@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "validCases": [
+    {
+      "id": "xld-provider",
+      "file": "xld-provider-fragment.json",
+      "expectedClock": {
+        "frameIndex": 240,
+        "nowMs": 4000,
+        "deltaMs": 16.6666666667
+      }
+    },
+    {
+      "id": "realtime-provider",
+      "file": "realtime-provider-fragment.json",
+      "expectedClock": {
+        "frameIndex": 48,
+        "nowMs": 800,
+        "deltaMs": 16.6666666667
+      }
+    }
+  ],
+  "invalidCases": [
+    {
+      "id": "unsupported-contract-version",
+      "file": "invalid-contract-version.json",
+      "mode": "partial",
+      "expectedCode": "CONTRACT_VERSION_UNSUPPORTED",
+      "expectedPath": "frame.contractVersion"
+    },
+    {
+      "id": "unknown-provider",
+      "file": "invalid-unknown-provider.json",
+      "mode": "partial",
+      "expectedCode": "INVALID_ENUM",
+      "expectedPath": "meta.loudness.sourceProvider"
+    },
+    {
+      "id": "empty-event-id",
+      "file": "invalid-event.json",
+      "mode": "partial",
+      "expectedCode": "EMPTY_EVENT_ID",
+      "expectedPath": "events.onset.eventId"
+    },
+    {
+      "id": "unknown-feature",
+      "file": "invalid-unknown-field.json",
+      "mode": "partial",
+      "expectedCode": "UNKNOWN_FIELD",
+      "expectedPath": "continuous.madeUpFeature"
+    },
+    {
+      "id": "out-of-range-feature",
+      "file": "invalid-out-of-range.json",
+      "mode": "partial",
+      "expectedCode": "OUT_OF_RANGE",
+      "expectedPath": "continuous.loudness"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {isPartial}=require('../workspace-controls.js');
+assert.equal(isPartial({analyzedRanges:[[0,100],[80,200]]},200),false,'overlapping complete coverage');
+assert.equal(isPartial({analyzedRanges:[[0,60],[80,200]]},200),true,'internal uncovered gap');
+assert.equal(isPartial({analyzedRanges:[[10,200]]},200),true,'missing introduction');
+assert.equal(isPartial({analyzedRanges:[[0,100]]},200),true,'partial long-song run');
+assert.equal(isPartial({analyzedRanges:[]},200),true,'empty coverage');
+assert.equal(isPartial({analyzedRanges:[[0,200]]},null),true,'unknown full duration cannot imply completeness');
+assert.equal(isPartial({duration:200,analyzedRanges:[[0,200]]},null),false,'duration in result');
+console.log('Workspace summary: PASS (partial coverage, gaps, overlap and unknown duration)');

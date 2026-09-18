@@ -1,0 +1,105 @@
+{
+  "contract": "xin.music-frame/1",
+  "contractVersion": 1,
+  "clock": {
+    "frameIndex": 48,
+    "nowMs": 800,
+    "deltaMs": 16.6666666667
+  },
+  "transport": {
+    "mode": "external",
+    "state": "playing",
+    "trackId": null,
+    "mediaTimeMs": null,
+    "durationMs": null,
+    "epoch": 0
+  },
+  "continuous": {
+    "loudness": 0.64,
+    "bass": 0.78,
+    "mid": 0.51,
+    "treble": 0.37,
+    "dynamicRange": 0.58,
+    "spectralDensity": 0.73,
+    "flux": 0.69,
+    "flatness": 0.22,
+    "sharpness": 0.46,
+    "rhythmPhase": 0.25
+  },
+  "states": {
+    "silence": 0
+  },
+  "events": {
+    "onset": {
+      "eventId": "external:onset:0:18",
+      "strength": 0.86,
+      "engineTimeMs": 800,
+      "mediaTimeMs": null,
+      "epoch": 0
+    },
+    "bassPeak": {
+      "eventId": "external:bassPeak:0:7",
+      "strength": 0.81,
+      "engineTimeMs": 800,
+      "mediaTimeMs": null,
+      "epoch": 0
+    }
+  },
+  "meta": {
+    "loudness": {
+      "sourceProvider": "realtime.core",
+      "providerDetail": {
+        "engineId": "xml-realtime-analyser",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.95,
+      "available": true,
+      "ageMs": 8,
+      "fallbackReason": null
+    },
+    "bass": {
+      "sourceProvider": "realtime.core",
+      "providerDetail": {
+        "engineId": "xml-realtime-analyser",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.94,
+      "available": true,
+      "ageMs": 8,
+      "fallbackReason": null
+    },
+    "onset": {
+      "sourceProvider": "realtime.core",
+      "providerDetail": {
+        "engineId": "xml-realtime-analyser",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.9,
+      "available": true,
+      "ageMs": 8,
+      "fallbackReason": null
+    },
+    "bassPeak": {
+      "sourceProvider": "realtime.core",
+      "providerDetail": {
+        "engineId": "xml-realtime-analyser",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.89,
+      "available": true,
+      "ageMs": 8,
+      "fallbackReason": null
+    },
+    "silence": {
+      "sourceProvider": "realtime.core",
+      "providerDetail": {
+        "engineId": "xml-realtime-analyser",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.98,
+      "available": true,
+      "ageMs": 8,
+      "fallbackReason": null
+    }
+  }
+}

@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Glitch Mapping Generator · Phase 6.5</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">GLITCH MAPPING GENERATOR · PHASE 6.5</p>
+        <h1>Audio → Visual Control Surface</h1>
+      </div>
+      <div class="app-header-actions">
+        <label class="locale-control" for="localeSelect">
+          <span id="localeLabel">界面语言</span>
+          <select id="localeSelect" aria-label="选择界面语言">
+            <option id="localeOptionZh" value="zh-CN">中文</option>
+            <option id="localeOptionEn" value="en-US">English</option>
+          </select>
+          <output id="localeSource" class="locale-source" data-source="default">默认</output>
+        </label>
+        <p id="sourceStatus" class="status" data-state="idle">IDLE</p>
+      </div>
+    </header>
+
+    <nav class="page-tabs" aria-label="Generator pages">
+      <button type="button" data-page-button="perform" data-active="true">Perform</button>
+      <button type="button" data-page-button="map" data-active="false">Map</button>
+      <button type="button" data-page-button="visual" data-active="false">Visual</button>
+      <button type="button" data-page-button="shader" data-active="false">Shader</button>
+      <button type="button" data-page-button="advanced" data-active="false">Advanced</button>
+    </nav>
+
+    <section class="history-toolbar" aria-label="Undo and redo history">
+      <div class="history-actions">
+        <button id="undoButton" type="button" disabled>Undo</button>
+        <button id="redoButton" type="button" disabled>Redo</button>
+      </div>
+      <p id="historyStatus" class="history-status" aria-live="polite">HISTORY READY</p>
+    </section>
+
+    <section data-page="perform" data-info-layer="creator" aria-label="Perform page">
+      <div class="perform-toolbar">
+        <label>
+          <span>Preset</span>
+          <select id="presetSelect">
+            <option value="balanced">Balanced Motion</option>
+            <option value="temporal-excavation">Temporal Excavation</option>
+            <option value="raster-deflection">Raster Deflection</option>
+            <option value="bitplane-drift">Bitplane Drift</option>
+            <option value="quantized-memory">Quantized Memory</option>
+            <option value="buildLab">Build Retention Lab</option>
+            <option value="structureLab">Structure Gate Lab</option>
+            <option value="nodeSourceLab">Bass + Flux Node Source Lab</option>
+            <option value="modulationLab">Second-order Modulation Lab</option>
+            <option value="saved">Saved Preset</option>
+          </select>
+        </label>
+        <label>
+          <span>Preset Name</span>
+          <input id="presetName" type="text" value="Balanced Motion" />
+        </label>
+        <label>
+          <span>Session Seed</span>
+          <input id="sessionSeed" type="number" step="1" value="0" />
+        </label>
+        <div class="transport" aria-label="Audio input">
+          <button id="offlineButton" type="button">离线确定性信号</button>
+          <button id="microphoneButton" type="button">实时麦克风</button>
+          <button id="stopButton" type="button">停止</button>
+        </div>
+      </div>
+
+      <canvas id="phase1Canvas" aria-label="Phase 1 WebGL2 preview"></canvas>
+
+      <section class="macro-panel" aria-label="Macro controls">
+        <label>
+          <span>Intensity <output id="macroIntensityValue">1.00</output></span>
+          <input id="macroIntensity" type="range" min="0.2" max="1.6" step="0.05" value="1" />
+        </label>
+        <label>
+          <span>Response <output id="macroResponseValue">1.00</output></span>
+          <input id="macroResponse" type="range" min="0.35" max="2.5" step="0.05" value="1" />
+        </label>
+      </section>
+
+      <section class="safety-panel" aria-label="Safety limiter controls">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 3.5 · COMPLETE SAFETY LIMITER</p>
+            <h2>Soft Protection + Physical Cap</h2>
+          </div>
+          <output id="safetyModeStatus" data-state="safe">SAFE · PHYSICAL CAP</output>
+        </header>
+        <div class="safety-controls">
+          <label>
+            <input id="safetyWhiteout" type="checkbox" checked />
+            <span>Whiteout protection</span>
+          </label>
+          <label>
+            <input id="safetyBlackout" type="checkbox" checked />
+            <span>Blackout protection</span>
+          </label>
+          <label>
+            <input id="safetyFeedbackRunaway" type="checkbox" checked />
+            <span>Feedback runaway protection</span>
+          </label>
+          <div class="physical-cap-lock">
+            <strong>PHYSICAL CAP · LOCKED</strong>
+            <span>Brightness ≤ 1.00 · Flash ≤ 3 Hz</span>
+          </div>
+        </div>
+        <output id="safetyInterventionStatus" class="safety-interventions">
+          No intervention this frame.
+        </output>
+      </section>
+
+      <section class="persistence-panel" aria-label="Snapshot and preset persistence">
+        <div class="persistence-copy">
+          <p class="eyebrow">PHASE 2 · SNAPSHOT STACK</p>
+          <p id="persistenceStatus" class="persistence-status" data-state="idle">NOT SAVED</p>
+        </div>
+        <label class="snapshot-note">
+          <span>Optional snapshot note</span>
+          <input id="snapshotNote" type="text" maxlength="80" placeholder="What are you comparing?" />
+        </label>
+        <div class="persistence-actions">
+          <button id="captureSnapshotButton" type="button">Capture Snapshot</button>
+          <button id="restoreSnapshotButton" type="button" disabled>Restore Latest</button>
+          <button id="savePresetButton" type="button">Save Preset</button>
+          <button id="loadPresetButton" type="button">Load Preset</button>
+        </div>
+      </section>
+
+      <section class="validation-panel" aria-label="Preset validation report">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 3.6 · PRESET VALIDATION</p>
+            <h2>Schema + Mapping Integrity</h2>
+          </div>
+          <output id="presetValidationStatus" data-state="idle">
+            NOT CHECKED
+          </output>
+        </header>
+        <ol id="presetValidationIssues" class="validation-issues" aria-live="polite">
+          <li data-severity="idle">Save or load a preset to validate it.</li>
+        </ol>
+      </section>
+
+      <section
+        class="compatibility-panel"
+        aria-label="Preset migration and compatibility report"
+      >
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 6.5 · MIGRATION AUDIT</p>
+            <h2>Preset Migration + Compatibility</h2>
+          </div>
+          <output id="presetCompatibilityStatus" data-state="idle">
+            NOT CHECKED
+          </output>
+        </header>
+
+        <p id="presetCompatibilitySummary" class="compatibility-summary">
+          Load or validate a preset to inspect migration coverage.
+        </p>
+
+        <div class="compatibility-metrics">
+          <div>
+            <span>Source</span>
+            <output id="presetCompatibilitySource">—</output>
+          </div>
+          <div>
+            <span>Target</span>
+            <output id="presetCompatibilityTarget">—</output>
+          </div>
+          <div>
+            <span>Steps</span>
+            <output id="presetMigrationCount">0</output>
+          </div>
+          <div>
+            <span>Resolved fields</span>
+            <output id="presetMigratedFieldCount">0</output>
+          </div>
+          <div>
+            <span>Not migrated</span>
+            <output id="presetNonMigratedFieldCount">0</output>
+          </div>
+        </div>
+
+        <div class="compatibility-columns">
+          <section>
+            <h3>Applied migrations</h3>
+            <ol id="presetMigrationSteps" class="compatibility-list">
+              <li data-state="idle">No report yet.</li>
+            </ol>
+          </section>
+          <section>
+            <h3>Migrated / resolved fields</h3>
+            <ol id="presetMigratedFields" class="compatibility-list">
+              <li data-state="idle">No report yet.</li>
+            </ol>
+          </section>
+          <section>
+            <h3>Fields not migrated</h3>
+            <ol id="presetNonMigratedFields" class="compatibility-list">
+              <li data-state="idle">No report yet.</li>
+            </ol>
+          </section>
+        </div>
+
+        <section class="compatibility-warning-block">
+          <h3>Compatibility warnings</h3>
+          <ol id="presetCompatibilityWarnings" class="compatibility-list">
+            <li data-state="valid">No compatibility warnings.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="snapshot-stack-panel" aria-label="Session snapshot stack">
+        <header>
+          <div>
+            <p class="eyebrow">SESSION ONLY · SEPARATE FROM PRESETS</p>
+            <h2>Snapshot Stack</h2>
+          </div>
+          <output id="snapshotCount">0 snapshots</output>
+        </header>
+        <div id="snapshotStack" class="snapshot-stack" aria-live="polite">
+          <p class="snapshot-empty">Capture a state to begin comparing.</p>
+        </div>
+      </section>
+
+      <section class="meters" aria-label="Core continuous sources">
+        <article class="meter" data-meter="loudness">
+          <span>Loudness</span><output data-meter-value="loudness">0.000</output>
+          <div class="track"><i data-meter-fill="loudness"></i></div>
+        </article>
+        <article class="meter" data-meter="bass">
+          <span>Bass</span><output data-meter-value="bass">0.000</output>
+          <div class="track"><i data-meter-fill="bass"></i></div>
+        </article>
+        <article class="meter" data-meter="mid">
+          <span>Mid</span><output data-meter-value="mid">0.000</output>
+          <div class="track"><i data-meter-fill="mid"></i></div>
+        </article>
+        <article class="meter" data-meter="treble">
+          <span>Treble</span><output data-meter-value="treble">0.000</output>
+          <div class="track"><i data-meter-fill="treble"></i></div>
+        </article>
+        <article class="meter" data-meter="dynamicRange">
+          <span>Dynamic Range</span><output data-meter-value="dynamicRange">0.000</output>
+          <div class="track"><i data-meter-fill="dynamicRange"></i></div>
+        </article>
+        <article class="meter" data-meter="spectralDensity">
+          <span>Spectral Density</span><output data-meter-value="spectralDensity">0.000</output>
+          <div class="track"><i data-meter-fill="spectralDensity"></i></div>
+        </article>
+        <article class="meter" data-meter="buildEnergy">
+          <span>Build Energy</span><output data-meter-value="buildEnergy">0.000</output>
+          <div class="track"><i data-meter-fill="buildEnergy"></i></div>
+        </article>
+        <article class="meter" data-meter="sectionDrive">
+          <span>Section Drive</span><output data-meter-value="sectionDrive">0.000</output>
+          <div class="track"><i data-meter-fill="sectionDrive"></i></div>
+        </article>
+        <article class="meter" data-meter="rhythmPhase">
+          <span>Rhythm Phase</span><output data-meter-value="rhythmPhase">0.000</output>
+          <div class="track"><i data-meter-fill="rhythmPhase"></i></div>
+        </article>
+        <article class="meter" data-meter="flux">
+          <span>Flux</span><output data-meter-value="flux">0.000</output>
+          <div class="track"><i data-meter-fill="flux"></i></div>
+        </article>
+        <article class="meter" data-meter="flatness">
+          <span>Flatness</span><output data-meter-value="flatness">0.000</output>
+          <div class="track"><i data-meter-fill="flatness"></i></div>
+        </article>
+        <article class="meter" data-meter="sharpness">
+          <span>Sharpness</span><output data-meter-value="sharpness">0.000</output>
+          <div class="track"><i data-meter-fill="sharpness"></i></div>
+        </article>
+      </section>
+
+      <section class="structure-panel" aria-label="Heuristic structure signals">
+        <header class="structure-panel-head">
+          <div>
+            <p class="eyebrow">PHASE 3.2 · HEURISTIC CONTROL SIGNALS</p>
+            <h2>Structure Events + Persistent States</h2>
+          </div>
+          <output id="structureModeStatus" data-state="warming">WARMING UP</output>
+        </header>
+        <p class="structure-disclaimer">
+          Visual control heuristics only · not authoritative musical structure recognition.
+        </p>
+        <div class="structure-controls">
+          <label>
+            <span>Sensitivity <output id="structureSensitivityValue">1.00</output></span>
+            <input id="structureSensitivity" type="range" min="0.25" max="3" step="0.05" value="1" />
+          </label>
+          <label>
+            <span>Hold duration <output id="structureHoldValue">2500 ms</output></span>
+            <input id="structureHoldDuration" type="range" min="250" max="12000" step="250" value="2500" />
+          </label>
+          <label>
+            <span>Unavailable fallback</span>
+            <select id="structureFallback">
+              <option value="zero">Zero states</option>
+              <option value="hold-last">Hold last state</option>
+            </select>
+          </label>
+          <label>
+            <span>Manual override</span>
+            <select id="structureManualOverride">
+              <option value="auto">Auto heuristic</option>
+              <option value="none">Force none</option>
+              <option value="build">Force Build</option>
+              <option value="drop">Force Drop</option>
+              <option value="climax">Force Climax</option>
+            </select>
+          </label>
+        </div>
+        <div class="structure-grid">
+          <article data-structure-card="boundary">
+            <span>Section Boundary</span>
+            <output id="structureBoundaryValue">0.000</output>
+            <small>Confidence <output id="structureBoundaryConfidence">0%</output></small>
+            <small>Availability <output id="structureBoundaryAvailability">WARMING</output></small>
+          </article>
+          <article data-structure-card="build">
+            <span>In Build</span>
+            <output id="structureBuildState">IDLE</output>
+            <small>Confidence <output id="structureBuildConfidence">0%</output></small>
+            <small>Availability <output id="structureBuildAvailability">WARMING</output></small>
+          </article>
+          <article data-structure-card="drop">
+            <span>In Drop</span>
+            <output id="structureDropState">IDLE</output>
+            <small>dropEnter <output id="structureDropEnter">0.000</output></small>
+            <small>Confidence <output id="structureDropConfidence">0%</output></small>
+            <small>Availability <output id="structureDropAvailability">WARMING</output></small>
+          </article>
+          <article data-structure-card="climax">
+            <span>In Climax</span>
+            <output id="structureClimaxState">IDLE</output>
+            <small>climaxEnter <output id="structureClimaxEnter">0.000</output></small>
+            <small>Confidence <output id="structureClimaxConfidence">0%</output></small>
+            <small>Availability <output id="structureClimaxAvailability">WARMING</output></small>
+          </article>
+        </div>
+      </section>
+    </section>
+
+    <section data-page="map" data-info-layer="creator" aria-label="Map page" hidden>
+      <section class="map-view-toolbar" aria-label="Map view selection">
+        <div>
+          <p class="eyebrow">PHASE 4.2 · SHARED DATA VIEWS</p>
+          <strong>Card View ↔ Graph View</strong>
+          <span>One live model · no duplicated mappings</span>
+        </div>
+        <div class="map-view-switch" role="group" aria-label="Map view">
+          <button
+            id="mapCardViewButton"
+            type="button"
+            aria-pressed="true"
+            data-active="true"
+          >Card View</button>
+          <button
+            id="mapGraphViewButton"
+            type="button"
+            aria-pressed="false"
+            data-active="false"
+          >Graph View</button>
+        </div>
+      </section>
+
+      <section id="mapCardView" class="mapping-card" data-map-view="card">
+        <div class="mapping-head">
+          <div>
+            <p class="eyebrow">EDITABLE MAPPING DATA</p>
+            <h2>Continuous MappingCard</h2>
+          </div>
+          <button
+            id="fxRackToggle"
+            class="rack-toggle"
+            type="button"
+            aria-pressed="true"
+            data-enabled="true"
+          >FX RACK · ON</button>
+        </div>
+
+        <label class="mapping-picker">
+          <span>Mapping</span>
+          <select id="mappingSelect"></select>
+        </label>
+        <div class="mapping-actions" aria-label="Mapping operations">
+          <button id="addMappingButton" type="button">Add</button>
+          <button id="soloMappingButton" type="button" data-active="false">Solo</button>
+          <button id="bypassMappingButton" type="button">Bypass</button>
+          <button id="duplicateMappingButton" type="button">Duplicate</button>
+          <button id="deleteMappingButton" class="danger" type="button">Delete</button>
+        </div>
+
+        <section class="mapping-ab-panel" aria-label="Mapping A B comparison">
+          <div>
+            <p class="eyebrow">MAPPING-LEVEL A/B</p>
+            <strong>Instant parameter comparison</strong>
+            <output id="mappingABStatus">A ACTIVE</output>
+          </div>
+          <div class="mapping-ab-switch" role="group" aria-label="Mapping parameter set">
+            <button
+              id="mappingVariantA"
+              type="button"
+              aria-pressed="true"
+              data-active="true"
+            >A</button>
+            <button
+              id="mappingVariantB"
+              type="button"
+              aria-pressed="false"
+              data-active="false"
+            >B</button>
+          </div>
+        </section>
+
+        <section class="learn-panel" aria-label="Learn v0 initial value suggester">
+          <div class="learn-panel-head">
+            <div>
+              <p class="eyebrow">PHASE 2.5 · LEARN V0</p>
+              <h2>Initial Value Suggester</h2>
+            </div>
+            <output id="learnStatus" data-state="idle">READY</output>
+          </div>
+          <div class="learn-controls">
+            <label>
+              <span>Representative segment</span>
+              <select id="learnWindowSeconds">
+                <option value="4">Recent 4 seconds</option>
+                <option value="8" selected>Recent 8 seconds</option>
+                <option value="12">Recent 12 seconds</option>
+              </select>
+            </label>
+            <button id="learnAnalyzeButton" type="button">Analyze recent segment</button>
+          </div>
+          <div class="learn-confidence">
+            <div>
+              <span>Confidence</span>
+              <output id="learnConfidence">—</output>
+            </div>
+            <div class="learn-confidence-track" aria-label="Learn confidence">
+              <i id="learnConfidenceFill"></i>
+            </div>
+          </div>
+          <div class="learn-results" aria-label="Suggested mapping values">
+            <div><span>Threshold</span><output id="learnThreshold">—</output></div>
+            <div><span>Range</span><output id="learnRange">—</output></div>
+            <div><span>Attack</span><output id="learnAttack">—</output></div>
+            <div><span>Fall</span><output id="learnFall">—</output></div>
+          </div>
+          <p class="learn-message">
+            <output id="learnMessage">Play a representative passage, then analyze it.</output>
+            <output id="learnCoverage">0.0 s · 0 samples</output>
+          </p>
+          <p class="learn-note">Suggestions only · values are never auto-applied.</p>
+        </section>
+
+        <div class="mapping-grid">
+          <label>
+            <span>Kind</span>
+            <select id="mappingKind">
+              <option value="continuous">Continuous</option>
+              <option value="event">Event</option>
+            </select>
+          </label>
+          <label>
+            <span>Source</span>
+            <select id="mappingSource">
+              <option value="audio.loudness">Loudness</option>
+              <option value="audio.bass">Bass</option>
+              <option value="audio.mid">Mid</option>
+              <option value="audio.treble">Treble</option>
+              <option value="audio.dynamicRange">Dynamic Range</option>
+              <option value="audio.spectralDensity">Spectral Density</option>
+              <option value="audio.buildEnergy">Build Energy</option>
+              <option value="audio.sectionDrive">Section Drive</option>
+              <option value="audio.rhythmPhase">Rhythm Phase</option>
+              <option value="audio.flux">Flux</option>
+              <option value="audio.flatness">Flatness</option>
+              <option value="audio.sharpness">Sharpness</option>
+              <option value="event.onset">Onset</option>
+              <option value="event.bassPeak">Bass Peak</option>
+              <option value="event.sectionBoundary">Section Boundary</option>
+              <option value="event.dropEnter">Drop Enter</option>
+              <option value="event.climaxEnter">Climax Enter</option>
+              <option value="control.visualPulse">Visual Pulse</option>
+              <option value="control.pulse2">Visual Pulse / 2</option>
+              <option value="control.pulse4">Visual Pulse / 4</option>
+              <option value="control.pulse8">Visual Pulse / 8</option>
+              <option value="control.pulse16">Visual Pulse / 16</option>
+              <option value="control.superCycle">Visual Super Cycle</option>
+              <option value="state.inBuild">In Build</option>
+              <option value="state.inDrop">In Drop</option>
+              <option value="state.inClimax">In Climax</option>
+            </select>
+          </label>
+          <label>
+            <span>Target</span>
+            <select id="mappingTarget"></select>
+          </label>
+          <label>
+            <span>Event Envelope</span>
+            <select id="mappingEnvelope"></select>
+          </label>
+          <label><span>Amount</span><input id="mappingAmount" type="number" min="-4" max="4" step="0.01" /></label>
+          <label><span>Range Min</span><input id="rangeMin" type="number" step="0.01" /></label>
+          <label><span>Range Max</span><input id="rangeMax" type="number" step="0.01" /></label>
+          <label><span>Curve</span><input id="mappingCurve" type="number" min="0.1" max="8" step="0.1" /></label>
+          <label><span>Threshold</span><input id="mappingThreshold" type="number" min="0" max="0.95" step="0.01" /></label>
+          <label><span>Attack (ms)</span><input id="mappingAttack" type="number" min="0" max="3000" step="10" /></label>
+          <label><span>Fall (ms)</span><input id="mappingFall" type="number" min="0" max="5000" step="10" /></label>
+          <label><span>Priority</span><input id="mappingPriority" type="number" min="-100" max="100" step="1" /></label>
+          <label>
+            <span>Polarity</span>
+            <select id="mappingPolarity">
+              <option value="normal">Normal</option>
+              <option value="inverted">Inverted</option>
+            </select>
+          </label>
+          <label>
+            <span>Replace Mode</span>
+            <select id="mappingReplaceMode">
+              <option value="replace">Replace</option>
+              <option value="multiply">Multiply</option>
+              <option value="add">Add</option>
+              <option value="max">Max</option>
+              <option value="min">Min</option>
+            </select>
+          </label>
+          <label><span>Probability</span><input id="mappingProbability" type="number" min="0" max="1" step="0.01" /></label>
+          <label>
+            <span>Safety Clamp</span>
+            <select id="mappingSafetyClamp">
+              <option value="true">Target range</option>
+              <option value="false">Final physical cap only</option>
+            </select>
+          </label>
+          <label>
+            <span>Gate State</span>
+            <select id="mappingGateSource">
+              <option value="">No Gate</option>
+              <option value="state.inBuild">In Build</option>
+              <option value="state.inDrop">In Drop</option>
+              <option value="state.inClimax">In Climax</option>
+            </select>
+          </label>
+          <label><span>Gate Threshold</span><input id="mappingGateThreshold" type="number" min="0" max="1" step="0.05" /></label>
+        </div>
+
+        <section class="mapping-causal-panel mapping-intent-panel" aria-label="Mapping configuration intent">
+          <header>
+            <div>
+              <p class="eyebrow">CREATOR SUMMARY · CONFIGURATION</p>
+              <h2>What this MappingCard intends</h2>
+            </div>
+            <output id="mappingIntentStatus" data-state="ready">READY</output>
+          </header>
+          <p id="mappingIntentSummary" class="mapping-causal-summary">
+            Select a MappingCard to describe its intent.
+          </p>
+          <details id="mappingIntentDetails" class="mapping-engineering-details">
+            <summary>Engineering configuration and raw IDs</summary>
+            <dl class="mapping-engineering-grid">
+              <div><dt>Source</dt><dd><output id="mappingIntentSource">—</output></dd></div>
+              <div><dt>Target</dt><dd><output id="mappingIntentTarget">—</output></dd></div>
+              <div><dt>Kind / Mode</dt><dd><output id="mappingIntentOperation">—</output></dd></div>
+              <div><dt>Polarity / Amount</dt><dd><output id="mappingIntentAmount">—</output></dd></div>
+              <div><dt>Range / Threshold</dt><dd><output id="mappingIntentRange">—</output></dd></div>
+              <div><dt>Response</dt><dd><output id="mappingIntentResponse">—</output></dd></div>
+              <div><dt>Gate / Probability</dt><dd><output id="mappingIntentConditions">—</output></dd></div>
+              <div><dt>Envelope / Modulation</dt><dd><output id="mappingIntentEnvelope">—</output></dd></div>
+              <div class="mapping-raw-row"><dt>Raw IDs</dt><dd><code id="mappingIntentRawIds" data-i18n-raw>—</code></dd></div>
+            </dl>
+          </details>
+        </section>
+
+        <section
+          class="mapping-modulation-panel"
+          aria-label="Second-order mapping modulation"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">PHASE 4.4 · SECOND-ORDER MODULATION</p>
+              <h2>Source / Node → Mapping Parameter</h2>
+            </div>
+            <div class="mapping-modulation-tools">
+              <output id="mappingModulationCount">0 LINKS</output>
+              <button id="addMappingModulation" type="button">Add Link</button>
+            </div>
+          </header>
+          <div class="mapping-modulation-controls">
+            <label>
+              <span>Modulation Link</span>
+              <select id="mappingModulationSelect"></select>
+            </label>
+            <label>
+              <span>Source / Node</span>
+              <select id="mappingModulationSource"></select>
+            </label>
+            <label>
+              <span>Mapping Parameter</span>
+              <select id="mappingModulationTarget">
+                <option value="amount">Amount</option>
+                <option value="threshold">Threshold</option>
+                <option value="fallMs">Fall (ms)</option>
+                <option value="probability">Probability</option>
+              </select>
+            </label>
+            <label>
+              <span>Depth</span>
+              <input
+                id="mappingModulationDepth"
+                type="number"
+                min="-5000"
+                max="5000"
+                step="0.01"
+                value="0"
+              />
+            </label>
+            <label class="check-control">
+              <input id="mappingModulationEnabled" type="checkbox" checked />
+              <span>Enabled</span>
+            </label>
+            <button
+              id="deleteMappingModulation"
+              class="danger"
+              type="button"
+            >Delete Link</button>
+          </div>
+          <p class="mapping-modulation-note">
+            Effective parameter = base + source value × depth.
+            Main routes are solid; modulation routes are dashed.
+          </p>
+        </section>
+
+        <section id="eventEnvelopePanel" class="envelope-panel" aria-label="Event envelope" hidden>
+          <div class="section-heading">
+            <p class="eyebrow">EVENT ENVELOPE</p>
+            <h2>Delay / Attack / Hold / Decay / Release / Cooldown</h2>
+          </div>
+          <div class="mapping-grid">
+            <label><span>Delay (ms)</span><input id="envelopeDelay" type="number" min="0" step="5" /></label>
+            <label><span>Attack (ms)</span><input id="envelopeAttack" type="number" min="0" step="5" /></label>
+            <label><span>Hold (ms)</span><input id="envelopeHold" type="number" min="0" step="5" /></label>
+            <label><span>Decay (ms)</span><input id="envelopeDecay" type="number" min="0" step="5" /></label>
+            <label><span>Sustain</span><input id="envelopeSustain" type="number" min="0" max="1" step="0.05" /></label>
+            <label><span>Release (ms)</span><input id="envelopeRelease" type="number" min="0" step="5" /></label>
+            <label><span>Cooldown (ms)</span><input id="envelopeCooldown" type="number" min="0" step="10" /></label>
+            <label>
+              <span>Retrigger</span>
+              <select id="envelopeRetrigger">
+                <option value="restart">Restart</option>
+                <option value="ignore-until-release">Ignore until release</option>
+                <option value="accumulate">Accumulate voices</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="node-graph-core-panel" aria-label="NodeGraph core editor">
+          <header>
+            <div>
+              <p class="eyebrow">PHASE 4.1 · NODEGRAPH CORE</p>
+              <h2>DAG Nodes + Deterministic Connections</h2>
+            </div>
+            <output id="nodeGraphStatus" data-state="ready">DAG READY</output>
+          </header>
+
+          <div class="node-graph-node-controls">
+            <label>
+              <span>New node kind</span>
+              <select id="nodeGraphKind">
+                <option value="bus">Bus</option>
+                <option value="math">Math</option>
+                <option value="shaper">Shaper</option>
+                <option value="logic">Logic</option>
+                <option value="lfo">LFO</option>
+                <option value="sample-hold">Sample &amp; Hold</option>
+              </select>
+            </label>
+            <button id="nodeGraphAddNode" type="button">Create Node</button>
+            <label>
+              <span>Selected node</span>
+              <select id="nodeGraphNode"></select>
+            </label>
+            <button id="nodeGraphDeleteNode" class="danger" type="button">
+              Delete Node
+            </button>
+          </div>
+
+          <div class="node-graph-connect-controls">
+            <label>
+              <span>Source</span>
+              <select id="nodeGraphEdgeSource"></select>
+            </label>
+            <label>
+              <span>Target node</span>
+              <select id="nodeGraphEdgeTarget"></select>
+            </label>
+            <label>
+              <span>Target port</span>
+              <select id="nodeGraphEdgePort">
+                <option value="input">Input</option>
+                <option value="a">A</option>
+                <option value="b">B</option>
+                <option value="trigger">Trigger</option>
+              </select>
+            </label>
+            <button id="nodeGraphConnect" type="button">Connect</button>
+          </div>
+
+          <div
+            id="nodeGraphRejectedEdge"
+            class="node-edge-preview"
+            data-state="idle"
+            aria-live="polite"
+          >No pending connection.</div>
+
+          <div class="node-graph-summary">
+            <output id="nodeGraphCount">0 nodes · 0 edges</output>
+            <span>DAG only · cycles are rejected before live state changes.</span>
+          </div>
+          <ol id="nodeGraphEdges" class="node-graph-edges">
+            <li class="node-graph-empty">Create nodes, then connect them.</li>
+          </ol>
+
+          <section class="node-probe-panel" aria-label="Node output probes">
+            <header>
+              <div>
+                <p class="eyebrow">PHASE 4.3 · LIVE NODE PROBES</p>
+                <h3>Output Value + Engine-Clock Waveform</h3>
+              </div>
+              <output id="nodeProbeStatus">0 PROBES</output>
+            </header>
+            <div id="nodeProbeGrid" class="node-probe-grid">
+              <p class="node-probe-empty">Create a node to expose its output probe.</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="energy-budget-panel" aria-label="Global Energy Budget controls">
+          <header>
+            <div>
+              <p class="eyebrow">PHASE 3.4 · ACTIVE ENERGY BUDGET</p>
+              <h2>Weighted Budget + Event Voice Policy</h2>
+            </div>
+            <output id="energyBudgetStatus" data-state="bypass">BYPASS</output>
+          </header>
+          <div class="energy-budget-controls">
+            <label class="check-control">
+              <input id="energyBudgetEnabled" type="checkbox" />
+              <span>Enable active budget</span>
+            </label>
+            <label>
+              <span>Budget</span>
+              <input id="energyBudgetValue" type="number" min="0.05" max="20" step="0.05" value="1" />
+            </label>
+            <label>
+              <span>Event voice limit</span>
+              <input id="eventVoiceLimit" type="number" min="0" max="64" step="1" value="4" />
+            </label>
+            <label>
+              <span>Global event policy</span>
+              <select id="globalEventPolicy">
+                <option value="drop-low-priority">Drop low priority</option>
+                <option value="queue">Queue · Experimental</option>
+              </select>
+            </label>
+            <label class="check-control">
+              <input id="experimentalQueueEnabled" type="checkbox" />
+              <span>Enable experimental queue</span>
+            </label>
+          </div>
+          <div class="energy-budget-live">
+            <span>Attenuation <output id="energyBudgetAttenuation">1.000</output></span>
+            <span>Voices <output id="eventVoiceStatus">0 / 4</output></span>
+          </div>
+          <details>
+            <summary>Advanced target weight table</summary>
+            <div class="energy-weight-table-wrap">
+              <table class="energy-weight-table">
+                <thead><tr><th>Module</th><th>Target</th><th>Weight</th></tr></thead>
+                <tbody id="energyWeightTableBody"></tbody>
+              </table>
+            </div>
+          </details>
+          <p class="debug-note">
+            Queue can delay events away from the beat. It is experimental and disabled by default.
+          </p>
+        </section>
+
+        <section class="debug-panel" aria-label="Phase 2 debug panel">
+          <div class="debug-panel-head">
+            <div>
+              <p class="eyebrow">PHASE 2.4 · READ-ONLY DEBUG</p>
+              <h2>Signal → Mapping → Target</h2>
+            </div>
+            <span>OBSERVE · ACTIVE BUDGET WHEN ENABLED</span>
+          </div>
+
+          <div class="debug-grid">
+            <article class="debug-card contribution-debug">
+              <div class="debug-card-head">
+                <div>
+                  <p class="eyebrow">SELECTED MAPPING</p>
+                  <h3>Contribution Breakdown</h3>
+                </div>
+                <output id="mappingDebugStatus">NO MAPPING</output>
+              </div>
+              <p id="mappingRuntimeSummary" class="mapping-causal-summary">
+                No engine trace has reached this MappingCard yet.
+              </p>
+              <details id="mappingRuntimeDetails" class="mapping-engineering-details">
+                <summary>Engineering values and raw reason codes</summary>
+                <div class="live-values" aria-label="Realtime contribution">
+                  <div><span>Source</span><output id="sourceReadout">0.000</output></div>
+                  <div><span>Normalized</span><output id="normalizedReadout">0.000</output></div>
+                  <div><span>Conditioned</span><output id="conditionedReadout">0.000</output></div>
+                  <div><span>Contribution</span><output id="contributionReadout">0.000</output></div>
+                  <div><span>Mixer Mode</span><output id="mappingModeReadout">REPLACE</output></div>
+                  <div><span>Probability</span><output id="probabilityReadout">1.00 · PASS</output></div>
+                  <div><span>Safety Clamp</span><output id="safetyClampReadout">TARGET RANGE</output></div>
+                  <div><span>Base Target</span><output id="baseReadout">0.000</output></div>
+                  <div><span>Final Target</span><output id="finalReadout">0.000</output></div>
+                </div>
+                <div class="debug-explanations">
+                  <p><span>Raw Mapping explanation</span><output id="mappingDebugReason" data-i18n-raw>Waiting for data.</output></p>
+                  <p><span>Raw Target explanation</span><output id="targetDebugReason" data-i18n-raw>Waiting for data.</output></p>
+                  <p><span>Raw reason codes</span><code id="mappingRawReasonCodes" data-i18n-raw>—</code></p>
+                  <p><span>Provider / confidence</span><output id="mappingRuntimeProvider">—</output></p>
+                  <p><span>Engine Clock</span><output id="mappingRuntimeClock">—</output></p>
+                </div>
+                <ol id="mappingRuntimePipeline" class="mapping-runtime-pipeline" aria-label="TargetMixer trace pipeline"></ol>
+              </details>
+            </article>
+
+            <article class="debug-card energy-debug">
+              <div class="debug-card-head">
+                <div>
+                  <p class="eyebrow">GLOBAL ENERGY BUDGET</p>
+                  <h3>Unweighted Preview</h3>
+                </div>
+                <output id="energyPercent">0%</output>
+              </div>
+              <div class="energy-track" aria-label="Read-only aggregate energy">
+                <i id="energyMeterFill"></i>
+              </div>
+              <dl class="energy-stats">
+                <div><dt>Raw aggregate</dt><dd><output id="energyRaw">0.000</output></dd></div>
+                <div><dt>Active targets</dt><dd><output id="energyActiveTargets">0 / 0</output></dd></div>
+                <div><dt>Peak target</dt><dd><output id="energyPeak">—</output></dd></div>
+              </dl>
+              <p id="energyDebugNote" class="debug-note">Active budget is bypassed.</p>
+            </article>
+
+            <article class="debug-card event-debug">
+              <div class="debug-card-head">
+                <div>
+                  <p class="eyebrow">EVENT LOG</p>
+                  <h3>Audio + Structure Events</h3>
+                </div>
+                <div class="event-log-tools">
+                  <output id="eventLogCount">0 EVENTS</output>
+                  <button id="clearEventLogButton" type="button">Clear</button>
+                </div>
+              </div>
+              <ol id="eventLog" class="event-log" aria-live="polite">
+                <li class="event-log-empty">No events detected yet.</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <section
+        id="mapGraphView"
+        class="graph-view-panel"
+        data-map-view="graph"
+        hidden
+      >
+        <header>
+          <div>
+            <p class="eyebrow">DERIVED VIEW · SAME LIVE DATA</p>
+            <h2>Patch Topology</h2>
+          </div>
+          <output id="graphViewStatus">0 MAPPINGS · 0 CORE NODES</output>
+        </header>
+
+        <div class="graph-view-stage">
+          <section class="graph-lane" aria-label="Audio and state sources">
+            <h3>Sources</h3>
+            <div id="graphViewSources" class="graph-node-stack"></div>
+          </section>
+          <section class="graph-lane graph-lane-core" aria-label="NodeGraph nodes">
+            <h3>Core Nodes</h3>
+            <div id="graphViewCoreNodes" class="graph-node-stack"></div>
+          </section>
+          <section class="graph-lane graph-lane-mappings" aria-label="Collapsed MappingCards">
+            <h3>MappingCards</h3>
+            <div id="graphViewMappings" class="graph-node-stack"></div>
+          </section>
+          <section class="graph-lane" aria-label="Visual targets">
+            <h3>Targets</h3>
+            <div id="graphViewTargets" class="graph-node-stack"></div>
+          </section>
+        </div>
+
+        <section class="graph-edge-list-panel" aria-label="NodeGraph connections">
+          <div>
+            <p class="eyebrow">SOLID · MAIN / DASHED · MODULATION</p>
+            <h3>Signal Connections</h3>
+          </div>
+          <ol id="graphViewEdges" class="graph-view-edges">
+            <li class="graph-view-empty">No NodeGraph connections.</li>
+          </ol>
+        </section>
+      </section>
+
+      <section class="pipeline" aria-label="TargetMixer fixed pipeline">
+        <span>1 · BASE</span>
+        <span>2 · MULTIPLY <i>CARD MODE</i></span>
+        <span>3 · ADD <i>CARD MODE</i></span>
+        <span>4 · MAX/MIN <i>CARD MODE</i></span>
+        <span>5 · REPLACE</span>
+        <span>6 · GATE <i>STATE SOURCE</i></span>
+        <span>7 · ENERGY BUDGET <i>WEIGHTED</i> → CLAMP</span>
+      </section>
+    </section>
+
+    <section data-page="visual" data-info-layer="creator" aria-label="Visual page" hidden>
+      <div class="section-heading">
+        <p class="eyebrow">TARGET INSPECTOR</p>
+        <h2>Base / Mapped / Final</h2>
+      </div>
+      <div class="table-wrap">
+        <table class="visual-table">
+          <thead>
+            <tr><th>Visual target</th><th>Base Value</th><th>Mapped Value</th><th>Final Value</th></tr>
+          </thead>
+          <tbody id="visualTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-page="shader" data-info-layer="engineering" aria-label="Shader page" hidden>
+      <header class="shader-page-heading">
+        <div>
+          <p class="eyebrow">PHASE 5.1 · STAGED GLSL PASS</p>
+          <h2>Compile Candidate → Apply Only When Valid</h2>
+        </div>
+        <output id="shaderPassStatus" data-state="idle">BUILT-IN LIVE</output>
+      </header>
+
+      <div class="shader-workbench">
+        <section class="shader-editor" aria-label="GLSL pass upload">
+          <div class="shader-upload-row">
+            <label class="shader-file-control">
+              <span>Fragment shader file</span>
+              <input
+                id="shaderPassFile"
+                type="file"
+                accept=".frag,.fs,.glsl,.txt,text/plain"
+              />
+            </label>
+            <div class="shader-sample-actions">
+              <button id="shaderValidSampleButton" type="button">
+                Load Valid Sample
+              </button>
+              <button id="shaderBrokenSampleButton" type="button">
+                Load Broken Sample
+              </button>
+            </div>
+          </div>
+
+          <label class="shader-source-control">
+            <span>Staged fragment source</span>
+            <textarea
+              id="shaderPassSource"
+              rows="22"
+              spellcheck="false"
+              aria-describedby="shaderStageNote"
+            ></textarea>
+          </label>
+
+          <div class="shader-apply-row">
+            <button id="shaderApplyButton" type="button">
+              Compile + Apply Staged Pass
+            </button>
+            <p id="shaderStageNote">
+              Compilation happens outside live state. A rejected candidate
+              never replaces the last valid pass.
+            </p>
+          </div>
+        </section>
+
+        <aside class="shader-report" aria-label="Shader compile report">
+          <div class="shader-live-card">
+            <span>LIVE PASS</span>
+            <strong id="shaderLiveLabel">Built-in feedback pass</strong>
+            <output id="shaderLiveRevision">REVISION 0</output>
+          </div>
+          <div id="shaderLogCard" class="shader-log-card">
+            <span>COMPILE LOG</span>
+            <pre id="shaderCompileLog" aria-live="polite" data-i18n-raw>No staged compile yet.</pre>
+          </div>
+          <p class="shader-scope-note">
+            Step 5.4 stores pass order, live custom pass and uniform registry
+            in the preset. Invalid staged edits never replace live state.
+          </p>
+        </aside>
+      </div>
+
+      <section class="shader-pipeline-panel" aria-label="Pass order and framebuffer preview">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 5.4 · ORDERED FRAMEBUFFER PIPELINE</p>
+            <h2>Pass Order + Live Framebuffer Preview</h2>
+          </div>
+          <output id="passOrderStatus" data-state="ready">2 PASSES</output>
+        </header>
+        <div class="shader-pipeline-grid">
+          <div>
+            <p class="field-label">Ordered render passes</p>
+            <div id="passOrderEditor" class="pass-order-editor"></div>
+          </div>
+          <figure class="framebuffer-preview-card">
+            <canvas
+              id="framebufferPreview"
+              width="320"
+              height="180"
+              aria-label="Current framebuffer preview"
+            ></canvas>
+            <figcaption>
+              <strong>FINAL FRAMEBUFFER</strong>
+              <output id="framebufferPreviewStatus">CLICK REFRESH</output>
+              <button id="framebufferPreviewButton" type="button">
+                Refresh Preview
+              </button>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="uniform-registry-panel" aria-label="GLSL uniform target registry">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 5.3 · FULL MAPPING CHAIN</p>
+            <h2>Source / Node → Budgeted Custom(GLSL) Uniform</h2>
+          </div>
+          <output id="uniformRegistryStatus" data-state="idle">0 TARGETS</output>
+        </header>
+
+        <div class="uniform-metadata-grid">
+          <label>
+            <span>Name</span>
+            <input id="uniformName" type="text" value="u_corruptionAmount" />
+          </label>
+          <label>
+            <span>Type</span>
+            <select id="uniformType">
+              <option value="float">float</option>
+              <option value="int">int</option>
+              <option value="bool">bool</option>
+            </select>
+          </label>
+          <label>
+            <span>Label</span>
+            <input id="uniformLabel" type="text" value="Corruption Amount" />
+          </label>
+          <label>
+            <span>Range Min</span>
+            <input id="uniformRangeMin" type="number" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Range Max</span>
+            <input id="uniformRangeMax" type="number" step="0.01" value="1" />
+          </label>
+          <label>
+            <span>Default</span>
+            <input id="uniformDefault" type="number" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Impact Category</span>
+            <select id="uniformImpactCategory">
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label>
+            <span>Impact Weight</span>
+            <input
+              id="uniformImpactWeight"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              value="0.55"
+            />
+          </label>
+        </div>
+
+        <div class="uniform-registry-actions">
+          <button id="uniformDeclareButton" type="button">Declare Uniform</button>
+          <p>
+            Category changes load the system default weight. User overrides
+            remain allowed, with a warning when risk is underestimated.
+          </p>
+        </div>
+
+        <output id="uniformRegistryMessage" data-state="idle">
+          No custom uniforms declared.
+        </output>
+        <div id="uniformRegistryList" class="uniform-registry-list"></div>
+      </section>
+
+      <section class="raw-json-panel" aria-label="Raw preset JSON staged editor">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 5.4 · STAGED CONFIG EDITOR</p>
+            <h2>Raw JSON · Validate Before Live Apply</h2>
+          </div>
+          <output id="rawJsonStatus" data-state="idle">NOT STAGED</output>
+        </header>
+        <textarea
+          id="rawJsonEditor"
+          rows="24"
+          spellcheck="false"
+          aria-describedby="rawJsonLog"
+        ></textarea>
+        <div class="raw-json-actions">
+          <button id="rawJsonLoadButton" type="button">Load Live → Stage</button>
+          <button id="rawJsonValidateButton" type="button">Validate Staged</button>
+          <button id="rawJsonApplyButton" type="button">Snapshot + Apply</button>
+        </div>
+        <pre id="rawJsonLog" aria-live="polite" data-i18n-raw>Live state remains untouched until staged JSON passes validation.</pre>
+      </section>
+    </section>
+
+    <section data-page="advanced" data-info-layer="engineering" aria-label="Advanced page" hidden>
+      <section
+        id="recoveryPanel"
+        class="recovery-panel"
+        aria-label="Autosave and crash recovery"
+        data-recovery-pending="false"
+      >
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 6.4 · PROJECT CONTINUITY</p>
+            <h2>Autosave + Crash Recovery</h2>
+          </div>
+          <output id="recoveryStatus" data-state="ready">AUTOSAVE READY</output>
+        </header>
+
+        <p id="recoverySummary" class="recovery-summary">
+          Project edits are saved at transaction boundaries and on the unified
+          engine clock. A normal exit marks the session clean.
+        </p>
+
+        <div class="recovery-actions">
+          <button id="recoveryRestoreButton" type="button" hidden>
+            Restore Latest Autosave
+          </button>
+          <button id="recoveryDiscardButton" type="button" hidden>
+            Discard Autosave
+          </button>
+          <button id="autosaveNowButton" type="button">
+            Save Recovery Point Now
+          </button>
+        </div>
+
+        <p class="recovery-note">
+          Recovery stores the editable project state and Snapshot Stack
+          separately from preset schema migration. Physical safety remains
+          active when recovered state is applied.
+        </p>
+      </section>
+
+      <section class="performance-profiler-panel" aria-label="Performance profiler">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 6.3 · FRAME COST OBSERVATORY</p>
+            <h2>Performance Profiler</h2>
+          </div>
+          <output id="performanceProfilerStatus" data-state="ready">
+            PROFILING
+          </output>
+        </header>
+
+        <div class="performance-profiler-controls">
+          <label class="performance-toggle">
+            <input id="performanceProfilerEnabled" type="checkbox" checked />
+            <span>Profiler enabled</span>
+          </label>
+          <label>
+            <span>Frame threshold (ms)</span>
+            <input
+              id="performanceProfilerThreshold"
+              type="number"
+              min="1"
+              max="100"
+              step="0.1"
+              value="16.7"
+            />
+          </label>
+          <button id="performanceProfilerReset" type="button">
+            Reset Window
+          </button>
+        </div>
+
+        <div class="performance-profiler-summary">
+          <div><span>Average frame</span><output id="performanceFrameAverage">0.00 ms</output></div>
+          <div><span>Peak frame</span><output id="performanceFramePeak">0.00 ms</output></div>
+          <div><span>Over budget</span><output id="performanceOverBudget">0 / 0</output></div>
+          <div><span>Dominant stage</span><output id="performanceBottleneck">—</output></div>
+        </div>
+
+        <div id="performanceStageList" class="performance-stage-list"></div>
+        <p class="performance-profiler-note">
+          Stage values report CPU submission cost. Profiling is session-only,
+          uses an injected high-resolution measurement clock, and never changes
+          engine time or visual output.
+        </p>
+      </section>
+
+      <section class="debug-bundle-panel" aria-label="Debug bundle export">
+        <header>
+          <div>
+            <p class="eyebrow">PHASE 6.2 · REPRODUCIBLE SUPPORT PACKAGE</p>
+            <h2>Debug Bundle Export</h2>
+          </div>
+          <output id="debugBundleStatus" data-state="idle">READY</output>
+        </header>
+
+        <p class="debug-bundle-intro">
+          Capture the current engine state as one ZIP. The export is read-only:
+          it does not add a Snapshot, alter the preset, or stop playback.
+        </p>
+
+        <div id="debugBundleContents" class="debug-bundle-contents">
+          <span>Preset JSON</span>
+          <span>Snapshot state</span>
+          <span>Audio feature sample</span>
+          <span>Mapping contributions</span>
+          <span>Final target values</span>
+          <span>Energy budget</span>
+          <span>Safety limiter</span>
+          <span>Shader pass config</span>
+          <span>Canvas screenshot</span>
+          <span>Console logs</span>
+          <span>Seed + clock mode</span>
+        </div>
+
+        <div class="debug-bundle-actions">
+          <button id="debugBundleExportButton" type="button">
+            Export Debug Bundle (.zip)
+          </button>
+          <div>
+            <strong id="debugBundleClockMode">IDLE</strong>
+            <output id="debugBundleSummary">
+              No bundle exported in this session.
+            </output>
+          </div>
+        </div>
+
+        <p class="debug-bundle-note">
+          The archive uses stable filenames and includes a manifest so the
+          current issue can be reproduced without reconstructing state by hand.
+        </p>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="../dist/ui-debug/phase1-demo.js"></script>
+</body>
+</html>

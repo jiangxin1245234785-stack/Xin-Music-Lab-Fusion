@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>XLD i18n smoke</title></head>
+<body>
+  <main id="ready">ready</main>
+  <p id="staticProbe" data-i18n="static.empty.title">选择一张唱片</p>
+  <div id="localeControl" class="locale-control" role="group" aria-label="语言">
+    <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+    <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+  </div>
+  <script src="../i18n/catalogs.js"></script>
+  <script src="../i18n/translator.js"></script>
+  <script src="../i18n/locale-controller.js"></script>
+  <script src="../i18n/bootstrap.js"></script>
+  <script src="../i18n/locale-ui.js"></script>
+  <script src="../i18n/static-ui.js"></script>
+  <script src="../i18n/runtime-messages.js"></script>
+</body>
+</html>

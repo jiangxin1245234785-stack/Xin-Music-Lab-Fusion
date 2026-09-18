@@ -1,0 +1,51 @@
+{
+  "name": "@xins-music-lab/glitch-mapping-generator",
+  "version": "6.6.1-integration-v.3",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "browser": "./dist/browser/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "default": "./dist/browser/index.js"
+    },
+    "./ui/locale": {
+      "types": "./dist/ui/i18n/index.d.ts",
+      "default": "./dist/ui/i18n/index.js"
+    },
+    "./ui/semantics": {
+      "types": "./dist/ui/semantics/index.d.ts",
+      "default": "./dist/ui/semantics/index.js"
+    },
+    "./browser-manifest.json": {
+      "default": "./dist/browser-manifest.json"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs",
+    "demo": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/serve-demo.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/run-test-suite.mjs",
+    "step1:capture": "tsc -p tsconfig.json && node scripts/capture-i18n-step1-audit.mjs && node scripts/capture-i18n-step1-baseline.mjs",
+    "step1:screenshot-manifest": "node scripts/capture-i18n-step1-screenshot-manifest.mjs",
+    "test:i18n:step4": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node --test tests/i18n-step4-surface-localization.test.mjs tests/i18n-step4-isolation.test.mjs",
+    "test:browser:step4": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/run-electron-step4-locale-smoke.mjs",
+    "test:i18n:step5": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node --test tests/i18n-step5-intent-presenter.test.mjs tests/i18n-step5-runtime-presenter.test.mjs",
+    "test:browser:step5": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/run-electron-step5-mapping-diagnostics-smoke.mjs",
+    "test:i18n:step6": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node --test tests/i18n-step6-pipeline-isolation.test.mjs tests/i18n-step6-editor-isolation.test.mjs tests/i18n-step6-delivery-audit.test.mjs",
+    "test:webgl:step6": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/run-electron-step6-webgl-tolerance.mjs",
+    "test:browser:step6": "tsc -p tsconfig.json && node scripts/build-browser-distribution.mjs && node scripts/run-electron-step6-acceptance.mjs",
+    "test:browser:electron": "node scripts/run-electron-file-smoke.mjs",
+    "test:visual": "tsc -p tsconfig.json && node --test tests/phase6-visual-regression.test.mjs",
+    "test:visual:update": "tsc -p tsconfig.json && node scripts/update-visual-snapshots.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

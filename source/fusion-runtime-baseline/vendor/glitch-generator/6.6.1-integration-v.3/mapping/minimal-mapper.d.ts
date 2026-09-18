@@ -1,0 +1,6 @@
+import type { MappingCard, ResolvedAudioFeatureFrame, ResolvedVisualTargetState, VisualTargetState } from '../schema/types.js';
+export type MappingSourceValues = Readonly<Record<string, number>>;
+export declare const CORE_MAPPING_SOURCE_IDS: readonly ["audio.loudness", "audio.bass", "audio.mid", "audio.treble", "audio.dynamicRange", "audio.spectralDensity", "audio.buildEnergy", "audio.sectionDrive", "audio.rhythmPhase", "audio.flux", "audio.flatness", "audio.sharpness", "audio.chordConfidence", "state.silence", "event.onset", "event.bassPeak", "event.sectionBoundary", "event.dropEnter", "event.climaxEnter", "event.chordChange", "state.inBuild", "state.inDrop", "state.inClimax", "confidence.sectionBoundary", "confidence.chord", "confidence.climax", "harmony.chordHue"];
+export declare function coreFeatureSourceValues(frame: ResolvedAudioFeatureFrame): MappingSourceValues;
+export declare function evaluateMappingCards(mappings: readonly MappingCard[], sourceValues: MappingSourceValues, baseState?: VisualTargetState): ResolvedVisualTargetState;
+//# sourceMappingURL=minimal-mapper.d.ts.map

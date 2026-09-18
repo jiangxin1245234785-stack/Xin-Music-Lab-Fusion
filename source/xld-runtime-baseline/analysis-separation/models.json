@@ -1,0 +1,33 @@
+[
+  {
+    "id": "bs-roformer-sw",
+    "name": "BS-RoFormer SW",
+    "default": true,
+    "model": "BS-Rofo-SW-Fixed",
+    "backend": "roformer",
+    "options": {
+      "chunkSize": 588800,
+      "numOverlap": 2,
+      "normalize": false
+    },
+    "checkpoint": {
+      "file": "BS-Rofo-SW-Fixed.ckpt",
+      "sha256": "24e7d35ee9c64415673d3fd33e06a67cac2c103c5df6267ba1576459c775916e"
+    },
+    "config": {
+      "file": "BS-Rofo-SW-Fixed.yaml",
+      "sha256": "f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b"
+    }
+  },
+  {
+    "id": "demucs-6s",
+    "name": "Demucs 6s",
+    "default": false,
+    "model": "htdemucs_6s",
+    "backend": "demucs",
+    "options": {
+      "shifts": 1,
+      "overlap": 0.25
+    }
+  }
+]

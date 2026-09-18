@@ -1,0 +1,79 @@
+{
+  "formatVersion": 1,
+  "width": 384,
+  "height": 368,
+  "sampleCount": 96,
+  "pixelScale": 4,
+  "engineClock": "fixed-step-offline",
+  "sessionSeed": 24832,
+  "targetIds": [
+    "feedback.retention",
+    "feedback.decay",
+    "feedback.zoom",
+    "feedback.rotation",
+    "blockDamage.blockSize",
+    "blockDamage.displacementX",
+    "blockDamage.spawnProbability",
+    "blockDamage.lifetime",
+    "rgbSplit.distance",
+    "rgbSplit.angle",
+    "rgbSplit.decay",
+    "scanlineGrain.scanlineDepth",
+    "scanlineGrain.grainDensity",
+    "scanlineGrain.grainContrast",
+    "signalLoss.dropoutProbability",
+    "signalLoss.dropoutOpacity",
+    "signalLoss.whiteTearBrightness",
+    "color.brightness",
+    "color.contrast",
+    "color.saturation",
+    "color.flashStrength"
+  ],
+  "passOrder": [
+    "builtin-feedback",
+    "custom-glsl"
+  ],
+  "shaderSha256": {
+    "builtinFeedback": "52a6f12c7c55d2d6adc157252a511e59f59231fef53dc86d58ba06d714ff249c",
+    "display": "a382df08517411f264e5ba8de53c2ceab6b078f0a3e08ccb98934d54e9168325"
+  },
+  "pixelSha256": "4c7cd0bb62439f6b43fd576fcd998529e92c8c18ca7dd73f5e544a81c758811e",
+  "pngSha256": "89a1b4403be666731ae20da898d4a2a3ef2bbb6acd358a96e91605a106e6f935",
+  "checkpoints": [
+    {
+      "x": 0,
+      "engineTimeMs": 0,
+      "brightness": 0.1656,
+      "feedbackZoom": 0.9204,
+      "blockSpawn": 0.0148
+    },
+    {
+      "x": 24,
+      "engineTimeMs": 874.66666667,
+      "brightness": 0.53745444,
+      "feedbackZoom": 1.28263616,
+      "blockSpawn": 0.02270558
+    },
+    {
+      "x": 48,
+      "engineTimeMs": 1749.33333333,
+      "brightness": 0.53981472,
+      "feedbackZoom": 0.93516179,
+      "blockSpawn": 0.02734073
+    },
+    {
+      "x": 72,
+      "engineTimeMs": 2624,
+      "brightness": 0.69589271,
+      "feedbackZoom": 1.19799345,
+      "blockSpawn": 0.0459304
+    },
+    {
+      "x": 95,
+      "engineTimeMs": 3477.33333333,
+      "brightness": 0.69420346,
+      "feedbackZoom": 0.92834166,
+      "blockSpawn": 0.022612
+    }
+  ]
+}

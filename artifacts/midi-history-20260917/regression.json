@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "xld": {
+    "exit": 0,
+    "passLines": 25
+  },
+  "xml": {
+    "exit": 0,
+    "passLines": 15
+  },
+  "before": {
+    "exit": 0,
+    "passLines": 24
+  }
+}

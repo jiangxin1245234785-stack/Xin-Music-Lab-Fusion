@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>XML i18n fixture</title></head>
+<body>
+  <span id="localeControl" role="group" aria-label="语言">
+    <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+    <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+  </span>
+  <main id="staticProbe" data-i18n="welcome.connect" data-i18n-title="capture.title">连接电脑声音</main>
+  <section id="fusionPanel" aria-label="Fusion">
+    <header class="calibration-head"><h2>Fusion 控制台</h2></header>
+    <label><input id="fusionAutoColor" type="checkbox" checked> 和弦驱动配色</label>
+  </section>
+  <button id="qualityButton" type="button">画质 Auto</button>
+  <output id="runtimeProbe">导演</output>
+  <script>
+    window.__productState = Object.freeze({ playing: true, preset: 'balanced', seed: 42, mappingCount: 5 });
+    window.__nativeLocaleCalls = [];
+    window.SmokeResonanceDesktop = Object.freeze({
+      getLocale: async () => ({ ok: true, locale: 'zh-CN', source: 'renderer' }),
+      setLocale: async locale => {
+        window.__nativeLocaleCalls.push(locale);
+        return { ok: true, locale, source: 'renderer' };
+      }
+    });
+  </script>
+  <script src="../i18n/catalogs.js"></script>
+  <script src="../i18n/translator.js"></script>
+  <script src="../i18n/locale-controller.js"></script>
+  <script src="../i18n/bootstrap.js"></script>
+  <script src="../i18n/locale-ui.js"></script>
+  <script src="../i18n/static-ui.js"></script>
+  <script src="../i18n/dynamic-ui.js"></script>
+  <script src="../i18n/desktop-locale-bridge.js"></script>
+</body>
+</html>

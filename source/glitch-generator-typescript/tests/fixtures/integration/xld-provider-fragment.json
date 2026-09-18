@@ -1,0 +1,149 @@
+{
+  "contract": "xin.music-frame/1",
+  "contractVersion": 1,
+  "clock": {
+    "frameIndex": 240,
+    "nowMs": 4000,
+    "deltaMs": 16.6666666667
+  },
+  "transport": {
+    "mode": "internal",
+    "state": "playing",
+    "trackId": "track-farewell-kingdom-yes",
+    "mediaTimeMs": 64250,
+    "durationMs": 905000,
+    "epoch": 2
+  },
+  "continuous": {
+    "buildEnergy": 0.72,
+    "sectionDrive": 0.88,
+    "chordConfidence": 0.84
+  },
+  "states": {
+    "inBuild": 0,
+    "inDrop": 0,
+    "inClimax": 1
+  },
+  "events": {
+    "sectionBoundary": {
+      "eventId": "track-farewell-kingdom-yes:sectionBoundary:12:2",
+      "strength": 0.91,
+      "engineTimeMs": 4000,
+      "mediaTimeMs": 64250,
+      "epoch": 2
+    },
+    "climaxEnter": {
+      "eventId": "track-farewell-kingdom-yes:climaxEnter:12:2",
+      "strength": 0.88,
+      "engineTimeMs": 4000,
+      "mediaTimeMs": 64250,
+      "epoch": 2
+    }
+  },
+  "labels": {
+    "sectionId": "songformer:chorus:12",
+    "sectionLabel": "chorus",
+    "chord": "C#m7"
+  },
+  "meta": {
+    "buildEnergy": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.76,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "sectionDrive": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.88,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "chordConfidence": {
+      "sourceProvider": "xld.harmony",
+      "providerDetail": {
+        "engineId": "chord-btc-consensus",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.84,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "inClimax": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.88,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "sectionBoundary": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.91,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "climaxEnter": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.88,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "sectionId": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.88,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "sectionLabel": {
+      "sourceProvider": "xld.songformer",
+      "providerDetail": {
+        "engineId": "songformer",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.88,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    },
+    "chord": {
+      "sourceProvider": "xld.harmony",
+      "providerDetail": {
+        "engineId": "chord-btc-consensus",
+        "providerVersion": "fixture-v1"
+      },
+      "confidence": 0.84,
+      "available": true,
+      "ageMs": 0,
+      "fallbackReason": null
+    }
+  }
+}

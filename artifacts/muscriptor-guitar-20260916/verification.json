@@ -1,0 +1,13 @@
+{
+  "decodeLimitChunks": [],
+  "decodeLimitSeconds": [],
+  "passed": true,
+  "chunks": 114,
+  "rawNotes": 2919,
+  "exportedNotes": 2916,
+  "officialCleanupChangedRawNotes": true,
+  "midiMatchesOfficialCleanup": true,
+  "sourceUnchanged": true,
+  "gapsUnchanged": true,
+  "maxEnd": 550.0
+}

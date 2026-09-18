@@ -1,0 +1,12 @@
+# MuScriptor 吉他默认与 Large 对照
+- 输入：现有 guitar WAV，单声部与一键 MIDI；不重新分轨。
+- 输出：Medium 独立模型缓存、MIDI/notes、开发版；Large 同源独立对照试听。
+- GUI：沿用模型卡片、默认/备选、生成、删除、目录与一键菜单。
+- Medium 采用已试听配置：batch4、CFG1、greedy、prelude_forcing=false。
+- 原生吉他类别与官方清理保留；不额外合并碎音或量化。
+- GAPS 保留备选；一次性迁移旧默认，之后尊重手选。
+- Windows 本机开发版，复用 yourmt3 Python；模型与官方源码本地附件。
+- 不安装新 Python 依赖，不承诺干净机器发行版。
+- 失败/取消保留旧结果；模型缓存指纹与其他模型隔离。
+- Large 需独立 HF 授权；小批量测试，记录转谱时间/显存，不自动改默认。
+- 验证：真实 MEGURI、MIDI回读、缓存/删除/一键、界面、回归与发布文件。

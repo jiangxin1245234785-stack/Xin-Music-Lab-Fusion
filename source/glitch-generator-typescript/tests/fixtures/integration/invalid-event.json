@@ -1,0 +1,11 @@
+{
+  "events": {
+    "onset": {
+      "eventId": "",
+      "strength": 0.8,
+      "engineTimeMs": 100,
+      "mediaTimeMs": null,
+      "epoch": 0
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Preserve baseline bytes and hashes; select line-ending rules in a later change.
+* -text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.docx binary

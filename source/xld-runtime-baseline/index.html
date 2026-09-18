@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Xin's Local Deck</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body class="workspace-app">
+  <div class="noise"></div>
+  <header class="topbar">
+    <div class="brand-mark">XLD</div>
+    <div class="brand-copy">
+      <strong>Xin’s Local Deck <em class="beta-tag">BETA</em></strong>
+      <span data-i18n="static.app.subtitle">本地专辑播放器 · 结构与和声观测台</span>
+    </div>
+    <div id="localeControl" class="locale-control" role="group" aria-label="语言">
+      <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+      <span aria-hidden="true">/</span>
+      <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+    </div>
+    <div class="font-controls" aria-label="界面字号" data-i18n-aria-label="static.fontControl.aria">
+      <button id="fontDecreaseButton" title="缩小界面字体" data-i18n-title="static.font.decrease.title">A−</button>
+      <span id="fontScaleLabel">100%</span>
+      <button id="fontIncreaseButton" title="放大界面字体" data-i18n-title="static.font.increase.title">A+</button>
+    </div>
+    <div class="library-status">
+      <span class="status-dot"></span>
+      <span id="librarySummary">正在读取曲库…</span>
+      <button id="rescanButton" class="quiet-button" data-i18n="static.library.rescan">刷新</button>
+      <button id="chooseLibraryButton" class="quiet-button" data-i18n="static.library.choose">更换曲库</button>
+    </div>
+    <details class="workspace-settings"><summary data-workspace-copy="storage">资料库</summary><section class="storage-strip">
+        <div><span data-i18n="static.analysis.repository">分析资料库</span><strong id="analysisRootLabel">正在读取路径…</strong></div>
+        <button id="storageManageButton" class="icon-text-button">存储管理</button>
+        <button id="openAnalysisRootButton" class="icon-text-button" data-i18n="static.action.open">打开</button>
+        <button id="chooseAnalysisRootButton" class="icon-text-button" data-i18n="static.action.change">更改</button>
+      </section></details>
+  </header>
+
+  <dialog id="storageDialog" class="storage-dialog" aria-labelledby="storageTitle">
+    <div class="storage-heading"><div><h2 id="storageTitle">存储管理</h2><p id="storageSummary"></p></div><button id="storageClose" class="quiet-button">关闭</button></div>
+    <p id="storageRoot" class="storage-path"></p>
+    <div class="storage-toolbar"><input id="storageSearch" type="search" placeholder="搜索歌曲、模型或目标" aria-label="搜索输出"><select id="storageFilter" aria-label="结果类型"><option value="all">全部结果</option><option value="refinement">细分结果</option><option value="stems">基础分轨</option><option value="kept">已保留</option></select><button id="storageRefresh" class="quiet-button">刷新</button><button id="storageSelect" class="quiet-button">选择可清理项</button><button id="storageDeselect" class="quiet-button">取消选择</button></div>
+    <p id="storageHelp" class="derived-hint"></p><p id="storageStatus" role="status" aria-live="polite"></p>
+    <div id="storageRows" class="storage-rows"></div>
+    <div class="storage-footer"><strong id="storageSelected"></strong><select id="storageMode" aria-label="清理方式"><option value="trash">移至回收站</option><option value="permanent">永久删除 · 释放空间</option></select><button id="storageClear" class="danger-button" disabled>清理所选</button></div>
+  </dialog>
+  <main class="app-shell">
+    <aside class="workspace-library">
+      <div class="workspace-library-heading"><span data-workspace-copy="library">曲库</span><small data-workspace-copy="libraryHint">单击选择 · 双击播放</small></div>
+      <nav class="workspace-library-nav" aria-label="曲库浏览"><button type="button" data-library-level="albums" data-workspace-copy="albums">专辑</button><button type="button" data-library-level="tracks" data-workspace-copy="tracks">曲目</button></nav>
+      <aside class="library-panel">
+      <div class="panel-heading">
+        <div><span class="eyebrow" data-i18n="static.library.eyebrow">曲库</span><h2 data-i18n="static.library.title">唱片库</h2></div>
+        <span id="albumCount" class="counter">0</span>
+      </div>
+      <label class="search-box">
+        <span>⌕</span>
+        <input id="searchInput" type="search" placeholder="搜索专辑、艺术家或曲目" data-i18n-placeholder="static.library.search.placeholder">
+      </label>
+      <div id="albumGrid" class="album-grid" aria-label="专辑列表" data-i18n-aria-label="static.library.grid.aria"></div>
+    </aside><section class="album-stage">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-disc"></div>
+        <span class="eyebrow" data-i18n="static.empty.eyebrow">等待你的选择</span>
+        <h1 data-i18n="static.empty.title">选择一张唱片</h1>
+        <p data-i18n="static.empty.description">专辑、封面与音轨都只从你的本地曲库读取。</p>
+      </div>
+      <div id="albumView" class="album-view hidden">
+        <section class="album-hero">
+          <div class="cover-frame">
+            <img id="albumCover" alt="专辑封面" data-i18n-alt="static.album.cover.alt">
+            <div id="coverFallback" class="cover-fallback">XLD</div>
+          </div>
+          <div class="album-info">
+            <span class="eyebrow" data-i18n="static.album.browsing">正在浏览</span>
+            <h1 id="albumTitle"></h1>
+            <p id="albumArtist"></p>
+            <div class="album-meta"><span id="albumTrackCount"></span><span data-i18n="static.album.lossless">本地无损曲库</span></div>
+            <div class="hero-actions">
+              <button id="playAlbumButton" class="primary-button"><span>▶</span> <span data-i18n="static.album.play">播放专辑</span></button>
+              <button id="shuffleAlbumButton" class="secondary-button" data-i18n="static.album.shuffle">随机播放</button>
+              <button id="batchAlbumButton" class="secondary-button" title="对整张专辑逐曲运行 SongFormer 段落 + BTC 和弦（严格串行，可取消）">整张专辑批量(段落+和弦)</button>
+            </div>
+          </div>
+        </section>
+        <section class="track-section">
+          <div class="section-title"><span data-i18n="static.track.title">曲目</span><span data-i18n="static.track.analysisAndDuration">已完成分析 · 时长</span></div>
+          <div id="trackList" class="track-list"></div>
+        </section>
+      </div>
+    </section>
+    </aside>
+    <section class="workspace-shell">
+      <div class="workspace-topline">
+      <section class="analysis-target">
+        <div class="workspace-cover"><img id="workspaceCover" alt="" hidden><span id="workspaceCoverFallback">XLD</span></div><div class="workspace-target-copy"><span class="eyebrow"><span data-workspace-copy="selected">工作曲目</span></span><strong id="analysisTargetTitle">请单击选择一首曲目</strong><small id="analysisTargetMeta">单击只选择，双击或 ▶ 才播放</small></div>
+      <button id="workspaceLocate" class="quiet-button" data-workspace-copy="locate">定位曲目</button></section>
+      <nav class="workspace-tabs" role="tablist" aria-label="工作台"><button type="button" id="workspace-tab-overview" role="tab" data-workspace-tab="overview" aria-selected="true" tabindex="0" aria-controls="workspaceContent" data-workspace-copy="overview">概览</button><button type="button" id="workspace-tab-section" role="tab" data-workspace-tab="section" data-lab="section" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="section">段落</button><button type="button" id="workspace-tab-harmony" role="tab" data-workspace-tab="harmony" data-lab="harmony" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="harmony">和弦</button><button type="button" id="workspace-tab-stems" role="tab" data-workspace-tab="stems" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="stems">分轨</button><button type="button" id="workspace-tab-midi" role="tab" data-workspace-tab="midi" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="midi">MIDI</button></nav>
+      </div>
+      <section id="taskCard" class="task-card hidden" aria-live="polite">
+        <div class="task-topline">
+          <div><span id="taskKicker">ANALYSIS RUNNING</span><strong id="taskTitle">正在启动分析器</strong></div>
+          <b id="taskPercent">0%</b>
+        </div>
+        <div class="task-progress"><i id="taskProgressBar"></i></div>
+        <div class="task-meta"><span id="taskEngine">—</span><span id="taskMessage">等待进程响应</span></div>
+        <div class="task-time"><span id="taskElapsed">已用时 0:00</span><span id="taskRemaining">正在估算剩余时间</span></div>
+        <button id="cancelAnalysisButton" class="danger-button hidden" data-i18n="static.action.cancel">取消当前任务</button>
+      <button id="workspaceDismissTask" class="quiet-button" data-workspace-copy="dismiss">收起</button></section>
+      <div id="workspaceContent" class="analysis-panel workspace-content" role="tabpanel" aria-labelledby="workspace-tab-overview" tabindex="0">
+        <section id="workspaceOverview">
+  <div class="workspace-overview-heading"><div><h2 data-workspace-copy="overviewTitle">歌曲概览</h2><p id="workspaceOverviewHint"></p></div><button id="workspaceRefresh" class="quiet-button" data-workspace-copy="refresh">刷新结果</button></div>
+  <div id="workspaceResults" class="workspace-results"></div>
+  <section class="workspace-export"><div><strong data-workspace-copy="toXml">用于 XML 可视化</strong><p data-workspace-copy="exportHint">段落、和弦与人工标签通过现有接口交给 XML。</p></div><button id="exportMusicLabButton" class="icon-text-button" disabled data-i18n="static.result.export">更新 Music Lab 接口</button>
+        <span id="integrationStatus">版本化 JSON · 尚未导出</span></section>
+</section><section id="workspaceDerived" class="derived-card" hidden aria-labelledby="derivedHeading">
+        <div class="derived-head"><strong id="derivedHeading">分轨与 MIDI</strong><button id="derivedRefresh" class="icon-text-button" disabled>刷新</button></div>
+        <div class="derived-source"><span data-workspace-copy="source">试听音源</span>          <div id="derivedWavHint" class="derived-hint"></div>
+          <div class="derived-choice"><select id="derivedSelect" aria-label="试听音轨" disabled><option value="original">原曲</option></select><button id="derivedAudition" class="secondary-button" disabled>试听</button></div>
+</div>
+        <div class="derived-block derived-wav-block">
+          <div class="stems-left-stack"><section class="base-stems-card">
+          <div class="derived-block-head"><span id="derivedWavHeading">WAV 分轨</span><small id="derivedWavScope">6 stems</small></div>
+          <div id="derivedStemModels" class="engine-list midi-engine-list" role="group" aria-label="分轨模型"></div>
+          <div class="derived-actions"><button id="derivedSeparate" class="secondary-button" disabled>分轨</button><button id="derivedWav" class="icon-text-button" disabled>打开 WAV 目录</button></div>
+          </section>
+            <div id="refinementResult" class="refinement-result-card" hidden>
+                <div class="refinement-audition" role="group" aria-label="对照试听"><button data-refinement-audio="original" class="secondary-button">原始输入</button><button data-refinement-audio="target" class="secondary-button">目标音轨</button><button data-refinement-audio="residual" class="secondary-button">剩余音频</button></div>
+              <audio id="refinementAudio" controls preload="none"></audio><p id="refinementOutputHint" class="derived-hint"></p>
+              <div class="derived-actions"><button id="refinementKeep" class="secondary-button">保留结果</button><button id="refinementFolder" class="icon-text-button">打开目录</button></div>
+            </div>
+          </div><section id="refinementPanel" class="refinement-panel" aria-labelledby="refinementTitle">
+            <div class="derived-block-head"><strong id="refinementTitle">细分</strong><small id="refinementScope">输入 → 目标 / 剩余音频</small></div>
+            <details class="compact-help"><summary data-workspace-copy="instructions">使用说明</summary><p id="refinementHint" class="derived-hint"></p><p id="refinementMidiBoundary" class="derived-hint"></p><p id="refinementExecution" class="derived-hint"></p></details>
+              <div id="refinementModels" class="engine-list midi-engine-list" role="group" aria-label="细分模型"></div>
+              <div class="refinement-options"><label><span id="refinementSourceLabel">输入来源</span><select id="refinementSource"></select></label><label><span id="refinementGroupLabel">乐器类别</span><select id="refinementGroup"></select></label><label><span id="refinementTargetLabel">提取目标</span><select id="refinementTarget"></select></label><label class="refinement-device-field"><span id="refinementDeviceLabel">运行方式</span><select id="refinementDevice"><option value="auto">自动</option><option value="cuda">GPU</option><option value="cpu">CPU</option></select></label></div>
+            <div class="refinement-range"><label><span id="refinementModeLabel">范围</span><select id="refinementMode"><option value="full">整曲</option><option value="preview">30 秒预览</option></select></label><label id="refinementStartField"><span id="refinementStartLabel">起点（秒）</span><input id="refinementStart" type="number" min="0" step="1" value="0"></label><button id="refinementUseTime" class="quiet-button">使用播放位置</button><button id="refinementRun" class="primary-button" disabled>提取 30 秒</button><button id="refinementCancel" class="quiet-button" hidden>取消</button></div>
+              <p id="refinementStatus" class="derived-hint" role="status" aria-live="polite"></p>
+
+
+          </section>
+        </div>
+        <div class="derived-block derived-midi-block">
+          <div class="midi-source-strip">
+            <p id="derivedMidiSource" class="workspace-notice"></p>
+            <div class="compact-field"><label id="midiStringsLabel" for="midiStringsSource">弦乐音源</label><div class="derived-choice"><select id="midiStringsSource" disabled><option value="">不加入弦乐</option></select></div></div>
+            <small id="midiStringsHint" class="derived-hint" aria-live="polite"></small>
+          </div>
+          <p id="workspaceMidiEmpty" class="workspace-notice" hidden><span data-workspace-copy="midiEmpty">先生成 WAV 分轨，再选择 bass、piano、guitar 或 drums 转谱。</span> <button type="button" class="quiet-button" data-workspace-go="stems" data-workspace-copy="toStems">去分轨</button></p>
+
+          <div class="midi-work-grid">
+            <section class="midi-single-card" aria-labelledby="derivedMidiHeading">          <div class="derived-block-head"><span id="derivedMidiHeading">MIDI 转谱</span><small id="derivedMidiScope"></small></div>
+          <div class="compact-field"><label id="derivedMidiSelectLabel" for="derivedMidiSelect">转谱声部</label>
+          <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听</button></div>
+          </div><div id="derivedModels" class="engine-list midi-engine-list" role="group" aria-label="MIDI 模型"></div>
+          <details class="compact-help"><summary data-workspace-copy="modelNotes">模型说明</summary><small id="derivedMidiHint" class="derived-hint">选择 bass、piano、guitar 或 drums 后生成 MIDI</small></details>
+          <div class="derived-actions"><button id="derivedTranscribe" class="primary-button" disabled>生成 MIDI</button><button id="derivedMidi" class="icon-text-button" disabled>打开 MIDI 目录</button><button id="derivedDeleteMidi" class="icon-text-button" disabled>删除 MIDI</button></div>
+</section>
+            <div class="midi-song-stack">          <section class="midi-batch-card">
+            <div class="derived-block-head"><strong id="midiBatchTitle">一键 MIDI</strong></div>
+            <details class="compact-help"><summary data-workspace-copy="instructions">使用说明</summary><small id="midiBatchHint" class="derived-hint"></small></details>
+            <div class="compact-actions"><button id="midiBatchRun" class="primary-button" disabled>一键生成 MIDI</button><button id="midiBatchFolder" class="icon-text-button" disabled>打开本曲 MIDI 目录</button></div>
+            <div id="midiBatchPlan" class="midi-merge-parts"></div>
+            
+            <small id="midiBatchStatus" class="derived-hint" aria-live="polite"></small>
+          </section>          <section class="midi-merge-card" aria-labelledby="midiMergeTitle">
+            <div class="derived-block-head"><strong id="midiMergeTitle">MIDI 融合</strong><small id="midiMergeBadge">实验</small></div>
+            <details class="compact-help"><summary data-workspace-copy="mergeDetails">声部与说明</summary><p id="midiMergeHint" class="derived-hint"></p><div id="midiMergeParts" class="midi-merge-parts"></div></details>
+            <div class="midi-merge-actions"><button id="midiMergeRun" class="secondary-button" disabled>融合 MIDI</button><button id="midiMergeOpen" class="icon-text-button" disabled>打开融合 MIDI</button><button id="midiMergeFolder" class="icon-text-button" disabled>打开目录</button></div>
+            <small id="midiMergeStatus" class="derived-hint" aria-live="polite"></small>
+          </section>
+</div>
+          </div>
+        </div>
+        <div class="derived-footer"><small id="derivedStatus" aria-live="polite">选择曲目后可分轨和转谱</small><label class="derived-force"><input id="derivedForce" type="checkbox"><span id="derivedForceLabel">重新生成</span></label></div>
+      </section><section id="workspaceLab" hidden><div class="panel-heading analysis-heading">
+        <div><span id="labEyebrow" class="eyebrow">SECTION LAB</span><h2 id="labTitle">段落评测台</h2></div>
+        <span id="analysisState" class="analysis-state">待机</span>
+      </div>
+<details id="workspaceModelOptions" class="workspace-model-options"><summary><span id="workspaceModelSummary"></span><span data-workspace-copy="changeModel">更换模型</span></summary>      <p id="labNote" class="analysis-note">原样对照各分析器的边界与聚类：MSAF 的相同字母仅表示同一算法认为结构相似；SongFormer (AI) 直接给出功能性段落（前奏 / 主歌 / 副歌…）。XLD 不融合也不重新解释任何分析器的判断。</p>
+
+      <div id="engineList" class="engine-list"></div>
+
+      <section id="harmonyPolicy" class="harmony-policy hidden">
+        <div><span class="eyebrow" data-i18n="static.resource.eyebrow">资源保护</span><strong data-i18n="static.resource.summary">三种方案串行执行，共享一次色度缓存</strong></div>
+        <span data-i18n="static.resource.note">仅使用 CPU · 不与 SongFormer 抢占 GPU · 结果不自动融合</span>
+        <label id="separationToggleRow" class="separation-toggle hidden" title="用 Demucs v4 去鼓和人声，仅将伴奏送入和弦引擎。" data-i18n-title="static.separation.title">
+          <input type="checkbox" id="separationToggle">
+          <span><span data-i18n="static.separation.prefix">和弦分析前先用</span> <strong data-i18n-raw>Demucs</strong> <span data-i18n="static.separation.suffix">分离伴奏（去鼓 + 去人声 · GPU）</span></span>
+        </label>
+      </section>
+
+</details>
+      <section id="segmentPanel" class="segment-panel hidden">
+        <div class="segment-head">
+          <span class="eyebrow" data-i18n="static.segment.eyebrow">长曲分段 · SONGFORMER</span>
+          <strong id="segmentHint">本曲超过单段上限,请分段分析</strong>
+        </div>
+        <div class="segment-inputs">
+          <label><span data-i18n="static.segment.start">起</span> <input id="segStart" type="text" inputmode="numeric" value="0:00"></label>
+          <label><span data-i18n="static.segment.end">止</span> <input id="segEnd" type="text" inputmode="numeric" value="3:00"></label>
+          <button id="segAnalyzeButton" class="primary-button" data-i18n="static.segment.analyze">分析该段</button>
+          <button id="segAutoButton" class="secondary-button" data-i18n="static.segment.auto">一键自动分段（整曲）</button>
+        </div>
+        <div id="segmentStatus" class="segment-status">填入"分:秒",单段最长见上方提示。已分析区间会留在泳道上,未分析区间显示为灰色。</div>
+      </section>
+
+      <div class="analysis-actions">
+        <button id="analyzeButton" class="primary-button" disabled>选择曲目后分析</button>
+        <button id="analyzeAllButton" class="secondary-button batch-button" disabled>一键运行四种 MSAF</button>
+      </div>
+
+      <section class="comparison-card">
+        <div class="comparison-header">
+          <div><span class="eyebrow" data-i18n="static.comparison.eyebrow">对齐比较</span><strong id="comparisonTitle">尚无段落结果</strong></div>
+          <div class="timeline-tools">
+            <span id="comparisonHint">同一时间轴 · 拖动定位</span>
+            <button id="timelineZoomOutButton" title="缩小时间轴" data-i18n-title="static.timeline.zoomOut.title">−</button>
+            <b id="timelineZoomLabel">适应全曲</b>
+            <button id="timelineZoomInButton" title="放大时间轴" data-i18n-title="static.timeline.zoomIn.title">+</button>
+            <button id="timelineFitButton" title="恢复全曲视图" data-i18n-title="static.timeline.fit.title" data-i18n="static.timeline.fit">全曲</button>
+          </div>
+        </div>
+        <div id="comparisonTimeline" class="comparison-timeline">
+          <div class="timeline-empty" data-i18n="static.timeline.empty">选择曲目，并运行一种或多种分析</div>
+        </div>
+        <div id="currentSegmentDetail" class="current-segment-detail">播放该曲目后，这里会显示当前段落。</div>
+      </section>
+
+      <details class="compact-annotations"><summary data-workspace-copy="annotations">人工标注</summary><section id="manualTagPanel" class="manual-tag-panel">
+        <div class="manual-tag-heading">
+          <div><span class="eyebrow" data-i18n="static.manual.eyebrow">人工标注</span><strong data-i18n="static.manual.title">人工段落标签</strong></div>
+          <button id="clearTagButton" class="icon-text-button" data-i18n="static.manual.new">新建</button>
+        </div>
+        <div class="tag-editor">
+          <label><span data-i18n="static.manual.start">起点</span> <input id="tagStart" type="text" inputmode="numeric" placeholder="0:00"></label>
+          <label><span data-i18n="static.manual.end">终点</span> <input id="tagEnd" type="text" inputmode="numeric" placeholder="0:30"></label>
+          <label class="tag-label-field"><span data-i18n="static.manual.label">标签</span> <input id="tagLabel" type="text" maxlength="80" placeholder="例如：高潮 / Bridge / A′" data-i18n-placeholder="static.manual.label.placeholder"></label>
+          <button id="tagUseCurrentButton" class="icon-text-button" data-i18n="static.manual.usePlayhead">取播放头</button>
+          <button id="tagUseSegmentButton" class="icon-text-button" disabled data-i18n="static.manual.useSegment">取选中段落</button>
+          <button id="saveTagButton" class="primary-button" disabled>保存 Tag</button>
+        </div>
+        <label class="tag-note-field"><span data-i18n="static.manual.note">备注</span> <input id="tagNote" type="text" maxlength="500" placeholder="可选；不会改写分析器原始结果" data-i18n-placeholder="static.manual.note.placeholder"></label>
+        <div id="manualTagList" class="manual-tag-list"><span class="tag-empty">尚无人工标签</span></div>
+      </section>
+</details><details class="workspace-details"><summary data-workspace-copy="manage">结果管理</summary><div class="result-actions" aria-label="分析结果管理" data-i18n-aria-label="static.result.actions.aria">
+        <button id="deleteAnalysisButton" class="danger-button" disabled data-i18n="static.result.deleteCurrent">删除当前结果</button>
+        <button id="deleteAllAnalysisButton" class="icon-text-button" disabled data-i18n="static.result.clearTrack">清空本曲分析</button>
+</div></details></section>
+        <details id="workspaceLogs" class="workspace-details"><summary data-workspace-copy="logs">任务日志</summary><div id="analysisLog" class="analysis-log"><span>等待分析任务</span></div></details>
+      </div>
+    </section>
+  </main>  <footer class="player-dock">
+    <div class="now-playing">
+      <div class="mini-cover"><img id="playerCover" alt=""><span id="miniFallback">XLD</span></div>
+      <div class="now-copy"><small id="workspacePlaybackState"></small><strong id="nowTitle">尚未播放</strong><span id="nowArtist">从唱片库选择一首歌</span></div>
+    </div>
+    <div class="transport">
+      <div class="transport-buttons">
+        <button id="shuffleButton" title="随机播放" aria-label="随机播放" data-i18n-title="static.transport.shuffle" data-i18n-aria-label="static.transport.shuffle"></button>
+        <button id="previousButton" title="上一首" aria-label="上一首" data-i18n-title="static.transport.previous" data-i18n-aria-label="static.transport.previous"></button>
+        <button id="playButton" class="play-button" title="播放/暂停" aria-label="播放" data-i18n-title="static.transport.playPause"></button>
+        <button id="nextButton" title="下一首" aria-label="下一首" data-i18n-title="static.transport.next" data-i18n-aria-label="static.transport.next"></button>
+        <button id="repeatButton" title="循环模式" aria-label="循环模式"></button>
+      </div>
+      <div class="progress-row">
+        <span id="currentTime">0:00</span>
+        <input id="seekBar" type="range" min="0" max="1000" value="0">
+        <span id="durationTime">0:00</span>
+      </div>
+    </div>
+    <div class="player-tools">
+      <button id="revealButton" title="在资源管理器显示" data-i18n-title="static.transport.reveal">⌁</button>
+      <span data-i18n="static.transport.volume">音量</span>
+      <input id="volumeBar" type="range" min="0" max="1" step="0.01" value="0.82">
+    </div>
+    <audio id="audioElement" preload="metadata"></audio>
+  </footer>
+
+  <script src="i18n/catalogs.js"></script>
+  <script src="i18n/translator.js"></script>
+  <script src="i18n/locale-controller.js"></script>
+  <script src="i18n/bootstrap.js"></script>
+  <script src="i18n/desktop-locale-bridge.js"></script>
+  <script src="i18n/locale-ui.js"></script>
+  <script src="i18n/static-ui.js"></script>
+  <script src="i18n/runtime-messages.js"></script>
+  <script src="midi-batch.js"></script>
+  <script src="derived-controls.js"></script>
+  <script src="refinement-controls.js"></script>
+  <script src="storage-controls.js"></script>
+  <script src="workspace-controls.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

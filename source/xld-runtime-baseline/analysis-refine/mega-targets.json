@@ -1,0 +1,373 @@
+[
+  {
+    "id": "strings",
+    "modelStem": "bowed_strings",
+    "group": "strings",
+    "name": "弓弦乐组",
+    "nameEn": "Bowed strings"
+  },
+  {
+    "id": "strings-all",
+    "modelStem": "strings",
+    "group": "strings",
+    "name": "弦乐总类",
+    "nameEn": "Strings (general)"
+  },
+  {
+    "id": "violin",
+    "modelStem": "violin",
+    "group": "strings",
+    "name": "小提琴",
+    "nameEn": "Violin"
+  },
+  {
+    "id": "viola",
+    "modelStem": "viola",
+    "group": "strings",
+    "name": "中提琴",
+    "nameEn": "Viola"
+  },
+  {
+    "id": "cello",
+    "modelStem": "cello",
+    "group": "strings",
+    "name": "大提琴",
+    "nameEn": "Cello"
+  },
+  {
+    "id": "double-bass",
+    "modelStem": "double-bass",
+    "group": "strings",
+    "name": "低音提琴",
+    "nameEn": "Double Bass"
+  },
+  {
+    "id": "guitar",
+    "modelStem": "guitar",
+    "group": "guitar",
+    "name": "吉他总类",
+    "nameEn": "Guitar"
+  },
+  {
+    "id": "electric-guitar",
+    "modelStem": "electric-guitar",
+    "group": "guitar",
+    "name": "电吉他",
+    "nameEn": "Electric Guitar"
+  },
+  {
+    "id": "acoustic-guitar",
+    "modelStem": "acoustic-guitar",
+    "group": "guitar",
+    "name": "原声吉他",
+    "nameEn": "Acoustic Guitar"
+  },
+  {
+    "id": "bass",
+    "modelStem": "bass",
+    "group": "guitar",
+    "name": "贝斯",
+    "nameEn": "Bass"
+  },
+  {
+    "id": "banjo",
+    "modelStem": "banjo",
+    "group": "guitar",
+    "name": "班卓琴",
+    "nameEn": "Banjo"
+  },
+  {
+    "id": "dobro",
+    "modelStem": "dobro",
+    "group": "guitar",
+    "name": "共鸣吉他",
+    "nameEn": "Dobro"
+  },
+  {
+    "id": "mandolin",
+    "modelStem": "mandolin",
+    "group": "guitar",
+    "name": "曼陀铃",
+    "nameEn": "Mandolin"
+  },
+  {
+    "id": "ukulele",
+    "modelStem": "ukulele",
+    "group": "guitar",
+    "name": "尤克里里",
+    "nameEn": "Ukulele"
+  },
+  {
+    "id": "sitar",
+    "modelStem": "sitar",
+    "group": "guitar",
+    "name": "西塔琴",
+    "nameEn": "Sitar"
+  },
+  {
+    "id": "harp",
+    "modelStem": "harp",
+    "group": "guitar",
+    "name": "竖琴",
+    "nameEn": "Harp"
+  },
+  {
+    "id": "keys",
+    "modelStem": "keys",
+    "group": "keys",
+    "name": "键盘总类",
+    "nameEn": "Keys"
+  },
+  {
+    "id": "piano",
+    "modelStem": "piano",
+    "group": "keys",
+    "name": "钢琴",
+    "nameEn": "Piano"
+  },
+  {
+    "id": "digital-piano",
+    "modelStem": "digital-piano",
+    "group": "keys",
+    "name": "电钢琴",
+    "nameEn": "Digital Piano"
+  },
+  {
+    "id": "synth",
+    "modelStem": "synth",
+    "group": "keys",
+    "name": "合成器",
+    "nameEn": "Synth"
+  },
+  {
+    "id": "organ",
+    "modelStem": "organ",
+    "group": "keys",
+    "name": "管风琴 / 风琴",
+    "nameEn": "Organ"
+  },
+  {
+    "id": "harpsichord",
+    "modelStem": "harpsichord",
+    "group": "keys",
+    "name": "羽管键琴",
+    "nameEn": "Harpsichord"
+  },
+  {
+    "id": "accordion",
+    "modelStem": "accordion",
+    "group": "keys",
+    "name": "手风琴",
+    "nameEn": "Accordion"
+  },
+  {
+    "id": "wind",
+    "modelStem": "wind",
+    "group": "wind",
+    "name": "管乐总类",
+    "nameEn": "Wind"
+  },
+  {
+    "id": "woodwind",
+    "modelStem": "woodwind",
+    "group": "wind",
+    "name": "木管",
+    "nameEn": "Woodwind"
+  },
+  {
+    "id": "brass",
+    "modelStem": "brass",
+    "group": "wind",
+    "name": "铜管",
+    "nameEn": "Brass"
+  },
+  {
+    "id": "flute",
+    "modelStem": "flute",
+    "group": "wind",
+    "name": "长笛",
+    "nameEn": "Flute"
+  },
+  {
+    "id": "clarinet",
+    "modelStem": "clarinet",
+    "group": "wind",
+    "name": "单簧管",
+    "nameEn": "Clarinet"
+  },
+  {
+    "id": "oboe",
+    "modelStem": "oboe",
+    "group": "wind",
+    "name": "双簧管",
+    "nameEn": "Oboe"
+  },
+  {
+    "id": "bassoon",
+    "modelStem": "bassoon",
+    "group": "wind",
+    "name": "巴松",
+    "nameEn": "Bassoon"
+  },
+  {
+    "id": "saxophone",
+    "modelStem": "saxophone",
+    "group": "wind",
+    "name": "萨克斯",
+    "nameEn": "Saxophone"
+  },
+  {
+    "id": "trumpet",
+    "modelStem": "trumpet",
+    "group": "wind",
+    "name": "小号",
+    "nameEn": "Trumpet"
+  },
+  {
+    "id": "trombone",
+    "modelStem": "trombone",
+    "group": "wind",
+    "name": "长号",
+    "nameEn": "Trombone"
+  },
+  {
+    "id": "french-horn",
+    "modelStem": "french-horn",
+    "group": "wind",
+    "name": "圆号",
+    "nameEn": "French Horn"
+  },
+  {
+    "id": "tuba",
+    "modelStem": "tuba",
+    "group": "wind",
+    "name": "大号",
+    "nameEn": "Tuba"
+  },
+  {
+    "id": "harmonica",
+    "modelStem": "harmonica",
+    "group": "wind",
+    "name": "口琴",
+    "nameEn": "Harmonica"
+  },
+  {
+    "id": "drums",
+    "modelStem": "drums",
+    "group": "percussion",
+    "name": "鼓组",
+    "nameEn": "Drums"
+  },
+  {
+    "id": "percussion",
+    "modelStem": "percussion",
+    "group": "percussion",
+    "name": "打击乐总类",
+    "nameEn": "Percussion"
+  },
+  {
+    "id": "kick",
+    "modelStem": "kick",
+    "group": "percussion",
+    "name": "底鼓",
+    "nameEn": "Kick"
+  },
+  {
+    "id": "snare",
+    "modelStem": "snare",
+    "group": "percussion",
+    "name": "军鼓",
+    "nameEn": "Snare"
+  },
+  {
+    "id": "hh",
+    "modelStem": "hh",
+    "group": "percussion",
+    "name": "踩镲",
+    "nameEn": "Hi-hat"
+  },
+  {
+    "id": "toms",
+    "modelStem": "toms",
+    "group": "percussion",
+    "name": "通鼓",
+    "nameEn": "Toms"
+  },
+  {
+    "id": "congas",
+    "modelStem": "congas",
+    "group": "percussion",
+    "name": "康加鼓",
+    "nameEn": "Congas"
+  },
+  {
+    "id": "tambourine",
+    "modelStem": "tambourine",
+    "group": "percussion",
+    "name": "铃鼓",
+    "nameEn": "Tambourine"
+  },
+  {
+    "id": "timpani",
+    "modelStem": "timpani",
+    "group": "percussion",
+    "name": "定音鼓",
+    "nameEn": "Timpani"
+  },
+  {
+    "id": "triangle",
+    "modelStem": "triangle",
+    "group": "percussion",
+    "name": "三角铁",
+    "nameEn": "Triangle"
+  },
+  {
+    "id": "bells",
+    "modelStem": "bells",
+    "group": "percussion",
+    "name": "钟铃",
+    "nameEn": "Bells"
+  },
+  {
+    "id": "glockenspiel",
+    "modelStem": "glockenspiel",
+    "group": "percussion",
+    "name": "钟琴",
+    "nameEn": "Glockenspiel"
+  },
+  {
+    "id": "marimba",
+    "modelStem": "marimba",
+    "group": "percussion",
+    "name": "马林巴",
+    "nameEn": "Marimba"
+  },
+  {
+    "id": "wind-chimes",
+    "modelStem": "wind-chimes",
+    "group": "percussion",
+    "name": "风铃",
+    "nameEn": "Wind Chimes"
+  },
+  {
+    "id": "vocal",
+    "modelStem": "vocal",
+    "group": "voice",
+    "name": "人声总类",
+    "nameEn": "Vocal"
+  },
+  {
+    "id": "lead-vocal",
+    "modelStem": "lead-vocal",
+    "group": "voice",
+    "name": "主唱",
+    "nameEn": "Lead Vocal"
+  },
+  {
+    "id": "back-vocal",
+    "modelStem": "back-vocal",
+    "group": "voice",
+    "name": "和声人声",
+    "nameEn": "Back Vocal"
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "name": "xins-music-lab-fusion",
+  "version": "0.5.0-dev.stems.10",
+  "description": "Xin's Music Lab Fusion · Canvas sources plus WebGL2 feedback glitch",
+  "main": "desktop/main.cjs",
+  "author": {
+    "name": "Xin",
+    "email": "1245234785@qq.com"
+  },
+  "scripts": {
+    "pretest": "node --check i18n/catalogs.js && node --check i18n/translator.js && node --check i18n/locale-controller.js && node --check i18n/bootstrap.js && node --check i18n/locale-ui.js && node --check i18n/static-ui.js && node --check i18n/dynamic-ui.js && node --check i18n/desktop-locale-bridge.js && node --check desktop/locale.cjs && node --check desktop/generator-locale.cjs && node --check scripts/i18n-inventory.cjs && node --check scripts/i18n-release-audit.cjs && node --check material-target-registry.js && node --check visual-material-runtime.js && node --check experimental-materials.js && node --check material-mapping-profile.js && node tests/i18n-step1.cjs && node tests/i18n-step2.cjs && node tests/i18n-step3.cjs && node tests/i18n-step4.cjs && node tests/i18n-step5.cjs && node tests/i18n-step6.cjs",
+    "start": "..\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe .",
+    "dist": "node scripts/build-desktop.cjs",
+    "test": "node --check app.js && node --check fusion.js && node --check live-harmony.js && node --check realtime-provider-adapter.js && node --check xld-timeline-provider-adapter.js && node --check music-feature-resolver.js && node --check resolver-legacy-shadow.js && node --check material-target-registry.js && node --check visual-material-runtime.js && node --check experimental-materials.js && node --check material-mapping-profile.js && node --check generator-source-adapter.js && node --check generator-runtime-shadow.js && node --check generator-preset-selector.js && node --check generator-preset-file-control.js && node --check generator-preset-repository-control.js && node --check product-control-dock.js && node --check target-inspector.js && node --check shadow-stability-monitor.js && node --check frame-ownership-monitor.js && node --check generator-output-controller.js && node --check source-inspector.js && node --check mapping-lab.js && node --check mapping-engine.js && node --check section-features.js && node --check section-engines.js && node --check glitch-engine.js && node --check glitch-feature-bus.js && node --check glitch-webgl.js && node --check original-glitch.js && node --check desktop/main.cjs && node --check desktop/preload.cjs && node --check desktop/glitch-preset-repository.cjs && node --check desktop/xld-analysis-service.cjs && node --check tests/phase2-artistic-matrix.cjs && node tests/dom-contract.js && node tests/mapping-contract.js && node tests/section-contract.js && node tests/glitch-engine-contract.js && node tests/glitch-feature-bus-contract.js && node tests/glitch-webgl-contract.js && node tests/robustness-contract.js && node tests/fusion-contract.js && node tests/xld-analysis-service-contract.js && node tests/realtime-provider-adapter-contract.js && node tests/xld-timeline-provider-adapter-contract.js && node tests/music-feature-resolver-contract.js && node tests/source-inspector-contract.js && node tests/resolver-legacy-shadow-contract.js && node tests/material-target-registry-contract.js && node tests/visual-material-runtime-contract.js && node tests/material-runtime-integration-contract.js && node tests/experimental-materials-contract.js && node tests/material-mapping-profile-contract.js && node tests/material-frame-phase-contract.js && node tests/phase2-material-integration-contract.js && node tests/generator-source-adapter-contract.js && node tests/generator-runtime-shadow-contract.js && node tests/generator-preset-selector-contract.js && node tests/generator-preset-file-control-contract.js && node tests/glitch-preset-repository-contract.js && node tests/generator-preset-repository-control-contract.js && node tests/product-control-dock-contract.js && node tests/target-inspector-contract.js && node tests/shadow-stability-monitor-contract.js && node tests/frame-ownership-monitor-contract.js && node tests/generator-output-controller-contract.js && node tests/phase2-artistic-matrix-contract.js && node --check stem-controls.js && node tests/xld-analysis-task-regression.cjs && node --check desktop/midi-assets.cjs && node tests/midi-task-regression.cjs && node ../shared-analysis/test.cjs && node tests/refresh-track.cjs",
+    "test:runtime": "electron tests/runtime-smoke.cjs",
+    "test:i18n:electron": "electron tests/i18n-electron-smoke.cjs",
+    "test:i18n:generator": "electron tests/i18n-step5-generator-electron.cjs",
+    "test:i18n:layout": "electron tests/i18n-step6-layout-electron.cjs",
+    "test:i18n:release": "node tests/i18n-step6.cjs",
+    "test:package": "node tests/asar-contract.js",
+    "test:analysis": "node tests/xld-analysis-service-contract.js && node tests/xld-analysis-task-regression.cjs && node tests/midi-task-regression.cjs"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

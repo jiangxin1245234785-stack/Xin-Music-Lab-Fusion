@@ -1,0 +1,12 @@
+# Guitar-FL 对照试听
+- 输入：既有 MEGURI 的 BS-RoFormer SW guitar.wav，整曲 568.75 秒。
+- 比较：Guitar-FL 与同源 GAPS；相同解码阈值，不合并碎音。
+- 输出：独立完整 MIDI、三个固定 30 秒试听片段、中文对照页、来源及运行记录。
+- 片段：60、270、480 秒起，与既有试听保持一致；不预判片段音乐类型。
+- 设备：Windows，复用 highres Python，优先 CUDA，记录实际设备。
+- 权重：作者公开 guitar-fl.pth，固定版本并核对官方 LFS SHA256。
+- 失败：记录并停止该模型，不修改原结果或自动换模型。
+- 依赖：复用 soundfile/scipy/pretty_midi/torch 与现有 SoundFont 渲染工具；无需安装。
+- 交付：本机试听实验，无 exe 打包，无产品菜单或默认引擎改动。
+- 验证：MIDI 回读、音频时长、浏览器试听加载、原输入哈希不变。
+- Ti-hFT：核实公开权重；未发现可用权重则只记录，暂不自行训练。

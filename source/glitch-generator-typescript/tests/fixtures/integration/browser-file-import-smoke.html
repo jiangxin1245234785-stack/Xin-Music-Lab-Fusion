@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Glitch Generator browser entry smoke</title>
+  </head>
+  <body>
+    <script type="module">
+      try {
+        const entryUrl = new URL(
+          '../../../dist/browser/index.js',
+          import.meta.url
+        );
+        const api = await import(entryUrl.href);
+        const frame = api.buildUnifiedMusicFrame({
+          clock: {
+            frameIndex: 3,
+            nowMs: 50,
+            deltaMs: 16.666666666666668
+          },
+          transport: {
+            mode: 'offline-test',
+            state: 'playing',
+            trackId: 'electron-file-smoke',
+            mediaTimeMs: 50,
+            durationMs: 1000,
+            epoch: 0
+          }
+        });
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = 64;
+        sourceCanvas.height = 64;
+        const sourceContext = sourceCanvas.getContext('2d');
+        sourceContext.fillStyle = 'rgb(240, 32, 16)';
+        sourceContext.fillRect(0, 0, 64, 64);
+
+        const outputCanvas = document.createElement('canvas');
+        outputCanvas.style.width = '64px';
+        outputCanvas.style.height = '64px';
+        document.body.append(outputCanvas);
+        const renderPort = api.createSourceAwareWebglRenderPort(outputCanvas, {
+          qualityMode: 'high'
+        });
+        const runtime = api.createGeneratorRuntime({
+          renderPort,
+          preset: api.createPreset({
+            targetDefaults: {
+              id: 'source-upload-smoke',
+              enabled: true,
+              values: {
+                'color.brightness': 0.8,
+                'color.contrast': 1,
+                'color.saturation': 1,
+                'visual.alpha': 1,
+                'feedback.retention': 0,
+                'scanlineGrain.scanlineDepth': 0,
+                'scanlineGrain.grainDensity': 0,
+                'signalLoss.dropoutProbability': 0,
+                'signalLoss.whiteTearBrightness': 0
+              }
+            }
+          })
+        });
+        const evaluation = runtime.evaluate(frame, frame.clock);
+        const rendered = runtime.render(sourceCanvas, evaluation);
+        const gl = outputCanvas.getContext('webgl2');
+        const pixel = new Uint8Array(4);
+        gl.readPixels(32, 32, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        const contextExtension = gl.getExtension('WEBGL_lose_context');
+        let contextLossResult = null;
+        let contextRestoreResult = null;
+        if (contextExtension) {
+          const waitFor = type => new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+              () => reject(new Error(`Timed out waiting for ${type}`)),
+              3000
+            );
+            outputCanvas.addEventListener(type, event => {
+              clearTimeout(timeout);
+              resolve(event);
+            }, { once: true });
+          });
+          const lostEvent = waitFor('webglcontextlost');
+          contextExtension.loseContext();
+          await lostEvent;
+          const lostFrame = api.buildUnifiedMusicFrame({
+            clock: {
+              frameIndex: 4,
+              nowMs: 66.6666666667,
+              deltaMs: 16.6666666667
+            },
+            transport: {
+              mode: 'offline-test',
+              state: 'playing',
+              trackId: 'electron-file-smoke',
+              mediaTimeMs: 66.6666666667,
+              durationMs: 1000,
+              epoch: 0
+            }
+          });
+          contextLossResult = runtime.render(
+            sourceCanvas,
+            runtime.evaluate(lostFrame, lostFrame.clock)
+          );
+          await new Promise(resolve => setTimeout(resolve, 120));
+          const restoredEvent = waitFor('webglcontextrestored');
+          contextExtension.restoreContext();
+          await restoredEvent;
+          const restoredFrame = api.buildUnifiedMusicFrame({
+            clock: {
+              frameIndex: 5,
+              nowMs: 83.3333333333,
+              deltaMs: 16.6666666666
+            },
+            transport: {
+              mode: 'offline-test',
+              state: 'playing',
+              trackId: 'electron-file-smoke',
+              mediaTimeMs: 83.3333333333,
+              durationMs: 1000,
+              epoch: 0
+            }
+          });
+          contextRestoreResult = runtime.render(
+            sourceCanvas,
+            runtime.evaluate(restoredFrame, restoredFrame.clock)
+          );
+        }
+        const profile = runtime.status().profile;
+        runtime.dispose();
+        globalThis.__glitchBrowserSmoke = {
+          ok: true,
+          entryId: api.GLITCH_GENERATOR_BROWSER_ENTRY_ID,
+          packageVersion: api.GLITCH_GENERATOR_PACKAGE_VERSION,
+          contract: frame.contract,
+          frameIndex: frame.clock.frameIndex,
+          sourceRendered:
+            rendered.status === 'rendered' && rendered.output.rendered === true,
+          sourceContract: rendered.output.contract,
+          sourceKind: rendered.output.kind,
+          sourceWidth: rendered.output.width,
+          sourceHeight: rendered.output.height,
+          renderCalls: profile.renderCalls,
+          gpuContextsCreated: profile.gpuContextsCreated,
+          rafRequests: profile.rafRequests,
+          qualityMode: rendered.output.quality.mode,
+          qualityProfile: rendered.output.quality.id,
+          contextTestSupported: Boolean(contextExtension),
+          contextLossSkipped:
+            contextLossResult?.output?.rendered === false &&
+            contextLossResult?.output?.skipReason === 'context-lost',
+          contextRestored:
+            contextRestoreResult?.output?.rendered === true &&
+            contextRestoreResult?.output?.context?.state === 'ready' &&
+            contextRestoreResult?.output?.context?.contextRestores === 1,
+          targetBindingContract: rendered.output.targetBindingContract,
+          targetBindingCount: rendered.output.targetBindingCount,
+          targetBindingsFinite: rendered.output.targetBindings.every(
+            binding => Number.isFinite(binding.value)
+          ),
+          pixel: [...pixel]
+        };
+      } catch (error) {
+        globalThis.__glitchBrowserSmoke = {
+          ok: false,
+          error: error instanceof Error
+            ? `${error.name}: ${error.message}\n${error.stack ?? ''}`
+            : String(error)
+        };
+      }
+    </script>
+  </body>
+</html>

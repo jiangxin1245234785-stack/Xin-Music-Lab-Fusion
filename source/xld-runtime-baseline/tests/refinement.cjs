@@ -1,0 +1,75 @@
+'use strict';
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{PassThrough}=require('node:stream'),{pathToFileURL}=require('node:url');
+const {createRefinement}=require('../core/refinement.cjs');
+(async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'xld-refinement-')),input=path.join(root,'other.wav');await fs.writeFile(input,Buffer.alloc(200));
+ const models=path.join(root,'models');await fs.mkdir(models);for(const name of ['separator.pt','conditions.npz','manifest.json'])await fs.writeFile(path.join(models,name),'fixture');
+ await fs.writeFile(path.join(models,'manifest.json'),JSON.stringify({models:{mega:{checkpoint:{file:'separator.pt'},config:{file:'conditions.npz'}}}}));
+ const old=process.env.XLD_REFINE_MODELS,oldRoformer=process.env.XLD_REFINE_ROFORMER_MODELS;process.env.XLD_REFINE_MODELS=models;process.env.XLD_REFINE_ROFORMER_MODELS=models;
+ const parent={ok:true,runId:crypto.randomUUID(),stems:[{name:'other',audioUrl:pathToFileURL(input).href,frames:320000,sampleRate:32000,channels:2}]};
+ const track={id:'test',filePath:input};let spawnCount=0,mode='ok';
+ const assets={directory:()=>root,readStems:async()=>parent};
+ let probeCount=0;const source=createRefinement({assets,probeAudio:async()=>{probeCount++;return {frames:320000,sampleRate:32000,channels:2};},python:()=>process.execPath,spawnProcess:(_python,args)=>{
+  spawnCount++;const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();
+  const value=key=>args[args.indexOf('--'+key)+1];child.kill=()=>{child.emit('close',1);return true;};
+  setImmediate(async()=>{
+   if(mode==='cancel'){child.emit('close',1);return;}
+   const runId=value('run-id'),output=value('output'),start=Number(value('start')),frames=Math.min(30*32000,320000-start*32000),folder=path.join(path.dirname(output),runId);await fs.mkdir(folder);
+   for(const name of ['original','target','residual'])await fs.writeFile(path.join(folder,name+'.wav'),Buffer.alloc(frames*8+80));
+   const result={scope:value('scope'),schemaVersion:2,requestedDevice:value('device'),kind:'refinement',runId,engine:value('engine'),trackId:track.id,parentRunId:value('parent-run')||null,cacheKey:value('cache-key'),sourceStem:value('source-stem'),target:value('target'),timeOrigin:start,duration:frames/32000,frames,sampleRate:32000,channels:2,reconstructionError:0,files:Object.fromEntries(['original','target','residual'].map(name=>[name,runId+'/'+name+'.wav']))};
+   if(value('scope')==='full')result.playback={gain:1,peaks:{original:.5,target:.3,residual:.2},files:{...result.files}};
+   if(mode==='scope')result.scope='preview';
+   if(mode==='playback')result.playback.files.target='../outside.wav';
+   if(mode==='path')result.files.target='../escape.wav';
+   if(mode==='stale')parent.runId=crypto.randomUUID();
+   await fs.writeFile(output,JSON.stringify(result));child.stdout.write(JSON.stringify({progress:.8,message:'test'})+'\n');child.emit('close',0);
+  });return child;
+ }});
+ const opts={engine:'audiosep-strings',start:0,duration:30};
+ const run=(options=opts,extras={})=>source.generate(track,options,{runId:crypto.randomUUID(),onChild:()=>{},onProgress:()=>{},cancelled:()=>false,beforeCommit:()=>{},...extras});
+ try{
+  const good=await run();assert(good.ok);assert.equal(good.duration,10);assert.equal(spawnCount,1);
+  assert((await run()).cached);assert.equal(spawnCount,1);
+  assert(!(await source.keep(track,{...opts,runId:crypto.randomUUID()})).ok);
+  assert((await source.keep(track,{...opts,runId:good.runId})).kept);
+  assert((await source.read(track,opts)).kept);
+  assert(!(await source.read(track,{...opts,target:'violin'})).ok,'target cache isolated');
+  assert(!(await source.read(track,{...opts,start:1})).ok,'range cache isolated');
+  assert(!(await source.read(track,{...opts,device:'cpu'})).ok,'device cache isolated');
+  await assert.rejects(source.context(track,{...opts,target:'tuba'}),/options-invalid/);
+  await assert.rejects(source.context(track,{...opts,device:'invalid'}),/options-invalid/);
+  const fullOpts={engine:'mega-53',scope:'full',start:999,duration:1};
+  const full=await run(fullOpts);assert(full.ok);assert.equal(full.duration,10);assert.equal(full.timeOrigin,0);assert.equal(full.scope,'full');
+  const whole=await source.context(track,fullOpts);assert.equal(whole.duration,10);assert.equal(whole.start,0);
+  assert.notEqual(whole.cacheKey,(await source.context(track,{engine:'mega-53',start:0,duration:10})).cacheKey,'full and same-length preview must be separate');
+  assert((await run({...fullOpts,start:3,duration:30})).cached,'full cache independent of hidden preview start');
+  assert.equal(full.urls.target,full.rawUrls.target,'unity gain uses raw file');
+  await assert.rejects(source.context(track,{...opts,scope:'full'}),/scope-invalid/);
+  await assert.rejects(source.context(track,{...opts,scope:'invalid'}),/scope-invalid/);
+  mode='scope';await assert.rejects(run({...fullOpts,device:'cpu'}),/scope-stale/);
+  mode='playback';await assert.rejects(run({...fullOpts,device:'cpu'}),/playback-invalid/);
+  assert((await source.read(track,fullOpts)).ok,'bad results must not replace full cache');
+  mode='path';await assert.rejects(run({...opts,start:1}),/path-invalid/);assert((await source.read(track,opts)).ok);
+  mode='cancel';await assert.rejects(run({...opts,start:2},{cancelled:()=>true}),/analysis-cancelled/);assert((await source.read(track,opts)).ok);
+  const originalParent=parent.runId;mode='stale';await assert.rejects(run({...opts,start:3}),/分轨来源/);parent.runId=originalParent;assert((await source.read(track,opts)).ok);
+  mode='ok';
+  const rawOpts={engine:'mega-53',sourceStem:'mix',scope:'full',target:'electric-guitar'};
+  const raw=await run(rawOpts);assert(raw.ok);assert.equal(raw.parentRunId,null);assert.equal(raw.sourceStem,'mix');assert.equal(probeCount,1);
+  parent.ok=false;assert((await run(rawOpts)).cached,'original song works with no stems');
+  await assert.rejects(source.context(track,{...rawOpts,sourceStem:'guitar'}),/请先生成/);parent.ok=true;
+  parent.stems.push({...parent.stems[0],name:'guitar'});
+  const guitar=await run({...rawOpts,sourceStem:'guitar'});assert(guitar.ok);assert.notEqual(guitar.cacheKey,raw.cacheKey);
+  await assert.rejects(source.context(track,{...rawOpts,sourceStem:'../../mix'}),/source-invalid/);
+  await assert.rejects(source.context(track,{...opts,sourceStem:'mix'}),/source-invalid/);
+  await assert.rejects(source.context(track,{...rawOpts,sourceStem:'piano'}),/音轨缺失/);
+  assert.notEqual((await source.context(track,{...rawOpts,target:'strings'})).cacheKey,(await source.context(track,{...rawOpts,target:'strings-all'})).cacheKey);
+  for(const target of require('../analysis-refine/mega-targets.json'))assert.equal((await source.context(track,{...rawOpts,target:target.id})).target,target.id);
+  const legacy=await source.context(track,opts),model=await fs.readFile(path.join(models,'manifest.json')),stat=await fs.stat(input);
+  const identity={version:2,adapter:'selected-head-v1',trackId:track.id,parentRunId:parent.runId,source:input,size:stat.size,mtimeMs:stat.mtimeMs,engine:opts.engine,target:'strings',device:'auto',start:0,duration:30,model:crypto.createHash('sha256').update(model).digest('hex')};
+  assert.equal(legacy.cacheKey,crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex'),'old other cache identity preserved');
+  await fs.writeFile(path.join(models,'manifest.json'),'changed');assert(!(await source.read(track,opts)).ok,'model identity invalidates cache');
+  await assert.rejects(source.context(track,{...opts,start:Infinity}));
+  await assert.rejects(source.context(track,{...opts,start:10}));
+  console.log('Refinement: source/model/range isolation, keep, invalid paths, cancel and changed-source protection PASS');
+ }finally{if(oldRoformer===undefined)delete process.env.XLD_REFINE_ROFORMER_MODELS;else process.env.XLD_REFINE_ROFORMER_MODELS=oldRoformer;if(old===undefined)delete process.env.XLD_REFINE_MODELS;else process.env.XLD_REFINE_MODELS=old;}
+})().catch(error=>{console.error(error);process.exitCode=1;});

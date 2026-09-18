@@ -1,0 +1,21 @@
+{
+  "name": "xins-local-deck-beta",
+  "version": "0.5.0-dev.core.25",
+  "description": "Xin's Local Deck (Beta) 路 local album player with structure and comparative harmony analysis",
+  "main": "desktop/main.cjs",
+  "author": {
+    "name": "Xin",
+    "email": "1245234785@qq.com"
+  },
+  "scripts": {
+    "start": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" .",
+    "test": "node tests/midi-history.cjs && node tests/muscriptor-string-cache.cjs && node tests/midi-delete.cjs && node tests/string-midi.cjs && node tests/derived-flow.cjs && node --check midi-batch.js && node tests/midi-batch.cjs && node --check core/midi-merge.cjs && node --check workspace-controls.js && node tests/workspace-summary.cjs && node --check app.js && node --check desktop/main.cjs && node --check desktop/preload.cjs && node --check desktop/locale.cjs && node --check i18n/catalogs.js && node --check i18n/translator.js && node --check i18n/locale-controller.js && node --check i18n/bootstrap.js && node --check i18n/desktop-locale-bridge.js && node --check i18n/locale-ui.js && node --check i18n/static-ui.js && node --check i18n/runtime-messages.js && node tests/repair-static.cjs && node tests/i18n-foundation.cjs && node tests/i18n-step2.cjs && node tests/i18n-step3.cjs && node tests/i18n-step4.cjs && node tests/i18n-step5.cjs && node tests/i18n-step6.cjs && node --check derived-controls.js && node ../shared-analysis/test.cjs && node --check core/analysis-service.cjs && node tests/core-ownership.cjs && node tests/xld-analysis-task-regression.cjs && node tests/midi-task-regression.cjs && node tests/open-request.cjs && node tests/midi-models.cjs && node tests/separation-models.cjs && node --check refinement-controls.js && node --check core/refinement.cjs && node tests/refinement.cjs && node tests/refinement-controls.cjs && node --check storage-controls.js && node tests/storage.cjs && node tests/storage-controls.cjs",
+    "test:runtime": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\runtime-smoke.cjs",
+    "test:i18n:electron": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\i18n-electron-smoke.cjs",
+    "test:i18n:app": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\i18n-app-smoke.cjs",
+    "test:separation:ui": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\separation-ui-electron.cjs",
+    "test:workspace:ui": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\workspace-ui-electron.cjs",
+    "test:merge": "node tests/midi-merge.cjs",
+    "test:merge:ui": "\"D:\\Program Files\\smoke-resonance\\node_modules\\electron\\dist\\electron.exe\" tests\\midi-merge-ui.cjs"
+  }
+}

@@ -1,0 +1,333 @@
+[
+  {
+    "id": "basic-pitch",
+    "name": "Basic Pitch",
+    "stems": [
+      "bass",
+      "piano",
+      "guitar",
+      "strings"
+    ],
+    "model": "basic-pitch-0.4.0-onnx",
+    "backend": "basic-pitch",
+    "options": {
+      "onsetThreshold": 0.5,
+      "frameThreshold": 0.3,
+      "minimumNoteMs": 127.7,
+      "midiTempo": 120
+    },
+    "retiredFor": [
+      "guitar"
+    ]
+  },
+  {
+    "id": "piano-highres",
+    "name": "HiRes Piano",
+    "stems": [
+      "piano"
+    ],
+    "defaultFor": "piano",
+    "model": "piano-highres-c3fa9730725b",
+    "backend": "highres",
+    "modelType": "Note_pedal",
+    "checkpoint": {
+      "file": "note_F1=0.9677_pedal_F1=0.9186.pth",
+      "sha256": "c3fa9730725bf4a762f1c14bc80cd5986eacda01b026f5a4a2525cd607876141",
+      "size": 171966578,
+      "repository": "xavriley/midi-transcription-models",
+      "revision": "b7bec65a2b860aca72856b0feef58b5df407b777"
+    },
+    "options": {
+      "onsetThreshold": 0.3,
+      "offsetThreshold": 0.3,
+      "frameThreshold": 0.1,
+      "pedalOffsetThreshold": 0.2,
+      "midiTempo": 120
+    }
+  },
+  {
+    "id": "guitar-gaps",
+    "name": "GAPS Guitar",
+    "stems": [
+      "guitar"
+    ],
+    "model": "guitar-gaps-94a7c936ec9f",
+    "backend": "highres",
+    "modelType": "Regress_onset_offset_frame_velocity_CRNN",
+    "checkpoint": {
+      "file": "guitar-gaps-paper-version-12200_iterations.pth",
+      "sha256": "94a7c936ec9fde83686d29007dc256274384e832739cadece39e92cee3b69a7e",
+      "size": 99256753,
+      "repository": "xavriley/midi-transcription-models",
+      "revision": "b7bec65a2b860aca72856b0feef58b5df407b777"
+    },
+    "options": {
+      "onsetThreshold": 0.3,
+      "offsetThreshold": 0.3,
+      "frameThreshold": 0.1,
+      "pedalOffsetThreshold": 0.2,
+      "midiTempo": 120
+    },
+    "retiredFor": [
+      "guitar"
+    ]
+  },
+  {
+    "id": "bass-highres",
+    "name": "HiRes Bass",
+    "stems": [
+      "bass"
+    ],
+    "defaultFor": "bass",
+    "model": "bass-highres-cbc792a1b6b6",
+    "backend": "highres",
+    "modelType": "Regress_onset_offset_frame_velocity_CRNN",
+    "checkpoint": {
+      "file": "filobass_20000_iterations.pth",
+      "sha256": "cbc792a1b6b6002a73ee0a433c0fe5e097ee728034fe2ea70b24bd06b5026e84",
+      "size": 98882013,
+      "repository": "xavriley/midi-transcription-models",
+      "revision": "b7bec65a2b860aca72856b0feef58b5df407b777"
+    },
+    "options": {
+      "onsetThreshold": 0.3,
+      "offsetThreshold": 0.3,
+      "frameThreshold": 0.1,
+      "pedalOffsetThreshold": 0.2,
+      "midiTempo": 120
+    }
+  },
+  {
+    "id": "drums-adtof",
+    "name": "ADTOF Drums",
+    "stems": [
+      "drums"
+    ],
+    "defaultFor": "drums",
+    "model": "adtof-5class-1bc986e596ec-v1",
+    "backend": "adtof",
+    "checkpoint": {
+      "file": "adtof_frame_rnn_pytorch_weights.pth",
+      "sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320",
+      "size": 3617805,
+      "repository": "xavriley/ADTOF-pytorch",
+      "revision": "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
+    },
+    "options": {
+      "kickThreshold": 0.22,
+      "snareThreshold": 0.24,
+      "tomThreshold": 0.32,
+      "hihatThreshold": 0.22,
+      "cymbalThreshold": 0.3,
+      "chunkFrames": 3000,
+      "contextFrames": 500,
+      "velocity": 100,
+      "midiTempo": 120
+    }
+  },
+  {
+    "id": "yourmt3-plus",
+    "name": "YourMT3+",
+    "stems": [
+      "strings",
+      "guitar"
+    ],
+    "model": "yourmt3-plus-moe-nops-5e66c1e",
+    "backend": "yourmt3",
+    "checkpoint": {
+      "file": "last.ckpt",
+      "sha256": "ae38e415c79efd5592dcb9b658cdb99ddb11d4c4e1eaa364cab04a052473fc25",
+      "size": 561544628,
+      "repository": "spaces/mimbres/YourMT3",
+      "revision": "5e66c1ea173a8186e0d20432b841d3180cc015b5"
+    },
+    "options": {
+      "batchSize": 2,
+      "precision": "float32",
+      "midiTempo": 120,
+      "decoder": "upstream-ties",
+      "adapterVersion": 1
+    },
+    "retiredFor": [
+      "guitar"
+    ]
+  },
+  {
+    "id": "muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "guitar"
+    ],
+    "defaultFor": "guitar",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_guitar,clean_electric_guitar,distorted_electric_guitar",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1
+    }
+  },
+  {
+    "id": "muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "guitar"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_guitar,clean_electric_guitar,distorted_electric_guitar",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1
+    }
+  },
+  {
+    "id": "strings-muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "strings"
+    ],
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-strings-v1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "violin,viola,cello,contrabass,string_ensemble",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 2,
+      "instrumentsByTarget": {
+        "violin": "violin",
+        "viola": "viola",
+        "cello": "cello",
+        "double-bass": "contrabass",
+        "strings": "violin,viola,cello,contrabass,string_ensemble",
+        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
+      }
+    }
+  },
+  {
+    "id": "strings-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "strings"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-strings-v1-fp16",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "violin,viola,cello,contrabass,string_ensemble",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 2,
+      "instrumentsByTarget": {
+        "violin": "violin",
+        "viola": "viola",
+        "cello": "cello",
+        "double-bass": "contrabass",
+        "strings": "violin,viola,cello,contrabass,string_ensemble",
+        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
+      },
+      "weightDtype": "float16"
+    },
+    "defaultFor": "strings"
+  },
+  {
+    "id": "drums-muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "drums"
+    ],
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-drums-v1-hits100ms",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "drums",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 2,
+      "drumNoteSeconds": 0.1
+    }
+  },
+  {
+    "id": "drums-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "drums"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-drums-v1-fp16-hits100ms",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "drums",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 2,
+      "weightDtype": "float16",
+      "drumNoteSeconds": 0.1
+    }
+  }
+]

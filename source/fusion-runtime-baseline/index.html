@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070f" />
+    <!-- Butterchurn compiles preset equations at runtime, so unsafe-eval is
+         intentionally limited to local scripts; every network source remains blocked. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'" />
+    <title data-i18n="app.documentTitle">Xin’s Music Lab Fusion · XLD × Live</title>
+    <link rel="icon" type="image/png" href="./assets/xins-music-lab-icon.png" />
+    <link rel="stylesheet" href="./style.css?v=0.5.0-i18n-step6" />
+  </head>
+  <body>
+    <main class="stage" data-palette="aurora" data-effect="spectrum">
+      <canvas id="visualizer" aria-label="随音乐变化的经典频谱动画" data-i18n-aria-label="canvas.classic"></canvas>
+      <canvas id="betaCanvas" class="beta-canvas" aria-label="Butterchurn MilkDrop 音乐可视化" data-i18n-aria-label="canvas.milkdrop"></canvas>
+      <canvas id="glitchCanvas" class="glitch-canvas" aria-label="随节奏撕裂的 Glitch 后处理" data-i18n-aria-label="canvas.glitch"></canvas>
+      <canvas id="glitchWebglCanvas" class="glitch-webgl-canvas" aria-label="WebGL2 跨帧反馈 Glitch 渲染" data-i18n-aria-label="canvas.webgl"></canvas>
+      <canvas id="generatorCanvas" class="generator-canvas" aria-label="Generator Source-aware WebGL2 输出" data-i18n-aria-label="canvas.generator"></canvas>
+      <canvas id="conductorCanvas" class="conductor-canvas" aria-label="随频响指挥乐团的卡通猫动画" data-i18n-aria-label="canvas.conductor"></canvas>
+      <div class="aurora" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="color-flash" id="colorFlash" aria-hidden="true"></div>
+
+      <header class="brand">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__copy"><span>Xin’s Music Lab <b class="fusion-beta">FUSION 0.3</b></span><small data-i18n="app.brandSubtitle">Designed by Xin · Canvas Source × WebGL2 Feedback</small></span>
+      </header>
+
+      <section class="now-playing" aria-live="polite">
+        <p class="eyebrow" data-i18n="shell.nowDrifting">正在漂流</p>
+        <h1 id="trackTitle">等待电脑里的声音</h1>
+        <p id="trackMeta">连接系统音频后，任何播放器都能驱动这片雾</p>
+      </section>
+
+      <section class="controls" aria-label="音乐与监听控制台" data-i18n-aria-label="controls.aria">
+        <div class="listen-control">
+          <button class="play" id="playButton" type="button" aria-label="开始监听" aria-pressed="false" title="分析监听开关">
+          <span class="play__icon" aria-hidden="true"></span>
+          </button>
+          <small data-i18n="controls.listen">监听</small>
+        </div>
+
+        <div class="media-transport desktop-only" aria-label="Windows 当前媒体控制" data-i18n-aria-label="media.aria">
+          <button id="mediaPrevious" type="button" aria-label="上一曲" title="上一曲" data-i18n-aria-label="media.previous" data-i18n-title="media.previous">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-9 6 9 6V6Z" /></svg>
+          </button>
+          <button class="media-transport__play" id="mediaPlayPause" type="button" aria-label="播放或暂停" title="播放 / 暂停" data-i18n-aria-label="media.playPause" data-i18n-title="media.playPauseTitle">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg>
+          </button>
+          <button id="mediaNext" type="button" aria-label="下一曲" title="下一曲" data-i18n-aria-label="media.next" data-i18n-title="media.next">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 6l9 6-9 6V6Z" /></svg>
+          </button>
+        </div>
+
+        <div class="timeline">
+          <div class="timeline__labels">
+            <span id="sourceLabel">系统音频</span>
+            <span id="energyLabel">等待连接</span>
+          </div>
+          <div class="timeline__track" aria-hidden="true">
+            <span id="timelineFill"></span>
+          </div>
+        </div>
+
+        <button class="file-button" id="captureButton" type="button" title="重新选择系统音频来源" data-i18n-title="capture.title">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0M4 12v5h3v-5H4Zm13 0v5h3v-5h-3ZM9 20h6" /></svg>
+          <span>连接声音</span>
+        </button>
+
+        <button class="icon-button" id="immersiveButton" type="button" aria-label="进入沉浸模式" title="沉浸模式：全屏并隐藏界面" data-i18n-aria-label="immersive.enter" data-i18n-title="immersive.enterTitle">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5M9 12h6" /></svg>
+        </button>
+      </section>
+
+      <aside class="mood-panel" aria-label="视觉设置" data-i18n-aria-label="visualSettings.aria">
+        <div class="settings-row settings-row--look">
+          <span class="settings-label" data-i18n="visualSettings.look">外观</span>
+          <div class="swatches">
+          <button class="swatch is-active" type="button" data-palette="aurora" aria-label="EVA 初号机紫绿配色" title="EVA-01 · 紫绿" data-i18n-aria-label="palette.auroraAria" data-i18n-title="palette.auroraTitle"></button>
+          <button class="swatch" type="button" data-palette="ember" aria-label="EVA 二号机红橙配色" title="EVA-02 · 红橙" data-i18n-aria-label="palette.emberAria" data-i18n-title="palette.emberTitle"></button>
+          <button class="swatch" type="button" data-palette="moon" aria-label="EVA 零号机蓝白配色" title="EVA-00 · 蓝白" data-i18n-aria-label="palette.moonAria" data-i18n-title="palette.moonTitle"></button>
+          <button class="swatch" type="button" data-palette="synthwave" aria-label="合成波霓虹配色" title="Synthwave · 品红青" data-i18n-aria-label="palette.synthwaveAria" data-i18n-title="palette.synthwaveTitle"></button>
+          <button class="swatch" type="button" data-palette="toxic" aria-label="酸蚀荧光配色" title="Acid Toxic · 荧光绿" data-i18n-aria-label="palette.toxicAria" data-i18n-title="palette.toxicTitle"></button>
+          <button class="swatch" type="button" data-palette="ultraviolet" aria-label="紫外电光配色" title="Ultraviolet · 蓝紫红" data-i18n-aria-label="palette.ultravioletAria" data-i18n-title="palette.ultravioletTitle"></button>
+          <button class="swatch" type="button" data-palette="solar" aria-label="日蚀金红配色" title="Solar Flare · 金红" data-i18n-aria-label="palette.solarAria" data-i18n-title="palette.solarTitle"></button>
+          <button class="swatch swatch--custom" type="button" data-palette="custom" aria-label="自定义配色" title="自定义配色" data-i18n-aria-label="palette.customAria" data-i18n-title="palette.customTitle"></button>
+          </div>
+          <label class="intensity">
+            <span data-i18n="visualSettings.response">响应</span>
+            <input id="intensity" type="range" min="0.45" max="1.8" step="0.05" value="1" />
+          </label>
+          <button class="calibration-toggle" id="paletteButton" type="button" aria-expanded="false" aria-controls="palettePanel" data-i18n="visualSettings.palette">调色</button>
+          <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 Auto</button>
+          <span class="ui-scale-control" aria-label="界面字号" data-i18n-aria-label="visualSettings.uiScale">
+            <button id="uiScaleDown" type="button" title="缩小界面字体" data-i18n-title="visualSettings.uiScaleDown">A−</button>
+            <b id="uiScaleLabel">140%</b>
+            <button id="uiScaleUp" type="button" title="放大界面字体" data-i18n-title="visualSettings.uiScaleUp">A+</button>
+          </span>
+          <span class="locale-control" id="localeControl" role="group" aria-label="语言">
+            <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+            <i aria-hidden="true">/</i>
+            <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+          </span>
+          <button class="calibration-toggle pulsar-style-toggle" id="pulsarLayoutButton" type="button" title="切换折叠频谱、单向频谱或真实双声道" data-i18n-title="visualSettings.pulsarLayoutTitle">Fold Spectrum</button>
+          <button class="calibration-toggle pulsar-style-toggle" id="pulsarStyleButton" type="button" title="切换脉冲星黑白 / 霓虹模式" data-i18n-title="visualSettings.pulsarStyleTitle">Ink Mono</button>
+        </div>
+        <div class="settings-row settings-row--engine">
+          <div class="settings-cluster"><span class="settings-label" data-i18n="engine.source">音源</span>
+            <button class="calibration-toggle" id="topModeInternal" type="button" aria-pressed="true" title="播放本地唱片库，使用 XLD 的离线段落/和弦时间线" data-i18n="engine.localLibrary" data-i18n-title="engine.localLibraryTitle">本地曲库</button>
+            <button class="calibration-toggle" id="topModeExternal" type="button" aria-pressed="false" title="监听系统/其他播放器声音，使用实时声学分析" data-i18n="engine.externalListen" data-i18n-title="engine.externalListenTitle">外部监听</button>
+          </div>
+          <div class="settings-cluster"><span class="settings-label" data-i18n="engine.analyze">分析</span>
+            <button class="calibration-toggle fusion-toggle" id="fusionButton" type="button" aria-expanded="false" aria-controls="fusionPanel" data-i18n="engine.fusion">XLD 融合</button>
+            <button class="calibration-toggle" id="calibrationButton" type="button" aria-expanded="false" aria-controls="calibrationPanel" data-i18n="engine.calibration">频响校准</button>
+            <button class="calibration-toggle mapping-lab-toggle" id="mappingLabButton" type="button" aria-expanded="false" aria-controls="mappingLabPanel" title="只负责分析编制密度、声部增量和器乐段落状态" data-i18n="engine.sectionLab" data-i18n-title="engine.sectionLabTitle">段落 Lab</button>
+          </div>
+          <span class="settings-flow" aria-hidden="true">→</span>
+          <div class="settings-cluster"><span class="settings-label" data-i18n="engine.perform">演出</span>
+            <span class="fx-rack-entry" aria-label="FX Rack" data-i18n-aria-label="engine.fxRackAria">
+              <button class="calibration-toggle fx-rack-power" id="glitchPowerButton" type="button" aria-pressed="false" title="立即接入或旁路全部 Glitch 效果" data-i18n-title="engine.fxPowerTitle">FX OFF</button>
+              <button class="calibration-toggle glitch-settings-toggle" id="glitchSettingsButton" type="button" aria-expanded="false" aria-controls="glitchPanel" title="打开 FX Rack 设置" data-i18n="engine.fxSettings" data-i18n-title="engine.fxSettingsTitle">设置</button>
+            </span>
+            <button class="calibration-toggle director-toggle" id="directorToggle" type="button" aria-pressed="false" title="仅在 GitHub 与 Glitch 视觉之间按音乐自动编排" data-i18n-title="engine.directorTitle">导演</button>
+            <button class="calibration-toggle conductor-toggle" id="conductorToggle" type="button" aria-pressed="false" title="让卡通猫随频响指挥乐团" data-i18n-title="engine.conductorTitle">猫指挥</button>
+            <button class="calibration-toggle" id="conductorSettingsButton" type="button" aria-expanded="false" aria-controls="conductorPanel" data-i18n="engine.action">动作</button>
+          </div>
+          <div class="settings-cluster settings-cluster--tools"><span class="settings-label" data-i18n="engine.tools">工具</span>
+            <button class="calibration-toggle" id="snapshotButton" type="button" title="保存当前视觉画面（S）" data-i18n="engine.snapshot" data-i18n-title="engine.snapshotTitle">快照</button>
+            <button class="calibration-toggle desktop-only" id="pinButton" type="button" aria-pressed="false" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
+          </div>
+        </div>
+        <div class="product-control-dock" id="productControlDock" data-state="ready" aria-label="产品控制台" data-i18n-aria-label="product.dockAria">
+          <span class="settings-label" data-i18n="product.label">产品</span>
+          <label class="product-control-dock__master">
+            <span data-i18n="product.fxMaster">FX 总强度</span>
+            <input data-product-fx-master type="range" min="0" max="200" step="5" value="125" aria-label="FX 总强度" data-i18n-aria-label="product.fxMasterAria" />
+            <output data-product-fx-master-output>125%</output>
+          </label>
+          <button class="product-control-dock__quality" data-product-quality data-mode="auto" type="button" data-i18n="product.quality.auto">画质 自动</button>
+          <button class="product-control-dock__source" data-product-source data-state="idle" type="button" title="打开音源诊断" data-i18n-title="product.sourceTitle">
+            <i aria-hidden="true"></i>
+            <span data-product-source-label data-i18n="product.source.idle">音源待机</span>
+            <small data-product-source-meta>unavailable · 0%</small>
+          </button>
+          <span class="product-control-dock__advanced" aria-hidden="true" data-i18n="product.advanced">高级工具</span>
+          <button data-product-open-xld type="button" data-i18n="product.openXld">XLD 评测台 ↗</button>
+          <button data-product-open-generator type="button" data-i18n="product.openGenerator">生成器 ↗</button>
+          <output data-product-tool-state data-state="ready" role="status" data-i18n="product.tool.ready">产品工具就绪</output>
+        </div>
+      </aside>
+
+      <section class="fusion-hud" id="fusionHud" data-state="idle" aria-live="polite" aria-label="段落 / 和弦 实时读出">
+        <span class="fusion-hud__dot"></span>
+        <b id="fusionHudTrack" class="fusion-hud__badge">未接入</b>
+        <span id="fusionHudSection">SECTION —</span>
+        <span id="fusionHudChord">CHORD —</span>
+      </section>
+
+      <aside class="fusion-panel" id="fusionPanel" aria-label="XLD Fusion 控制台" aria-hidden="true">
+        <div class="calibration-head">
+          <div>
+            <p class="eyebrow">XLD × LIVE VISUAL ENGINE</p>
+            <h2>Fusion 控制台</h2>
+          </div>
+          <button id="fusionClose" class="calibration-close" type="button" aria-label="关闭 Fusion 控制台">×</button>
+        </div>
+
+        <!-- 核心:段落 + 和弦(置顶) -->
+        <div class="fusion-state-grid">
+          <article><small>STRUCTURE 段落</small><strong id="fusionSection">—</strong><span id="fusionSectionSource">等待段落时间线</span></article>
+          <article class="is-chord"><small>HARMONY 和弦</small><strong id="fusionChord">—</strong><span id="fusionChordSource">等待和弦时间线</span></article>
+        </div>
+
+        <div class="fusion-engine-select" aria-label="识别引擎选择">
+          <label>段落引擎
+            <select id="fusionSectionEngine"><option value="auto">自动 · 优先级</option></select>
+          </label>
+          <label>和弦引擎
+            <select id="fusionChordEngine"><option value="consensus">共识 · CQT+CENS+Hybrid</option></select>
+          </label>
+        </div>
+
+        <div class="fusion-engine-votes" id="fusionVotes" aria-label="和弦引擎投票">
+          <span>CQT <b>—</b></span><span>CENS <b>—</b></span><span>HYBRID <b>—</b></span>
+        </div>
+
+        <!-- 当前播放 + 歌曲选择 -->
+        <div class="fusion-track-card">
+          <img id="fusionCover" class="fusion-track-card__cover" alt="" />
+          <div class="fusion-track-card__copy">
+            <small id="fusionAlbum">NO TRACK LOADED</small>
+            <strong id="fusionTrack">—</strong>
+            <span id="fusionArtist">—</span>
+          </div>
+          <div class="fusion-track-card__actions">
+            <span class="fusion-link-card" id="fusionLinkCard" data-state="idle" title="XLD 桥接状态">
+              <span class="fusion-link-card__signal"></span><small id="fusionStatus">等待 XLD 分析文件</small>
+            </span>
+            <div class="fusion-track-card__buttons">
+              <button id="fusionReveal" type="button" disabled>定位文件</button>
+              <button id="fusionLoad" type="button" title="兼容旧分析文件">导入 JSON</button>
+            </div>
+          </div>
+        </div>
+
+        <section class="fusion-analysis-card" id="fusionAnalysisCard" data-state="idle" aria-label="XLD 分析结果">
+          <div class="fusion-analysis-card__head">
+            <span><small>XLD · RESULTS</small><b id="fusionAnalysisTitle">选择曲目后读取分析结果</b></span>
+            <button id="fusionOpenXldLab" type="button" title="在 XLD 中分析当前曲目">在 XLD 中分析</button>
+          </div>
+          <div class="fusion-analysis-card__controls fusion-stem-controls">
+            <select id="fusionStemSelect" aria-label="试听音轨" data-i18n-aria-label="stems.selectAria"><option value="original">原曲</option></select>
+            <button id="fusionStemReveal" type="button" disabled data-i18n="stems.folder">打开输出目录</button>
+            <button id="fusionResultsRefresh" type="button" data-i18n="fusion.resultsRefresh" disabled>更新结果</button>
+          </div>
+          <small id="fusionStemStatus" aria-live="polite">选择曲目后读取分轨</small>
+          <div class="fusion-analysis-card__controls fusion-midi-controls">
+            <small id="fusionMidiStatus" aria-live="polite" data-i18n="midi.select">选择 bass / piano / guitar 查看 MIDI</small>
+            <button id="fusionMidiReveal" type="button" disabled data-i18n="midi.folder">打开 MIDI 目录</button>
+          </div>
+          <details id="fusionAnalysisOptions" class="fusion-analysis-options">
+            <summary data-i18n="fusion.analysisOptions">分析选项</summary>
+            <div class="fusion-analysis-card__controls">
+              <select id="fusionAnalysisEngine" aria-label="选择离线分析引擎"><option value="">正在探测分析器…</option></select>
+              <button id="fusionAnalysisRun" type="button" disabled>开始分析</button>
+              <button id="fusionAnalysisCancel" type="button" disabled>取消</button>
+            </div>
+            <div class="fusion-analysis-card__controls fusion-analysis-shortcuts">
+              <button id="fusionStemRun" type="button" disabled>分轨</button>
+              <button id="fusionMidiRun" type="button" disabled>转 MIDI</button>
+            </div>
+          </details>
+          <div class="fusion-analysis-card__progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="fusionAnalysisProgress"></i></div>
+          <div class="fusion-analysis-card__status">
+            <span id="fusionAnalysisStatus">分析由 XLD 提供，返回时自动更新结果</span><output id="fusionAnalysisPercent">—</output>
+          </div>
+        </section>
+
+        <div class="fusion-transport">
+          <button id="fusionPrevious" class="fusion-skip" type="button" disabled aria-label="上一曲">‹</button>
+          <button id="fusionPlay" class="fusion-play" type="button" disabled aria-label="播放或暂停">▶</button>
+          <button id="fusionNext" class="fusion-skip" type="button" disabled aria-label="下一曲">›</button>
+          <span id="fusionTime">0:00</span>
+          <input id="fusionSeek" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="播放进度" />
+          <span id="fusionDuration">0:00</span>
+        </div>
+
+        <div class="fusion-source-switch" role="group" aria-label="音频来源">
+          <button id="fusionModeInternal" type="button" aria-pressed="true">本地曲库</button>
+          <button id="fusionModeExternal" type="button" aria-pressed="false">外部监听</button>
+        </div>
+
+        <section class="fusion-library" id="fusionLibraryView">
+          <div class="fusion-library__head">
+            <span><b id="fusionLibraryMeta">正在扫描本地曲库…</b><small id="fusionLibraryRoot">D:\Download\bandcamp</small></span>
+            <button id="fusionLocateTrack" type="button" title="展开并跳到正在播放的曲目">定位</button>
+            <button id="fusionRefresh" type="button">刷新</button>
+          </div>
+          <div class="fusion-library__filter">
+            <input id="fusionLibrarySearch" type="search" placeholder="搜索专辑、艺术家或曲目" aria-label="搜索本地音乐库" />
+            <label class="fusion-library__only" title="只显示已有 XLD 段落或和弦分析的曲目">
+              <input id="fusionLibraryAnalyzed" type="checkbox" /><span>仅已分析</span>
+            </label>
+          </div>
+          <div class="fusion-library__list" id="fusionLibraryList" aria-label="本地曲目列表"></div>
+        </section>
+
+        <section class="fusion-external" id="fusionExternalView" aria-hidden="true">
+          <p>监听浏览器、Spotify 或其他播放器。外部模式只使用实时声学信号，不会错误套用本地段落时间线。</p>
+          <button id="fusionExternalToggle" type="button">开始监听电脑声音</button>
+        </section>
+
+        <div class="fusion-master">
+          <div><span>GLITCH MASTER</span><output id="fusionMasterOutput">125%</output></div>
+          <input id="fusionMaster" type="range" min="0" max="200" step="5" value="125" />
+          <div class="fusion-master__scale"><span>BYPASS</span><span>DESIGN</span><span>VIOLENT</span></div>
+        </div>
+
+        <div class="fusion-actions">
+          <label><input id="fusionAutoColor" type="checkbox" checked /> 和弦驱动配色</label>
+          <button id="fusionProof" class="fusion-proof" type="button">8s PROOF · 强化证明</button>
+        </div>
+
+        <div class="fusion-monitor">
+          <span>LIVE <b id="fusionLiveState">WAIT</b></span>
+          <span>TIMELINE <b id="fusionTimelineState">OFF</b></span>
+          <span>OUTPUT <b id="fusionOutputState">BYPASS</b></span>
+        </div>
+      </aside>
+
+      <aside class="mapping-lab-panel" id="mappingLabPanel" aria-label="多引擎器乐段落识别实验室" aria-hidden="true">
+        <div class="calibration-head mapping-lab-head">
+          <div>
+            <p class="eyebrow">SECTION ANALYSIS WORKBENCH</p>
+            <h2>多引擎段落识别 β</h2>
+          </div>
+          <div class="mapping-state-wrap">
+            <span id="mappingState" class="mapping-state" data-state="SPARSE">稀疏</span>
+            <button id="mappingLabClose" class="calibration-close" type="button" aria-label="关闭映射实验室">×</button>
+          </div>
+        </div>
+
+        <div class="section-input-note"><i></i><span>RAW PCM BUS</span> 固定分析器 · 与频响校准完全隔离</div>
+        <div class="section-engine-grid" aria-label="并行段落识别引擎">
+          <button class="section-engine-card is-active" type="button" data-section-engine-toggle="our" aria-pressed="true">
+            <span><b>OUR LIVE</b> 即时状态</span><strong data-section-engine-label="our">SPARSE</strong>
+            <small><output data-section-engine-confidence="our">0%</output> · 即时</small>
+          </button>
+          <button class="section-engine-card section-engine-card--fused is-active" type="button" data-section-engine-toggle="fused" aria-pressed="true">
+            <span><b>OUR FUSED</b> 延迟融合</span><strong data-section-engine-label="fused">SPARSE</strong>
+            <small><output data-section-engine-confidence="fused">0%</output> · <output data-section-engine-latency="fused">2.4s</output></small>
+            <em data-section-engine-candidate="fused">候选 SPARSE · 0%</em>
+          </button>
+          <button class="section-engine-card section-engine-card--foote is-active" type="button" data-section-engine-toggle="foote" aria-pressed="true">
+            <span><b>FOOTE</b> 突变边界</span><strong data-section-engine-label="foote">WARMUP</strong>
+            <small><output data-section-engine-confidence="foote">0%</output> · <output data-section-engine-latency="foote">1.3s</output></small>
+          </button>
+          <button class="section-engine-card section-engine-card--recurrence is-active" type="button" data-section-engine-toggle="recurrence" aria-pressed="true">
+            <span><b>FORM</b> 复现聚类</span><strong data-section-engine-label="recurrence">WARMUP</strong>
+            <small><output data-section-engine-confidence="recurrence">0%</output> · <output data-section-engine-latency="recurrence">1.0s</output></small>
+          </button>
+        </div>
+
+        <div class="section-harmony-readout" aria-label="实时和弦旁路">
+          <span>HARMONY LENS</span>
+          <strong data-section-chord>—</strong>
+          <output data-section-chord-confidence>0%</output>
+          <small>轻量 Chroma · 仅作结构证据</small>
+        </div>
+
+        <canvas id="mappingLabCanvas" class="mapping-lab-canvas" aria-label="四种段落引擎的最近三十秒对比时间轴"></canvas>
+        <div class="mapping-legend" aria-hidden="true">
+          <span class="mapping-legend__orchestration">OUR Live</span>
+          <span class="mapping-legend__fused">OUR Fused</span>
+          <span class="mapping-legend__foote">Foote boundary</span>
+          <span class="mapping-legend__recurrence">Form change</span>
+          <span class="mapping-legend__density">Raw fullness</span>
+        </div>
+
+        <div class="mapping-meters">
+          <div class="mapping-meter mapping-meter--orchestration" data-mapping-meter="orchestration"><span>编制密度</span><i></i><output data-mapping-value="orchestration">0.00</output></div>
+          <div class="mapping-meter mapping-meter--surge" data-mapping-meter="orchestrationSurge"><span>声部增量</span><i></i><output data-mapping-value="orchestrationSurge">0.00</output></div>
+          <div class="mapping-meter mapping-meter--fullness" data-mapping-meter="spectralFullness"><span>频谱饱满度</span><i></i><output data-mapping-value="spectralFullness">0.00</output></div>
+          <div class="mapping-meter mapping-meter--harmony" data-mapping-meter="chordChange"><span>和声变化</span><i></i><output data-mapping-value="chordChange">0.00</output></div>
+          <div class="mapping-meter mapping-meter--climax" data-mapping-meter="climaxConfidence"><span>OUR 高潮</span><i></i><output data-mapping-value="climaxConfidence">0.00</output></div>
+          <div class="mapping-meter mapping-meter--drop" data-mapping-meter="dropConfidence"><span>OUR 抽空</span><i></i><output data-mapping-value="dropConfidence">0.00</output></div>
+        </div>
+
+        <details class="postfx-detail mapping-detail" open>
+          <summary>OUR 引擎参数 <span>只影响当前状态机，不影响 Foote / Form</span></summary>
+        <div class="postfx-detail-grid mapping-controls">
+          <label class="calibration-field conductor-grid__wide">
+            <span>输入灵敏度 <output data-mapping-output="sensitivity">100%</output></span>
+            <input data-mapping-key="sensitivity" type="range" min="0.55" max="1.8" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>段落识别灵敏度 <output data-mapping-output="sectionSensitivity">100%</output></span>
+            <input data-mapping-key="sectionSensitivity" type="range" min="0.7" max="1.45" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>段落保持时间 <output data-mapping-output="sectionHold">100%</output></span>
+            <input data-mapping-key="sectionHold" type="range" min="0.55" max="1.8" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>高潮识别灵敏度 <output data-mapping-output="climaxSensitivity">100%</output></span>
+            <input data-mapping-key="climaxSensitivity" type="range" min="0.7" max="1.45" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>抽空识别灵敏度 <output data-mapping-output="dropSensitivity">100%</output></span>
+            <input data-mapping-key="dropSensitivity" type="range" min="0.7" max="1.45" step="0.05" value="1" />
+          </label>
+        </div>
+        </details>
+
+        <details class="postfx-detail mapping-detail" open>
+          <summary>OUR FUSED 融合权重 <span>只影响延迟融合版，可与即时版直接对照</span></summary>
+          <div class="postfx-detail-grid mapping-controls">
+            <label class="calibration-field conductor-grid__wide">
+              <span>频谱饱满度权重 <output data-fusion-output="fullnessWeight">115%</output></span>
+              <input data-fusion-key="fullnessWeight" type="range" min="0.35" max="1.8" step="0.05" value="1.15" />
+            </label>
+            <label class="calibration-field conductor-grid__wide">
+              <span>即时 OUR 权重 <output data-fusion-output="liveWeight">75%</output></span>
+              <input data-fusion-key="liveWeight" type="range" min="0" max="1.5" step="0.05" value="0.75" />
+            </label>
+            <label class="calibration-field conductor-grid__wide">
+              <span>边界 / 复现权重 <output data-fusion-output="boundaryWeight">65%</output></span>
+              <input data-fusion-key="boundaryWeight" type="range" min="0" max="1.5" step="0.05" value="0.65" />
+            </label>
+            <label class="calibration-field conductor-grid__wide">
+              <span>和弦证据权重 <output data-fusion-output="harmonyWeight">35%</output></span>
+              <input data-fusion-key="harmonyWeight" type="range" min="0" max="1.5" step="0.05" value="0.35" />
+            </label>
+            <label class="calibration-field conductor-grid__wide">
+              <span>融合确认时间 <output data-fusion-output="confirmMs">2.4s</output></span>
+              <input data-fusion-key="confirmMs" type="range" min="1400" max="4200" step="100" value="2400" />
+            </label>
+          </div>
+        </details>
+        <div class="calibration-foot">
+          <p>四种方案并行观察：OUR Live 即时响应；OUR Fused 延迟整合频谱饱满度、Foote、Form 与和声证据。目前均不接管视觉调制。</p>
+          <button id="mappingLabReset" type="button">重置全部</button>
+        </div>
+      </aside>
+
+      <aside class="conductor-panel" id="conductorPanel" aria-label="指挥猫动作设置" aria-hidden="true">
+        <div class="calibration-head">
+          <div>
+            <p class="eyebrow">CONDUCTOR CONTROL</p>
+            <h2>指挥动作与站位</h2>
+          </div>
+          <button id="conductorClose" class="calibration-close" type="button" aria-label="关闭指挥设置">×</button>
+        </div>
+        <div class="calibration-presets conductor-positions" role="group" aria-label="指挥站位">
+          <button class="preset-button" type="button" data-conductor-position="left">左侧</button>
+          <button class="preset-button is-active" type="button" data-conductor-position="center">中央</button>
+          <button class="preset-button" type="button" data-conductor-position="right">右侧</button>
+        </div>
+        <div class="calibration-grid conductor-grid">
+          <label class="calibration-field">
+            <span>指挥速度 <output data-conductor-output="speed">1.00×</output></span>
+            <input data-conductor-key="speed" type="range" min="0.4" max="2.2" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field">
+            <span>手势幅度 <output data-conductor-output="gesture">100%</output></span>
+            <input data-conductor-key="gesture" type="range" min="0.4" max="1.8" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field">
+            <span>角色大小 <output data-conductor-output="size">100%</output></span>
+            <input data-conductor-key="size" type="range" min="0.55" max="1.5" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field calibration-field--select">
+            <span>面向舞台</span>
+            <select data-conductor-key="facing">
+              <option value="auto">自动</option>
+              <option value="left">向左</option>
+              <option value="right">向右</option>
+            </select>
+          </label>
+          <label class="calibration-field calibration-field--select">
+            <span>声部文字</span>
+            <select data-conductor-key="labels">
+              <option value="auto">显示 5 秒</option>
+              <option value="always">始终显示</option>
+              <option value="hidden">隐藏</option>
+            </select>
+          </label>
+          <label class="calibration-field">
+            <span>横向位置 <output data-conductor-output="x">57%</output></span>
+            <input data-conductor-key="x" type="range" min="0.1" max="0.9" step="0.01" value="0.57" />
+          </label>
+          <label class="calibration-field">
+            <span>纵向位置 <output data-conductor-output="y">87%</output></span>
+            <input data-conductor-key="y" type="range" min="0.58" max="0.96" step="0.01" value="0.87" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>乐团显眼程度 <output data-conductor-output="orchestra">55%</output></span>
+            <input data-conductor-key="orchestra" type="range" min="0" max="1" step="0.05" value="0.55" />
+          </label>
+        </div>
+        <div class="calibration-foot">
+          <p>位置、速度和动作幅度实时生效，并自动保存在本机。</p>
+          <button id="conductorReset" type="button">恢复默认</button>
+        </div>
+      </aside>
+
+      <aside class="glitch-panel" id="glitchPanel" aria-label="Glitch 映射设置" aria-hidden="true">
+        <div class="calibration-head">
+          <div>
+            <p class="eyebrow">UNIVERSAL POST FX RACK</p>
+            <h2>通用 Glitch 效果器</h2>
+          </div>
+          <div class="postfx-head-actions">
+            <button id="glitchRackToggle" class="postfx-power" type="button" aria-pressed="false">OFF</button>
+            <button id="glitchClose" class="calibration-close" type="button" aria-label="关闭 Glitch 设置">×</button>
+          </div>
+        </div>
+        <div class="glitch-mapping-note">
+          <strong id="glitchRendererState" data-state="checking">RENDERER · CHECKING WEBGL2</strong>
+          <span>段落 Lab 只负责识别；这里决定编制、鼓组、撕蚀与节奏如何作用于当前画面。</span>
+        </div>
+        <section class="product-preset-control" id="generatorPresetControl" data-state="loading" aria-label="Generator 产品预设" data-i18n-aria-label="product.preset.aria" aria-busy="true">
+          <div class="product-preset-control__head">
+            <span>
+              <b data-i18n="product.preset.eyebrow">视觉配方 · GENERATOR</b>
+              <small data-i18n="product.preset.note">选择 Mapping 配方；FX Rack 权重仍负责信号口味。</small>
+            </span>
+            <strong data-product-preset-state data-state="loading" data-i18n="product.preset.state.loading">载入中</strong>
+          </div>
+          <div class="product-preset-control__list" data-product-preset-list role="group" aria-label="Generator 内置产品预设" data-i18n-aria-label="product.preset.listAria"></div>
+          <p class="product-preset-control__detail" data-product-preset-detail role="status" data-i18n="product.preset.loadingDetail">正在载入 Generator 产品预设…</p>
+          <div class="product-preset-files" id="generatorPresetFiles" data-state="loading" aria-label="Generator 预设 JSON 文件" data-i18n-aria-label="product.filesAria" aria-busy="true">
+            <div class="product-preset-files__actions">
+              <button type="button" data-product-preset-export data-i18n="product.files.export" disabled>导出当前 JSON</button>
+              <button type="button" data-product-preset-import data-i18n="product.files.import" disabled>导入 JSON</button>
+              <input type="file" data-product-preset-file-input accept="application/json,.json" hidden />
+            </div>
+            <strong data-product-preset-file-state data-state="loading" role="status" data-i18n="product.files.loading">JSON 文件 · 载入中</strong>
+          </div>
+          <details class="preset-repository" id="generatorPresetRepository" data-state="loading" aria-busy="true">
+            <summary>
+              <span>
+                <b data-i18n="product.repository.title">预设仓库</b>
+                <small data-preset-repository-path data-i18n="product.repository.locating">正在定位独立仓库…</small>
+              </span>
+              <strong data-preset-repository-counts title="内置 / 用户 / 恢复" data-i18n-title="product.repository.countsTitle">0 / 0 / 0</strong>
+            </summary>
+            <div class="preset-repository__body">
+              <div class="preset-repository__toolbar">
+                <button type="button" data-preset-repository-action="save" data-preset-repository-save data-i18n="product.repository.save" disabled>保存当前到用户库</button>
+                <button type="button" data-preset-repository-action="refresh" data-preset-repository-refresh data-i18n="product.repository.refresh" disabled>刷新</button>
+                <span data-preset-repository-status data-state="loading" role="status" data-i18n="product.repository.loading">预设仓库 · 载入中</span>
+              </div>
+              <section class="preset-repository__category">
+                <h3><b data-i18n="product.repository.category.builtIn">内置</b> <span data-i18n="product.repository.readOnly">只读</span></h3>
+                <div data-preset-repository-category="builtIn"></div>
+              </section>
+              <section class="preset-repository__category">
+                <h3><b data-i18n="product.repository.category.user">用户</b> <span data-i18n="product.repository.userActions">可保存 · 可删除</span></h3>
+                <div data-preset-repository-category="user"></div>
+              </section>
+              <section class="preset-repository__category">
+                <h3><b data-i18n="product.repository.category.recovered">已恢复</b> <span data-i18n="product.repository.recoveryNote">只读恢复候选</span></h3>
+                <div data-preset-repository-category="recovered"></div>
+              </section>
+            </div>
+          </details>
+        </section>
+        <details class="source-inspector" id="sourceInspector">
+          <summary>
+            <span>
+              <b data-i18n="product.sourceInspector.title">音源诊断</b>
+              <small data-inspector-transport>UNKNOWN · UNKNOWN · E0</small>
+            </span>
+            <strong data-inspector-state data-state="neutral">NEUTRAL</strong>
+          </summary>
+          <div class="source-inspector__body">
+            <p class="source-inspector__note" data-i18n="product.sourceInspector.note">只读诊断：显示 Resolver 采用的值、Provider、置信度、样本年龄与降级原因，不参与 Mapping。</p>
+            <p class="source-inspector__warning" data-inspector-warning data-category="none" role="status" hidden></p>
+            <div class="source-inspector__rows" data-inspector-rows></div>
+          </div>
+        </details>
+        <details class="target-inspector" id="targetInspector">
+          <summary>
+            <span>
+              <b data-i18n="product.targetInspector.title">视觉目标诊断</b>
+              <small data-target-inspector-clock>0 ms</small>
+            </span>
+            <strong data-target-inspector-state>WAITING</strong>
+          </summary>
+          <div class="target-inspector__body">
+            <p class="target-inspector__note" data-i18n="product.targetInspector.note">只读 A/B：仅比较视觉意图层级，不比较不同系统的原始信号数值。</p>
+            <div class="target-inspector__status">
+              <span data-target-inspector-safety>UNKNOWN · 0 intervention(s)</span>
+              <span data-target-inspector-energy>BUDGET PASSIVE</span>
+            </div>
+            <div class="target-inspector__rows" data-target-inspector-rows></div>
+            <ol class="target-inspector__timeline" data-target-inspector-timeline></ol>
+          </div>
+        </details>
+        <details class="shadow-gate" id="shadowStabilityGate">
+          <summary>
+            <span>
+              <b data-i18n="product.shadowGate.title">影子稳定性闸门</b>
+              <small data-shadow-gate-duration>0.0s / 30s</small>
+            </span>
+            <strong data-shadow-gate-state>PROVISIONAL</strong>
+          </summary>
+          <div class="shadow-gate__body">
+            <p class="shadow-gate__note" data-i18n="product.shadowGate.note">只读长稳监测：不改变 Mapping、Renderer 或正式画面；持续播放至少 30 秒后才会给出 PASS。</p>
+            <div class="shadow-gate__grid">
+              <span data-shadow-gate-targets>0 finite targets</span>
+              <span data-shadow-gate-voices>0/0 voices</span>
+              <span data-shadow-gate-system>SYSTEM TELEMETRY WAITING</span>
+              <span data-shadow-gate-reasons>COLLECTING ENGINE-CLOCK SAMPLES</span>
+            </div>
+          </div>
+        </details>
+        <p class="panel-section-label">FX RACK WEIGHT PRESETS · 信号权重</p>
+        <div class="calibration-presets postfx-presets" role="group" aria-label="Glitch 权重预设">
+          <button class="preset-button is-active" type="button" data-glitch-preset="balanced">均衡</button>
+          <button class="preset-button" type="button" data-glitch-preset="orchestral">交响全奏</button>
+          <button class="preset-button" type="button" data-glitch-preset="impact">鼓点击穿</button>
+          <button class="preset-button" type="button" data-glitch-preset="acid">Acid 腐蚀</button>
+          <button class="preset-button" type="button" data-glitch-preset="weg">壮丽崩坏</button>
+          <button class="preset-button" type="button" data-glitch-preset="restrained">克制</button>
+        </div>
+        <canvas id="glitchCurveCanvas" class="postfx-curve" aria-label="编制、鼓点、撕蚀、节奏与最终 Glitch 驱动力曲线"></canvas>
+        <div class="postfx-legend" aria-hidden="true"><span class="postfx-legend__ensemble">编制</span><span class="postfx-legend__beat">鼓点</span><span class="postfx-legend__acid">撕蚀</span><span class="postfx-legend__section">段落</span><span class="postfx-legend__rhythm">节奏</span><span class="postfx-legend__tension">张力</span><span class="postfx-legend__burst">释放</span><span class="postfx-legend__drive">输出</span></div>
+        <div class="calibration-grid glitch-grid postfx-weight-grid">
+          <label class="calibration-field conductor-grid__wide">
+            <span>编制权重 <output data-glitch-output="ensembleWeight">100%</output></span>
+            <input data-glitch-key="ensembleWeight" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>鼓组总权重 <output data-glitch-output="drumWeight">100%</output></span>
+            <input data-glitch-key="drumWeight" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>撕蚀度总权重 <output data-glitch-output="abrasionWeight">100%</output></span>
+            <input data-glitch-key="abrasionWeight" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>段落驱动权重 <output data-glitch-output="sectionDrive">100%</output></span>
+            <input data-glitch-key="sectionDrive" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>效果总强度 <output data-glitch-output="fxStrength">125%</output></span>
+            <input data-glitch-key="fxStrength" type="range" min="0.4" max="2" step="0.05" value="1.25" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>节奏锁定 <output data-glitch-output="rhythmLock">65%</output></span>
+            <input data-glitch-key="rhythmLock" type="range" min="0" max="1" step="0.05" value="0.65" />
+          </label>
+        </div>
+        <div class="postfx-detail-stack">
+          <details class="postfx-detail">
+            <summary>鼓组细调 <span>低鼓 · 中鼓 · 高频碎击</span></summary>
+            <div class="postfx-detail-grid">
+              <label class="calibration-field"><span>低鼓 <output data-glitch-output="drumLow">100%</output></span><input data-glitch-key="drumLow" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>中鼓 <output data-glitch-output="drumMid">100%</output></span><input data-glitch-key="drumMid" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>高频鼓 <output data-glitch-output="drumHigh">100%</output></span><input data-glitch-key="drumHigh" type="range" min="0" max="2" step="0.05" value="1" /></label>
+            </div>
+          </details>
+          <details class="postfx-detail">
+            <summary>撕蚀细调 <span>摩擦 · 粗糙 · 尖锐 · 扫频</span></summary>
+            <div class="postfx-detail-grid">
+              <label class="calibration-field"><span>不协和摩擦 <output data-glitch-output="abrasionDissonance">100%</output></span><input data-glitch-key="abrasionDissonance" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>粗糙噪声 <output data-glitch-output="abrasionRoughness">100%</output></span><input data-glitch-key="abrasionRoughness" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>尖锐瞬态 <output data-glitch-output="abrasionTransient">100%</output></span><input data-glitch-key="abrasionTransient" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>共振扫动 <output data-glitch-output="abrasionSweep">100%</output></span><input data-glitch-key="abrasionSweep" type="range" min="0" max="2" step="0.05" value="1" /></label>
+            </div>
+          </details>
+          <details class="postfx-detail">
+            <summary>三层结构与节奏 <span>底层 · 底噪 · 爆发</span></summary>
+            <div class="postfx-detail-grid">
+              <label class="calibration-field"><span>基础层 <output data-glitch-output="baseLayer">100%</output></span><input data-glitch-key="baseLayer" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>底噪层 <output data-glitch-output="noiseLayer">85%</output></span><input data-glitch-key="noiseLayer" type="range" min="0" max="2" step="0.05" value="0.85" /></label>
+              <label class="calibration-field"><span>爆发层 <output data-glitch-output="burstLayer">100%</output></span><input data-glitch-key="burstLayer" type="range" min="0" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>张力累积 <output data-glitch-output="tensionBuild">100%</output></span><input data-glitch-key="tensionBuild" type="range" min="0.5" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field"><span>事件间隔 <output data-glitch-output="eventSpacing">100%</output></span><input data-glitch-key="eventSpacing" type="range" min="0.5" max="2" step="0.05" value="1" /></label>
+              <label class="calibration-field calibration-field--select"><span>节奏倍频 <output data-glitch-output="rhythmSubdivision">1×</output></span><select data-glitch-key="rhythmSubdivision"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+            </div>
+          </details>
+        </div>
+        <div class="postfx-user-presets">
+          <p class="panel-section-label">USER PRESETS · 保存在本机</p>
+          <div class="postfx-preset-save">
+            <input id="glitchPresetName" type="text" maxlength="24" placeholder="输入预设名称" />
+            <button id="glitchPresetSave" type="button">记录当前</button>
+          </div>
+          <div id="glitchPresetList" class="postfx-preset-list" aria-live="polite"></div>
+        </div>
+        <div class="calibration-foot">
+          <p>蓝、粉、酸绿是内容信号；橙线积累张力，红线表示稀疏释放。白线是三层合成后的实际输出。设置会自动保存。</p>
+          <button id="glitchReset" type="button">恢复默认</button>
+        </div>
+      </aside>
+
+      <aside class="palette-panel" id="palettePanel" aria-label="自定义配色" aria-hidden="true">
+        <div class="calibration-head">
+          <div>
+            <p class="eyebrow">EVA COLOR LAB</p>
+            <h2>自定义配色</h2>
+          </div>
+          <button id="paletteClose" class="calibration-close" type="button" aria-label="关闭配色面板">×</button>
+        </div>
+        <div class="calibration-presets palette-presets" role="group" aria-label="配色预设">
+          <button class="preset-button" type="button" data-palette-preset="aurora">EVA-01 紫绿</button>
+          <button class="preset-button" type="button" data-palette-preset="ember">EVA-02 红橙</button>
+          <button class="preset-button" type="button" data-palette-preset="moon">EVA-00 蓝白</button>
+          <button class="preset-button" type="button" data-palette-preset="synthwave">合成波</button>
+          <button class="preset-button" type="button" data-palette-preset="toxic">酸蚀绿</button>
+          <button class="preset-button" type="button" data-palette-preset="ultraviolet">紫外线</button>
+          <button class="preset-button" type="button" data-palette-preset="solar">日蚀</button>
+        </div>
+        <div class="color-grid">
+          <label class="color-field"><span>主色</span><input id="customMain" type="color" data-custom-color="main" value="#8d7cff" /></label>
+          <label class="color-field"><span>高光</span><input id="customHot" type="color" data-custom-color="hot" value="#72e8ce" /></label>
+          <label class="color-field"><span>背景</span><input id="customDark" type="color" data-custom-color="dark" value="#1a153a" /></label>
+        </div>
+        <div class="palette-preview" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="calibration-grid color-fx-grid">
+          <label class="calibration-field conductor-grid__wide">
+            <span>色彩循环 <output data-color-fx-output="cycle">关闭</output></span>
+            <input data-color-fx-key="cycle" type="range" min="0" max="2" step="0.05" value="0" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>呼吸深度 <output data-color-fx-output="breath">关闭</output></span>
+            <input data-color-fx-key="breath" type="range" min="0" max="1" step="0.05" value="0" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>瞬态频闪 <output data-color-fx-output="strobe">关闭</output></span>
+            <input data-color-fx-key="strobe" type="range" min="0" max="1" step="0.05" value="0" />
+          </label>
+        </div>
+        <p class="palette-note">循环只旋转画面色相；呼吸缓慢明暗起伏；频闪仅在强瞬态短促触发并限制最大亮度。设置保存在本机。</p>
+      </aside>
+
+      <aside class="calibration-panel" id="calibrationPanel" aria-label="频谱校准" aria-hidden="true">
+        <div class="calibration-head">
+          <div>
+            <p class="eyebrow">SPECTRUM CALIBRATION</p>
+            <h2>频率与响度映射</h2>
+          </div>
+          <button id="calibrationClose" class="calibration-close" type="button" aria-label="关闭校准面板">×</button>
+        </div>
+
+        <div class="calibration-presets" role="group" aria-label="校准预设">
+          <button class="preset-button is-active" type="button" data-calibration-preset="open-flat">开源分析器</button>
+          <button class="preset-button" type="button" data-calibration-preset="classic">千千经典</button>
+          <button class="preset-button" type="button" data-calibration-preset="electronic">电子低频</button>
+          <button class="preset-button" type="button" data-calibration-preset="vocal">人声清晰</button>
+          <button class="preset-button" type="button" data-calibration-preset="air">高频展开</button>
+        </div>
+
+        <p class="panel-section-label">VISUAL RESPONSE · 不改原始测量</p>
+        <div class="calibration-presets response-presets" role="group" aria-label="频响映射预设">
+          <button class="preset-button is-active" type="button" data-response-preset="flat">平直</button>
+          <button class="preset-button" type="button" data-response-preset="warm">暖厚</button>
+          <button class="preset-button" type="button" data-response-preset="clarity">清晰</button>
+          <button class="preset-button" type="button" data-response-preset="air">空气感</button>
+          <button class="preset-button" type="button" data-response-preset="a-weighted">A 感知</button>
+          <button class="preset-button" type="button" data-response-preset="c-weighted">C 冲击</button>
+          <button class="preset-button" type="button" data-response-preset="itu468">468 细节</button>
+        </div>
+        <div class="calibration-grid response-grid">
+          <label class="calibration-field">
+            <span>低频映射 <output data-response-output="lowGain">+0.0 dB</output></span>
+            <input data-response-key="lowGain" type="range" min="-12" max="12" step="0.5" value="0" />
+          </label>
+          <label class="calibration-field">
+            <span>中频映射 <output data-response-output="midGain">+0.0 dB</output></span>
+            <input data-response-key="midGain" type="range" min="-12" max="12" step="0.5" value="0" />
+          </label>
+          <label class="calibration-field conductor-grid__wide">
+            <span>高频映射 <output data-response-output="highGain">+0.0 dB</output></span>
+            <input data-response-key="highGain" type="range" min="-12" max="12" step="0.5" value="0" />
+          </label>
+        </div>
+
+        <div class="calibration-grid">
+          <label class="calibration-field calibration-field--select">
+            <span>横轴刻度</span>
+            <select id="frequencyScale" data-calibration-key="scale">
+              <option value="log">对数（音乐）</option>
+              <option value="bark">Bark（感知）</option>
+              <option value="mel">Mel（音高）</option>
+              <option value="linear">线性（测量）</option>
+            </select>
+          </label>
+          <label class="calibration-field calibration-field--check">
+            <span>自动增益</span>
+            <input id="autoGain" data-calibration-key="autoGain" type="checkbox" />
+          </label>
+
+          <label class="calibration-field">
+            <span>最低频率 <output data-output-for="minFreq">20 Hz</output></span>
+            <input id="minFreq" data-calibration-key="minFreq" type="range" min="20" max="1000" step="10" value="20" />
+          </label>
+          <label class="calibration-field">
+            <span>最高频率 <output data-output-for="maxFreq">20 kHz</output></span>
+            <input id="maxFreq" data-calibration-key="maxFreq" type="range" min="2000" max="22000" step="100" value="20000" />
+          </label>
+          <label class="calibration-field">
+            <span>响度底线 <output data-output-for="minDb">−92 dB</output></span>
+            <input id="minDb" data-calibration-key="minDb" type="range" min="-120" max="-45" step="1" value="-92" />
+          </label>
+          <label class="calibration-field">
+            <span>响度顶线 <output data-output-for="maxDb">−18 dB</output></span>
+            <input id="maxDb" data-calibration-key="maxDb" type="range" min="-50" max="0" step="1" value="-18" />
+          </label>
+          <label class="calibration-field">
+            <span>高频补偿 <output data-output-for="tilt">+2.0 dB/oct</output></span>
+            <input id="tilt" data-calibration-key="tilt" type="range" min="-8" max="12" step="0.5" value="2" />
+          </label>
+          <label class="calibration-field">
+            <span>平滑度 <output data-output-for="smoothing">68%</output></span>
+            <input id="smoothing" data-calibration-key="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.68" />
+          </label>
+        </div>
+
+        <div class="calibration-foot">
+          <p>每根柱按真实 Hz 频段取功率均值。预设参考 <a href="https://github.com/hvianna/audioMotion-analyzer" target="_blank" rel="noreferrer">audioMotion</a> 的分析器思路，参数为本项目配置。</p>
+          <button id="calibrationReset" type="button">恢复推荐值</button>
+        </div>
+      </aside>
+
+      <section class="visual-catalog" aria-label="视觉效果目录" data-i18n-aria-label="catalog.aria">
+        <div class="catalog-group catalog-group--materials">
+          <span class="catalog-label" data-i18n="catalog.material">视觉材料</span>
+          <div class="catalog-items">
+            <button class="scene-button modern-button" type="button" data-effect="spectral-fabric" data-i18n="catalog.spectralFabric">频谱织物</button>
+            <button class="scene-button modern-button" type="button" data-effect="temporal-strata" data-i18n="catalog.temporalStrata">时间地层</button>
+          </div>
+        </div>
+        <span class="catalog-rule" aria-hidden="true"></span>
+        <div class="catalog-group">
+          <span class="catalog-label" data-i18n="catalog.classic">经典款</span>
+          <div class="catalog-items">
+            <button class="scene-button is-active" type="button" data-effect="spectrum" data-i18n="catalog.spectrum">LED 频谱</button>
+            <button class="scene-button" type="button" data-effect="mirror" data-i18n="catalog.mirror">镜像频谱</button>
+            <button class="scene-button" type="button" data-effect="waveform" data-i18n="catalog.waveform">示波器</button>
+            <button class="scene-button" type="button" data-effect="radial" data-i18n="catalog.radial">环形频谱</button>
+            <button class="scene-button" type="button" data-effect="waterfall" data-i18n="catalog.waterfall">瀑布图</button>
+            <button class="scene-button" type="button" data-effect="vu" data-i18n="catalog.vu">机械 VU</button>
+          </div>
+        </div>
+        <span class="catalog-rule" aria-hidden="true"></span>
+        <div class="catalog-group catalog-group--modern">
+          <span class="catalog-label" data-i18n="catalog.modern">现代款</span>
+          <div class="catalog-items">
+            <button class="scene-button modern-button" type="button" data-effect="ribbons" data-i18n="catalog.ribbons">霓虹丝带</button>
+            <button class="scene-button modern-button" type="button" data-effect="pulsar" data-i18n="catalog.pulsar">脉冲星</button>
+            <button class="scene-button modern-button" type="button" data-effect="tunnel" data-i18n="catalog.tunnel">超空间</button>
+            <button class="scene-button modern-button" type="button" data-effect="pulse-grid" data-i18n="catalog.pulseGrid">脉冲网格</button>
+            <button class="scene-button modern-button" type="button" data-effect="bloom" data-i18n="catalog.bloom">棱镜花</button>
+          </div>
+        </div>
+        <span class="catalog-rule" aria-hidden="true"></span>
+        <details class="catalog-archive">
+          <summary title="展开旧版 GitHub 与 Glitch 实验" data-i18n="catalog.archive" data-i18n-title="catalog.archiveTitle">旧实验 · 15</summary>
+          <div class="catalog-archive__drawer">
+            <div class="catalog-group catalog-group--beta">
+              <span class="catalog-label" data-i18n="catalog.betaGithub">Beta · GitHub</span>
+              <div class="catalog-items">
+                <button class="scene-button beta-button" type="button" data-effect="beta-1" title="Eo.S. + Krash · 内置节拍检测的 Glowsticks">Glowsticks</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-2" title="Geiss · Thumb Drum">Thumb Drum</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-3" title="Martin · Another Kind of Groove">Groove</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-4" title="Flexi · Bouncing Balls / Mindblob">Bouncing</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-5" title="Zylot · Music Reactive Paint Mix">Paint Spill</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-6" title="Fumbling_Foo + Flexi + Martin · Star Nova v7b">Star Nova</button>
+                <button class="scene-button beta-button" type="button" data-effect="beta-7" title="Unchained · Rewop">Rewop</button>
+              </div>
+            </div>
+            <span class="catalog-rule" aria-hidden="true"></span>
+            <div class="catalog-group catalog-group--glitch">
+              <span class="catalog-label" data-i18n="catalog.glitchBeta">Glitch · Beta</span>
+              <div class="catalog-items">
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-1" title="Rovastar + Geiss · Hurricane Nightmare Posterize Mix">Posterize</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-2" title="Geiss + Flexi + Martin · Disconnected">Disconnected</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-3" title="AdamFX + Martin · Tack Tile Disfunction B">Tack Tile</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-4" title="Flexi · What Is The Matrix">Matrix</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-5" title="持续帧残留与节拍方向性运动" data-i18n-title="catalog.datamoshTitle">Datamosh</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-6" title="高频瞬态驱动 RGB 通道错位" data-i18n-title="catalog.rgbSplitTitle">RGB Split</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-7" title="动态范围驱动数字压缩块" data-i18n-title="catalog.codecRainTitle">Codec Rain</button>
+                <button class="scene-button glitch-button" type="button" data-effect="beta-glitch-8" title="强拍触发同步丢失与扫描回卷" data-i18n-title="catalog.signalLossTitle">Signal Loss</button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <p class="hint"><kbd>Space</kbd> 暂停 · <kbd>H</kbd> 隐藏 · <kbd>D</kbd> 导演 · <kbd>G</kbd> Glitch · <kbd>S</kbd> 快照</p>
+
+      <button class="immersive-exit" id="immersiveExit" type="button" aria-label="退出沉浸模式" title="退出沉浸模式" data-i18n-aria-label="immersive.exit" data-i18n-title="immersive.exit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v6H3m18 0h-6V3M3 15h6v6m6 0v-6h6" /></svg>
+      </button>
+
+      <section class="welcome" id="welcome" aria-labelledby="welcomeTitle">
+        <div class="welcome__halo" aria-hidden="true"></div>
+        <div class="welcome__content">
+          <p class="eyebrow" data-i18n="welcome.eyebrow">XIN’S MUSIC LAB · 音乐响应幻境</p>
+          <h2 id="welcomeTitle"><span data-i18n="welcome.titleLine1">让此刻播放的歌，</span><br /><span data-i18n="welcome.titleLine2">在雾里显形。</span></h2>
+          <p data-i18n="welcome.body">直接打开本地唱片库，获得精确段落与和弦时间线；或监听其他播放器，让任何声音驱动现场视觉。</p>
+          <button id="enterButton" type="button">
+            <span data-i18n="welcome.connect">连接电脑声音</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
+          <button id="fusionWelcomeButton" class="fusion-welcome-button" type="button">正在扫描本地曲库…</button>
+          <small data-i18n="welcome.note">本地模式直接播放文件；外部模式只监听系统声音。所有分析都留在本机。</small>
+        </div>
+      </section>
+
+      <audio id="fusionAudio" preload="metadata"></audio>
+
+      <div class="toast" id="toast" role="status"></div>
+    </main>
+    <script src="./vendor/butterchurn-2.6.7.min.js"></script>
+    <script src="./vendor/butterchurn-presets-2.4.7.min.js"></script>
+    <script src="./i18n/catalogs.js"></script>
+    <script src="./i18n/translator.js"></script>
+    <script src="./i18n/locale-controller.js"></script>
+    <script src="./i18n/bootstrap.js"></script>
+    <script src="./i18n/locale-ui.js"></script>
+    <script src="./i18n/static-ui.js"></script>
+    <script src="./i18n/dynamic-ui.js"></script>
+    <script src="./i18n/desktop-locale-bridge.js"></script>
+    <script src="./conductor-poses.js"></script>
+    <script src="./section-features.js"></script>
+    <script src="./section-engines.js"></script>
+    <script src="./mapping-engine.js"></script>
+    <script src="./live-harmony.js"></script>
+    <script src="./realtime-provider-adapter.js"></script>
+    <script src="./xld-timeline-provider-adapter.js"></script>
+    <script src="./music-feature-resolver.js"></script>
+    <script src="./resolver-legacy-shadow.js"></script>
+    <script src="./material-target-registry.js"></script>
+    <script src="./visual-material-runtime.js"></script>
+    <script src="./experimental-materials.js"></script>
+    <script src="./material-mapping-profile.js"></script>
+    <script src="./generator-source-adapter.js"></script>
+    <script src="./generator-runtime-shadow.js"></script>
+    <script src="./generator-preset-selector.js"></script>
+    <script src="./generator-preset-file-control.js"></script>
+    <script src="./generator-preset-repository-control.js"></script>
+    <script src="./product-control-dock.js"></script>
+    <script src="./target-inspector.js"></script>
+    <script src="./shadow-stability-monitor.js"></script>
+    <script src="./frame-ownership-monitor.js"></script>
+    <script src="./generator-output-controller.js"></script>
+    <script src="./source-inspector.js"></script>
+    <script src="./glitch-engine.js"></script>
+    <script src="./glitch-feature-bus.js"></script>
+    <script src="./glitch-webgl.js"></script>
+    <script src="./original-glitch.js"></script>
+    <script src="./mapping-lab.js"></script>
+    <script src="./app.js"></script>
+    <script src="./stem-controls.js"></script>
+    <script src="./fusion.js"></script>
+  </body>
+</html>

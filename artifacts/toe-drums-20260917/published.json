@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "release": "D:\\Projects\\Xin-Music-Lab-Fusion\\releases\\0.5.0-dev.muscriptor.4",
+  "packageFiles": 2722,
+  "sourceFiles": [
+    "xld-runtime-baseline/analysis-midi/models.json",
+    "xld-runtime-baseline/derived-controls.js",
+    "xld-runtime-baseline/i18n/runtime-messages.js",
+    "xld-runtime-baseline/package.json",
+    "xld-runtime-baseline/tests/midi-models.cjs",
+    "xld-runtime-baseline/tests/midi-delete.cjs"
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "contract": "xin.phase2-listening-corpus/1",
+  "version": "1.0.1",
+  "createdAt": "2026-07-30T00:00:00.000Z",
+  "purpose": "Fixed real-audio listening evidence for Phase 2 Material × Glitch acceptance",
+  "track": {
+    "id": "5ff7c045580d4cb4242437a227098480fc12ccf4",
+    "number": 8,
+    "title": "Radioactive Spell Wave",
+    "artist": "world's end girlfriend",
+    "album": "LAST WALTZ",
+    "durationSeconds": 647.711,
+    "source": "D:\\Download\\bandcamp\\world's end girlfriend - LAST WALTZ\\world's end girlfriend - LAST WALTZ - 08 Radioactive Spell Wave.flac",
+    "sourceBytes": 130778887,
+    "sourceSha256": "4a1b6e9805dcaea463b5f216c80fdab63e90b7c849778bb3f7d15ccd8a0ed32d"
+  },
+  "xld": {
+    "manifest": "D:\\Caches\\Xin's Local Deck\\Analysis\\world's end girlfriend - LAST WALTZ\\08 Radioactive Spell Wave__5ff7c04558\\music-lab.json",
+    "manifestSha256": "306de827857f11df09ba82ca6e392ba24eaa9af56165ab8f873a49a804e6270d",
+    "featureCache": "D:\\Caches\\Xin's Local Deck\\Analysis\\world's end girlfriend - LAST WALTZ\\08 Radioactive Spell Wave__5ff7c04558\\features-harmony\\harmony-features-v2.npz",
+    "featureCacheSha256": "794489dad784a1e237b6e5c19e9c4b2d9ee61010265c902886c8536bd0677191",
+    "featureSampleRate": 22050,
+    "featureHopLength": 2048,
+    "selectionMethod": {
+      "windowSeconds": 2,
+      "silence": "Lowest two-second smoothed RMS after excluding the first and last fifteen seconds, used as a repeatable interior quiet-floor fixture",
+      "sparse": "Low non-silent RMS plus low normalized pitch activity and low positive flux",
+      "build": "Largest ten-second RMS and pitch-activity rise with an energetic endpoint",
+      "drop": "Largest three-second RMS and pitch-activity fall after an energetic frame",
+      "dense": "High stable RMS plus broad pitch activity and pitch-class entropy"
+    }
+  },
+  "segments": [
+    {
+      "id": "silence",
+      "label": "Quiet floor · 近静音",
+      "timeSeconds": 181.952,
+      "captureWindowSeconds": 1.42,
+      "listeningIntent": "Confirm that both materials settle without false destruction or a frozen/blank output",
+      "xldSection": {
+        "label": "verse",
+        "start": 153.9626,
+        "end": 211.6849
+      },
+      "featureEvidence": {
+        "smoothedRms": 0.001249,
+        "rmsDb": -58.071,
+        "interiorGuardSeconds": 181.952,
+        "selectionScore": 0
+      }
+    },
+    {
+      "id": "sparse",
+      "label": "Sparse · 稀疏",
+      "timeSeconds": 362.603,
+      "captureWindowSeconds": 1.42,
+      "listeningIntent": "Test whether the underlying material keeps air, spacing, and fine structure when little energy is present",
+      "xldSection": {
+        "label": "inst",
+        "start": 341.2829,
+        "end": 387.3647
+      },
+      "featureEvidence": {
+        "smoothedRms": 0.030764,
+        "rmsNormalized": 0,
+        "normalizedPitchActivity": 0.5492,
+        "pitchEntropy": 0.8972,
+        "positiveFlux": 0.00467,
+        "selectionScore": 0.8328
+      }
+    },
+    {
+      "id": "build",
+      "label": "Build · 堆叠",
+      "timeSeconds": 278.639,
+      "captureWindowSeconds": 1.42,
+      "listeningIntent": "Test accumulated energy, continuity, and rising destruction without flattening the source identity",
+      "xldSection": {
+        "label": "intro",
+        "start": 270,
+        "end": 294.841
+      },
+      "featureEvidence": {
+        "smoothedRms": 0.342313,
+        "rmsNormalized": 0.8213,
+        "normalizedPitchActivity": 0.7273,
+        "pitchEntropy": 0.943,
+        "positiveFlux": 0.013825,
+        "selectionScore": 0.657
+      }
+    },
+    {
+      "id": "drop",
+      "label": "Drop · 坠落",
+      "timeSeconds": 296.658,
+      "captureWindowSeconds": 1.42,
+      "listeningIntent": "Test release, rupture, and negative-space recovery immediately after a high-energy passage",
+      "xldSection": {
+        "label": "verse",
+        "start": 294.841,
+        "end": 341.2829
+      },
+      "featureEvidence": {
+        "smoothedRms": 0.098938,
+        "rmsNormalized": 0.1521,
+        "normalizedPitchActivity": 0.6856,
+        "pitchEntropy": 0.9181,
+        "positiveFlux": 0.004332,
+        "selectionScore": 0.738
+      }
+    },
+    {
+      "id": "dense",
+      "label": "Dense · 高密度",
+      "timeSeconds": 293.222,
+      "captureWindowSeconds": 1.42,
+      "listeningIntent": "Stress the renderer at near-maximum real musical density and check whether both materials remain distinguishable",
+      "xldSection": {
+        "label": "intro",
+        "start": 270,
+        "end": 294.841
+      },
+      "featureEvidence": {
+        "smoothedRms": 0.405719,
+        "rmsNormalized": 0.9956,
+        "normalizedPitchActivity": 0.9811,
+        "pitchEntropy": 0.9788,
+        "positiveFlux": 0.012124,
+        "selectionScore": 0.9887
+      }
+    }
+  ],
+  "acceptancePolicy": {
+    "engineering": "Automated checks may reject blank, flat, stalled, unbound, field-disconnected, or materially collapsed output",
+    "artistic": "No metric is allowed to declare an image beautiful; final acceptance remains a human review by Xin",
+    "installedProductChanged": false
+  }
+}

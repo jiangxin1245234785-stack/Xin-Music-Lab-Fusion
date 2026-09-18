@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "allModelOptionsUnchanged": true,
+  "stringsDefault": "strings-muscriptor-large",
+  "drumsDefault": "drums-adtof",
+  "realToeCaches": 3,
+  "packageFiles": 2722,
+  "changed": [
+    "analysis-midi/models.json",
+    "derived-controls.js",
+    "i18n/runtime-messages.js",
+    "package.json",
+    "tests/midi-models.cjs",
+    "tests/midi-delete.cjs"
+  ]
+}

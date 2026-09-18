@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "release": "D:\\Projects\\Xin-Music-Lab-Fusion\\releases\\0.5.0-dev.history.1",
+  "version": "0.5.0-dev.history.1",
+  "packageFiles": 2722,
+  "sourceFilesCompared": 2785,
+  "changed": [
+    "xld-runtime-baseline/core/derived-assets.cjs",
+    "xld-runtime-baseline/core/analysis-service.cjs",
+    "xld-runtime-baseline/core/midi-merge.cjs",
+    "xld-runtime-baseline/analysis-midi/runner.py",
+    "xld-runtime-baseline/derived-controls.js",
+    "xld-runtime-baseline/i18n/runtime-messages.js",
+    "xld-runtime-baseline/package.json",
+    "xld-runtime-baseline/analysis-midi/README.md",
+    "xld-runtime-baseline/core/README.md",
+    "xld-runtime-baseline/tests/midi-history.cjs",
+    "xld-runtime-baseline/tests/midi-models.cjs",
+    "xld-runtime-baseline/tests/midi-delete.cjs",
+    "xld-runtime-baseline/tests/storage.cjs",
+    "xld-runtime-baseline/tests/derived-flow.cjs",
+    "shared-analysis/test.cjs",
+    "release-tools/BUNDLE-README.md",
+    "release-tools/USER-GUIDE.html"
+  ],
+  "publishedAt": "2026-09-18T01:25:42.568Z"
+}

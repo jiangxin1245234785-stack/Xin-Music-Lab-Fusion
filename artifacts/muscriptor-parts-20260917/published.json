@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "release": "D:\\Projects\\Xin-Music-Lab-Fusion\\releases\\0.5.0-dev.muscriptor.3",
+  "packageFiles": 2722,
+  "sourceFiles": [
+    "xld-runtime-baseline/analysis-midi/models.json",
+    "xld-runtime-baseline/analysis-midi/muscriptor_backend.py",
+    "xld-runtime-baseline/analysis-midi/runner.py",
+    "xld-runtime-baseline/core/analysis-service.cjs",
+    "xld-runtime-baseline/core/derived-assets.cjs",
+    "xld-runtime-baseline/derived-controls.js",
+    "xld-runtime-baseline/i18n/runtime-messages.js",
+    "xld-runtime-baseline/app.js",
+    "xld-runtime-baseline/workspace-controls.js",
+    "xld-runtime-baseline/package.json",
+    "xld-runtime-baseline/tests/midi-models.cjs",
+    "xld-runtime-baseline/tests/muscriptor-string-cache.cjs",
+    "xld-runtime-baseline/tests/muscriptor-parts.py",
+    "fusion-runtime-baseline/fusion.js",
+    "fusion-runtime-baseline/package.json"
+  ]
+}

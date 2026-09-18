@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Step 6 WebGL2 Locale Tolerance Fixture</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; background: #080912; color: #f4f1ff; }
+    body { font: 14px/1.4 system-ui, sans-serif; padding: 18px; }
+    canvas { display: block; width: 320px; height: 180px; }
+    #localeText { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <canvas id="fixtureCanvas" width="320" height="180"></canvas>
+  <p id="localeText">画面参数</p>
+  <script type="module">
+    import {
+      FixedStepEngineClock,
+      MinimalWebglRenderer,
+      VISUAL_TARGETS,
+      createDefaultVisualValues,
+      createSeededPrng,
+      createVisualTargetState
+    } from '../../dist/index.js';
+    import {
+      createLocaleController,
+      translateSurfaceText
+    } from '../../dist/ui/i18n/index.js';
+
+    const WIDTH = 320;
+    const HEIGHT = 180;
+    const FRAME_COUNT = 24;
+    const PRESET_SEED = 0x53473657;
+    const SESSION_SEED = 0x4c4f434c;
+    const CLOCK_STEP_MS = 1000 / 60;
+
+    function readFramebuffer(gl) {
+      const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.finish();
+      gl.readPixels(
+        0,
+        0,
+        WIDTH,
+        HEIGHT,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels
+      );
+      const error = gl.getError();
+      if (error !== gl.NO_ERROR) {
+        throw new Error(`readPixels failed with WebGL error ${error}`);
+      }
+      return pixels;
+    }
+
+    function grayAt(pixels, pixelIndex) {
+      const offset = pixelIndex * 4;
+      return Math.round(
+        pixels[offset] * 0.2126 +
+        pixels[offset + 1] * 0.7152 +
+        pixels[offset + 2] * 0.0722
+      );
+    }
+
+    function histogram(pixels, bins = 16) {
+      const values = Array.from({ length: bins }, () => 0);
+      const pixelCount = pixels.length / 4;
+      for (let index = 0; index < pixelCount; index += 1) {
+        const gray = grayAt(pixels, index);
+        values[Math.min(bins - 1, Math.floor(gray / 256 * bins))] += 1;
+      }
+      return values.map(value => value / pixelCount);
+    }
+
+    function averageHash(pixels) {
+      const samples = [];
+      for (let y = 0; y < 8; y += 1) {
+        for (let x = 0; x < 8; x += 1) {
+          const startX = Math.floor(x * WIDTH / 8);
+          const endX = Math.floor((x + 1) * WIDTH / 8);
+          const startY = Math.floor(y * HEIGHT / 8);
+          const endY = Math.floor((y + 1) * HEIGHT / 8);
+          let total = 0;
+          let count = 0;
+          for (let py = startY; py < endY; py += 1) {
+            for (let px = startX; px < endX; px += 1) {
+              total += grayAt(pixels, py * WIDTH + px);
+              count += 1;
+            }
+          }
+          samples.push(total / Math.max(1, count));
+        }
+      }
+      const average = samples.reduce((sum, value) => sum + value, 0) /
+        samples.length;
+      let hash = '';
+      for (let offset = 0; offset < samples.length; offset += 4) {
+        let nibble = 0;
+        for (let bit = 0; bit < 4; bit += 1) {
+          if (samples[offset + bit] >= average) nibble |= 1 << (3 - bit);
+        }
+        hash += nibble.toString(16);
+      }
+      return hash;
+    }
+
+    function hamming(left, right) {
+      let distance = 0;
+      for (let index = 0; index < Math.min(left.length, right.length); index++) {
+        let value = parseInt(left[index], 16) ^ parseInt(right[index], 16);
+        while (value) {
+          distance += value & 1;
+          value >>>= 1;
+        }
+      }
+      return distance + Math.abs(left.length - right.length) * 4;
+    }
+
+    function compare(before, after) {
+      let absoluteDifference = 0;
+      let changedGrayPixels = 0;
+      const pixelCount = before.length / 4;
+      for (let index = 0; index < pixelCount; index += 1) {
+        const offset = index * 4;
+        for (let channel = 0; channel < 3; channel += 1) {
+          absoluteDifference += Math.abs(
+            before[offset + channel] - after[offset + channel]
+          );
+        }
+        if (Math.abs(grayAt(before, index) - grayAt(after, index)) > 8) {
+          changedGrayPixels += 1;
+        }
+      }
+      const beforeHistogram = histogram(before);
+      const afterHistogram = histogram(after);
+      const beforeHash = averageHash(before);
+      const afterHash = averageHash(after);
+      return {
+        mae: absoluteDifference / (pixelCount * 3),
+        grayDeltaOver8Ratio: changedGrayPixels / pixelCount,
+        histogramL1: beforeHistogram.reduce(
+          (sum, value, index) => sum + Math.abs(value - afterHistogram[index]),
+          0
+        ),
+        perceptualHashDistance: hamming(beforeHash, afterHash),
+        beforeHistogram,
+        afterHistogram,
+        beforePerceptualHash: beforeHash,
+        afterPerceptualHash: afterHash
+      };
+    }
+
+    globalThis.step6WebglTolerance = (() => {
+      const canvas = document.querySelector('#fixtureCanvas');
+      const localeText = document.querySelector('#localeText');
+      const renderer = new MinimalWebglRenderer(canvas);
+      const gl = canvas.getContext('webgl2');
+      if (!gl) throw new Error('WebGL2 is unavailable in Step 6 fixture.');
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      const locale = createLocaleController();
+      const clock = new FixedStepEngineClock(CLOCK_STEP_MS);
+      const random = createSeededPrng(PRESET_SEED, SESSION_SEED);
+      const targetState = createVisualTargetState({
+        id: 'step6-webgl-fixed-targets',
+        values: {
+          ...createDefaultVisualValues(),
+          [VISUAL_TARGETS.feedbackRetention]: 0.82,
+          [VISUAL_TARGETS.feedbackDecay]: 0.91,
+          [VISUAL_TARGETS.feedbackZoom]: 1.035,
+          [VISUAL_TARGETS.feedbackRotation]: 0.012,
+          [VISUAL_TARGETS.blockSize]: 0.09,
+          [VISUAL_TARGETS.blockDisplacementX]: 0.34,
+          [VISUAL_TARGETS.blockSpawnProbability]: 0.24,
+          [VISUAL_TARGETS.blockLifetime]: 0.31,
+          [VISUAL_TARGETS.rgbDistance]: 0.018,
+          [VISUAL_TARGETS.rgbAngle]: 1.2,
+          [VISUAL_TARGETS.rgbDecay]: 0.72,
+          [VISUAL_TARGETS.scanlineDepth]: 0.22,
+          [VISUAL_TARGETS.grainDensity]: 0.31,
+          [VISUAL_TARGETS.grainContrast]: 0.38,
+          [VISUAL_TARGETS.dropoutProbability]: 0.08,
+          [VISUAL_TARGETS.dropoutOpacity]: 0.24,
+          [VISUAL_TARGETS.whiteTearBrightness]: 0.12,
+          [VISUAL_TARGETS.colorBrightness]: 0.74,
+          [VISUAL_TARGETS.colorContrast]: 1.12,
+          [VISUAL_TARGETS.colorSaturation]: 1.18,
+          [VISUAL_TARGETS.colorFlashStrength]: 0.08
+        }
+      });
+      let lastClock = null;
+      let renderCalls = 0;
+      for (let index = 0; index < FRAME_COUNT; index += 1) {
+        lastClock = clock.tick();
+        renderer.render(
+          targetState,
+          lastClock,
+          random.nextFloat(),
+          [],
+          undefined,
+          null,
+          { renderScale: 1, maxDpr: 1 }
+        );
+        renderCalls += 1;
+      }
+      gl.finish();
+      const localeBefore = locale.getLocale();
+      localeText.textContent = translateSurfaceText(localeBefore, 'Visual');
+      const displayTextBefore = localeText.textContent;
+      const beforePixels = readFramebuffer(gl);
+      const beforePng = canvas.toDataURL('image/png');
+      const renderCallsBeforeLocale = renderCalls;
+      const frameIndexBeforeLocale = lastClock.frameIndex;
+
+      locale.setLocalLocale('en-US');
+      document.documentElement.lang = locale.getLocale();
+      localeText.textContent = translateSurfaceText(locale.getLocale(), 'Visual');
+      const displayTextAfter = localeText.textContent;
+      const afterPixels = readFramebuffer(gl);
+      const afterPng = canvas.toDataURL('image/png');
+
+      return {
+        ok: true,
+        canvas: {
+          cssWidth: canvas.clientWidth,
+          cssHeight: canvas.clientHeight,
+          width: canvas.width,
+          height: canvas.height,
+          dpr: window.devicePixelRatio
+        },
+        gpu: {
+          vendor: String(gl.getParameter(gl.VENDOR) ?? ''),
+          renderer: String(gl.getParameter(gl.RENDERER) ?? ''),
+          unmaskedVendor: debugInfo
+            ? String(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) ?? '')
+            : '',
+          unmaskedRenderer: debugInfo
+            ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) ?? '')
+            : ''
+        },
+        render: {
+          frameCount: FRAME_COUNT,
+          frameIndex: lastClock.frameIndex,
+          frameIndexBeforeLocale,
+          presetSeed: PRESET_SEED,
+          sessionSeed: SESSION_SEED,
+          clockStepMs: CLOCK_STEP_MS,
+          engineTimeMs: lastClock.nowMs,
+          renderCallsBeforeLocale,
+          renderCallsAfterLocale: renderCalls,
+          targetState
+        },
+        locale: {
+          before: localeBefore,
+          after: locale.getLocale(),
+          displayTextBefore,
+          displayTextAfter
+        },
+        evidence: {
+          sameCanvas: document.querySelector('#fixtureCanvas') === canvas,
+          sameContext: canvas.getContext('webgl2') === gl,
+          contextLost: gl.isContextLost(),
+          framebufferByteLength: beforePixels.byteLength
+        },
+        metrics: compare(beforePixels, afterPixels),
+        beforePixels: Array.from(beforePixels),
+        afterPixels: Array.from(afterPixels),
+        beforePng,
+        afterPng
+      };
+    })();
+  </script>
+</body>
+</html>
