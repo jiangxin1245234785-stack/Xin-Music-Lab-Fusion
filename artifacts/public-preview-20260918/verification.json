@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-18",
+  "passed": true,
+  "documentationOnly": true,
+  "versions": {
+    "xld-runtime-baseline": "0.5.0-dev.core.25",
+    "fusion-runtime-baseline": "0.5.0-dev.stems.10"
+  },
+  "absoluteRuntimePaths": 21,
+  "checked": [
+    {
+      "file": "README.md",
+      "bytes": 4169,
+      "sha256": "b5df4e68dabc7f7eacea194a7dcf17f6d4439c53f9c7f099f762c4781862bc2c"
+    },
+    {
+      "file": "docs/USER_GUIDE.md",
+      "bytes": 6691,
+      "sha256": "0eeaede89c97e16d1ca6b8fe6379be50a9040fedcea75bef967aa385a3f03fb6"
+    },
+    {
+      "file": "docs/DEVELOPMENT.md",
+      "bytes": 2043,
+      "sha256": "bb8ff66e45a86fef02ccb0537c8e001dadc3c4f74bc2829f9dd68d38ca57bc42"
+    },
+    {
+      "file": "docs/PREVIEW_RELEASE_PLAN.md",
+      "bytes": 6692,
+      "sha256": "0315985f8ebef3f4a3c1670411f487e5c064da0043dfcbcf56f68b18be080c53"
+    },
+    {
+      "file": "source/release-tools/BUNDLE-README.md",
+      "bytes": 1946,
+      "sha256": "08bd5e37770a9dab0785068e9f1a7f1a4023c9dc551cbc75c0ccc5bb499a2eea"
+    },
+    {
+      "file": "source/release-tools/RELEASE-README.md",
+      "bytes": 1225,
+      "sha256": "18312b4f300ab5335def1a0b7fcfb18fd25bf1bd3c8cc5fac5f7dfc7f4617bba"
+    }
+  ],
+  "errors": [],
+  "softwareTestsRerun": false,
+  "existingReleaseModified": false,
+  "unrelatedChangesPreserved": [
+    "docs/MODEL_LANDSCAPE_20260917.md"
+  ],
+  "validationNote": "GitHub repository owner in links is intentional; personal absolute paths and stale application versions are checked separately."
+}

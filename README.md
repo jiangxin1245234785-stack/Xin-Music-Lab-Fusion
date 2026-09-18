@@ -1,77 +1,65 @@
-# Xin Music Lab Fusion — Development Workspace
+# Xin Music Lab
 
-This directory is the development workspace for Xin’s Music Lab Fusion.
+把一首本地音乐拆成声部、转成 MIDI，并观察它的段落、和弦与音乐可视化。
 
-GitHub: https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion
+Xin Music Lab 是一个持续开发中的个人音乐工具项目，关注器乐、后摇、弦乐叠奏和复杂编配。它把不同开源模型接入同一工作台，方便试听、比较和保管结果。
 
-[GitHub workflow and local-runtime setup](docs/GITHUB_WORKFLOW.md). The repository contains source and selected documentation; models, music, generated results and installed environments remain local.
+**当前状态：开发预览。尚未提供经过独立电脑验证的通用安装包。** GitHub 的 “Download ZIP” 下载的是源码，不包含完整运行环境、模型或可直接启动的应用。程序获取进度见[第三方试用计划](docs/PREVIEW_RELEASE_PLAN.md)。
 
-Latest development: **0.5.0-dev.history.1** (XLD core.25 / XML stems.10), 2026-09-17. Launch from `releases/0.5.0-dev.history.1`; P0 round A separates historical MIDI readability from current-version cache matching. This is a locally verified development build, not a clean-machine release certification.
+## 能做什么
 
-- [Claude handoff / 接手入口](CLAUDE_HANDOFF.md)
-- [完整开发进度与后续计划](docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md)
+| 功能 | 你可以得到什么 |
+|---|---|
+| 基础分轨 | 把歌曲分成多个 WAV 声部，分别试听与导出 |
+| 乐器细分 | 进一步提取弦乐等目标，试听目标与剩余声音 |
+| MIDI 转谱 | 分别处理钢琴、贝斯、吉他、鼓和可选弦乐 |
+| 一键 MIDI 与融合 | 顺序处理可用声部，把结果合成一份 MIDI |
+| 段落与和弦 | 查看整曲段落边界、标签与和弦变化 |
+| 结果管理 | 打开输出目录、比较模型结果、清理不需要的文件 |
+| 音乐可视化 | 使用声音与已有分析结果驱动视觉表现 |
 
-Current status and history:
+## 从哪里开始
 
-- `SOURCE_OF_TRUTH.md` — current authoritative state and safety boundary.
-- `DEVELOPMENT_LOG.md` — chronological development, decisions, verification,
-  and remaining work.
+项目包含两个应用：
 
-The older Phase 1/2 status below documents the visual-material workstream. For current XLD analysis and MIDI work, use the handoff above.
+- **XLD（Xin’s Local Deck）**：曲库和分析工作台。分轨、MIDI、段落与和弦从这里开始。
+- **XML（Xin’s Music Lab Fusion）**：音乐可视化，读取 XLD 的分析结果。
 
-## Directory roles
+对于已经由开发者配置好运行环境的试用者，基本顺序是：
 
-- `source/xld-runtime-baseline` — XLD analysis owner, workbench, stems, refinement, MIDI and storage.
-- `runtime` — shared isolated Python environments and model weights.
-- `releases` — independently launchable release candidates and development builds.
-- `source/fusion-runtime-baseline` — a cleaned, editable snapshot of the current installed Fusion runtime. Generated installer output, installed dependencies, backups, legacy Generator copies, and old desktop builds are excluded.
-- `source/glitch-generator-typescript` — the TypeScript Generator source baseline, including its lockfile, tests, compiled baseline, and local development dependencies.
-- `artifacts` — Phase 0 evidence, reports, screenshots, fixtures, and prior research outputs.
-- `work` — Phase 0 measurement controls, source snapshots, and reproducibility scripts.
-- `docs` — architecture, migration, research, and source-of-truth notes.
+**打开 XLD → 选择自己的曲库和输出目录 → 选择一首歌 → 分轨 → 试听 → 生成 MIDI。**
 
-## Safety boundary
+详细操作见[快速上手与常见问题](docs/USER_GUIDE.md)。当前源码克隆需要自行准备依赖；尚没有一键安装模型功能。
 
-`D:\Program Files\xins-music-lab-fusion` remains the installed product and must not be used as an editable development directory.
+## 模型如何选择
 
-Phase 1 source reconciliation and Task 1 Material architecture passed on
-2026-07-30. The TypeScript Generator owns the current five-preset mechanism
-set, eight-frame history behavior, shader pipeline, and ownership metadata for
-all 21 formal targets. Its clean build passes 322 / 322 Generator tests.
+通常可以先用各声部的默认选项，再比较备选模型。
 
-The editable Fusion baseline now has a `VisualMaterialRegistry`,
-`MaterialRuntime`, legacy adapters, `MaterialTargetRegistry`, frame
-orchestrator, abstract MaterialSurface output, and a backward-compatible
-Material source extension. Fusion passes 80 / 80 contracts and 54 / 54
-Electron runtime assertions; the observed Material and Generator frame indexes
-match with zero runtime errors. The installed product remains unchanged.
+| 用途 | 当前默认 | 备选 / 使用建议 |
+|---|---|---|
+| 六轨分离 | BS-RoFormer SW | Demucs 6s |
+| 弦乐等细分 | Mega53 | 先用短片段试听，再考虑整曲 |
+| 钢琴 / 贝斯 MIDI | HiRes Piano / HiRes Bass | 当前专用模型 |
+| 吉他 MIDI | MuScriptor Medium | 复杂编配可试 Large |
+| 弦乐 MIDI | MuScriptor Large | Medium、YourMT3+ 等备选 |
+| 鼓 MIDI | ADTOF | MuScriptor Medium / Large |
 
-Phase 2 adds `spectral-fabric` and `temporal-strata` as native registry
-materials. Four music-driven `material.*` mappings now use the same Generator
-evaluator as Glitch mappings, while the 21 formal Glitch targets remain
-unchanged. The engine executes Mapping → Material → Generator in one explicit
-two-phase host frame, and Generator WebGL now samples `density` and optional
-`age` fields with a neutral legacy fallback.
+这些默认来自本项目的实际试用，不代表所有音乐上的质量排名。模型能力属于相应上游项目；本项目负责整合、交互和结果管理。
 
-The current development baseline passes 90 / 90 Fusion checks, 327 / 327
-Generator tests, and 57 / 57 Electron assertions. The final real-audio matrix
-covers two materials, five Glitch presets, and five musical states: 50 / 50
-effect cells plus 10 / 10 FX OFF baselines pass, with zero runtime failures,
-console errors, or material-pair collapse.
+## 使用前了解
 
-Phase 2 engineering is complete. Phase 2 remains artistically open until Xin
-reviews the final gallery and accepts it or records a bounded correction list.
-Any product deployment still requires explicit approval.
+- 当前主要在 Windows 与 NVIDIA GPU 环境下验证；12 GB 显存设备跑通过部分 Large 工作流，这不是所有任务的最低配置保证。CPU、其他显卡与系统的覆盖尚不完整。
+- 模型、运行环境和输出 WAV 需要额外磁盘空间，未包含在源码仓库中。部分模型需要先在上游接受使用条款。
+- 转谱结果适合继续分析和编辑，不能保证还原原演奏。失真、串音、揉弦与复杂叠奏仍可能产生错误或碎音。
+- 当前 MIDI 保留音符的秒级位置；导出的固定速度不等于分析出了歌曲的真实速度变化。
+- 分析使用本地文件与已配置模型运行；首次获取依赖或权重可能需要联网。
 
+## 反馈与参与
 
-## Stem development preview — 2026-09-13
+如遇问题，请记录应用版本、Windows / 显卡、操作步骤、模型名称和错误提示。在有仓库访问权限的情况下，可通过 [Issues](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/issues) 反馈；否则交给向你提供测试包的人。无需上传完整歌曲或个人路径。
 
-Build `0.5.0-dev.stems.1` adds single-track six-stem WAV separation, audition, output-folder access, and focused task fixes. Run `source/fusion-runtime-baseline/start-dev.cmd` on this machine. Existing XLD Python and Electron dependencies are reused. Human quality review is pending; installed products remain unchanged. See `work/stems-20260913/HANDOFF.md`.
+开发者请从[开发入口](docs/DEVELOPMENT.md)开始；完整历史在[开发日志](DEVELOPMENT_LOG.md)，后续安排见[项目进度与路线图](docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md)。
 
-## Strings and drums preview — 2026-09-17
+## 第三方组件
 
-Latest build: [0.5.0-dev.muscriptor.3](releases/0.5.0-dev.muscriptor.3/XLD.exe), XLD core.23 / XML stems.10. Strings and drums now offer MuScriptor Medium/Large; existing defaults and guitar tiers remain. Four MEGURI full-song results are cached. [Listen to the three-model comparisons](artifacts/muscriptor-parts-20260917/listening/弦乐与鼓MIDI对比.html). See [handoff and validation](work/muscriptor-parts-20260917/HANDOFF.md). Local development build; human quality review pending.
-
-## Strings default and toe drums comparison — 2026-09-17
-
-[Development build 0.5.0-dev.muscriptor.4](releases/0.5.0-dev.muscriptor.4/XLD.exe): accepted MuScriptor Large becomes the strings default; YourMT3+ and Medium remain available. Drums still default to ADTOF. [toe Goodbye: original drums and three MIDI models](artifacts/toe-drums-20260917/listening/toe-Goodbye-鼓MIDI对比.html), with full-song MIDI downloads. [Validation and handoff](work/toe-drums-20260917/HANDOFF.md).
+应用集成了多个开源项目与模型，源码、权重和依赖分别适用其原有条款。项目整体尚未选定对外开源许可证，部分组件的再分发状态仍在整理。现阶段不应将整个目录直接当作可再分发安装包；准备情况见[试用发布计划](docs/PREVIEW_RELEASE_PLAN.md)。

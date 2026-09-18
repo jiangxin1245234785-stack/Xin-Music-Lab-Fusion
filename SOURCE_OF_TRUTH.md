@@ -1,7 +1,7 @@
 # Xin’s Music Lab — Source of Truth after D-drive migration
 
 Historical baseline date: 2026-07-31
-Current summary updated: 2026-09-17
+Current summary updated: 2026-09-18
 
 Current release candidate: 2026-09-15 — releases/0.5.0-rc.6; see work/refinement-bcnr-20260915/HANDOFF.md.
 
@@ -319,3 +319,8 @@ XLD core.20 / releases/0.5.0-dev.guitar.1：guitar 新增 YourMT3+ 备选，GAPS
 ## 2026-09-17: GitHub source repository connected
 
 Private repository: https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion . The local main branch tracks origin/main; the initial push was verified against the remote commit. Source, documentation and selected text evidence are tracked. Models, installed runtimes, releases, music and generated results remain local. Windows Git Credential Manager handles local Git authentication; no token is stored in this project. See docs/GITHUB_WORKFLOW.md and work/github-setup-20260917/HANDOFF.md. This repository setup does not change the application version.
+
+
+## 2026-09-18: User-facing documentation and preview preparation
+
+README now targets users; developer entry is docs/DEVELOPMENT.md. docs/USER_GUIDE.md covers the current workflow; docs/PREVIEW_RELEASE_PLAN.md separates completed documentation from portable-package, first-run and clean-machine work. Existing executables and app versions are unchanged. Both release README templates are updated for future builds; offline HTML help still needs consolidation. No public release or repository-visibility change was made.

@@ -1,7 +1,7 @@
 # Xin’s Music Lab Fusion — 开发日志
 
-最后更新：2026-09-17  
-记录范围：2026-06-20 至 2026-09-17  
+最后更新：2026-09-18  
+记录范围：2026-06-20 至 2026-09-18  
 主工作目录：`D:\Projects\Xin-Music-Lab-Fusion`
 
 > 本文件按已有源码、测试报告、截图、哈希和阶段报告回溯整理。2026-09-13 只补齐文档，没有修改运行代码，也没有部署产品。
@@ -691,3 +691,10 @@ MEGURI 568.75秒整曲完成：弦乐 Medium 3718 / Large 4698 音符，鼓 Medi
 为 jiangxin1245234785-stack/Xin-Music-Lab-Fusion 建立 main / origin，纳入当前 history.1 / core.25 源码与精简文档。新增根忽略规则、保留原字节的 Git 属性、GitHub 开发说明和 runtime.local.example.json；运行环境、模型、曲库、生成音频 / MIDI、旧安装包、凭据和本机配置保持本地。常见凭据模式和大文件扫描通过，未修改应用算法或重跑推理。首次远端上传状态以 work/github-setup-20260917/HANDOFF.md 后续验证及远端 main 提交为准。
 
 GitHub 接入后续验证：用户完成设备授权；远端为私有仓库且可推送。初始提交 9d40d55 已上传，远端 main 与本地一致，设置 origin/main 跟踪。模型、运行环境、音乐和生成结果未上传。
+
+
+## 2026-09-18：面向使用者的文档与试用发布准备
+
+README 改为功能、获取状态、使用入口、模型选择与反馈；旧版归档。新增 docs/USER_GUIDE.md、DEVELOPMENT.md、PREVIEW_RELEASE_PLAN.md；重写两份随包 README 模板。明确源码 ZIP 不包含模型和运行环境，目前没有通用下载包。
+
+确认 history.1 的21条 runtime 路径均为绝对路径、开发种子含个人曲库、MuScriptor共用YourMT3 Python；下一步先做可搬迁包与首次配置，再做干净系统 / GPU 验证。离线 HTML 帮助仍待统一。本轮未改应用版本、模型、现有发行包或仓库可见性，也没有创建 Release。见 work/public-preview-20260918/HANDOFF.md。
