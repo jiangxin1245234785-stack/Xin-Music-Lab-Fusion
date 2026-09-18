@@ -689,3 +689,5 @@ MEGURI 568.75秒整曲完成：弦乐 Medium 3718 / Large 4698 音符，鼓 Medi
 ## 2026-09-17：GitHub 本地基线与仓库关联
 
 为 jiangxin1245234785-stack/Xin-Music-Lab-Fusion 建立 main / origin，纳入当前 history.1 / core.25 源码与精简文档。新增根忽略规则、保留原字节的 Git 属性、GitHub 开发说明和 runtime.local.example.json；运行环境、模型、曲库、生成音频 / MIDI、旧安装包、凭据和本机配置保持本地。常见凭据模式和大文件扫描通过，未修改应用算法或重跑推理。首次远端上传状态以 work/github-setup-20260917/HANDOFF.md 后续验证及远端 main 提交为准。
+
+GitHub 接入后续验证：用户完成设备授权；远端为私有仓库且可推送。初始提交 9d40d55 已上传，远端 main 与本地一致，设置 origin/main 跟踪。模型、运行环境、音乐和生成结果未上传。

@@ -314,3 +314,8 @@ XLD core.19 / releases/0.5.0-dev.yourmt3.2：用户试听 MEGURI 后确认 YourM
 XLD core.20 / releases/0.5.0-dev.guitar.1：guitar 新增 YourMT3+ 备选，GAPS 仍默认；模型菜单按原声／清晰拨弦、电吉他试听、通用／弯音检测说明用途。复用原模型环境，支持独立缓存、一键 MIDI、融合、删除与目录。MEGURI 同源整曲完成 YourMT3+ 1912 音符（GAPS 883），新模型缓存可直接使用，原启用选择保留。统计不代表质量提升，待用户试听。吉他与弦乐联合验证发现融合通道不足，现对同声部同音色无表情轨进行无损通道整理；五声部 9260 音符 / 10 轨，回读验证时值与音符完整。融合缓存指纹升级，旧文件保留。双应用回归、真实推理、单屏双语、一键/删除/目录、发布窗口和九段音频通过。试听 artifacts/guitar-yourmt3-20260916/listening/吉他MIDI对比.html；细节 work/guitar-yourmt3-20260916/HANDOFF.md。本机开发版，尚未改电吉他默认，不重建连续揉弦曲线。
 
 
+
+
+## 2026-09-17: GitHub source repository connected
+
+Private repository: https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion . The local main branch tracks origin/main; the initial push was verified against the remote commit. Source, documentation and selected text evidence are tracked. Models, installed runtimes, releases, music and generated results remain local. Windows Git Credential Manager handles local Git authentication; no token is stored in this project. See docs/GITHUB_WORKFLOW.md and work/github-setup-20260917/HANDOFF.md. This repository setup does not change the application version.

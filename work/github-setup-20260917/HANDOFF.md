@@ -23,3 +23,9 @@
 本记录先随本地初始提交保存。远端是否已发布以 git ls-remote origin refs/heads/main 与 git rev-parse HEAD 一致为准；成功后会补记连接验证。不把 origin 地址存在当成已上传成功。
 
 GitHub 连接器账号识别与 Windows Git Credential Manager 是两套独立授权。本机 Git 登录在浏览器完成；没有把 token 保存进项目。连接器是否能访问仓库仍需单独验证。
+
+## 首次远端验证完成
+
+用户已通过 GitHub 设备流程授权本机 Git Credential Manager；API 确认仓库 private:true 且有 push 权限。空仓库首次 push 成功，main 已跟踪 origin/main。初始提交 9d40d55541e0c30aa35a2f9c35d84f6cd508378c，已用 ls-remote 与本地 HEAD 核对一致。后续本段交付记录会形成一个文档提交。
+
+本机 Git 路径已经可用，无需依赖另一个 GitHub 连接器的授权。今后可从 Codex 通过本机 Git 提交、拉取和推送。项目内没有保存登录 token，模型 / 音频仍留本地。
