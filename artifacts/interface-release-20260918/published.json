@@ -1,0 +1,20 @@
+{
+  "url": "https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.ui.1",
+  "tag": "v0.5.0-preview.ui.1",
+  "private": true,
+  "prerelease": true,
+  "assets": [
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 111,
+      "digest": "sha256:48f582df894b6805c4f82c58886f51bbbe435310d8f2fa47ddc4c401756481c1",
+      "url": "https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/download/v0.5.0-preview.ui.1/SHA256SUMS.txt"
+    },
+    {
+      "name": "Xin-Music-Lab-0.5.0-preview.ui.1-win-x64.zip",
+      "bytes": 234822354,
+      "digest": "sha256:2492091115acd56b1d3f93ea01692240a1ff131f84acfad946fe40afcdbbe77d",
+      "url": "https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/download/v0.5.0-preview.ui.1/Xin-Music-Lab-0.5.0-preview.ui.1-win-x64.zip"
+    }
+  ]
+}
