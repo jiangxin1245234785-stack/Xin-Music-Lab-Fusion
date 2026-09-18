@@ -7,7 +7,7 @@
   const help=document.createElement('button');help.type='button';help.id='releaseHelp';
   const status=document.createElement('button');status.type='button';status.id='releaseStatus';status.textContent='ⓘ';
   function localize(){const english=document.documentElement.lang.startsWith('en');
-    help.textContent=info.version+' · '+(english?'Help':'帮助');
+    help.textContent=(info.interfaceOnly?(english?'Interface · Models not bundled · ':'界面版 · 模型自配 · '):'')+info.version+' · '+(english?'Help':'帮助');
     help.title=english?'Usage guide (F1)':'使用说明（F1）';
     status.title=english?'Version and environment':'版本与环境';status.setAttribute('aria-label',status.title);
   }

@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),{fileURLToPath}=require('node:url');
-function install({root,isXml,version,electron,runtime}) {
+function install({root,isXml,version,electron,runtime,interfaceOnly=false}) {
   const {app,BrowserWindow,ipcMain,dialog}=electron;
   const product=isXml?"Xin’s Music Lab":"Xin’s Local Deck";
   const entry=path.join(root,'resources/apps',isXml?'fusion-runtime-baseline':'xld-runtime-baseline','index.html');
@@ -20,7 +20,7 @@ function install({root,isXml,version,electron,runtime}) {
     helpWindow.loadFile(guide).catch(error=>{helpWindow?.close();dialog.showErrorBox('无法打开使用说明',error.message);});
   }
   const guard=(event)=>{if(!isMain(event.sender))throw Error('release-action-unavailable');};
-  ipcMain.handle('release:info',(event)=>{guard(event);return {version,product};});
+  ipcMain.handle('release:info',(event)=>{guard(event);return {version,product,interfaceOnly};});
   ipcMain.handle('release:help',(event)=>{guard(event);openHelp(BrowserWindow.fromWebContents(event.sender));return {ok:true};});
   ipcMain.handle('release:status',async(event,locale)=>{
     guard(event);const english=locale==='en-US';let status;

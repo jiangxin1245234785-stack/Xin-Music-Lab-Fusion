@@ -11,7 +11,7 @@ const {setInterval, clearInterval} = require('node:timers');
 
 const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
 const AI_ENGINE_IDS = ['songformer'];
-const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc'];
+const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
 const STEM_ENGINE_ID = 'demucs-6s';
 const STEM_ENGINE_IDS = midiModule.SEPARATION_ENGINE_IDS;
 const RESULT_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
@@ -64,27 +64,29 @@ function createService(options = {}) {
     if (midiModule.ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-midi', 'runner.py');
     if (STEM_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-separation', 'runner.py');
     if (AI_ENGINE_IDS.includes(engine)) return path.join(xldRoot, 'analysis-ai', 'songformer_runner.py');
-    if (HARMONY_ENGINE_IDS.includes(engine)) return path.join(xldRoot, 'analysis-harmony', 'harmony_runner.py');
+    // Harmony runner moved into source (chords.1); BTC weights stay under xldRoot/analysis-harmony/btc/weights.
+    if (HARMONY_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-harmony', 'harmony_runner.py');
     return path.join(xldRoot, 'analysis', 'runner.py');
   };
 
+  // Explicit configuration is authoritative, including an uninstalled path.
+  const configuredPython = (key, fallback = []) => firstExisting(process.env[key] ? [process.env[key]] : fallback);
   const pythonFor = engine => {
     if(midiModule.profileFor(engine)?.backend === 'muscriptor') return firstExisting([process.env.XLD_MUSCRIPTOR_PYTHON]);
     if(engine === 'yourmt3-plus') return firstExisting([process.env.XLD_YOURMT3_PYTHON]);
-    if(engine === 'bs-roformer-sw') return firstExisting([process.env.XLD_ROFORMER_PYTHON, 'D:/Caches/codex/runtimes/xld-roformer/Scripts/python.exe']);
+    if(engine === 'bs-roformer-sw') return configuredPython('XLD_ROFORMER_PYTHON', ['D:/Caches/codex/runtimes/xld-roformer/Scripts/python.exe']);
     if (midiModule.ENGINE_IDS.includes(engine)) return midiModule.profileFor(engine).backend !== 'basic-pitch'
-      ? firstExisting([process.env.XLD_HIGHRES_PYTHON, 'D:\\Caches\\codex\\runtimes\\xld-midi-highres\\Scripts\\python.exe'])
-      : firstExisting([process.env.XLD_MIDI_PYTHON, 'D:\\Caches\\codex\\runtimes\\xld-midi\\Scripts\\python.exe']);
-    const msaf = firstExisting([
-      process.env.XLD_PYTHON,
+      ? configuredPython('XLD_HIGHRES_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi-highres\\Scripts\\python.exe'])
+      : configuredPython('XLD_MIDI_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi\\Scripts\\python.exe']);
+    const msaf = configuredPython('XLD_PYTHON', [
       path.join(stableXldRoot, 'analysis', '.venv', 'Scripts', 'python.exe'),
       path.join(xldRoot, 'analysis', '.venv', 'Scripts', 'python.exe')
     ]);
-    const ai = firstExisting([
-      process.env.XLD_AI_PYTHON,
+    const ai = configuredPython('XLD_AI_PYTHON', [
       path.join(xldRoot, 'analysis-ai', '.venv', 'Scripts', 'python.exe')
     ]);
     if (STEM_ENGINE_IDS.includes(engine) || AI_ENGINE_IDS.includes(engine)) return ai;
+    if (engine === 'chord-consonance') return firstExisting([process.env.XLD_CHORDS_PYTHON]);
     if (HARMONY_ENGINE_IDS.includes(engine)) return process.env.XLD_HARMONY_PYTHON || ai || msaf;
     return msaf;
   };

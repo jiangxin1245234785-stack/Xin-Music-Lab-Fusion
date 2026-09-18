@@ -1,0 +1,43 @@
+{
+  "release": "0.5.0-preview.ui.1",
+  "baseline": "45bbecc",
+  "scope": "Interface only, no models or Python",
+  "files": 653,
+  "weightsIncluded": 0,
+  "vendorIncluded": false,
+  "ui": {
+    "passed": true,
+    "missingModels": 16,
+    "play": {
+      "time": 0.020429,
+      "duration": 8
+    },
+    "checks": [
+      "XLD and XML boot with all 21 runtime paths absent",
+      "model readiness unavailable",
+      "synthetic local WAV library playback",
+      "interface label and offline help/F1/localization",
+      "isolated user settings"
+    ],
+    "limitations": "Same host; not clean Windows certification"
+  },
+  "tests": [
+    "test-interface",
+    "test-configured-python",
+    "test-portable",
+    "test-release-shell",
+    "XLD npm test on committed snapshot + explicit interpreter patch",
+    "XML service/task/MIDI/shared-reader/refresh regressions",
+    "release manifest 653 files"
+  ],
+  "limitations": [
+    "XML full snapshot suite stops at missing ignored desktop-build/package.json fixture; relevant targeted regressions passed",
+    "Not clean Windows acceptance",
+    "Advanced model setup is manual; some legacy backend installation recipes remain incomplete"
+  ],
+  "archive": {
+    "bytes": 234822354,
+    "sha256": "2492091115acd56b1d3f93ea01692240a1ff131f84acfad946fe40afcdbbe77d",
+    "verifiedFiles": 653
+  }
+}

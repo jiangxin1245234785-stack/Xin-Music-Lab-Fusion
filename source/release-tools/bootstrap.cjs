@@ -9,8 +9,8 @@ app.setAppUserModelId(isXml?'com.xin.musiclab':'com.xin.localdeck');
 // namespace, while keeping XML and XLD together. Existing releases are untouched.
 const developmentSeed=path.join(root,'development-settings.json');
 const acceptanceProfile=process.env.XIN_RELEASE_TEST_ROOT&&process.env.XLD_TEST==='1'&&process.env.XML_TEST==='1';
-let previewProfile=false;
-try{previewProfile=JSON.parse(fs.readFileSync(path.join(root,'runtime.json'),'utf8')).channel==='preview';}catch(_){}
+let previewProfile=false,interfaceOnly=false;
+try{const config=JSON.parse(fs.readFileSync(path.join(root,'runtime.json'),'utf8'));previewProfile=config.channel==='preview';interfaceOnly=config.kind==='interface-only';}catch(_){}
 if(previewProfile&&!acceptanceProfile){
  const profiles=path.join(app.getPath('appData'),'XinMusicPreview');
  fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);
@@ -34,8 +34,8 @@ const apps=path.join(root,'resources/apps');
 try{
  const runtime=require(path.join(apps,'shared-analysis/runtime-config.cjs'));
  const status=runtime.apply(path.join(root,'runtime.json'));
- require('./release-shell.cjs').install({root,isXml,version:app.getVersion(),electron:require('electron'),runtime});
+ require('./release-shell.cjs').install({root,isXml,interfaceOnly,version:app.getVersion(),electron:require('electron'),runtime});
  process.env.XLD_EXECUTABLE=path.join(root,'XLD.exe');
- if(!status.ok)app.whenReady().then(()=>dialog.showMessageBox({type:'warning',title:'音乐分析环境未就绪',message:'部分分析环境未找到，仍可浏览和播放。',detail:status.missing.map(item=>item.key+': '+item.path).join('\n')+'\n请检查发布目录的 runtime.json。'}));
+ if(!status.ok&&!interfaceOnly)app.whenReady().then(()=>dialog.showMessageBox({type:'warning',title:'音乐分析环境未就绪',message:'部分分析环境未找到，仍可浏览和播放。',detail:status.missing.map(item=>item.key+': '+item.path).join('\n')+'\n请检查发布目录的 runtime.json。'}));
  require(path.join(apps,isXml?'fusion-runtime-baseline':'xld-runtime-baseline','desktop/main.cjs'));
 }catch(error){dialog.showErrorBox('无法启动',error.message+'\n请检查发布文件及 runtime.json。');app.quit();}

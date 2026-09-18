@@ -4,7 +4,11 @@
 
 Xin Music Lab 是一个持续开发中的个人音乐工具项目，关注器乐、后摇、弦乐叠奏和复杂编配。它把不同开源模型接入同一工作台，方便试听、比较和保管结果。
 
-**当前状态：开发预览。尚未提供经过独立电脑验证的通用安装包。** GitHub 的 “Download ZIP” 下载的是源码，不包含完整运行环境、模型或可直接启动的应用。程序获取进度见[第三方试用计划](docs/PREVIEW_RELEASE_PLAN.md)。目前已完成相对运行路径和本机搬迁验证，独立电脑验收仍在准备。
+**Windows 界面预览版：[下载程序 ZIP](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.ui.1)。** 在 Release 的 Assets 中选择 Xin-Music-Lab-0.5.0-preview.ui.1-win-x64.zip，完整解压后运行 XLD.exe / XML.exe。GitHub 的 Download ZIP / Source code 仍是源码，不能当安装包使用。当前仓库为私有仓库，下载需要仓库访问权限。
+
+**程序不附带任何模型权重、Python 或 AI 依赖。** 可以先体验曲库、播放和可视化；分轨、MIDI、段落与和弦需要自行从作者处下载和安装后端。请阅读[模型自配说明](source/release-tools/MODEL-SETUP.md)，其中列出适配版本、路径、授权入口与尚未完善的旧后端。
+
+本次界面发行基于 core.26 / stems.11，后续开发包可能有更多引擎。它是本机验证的预览版，尚未完成全新 Windows 验收。
 
 ## 能做什么
 
@@ -25,7 +29,7 @@ Xin Music Lab 是一个持续开发中的个人音乐工具项目，关注器乐
 - **XLD（Xin’s Local Deck）**：曲库和分析工作台。分轨、MIDI、段落与和弦从这里开始。
 - **XML（Xin’s Music Lab Fusion）**：音乐可视化，读取 XLD 的分析结果。
 
-对于已经由开发者配置好运行环境的试用者，基本顺序是：
+自行配置需要的模型后，分析的基本顺序是：
 
 **打开 XLD → 选择自己的曲库和输出目录 → 选择一首歌 → 分轨 → 试听 → 生成 MIDI。**
 

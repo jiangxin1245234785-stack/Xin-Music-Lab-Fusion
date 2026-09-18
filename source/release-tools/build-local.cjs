@@ -7,7 +7,8 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  const resolved=runtime.read(configFile),raw=JSON.parse(fs.readFileSync(configFile)),version=raw.releaseVersion;
  if(typeof version!=='string' || !/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/.test(version))throw Error('Explicit releaseVersion required');
  const shippedConfig=runtime.rebase(configFile,output);
- const inspection=runtime.inspect(resolved);if(!inspection.ok)throw Error('Runtime paths missing: '+JSON.stringify(inspection.missing));
+ const interfaceOnly=raw.kind==='interface-only';
+ const inspection=runtime.inspect(resolved);if(!interfaceOnly&&!inspection.ok)throw Error('Runtime paths missing: '+JSON.stringify(inspection.missing));
  if(!fs.existsSync(path.join(electronRoot,'electron.exe')))throw Error('Electron distribution missing');
  for(const name of ['xld-runtime-baseline','fusion-runtime-baseline','shared-analysis'])if(!fs.existsSync(path.join(sourceRoot,name)))throw Error('Source missing: '+name);
  fs.mkdirSync(output,{recursive:true});
@@ -19,7 +20,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  const excluded=new Set(['node_modules','.git','__pycache__','tests','desktop-build','scripts','.venv','artifacts']);
  for(const name of ['xld-runtime-baseline','fusion-runtime-baseline','shared-analysis']){
   const from=path.join(sourceRoot,name);
-  fs.cpSync(from,path.join(apps,name),{recursive:true,filter:file=>!path.relative(from,file).split(path.sep).some(part=>excluded.has(part)) && !path.basename(file).startsWith('start-') && !path.basename(file).startsWith('setup_') && !['development-settings.json','runtime.local.json','.env','auth.json','credentials.json'].includes(path.basename(file))});
+  fs.cpSync(from,path.join(apps,name),{recursive:true,filter:file=>(!interfaceOnly||require('./interface-policy.cjs').includeAppFile(path.relative(from,file))) && !path.relative(from,file).split(path.sep).some(part=>excluded.has(part)) && !path.basename(file).startsWith('start-') && !path.basename(file).startsWith('setup_') && !['development-settings.json','runtime.local.json','.env','auth.json','credentials.json'].includes(path.basename(file))});
  }
  const appRoot=path.join(output,'resources/app');fs.mkdirSync(appRoot,{recursive:true});
  fs.copyFileSync(path.join(__dirname,'bootstrap.cjs'),path.join(appRoot,'bootstrap.cjs'));
@@ -36,9 +37,10 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  }
  fs.writeFileSync(path.join(appRoot,'package.json'),JSON.stringify({name:'xin-music-suite',version,main:'bootstrap.cjs'}));
  fs.writeFileSync(path.join(output,'runtime.json'),JSON.stringify(shippedConfig,null,2));
- const template=fs.readFileSync(path.join(__dirname,raw.kind==='isolated-runtime'?'BUNDLE-README.md':'RELEASE-README.md'),'utf8');
+ const template=fs.readFileSync(path.join(__dirname,interfaceOnly?'INTERFACE-README.md':raw.kind==='isolated-runtime'?'BUNDLE-README.md':'RELEASE-README.md'),'utf8');
  fs.writeFileSync(path.join(output,'README.md'),template.replaceAll('{{VERSION}}',version));
- fs.writeFileSync(path.join(output,'使用说明.html'),fs.readFileSync(path.join(__dirname,'USER-GUIDE.html'),'utf8').replaceAll('{{VERSION}}',version));
+ fs.writeFileSync(path.join(output,'使用说明.html'),fs.readFileSync(path.join(__dirname,interfaceOnly?'INTERFACE-GUIDE.html':'USER-GUIDE.html'),'utf8').replaceAll('{{VERSION}}',version));
+ if(interfaceOnly)fs.copyFileSync(path.join(__dirname,'MODEL-SETUP.md'),path.join(output,'MODEL-SETUP.md'));
  const files=[];function scan(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())scan(file);else files.push({path:path.relative(output,file).replaceAll('\\','/'),bytes:fs.statSync(file).size,sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')});}}
  scan(output);fs.writeFileSync(path.join(output,'release-manifest.json'),JSON.stringify({version,kind:raw.kind||'local-external-runtime',branding,appVersions:Object.fromEntries(['xld-runtime-baseline','fusion-runtime-baseline'].map(name=>[name,JSON.parse(fs.readFileSync(path.join(sourceRoot,name,'package.json'))).version])),createdAt:new Date().toISOString(),files},null,2));
  return {output,files:files.length,bytes:files.reduce((sum,file)=>sum+file.bytes,0)};
