@@ -4,7 +4,7 @@
 
 ## 当前基线
 
-最近本机开发包：`0.5.0-dev.history.1`；XLD `0.5.0-dev.core.25`，XML `0.5.0-dev.stems.10`。本轮用户文档整理不改变应用版本。后续以 [SOURCE_OF_TRUTH](../SOURCE_OF_TRUTH.md) 顶部为准。
+最近本机预览包：`0.5.0-preview.paths.1`；XLD `0.5.0-dev.core.26`，XML `0.5.0-dev.stems.11`。本轮增加可搬迁配置与独立预览偏好，模型和算法未改动。后续以 [SOURCE_OF_TRUTH](../SOURCE_OF_TRUTH.md) 顶部为准。
 
 ## 阅读顺序
 

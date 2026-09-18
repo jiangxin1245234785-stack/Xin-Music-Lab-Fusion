@@ -8,7 +8,7 @@
 
 ## 当前状态
 
-最新开发包：releases/0.5.0-dev.history.1；XLD 0.5.0-dev.core.25 / XML 0.5.0-dev.stems.10。P0 轮次 A 完成：历史 MIDI 结果可读与当前版本缓存匹配解耦（ok / matches），每次运行独立记录 midi/<stem>/runs/，融合记录 provenance；不换模型、不改默认。吉他默认 MuScriptor Medium、复杂曲可选 Large；弦乐默认 Large；钢琴 / 贝斯保持 HiRes；鼓保留 ADTOF 默认及 MuScriptor 双档。toe 鼓试听已完成，整体相近、ADTOF 镲片尾音略逊，未决定切换默认。下一步为 P0 轮次 B（同 engine 多版本切换 / 回退 / 按 runId 删除 / 保留策略）。完整交接见 [CLAUDE_HANDOFF.md](CLAUDE_HANDOFF.md) 和 [进度与计划](docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md)。本机开发验证通过，不代表干净机器正式发行验收。下表保留原视觉项目阶段状态。
+最新本机预览：releases/0.5.0-preview.paths.1；XLD core.26 / XML stems.11。完成相对路径、独立预览偏好、系统目录默认和随包帮助；本机搬迁通过，独立机器验收待做。详见日志末尾及 work/portable-paths-20260918/HANDOFF.md。上一开发包 history.1 的状态如下。P0 轮次 A 完成：历史 MIDI 结果可读与当前版本缓存匹配解耦（ok / matches），每次运行独立记录 midi/<stem>/runs/，融合记录 provenance；不换模型、不改默认。吉他默认 MuScriptor Medium、复杂曲可选 Large；弦乐默认 Large；钢琴 / 贝斯保持 HiRes；鼓保留 ADTOF 默认及 MuScriptor 双档。toe 鼓试听已完成，整体相近、ADTOF 镲片尾音略逊，未决定切换默认。下一步为 P0 轮次 B（同 engine 多版本切换 / 回退 / 按 runId 删除 / 保留策略）。完整交接见 [CLAUDE_HANDOFF.md](CLAUDE_HANDOFF.md) 和 [进度与计划](docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md)。本机开发验证通过，不代表干净机器正式发行验收。下表保留原视觉项目阶段状态。
 
 | 范围 | 状态 | 说明 |
 |---|---|---|
@@ -698,3 +698,13 @@ GitHub 接入后续验证：用户完成设备授权；远端为私有仓库且�
 README 改为功能、获取状态、使用入口、模型选择与反馈；旧版归档。新增 docs/USER_GUIDE.md、DEVELOPMENT.md、PREVIEW_RELEASE_PLAN.md；重写两份随包 README 模板。明确源码 ZIP 不包含模型和运行环境，目前没有通用下载包。
 
 确认 history.1 的21条 runtime 路径均为绝对路径、开发种子含个人曲库、MuScriptor共用YourMT3 Python；下一步先做可搬迁包与首次配置，再做干净系统 / GPU 验证。离线 HTML 帮助仍待统一。本轮未改应用版本、模型、现有发行包或仓库可见性，也没有创建 Release。见 work/public-preview-20260918/HANDOFF.md。
+
+## 2026-09-18：相对路径预览
+
+已生成本地 `0.5.0-preview.paths.1`（XLD core.26 / XML stems.11）。环境配置的 21 个路径全部相对 runtime.json 保存；打包同时换算旧绝对配置。程序与 runtime 保留层级即可一起搬迁。曲库和分析结果是用户自己选择的外部目录，继续记录绝对路径，避免因移动程序而失联。
+
+首次使用系统音乐目录与文档/Xin Music Lab/Analysis；预览版偏好独立、不复制个人开发设置。旧版本及已有结果未迁移。MuScriptor 共用 YourMT3 Python 的关系已在配置生成中明确。
+
+本机中文/空格目录搬迁：11 组环境检查通过、6 个 Python 的受检导入路径均在新目录；XLD/XML 启动、目录保留、共享配置与帮助通过。30 秒 toe 鼓片段在新位置用 ADTOF/CUDA 完成转谱，保存及回读 30 个音符。两套源码回归、发布路径及诊断测试通过。
+
+仍未进行原开发目录不可见的独立机器验证。大二进制搬迁测试采用同盘硬链接，不等于新 Windows 安装；强制隐藏 GPU 时发现现有 PyTorch/cuDNN 的 min() 空集合错误，CPU 模式待处理。公开安装包、组件再分发核实和模型安装引导仍待完成。

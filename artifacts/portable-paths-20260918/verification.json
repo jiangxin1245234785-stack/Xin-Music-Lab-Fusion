@@ -1,0 +1,132 @@
+{
+  "date": "2026-09-18",
+  "release": "0.5.0-preview.paths.1",
+  "scope": "Local preview relocation; not general public distribution",
+  "passed": true,
+  "relativeRuntimePaths": 21,
+  "probes": [
+    {
+      "name": "sections",
+      "ok": true,
+      "required": [
+        "msaf",
+        "msaf-sf",
+        "msaf-foote",
+        "msaf-cnmf"
+      ]
+    },
+    {
+      "name": "songformer",
+      "ok": true,
+      "required": [
+        "songformer"
+      ]
+    },
+    {
+      "name": "harmony",
+      "ok": true,
+      "required": [
+        "chord-cqt",
+        "chord-cens",
+        "chord-hybrid",
+        "chord-btc"
+      ]
+    },
+    {
+      "name": "basic-pitch",
+      "ok": true,
+      "required": [
+        "basic-pitch"
+      ]
+    },
+    {
+      "name": "highres",
+      "ok": true,
+      "required": [
+        "piano-highres",
+        "bass-highres",
+        "drums-adtof"
+      ]
+    },
+    {
+      "name": "roformer",
+      "ok": true,
+      "required": [
+        "bs-roformer-sw"
+      ]
+    },
+    {
+      "name": "demucs",
+      "ok": true,
+      "required": [
+        "demucs-6s"
+      ]
+    },
+    {
+      "name": "yourmt3",
+      "ok": true,
+      "required": [
+        "yourmt3-plus"
+      ]
+    },
+    {
+      "name": "muscriptor",
+      "ok": true,
+      "required": [
+        "muscriptor-medium",
+        "muscriptor-large",
+        "strings-muscriptor-medium",
+        "strings-muscriptor-large",
+        "drums-muscriptor-medium",
+        "drums-muscriptor-large"
+      ]
+    },
+    {
+      "name": "refinement",
+      "ok": true,
+      "required": [
+        "audiosep-strings"
+      ]
+    },
+    {
+      "name": "refinement-roformer",
+      "ok": true,
+      "required": [
+        "bowed-strings-v2",
+        "mega-53"
+      ]
+    }
+  ],
+  "pythonEnvironmentsWithRelocatedImports": 6,
+  "gui": [
+    "Fresh XLD uses isolated defaults",
+    "Saved user paths retained after XLD restart",
+    "XML inherits preview XLD folders",
+    "Both apps launch from Chinese/space relocation; help/F1/locale work without horizontal overflow"
+  ],
+  "inference": {
+    "engine": "drums-adtof",
+    "device": "cuda",
+    "duration": 30,
+    "noteCount": 30,
+    "digests": {
+      "midi": "e3761a822b301e78096ea607ba3776c2931129aad95117f557dd676e661d8722",
+      "notes": "a97a9f23602c289a39af1ff1a63d36390b7440a79411d1cc78140fa18ca9dac2"
+    },
+    "sourceUnchanged": true
+  },
+  "tests": [
+    "XLD npm test",
+    "XML npm test",
+    "test.cjs",
+    "test-portable.cjs",
+    "test-release-shell.cjs",
+    "test-diagnostics.cjs"
+  ],
+  "limits": [
+    "Original installation still present; immutable large binaries hardlinked in same-volume relocated fixture",
+    "No clean-machine/VM verification or public release",
+    "Forced hidden-GPU CPU test hits existing torch/cudnn min() empty-iterable failure; normal CUDA sample passes",
+    "Optional-model installer and license redistribution audit remain pending"
+  ]
+}

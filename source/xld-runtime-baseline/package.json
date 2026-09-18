@@ -1,6 +1,6 @@
 {
   "name": "xins-local-deck-beta",
-  "version": "0.5.0-dev.core.25",
+  "version": "0.5.0-dev.core.26",
   "description": "Xin's Local Deck (Beta) 路 local album player with structure and comparative harmony analysis",
   "main": "desktop/main.cjs",
   "author": {

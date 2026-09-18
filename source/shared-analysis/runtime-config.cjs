@@ -14,6 +14,17 @@ function read(file){
  for(const [key,value] of Object.entries(flags))if(!['HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE','HF_HUB_DISABLE_TELEMETRY'].includes(key)||!['0','1'].includes(value))throw Error('Invalid runtime flag: '+key);
  return {schemaVersion:1,paths,flags};
 }
+// Rebase every runtime path against the shipped configuration, never process.cwd().
+function rebase(file, outputDirectory){
+ const raw=JSON.parse(fs.readFileSync(file,'utf8')),resolved=read(file);
+ const paths={};
+ for(const [key,target] of Object.entries(resolved.paths)){
+  const relative=path.relative(outputDirectory,target);
+  if(path.isAbsolute(relative))throw Error('Runtime path is on a different volume: '+key+'. Place program and runtime on the same volume before building.');
+  paths[key]=(relative || '.').split(path.sep).join('/');
+ }
+ return {...raw,paths};
+}
 function inspect(config){
  const missing=[];
  for(const [key,value] of Object.entries(config.paths)){
@@ -31,4 +42,4 @@ function apply(file,env=process.env){
  env.PYTHONDONTWRITEBYTECODE='1';env.PYTHONUTF8='1';
  return inspect(config);
 }
-module.exports={read,inspect,apply};
+module.exports={read,inspect,apply,rebase};

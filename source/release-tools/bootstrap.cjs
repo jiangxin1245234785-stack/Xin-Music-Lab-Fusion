@@ -8,7 +8,15 @@ app.setAppUserModelId(isXml?'com.xin.musiclab':'com.xin.localdeck');
 // Optional development seed gives this build its own profile and single-instance
 // namespace, while keeping XML and XLD together. Existing releases are untouched.
 const developmentSeed=path.join(root,'development-settings.json');
-if(fs.existsSync(developmentSeed)&&!(process.env.XIN_RELEASE_TEST_ROOT&&process.env.XLD_TEST==='1'&&process.env.XML_TEST==='1')){
+const acceptanceProfile=process.env.XIN_RELEASE_TEST_ROOT&&process.env.XLD_TEST==='1'&&process.env.XML_TEST==='1';
+let previewProfile=false;
+try{previewProfile=JSON.parse(fs.readFileSync(path.join(root,'runtime.json'),'utf8')).channel==='preview';}catch(_){}
+if(previewProfile&&!acceptanceProfile){
+ const profiles=path.join(app.getPath('appData'),'XinMusicPreview');
+ fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);
+ const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
+}
+if(!previewProfile&&fs.existsSync(developmentSeed)&&!acceptanceProfile){
  const seed=JSON.parse(fs.readFileSync(developmentSeed,'utf8'));
  const profiles=path.join(app.getPath('appData'),'XinMusicDevelopment',app.getVersion());
  fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);

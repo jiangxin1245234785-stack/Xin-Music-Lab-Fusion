@@ -12,7 +12,8 @@ const ANALYSIS_RUNTIME_ROOT = process.env.XLD_RUNTIME_ROOT || 'D:\\Program Files
 const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createMainLocaleController, normalizeLocale } = require('./locale.cjs');
 
-const DEFAULT_LIBRARY_ROOT = 'D:\\Download\\bandcamp';
+const {defaultUserPaths} = require('../../shared-analysis/user-paths.cjs');
+const DEFAULT_LIBRARY_ROOT = defaultUserPaths(app).libraryRoot;
 const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus']);
 const COVER_NAMES = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.png', 'front.jpg', 'front.png'];
 const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
@@ -71,7 +72,7 @@ const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const legacyAnalysisRoot = () => path.join(app.getPath('userData'), 'analysis');
 const defaultAnalysisRoot = () => process.env.XLD_TEST === '1'
   ? path.join(app.getPath('userData'), 'analysis-v2')
-  : "D:\\Caches\\Xin's Local Deck\\Analysis";
+  : defaultUserPaths(app).analysisRoot;
 const analysisRoot = () => analysisRootPath || defaultAnalysisRoot();
 
 async function readSettings() {

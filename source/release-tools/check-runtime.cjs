@@ -11,6 +11,8 @@ function check(file,sourceRoot,{probe=spawnSync,onProgress=()=>{}}={}){
   ['highres',config.paths.XLD_HIGHRES_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/runner.py')],
   ['roformer',config.paths.XLD_ROFORMER_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-separation/runner.py')],
   ['demucs',config.paths.XLD_AI_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-separation/runner.py')],
+  ...(config.paths.XLD_YOURMT3_PYTHON?[['yourmt3',config.paths.XLD_YOURMT3_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/runner.py')]]:[]),
+  ...(config.paths.XLD_MUSCRIPTOR_PYTHON?[['muscriptor',config.paths.XLD_MUSCRIPTOR_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/runner.py')]]:[]),
   ...(config.paths.XLD_REFINE_MODELS?[['refinement',config.paths.XLD_HIGHRES_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-refine/runner.py')]]:[]),
   ...(config.paths.XLD_REFINE_ROFORMER_MODELS?[['refinement-roformer',config.paths.XLD_ROFORMER_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-refine/runner.py')]]:[])
  ].map(([name,python,runner],index,all)=>{
@@ -18,8 +20,8 @@ function check(file,sourceRoot,{probe=spawnSync,onProgress=()=>{}}={}){
   const result=probe(python,['-X','utf8',runner,'--engines'],{env,windowsHide:true,encoding:'utf8',timeout:120000,maxBuffer:1024*1024});
   const stdout=result.stdout||'',stderr=result.stderr||'';
   let engines=[];try{const start=stdout.indexOf('['),end=stdout.lastIndexOf(']'),parsed=JSON.parse(stdout.slice(start,end+1));if(Array.isArray(parsed))engines=parsed;}catch(_){}
-  const required={sections:['msaf','msaf-sf','msaf-foote','msaf-cnmf'],songformer:['songformer'],harmony:['chord-cqt','chord-cens','chord-hybrid','chord-btc'],'basic-pitch':['basic-pitch'],highres:['piano-highres','guitar-gaps','bass-highres','drums-adtof'],roformer:['bs-roformer-sw'],demucs:['demucs-6s'],refinement:['audiosep-strings'],'refinement-roformer':['bowed-strings-v2','mega-53']}[name];
-  const venv=path.resolve(python,'../..'),cfg=path.join(venv,'pyvenv.cfg');
+  const required={sections:['msaf','msaf-sf','msaf-foote','msaf-cnmf'],songformer:['songformer'],harmony:['chord-cqt','chord-cens','chord-hybrid','chord-btc'],'basic-pitch':['basic-pitch'],highres:['piano-highres','bass-highres','drums-adtof'],yourmt3:['yourmt3-plus'],muscriptor:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large'],roformer:['bs-roformer-sw'],demucs:['demucs-6s'],refinement:['audiosep-strings'],'refinement-roformer':['bowed-strings-v2','mega-53']}[name];
+  const parent=path.dirname(python),venv=path.basename(parent).toLowerCase()==='scripts'?path.dirname(parent):parent,cfg=path.join(venv,'pyvenv.cfg');
   const inherited=[];const site=path.join(venv,'Lib/site-packages');
   if(fs.existsSync(site))for(const entry of fs.readdirSync(site).filter(name=>name.endsWith('.pth')))inherited.push({file:path.join(site,entry),content:fs.readFileSync(path.join(site,entry),'utf8')});
   return {name,python,runner,ok:result.status===0 && required.every(id=>engines.some(engine=>engine.id===id && engine.available)),required,engines,baseEnvironment:fs.existsSync(cfg)?fs.readFileSync(cfg,'utf8'):null,inherited,error:result.error?.message || (result.status!==0?stderr.slice(-2000):undefined)};

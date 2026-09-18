@@ -5,7 +5,9 @@ Current summary updated: 2026-09-18
 
 Current release candidate: 2026-09-15 — releases/0.5.0-rc.6; see work/refinement-bcnr-20260915/HANDOFF.md.
 
-Latest development: 2026-09-17 — releases/0.5.0-dev.history.1; XLD core.25 / XML stems.10. P0 round A: historical MIDI results stay readable (readMidi `ok`) while only current-version results are cache hits (`matches`); every run keeps its own record under midi/<stem>/runs/; merge records provenance. No model, default or option changed; the three model registries are byte-identical to muscriptor.4. Next: round B (same-engine version switching / rollback / per-run deletion / bounded retention). See work/midi-history-20260917/HANDOFF.md.
+Latest local preview: 2026-09-18 — releases/0.5.0-preview.paths.1; XLD core.26 / XML stems.11. Relative runtime configuration, independent preview profile, OS user-directory defaults, consolidated offline help and current-model diagnostics. Local relocation / GUI / ADTOF GPU sample pass; no clean-machine or public-release claim. No model/default/weight changes. See work/portable-paths-20260918/HANDOFF.md.
+
+Previous development: 2026-09-17 — releases/0.5.0-dev.history.1; XLD core.25 / XML stems.10. P0 round A: historical MIDI results stay readable (readMidi `ok`) while only current-version results are cache hits (`matches`); every run keeps its own record under midi/<stem>/runs/; merge records provenance. No model, default or option changed; the three model registries are byte-identical to muscriptor.4. Next: round B (same-engine version switching / rollback / per-run deletion / bounded retention). See work/midi-history-20260917/HANDOFF.md.
 
 Previous development: 2026-09-17 — releases/0.5.0-dev.muscriptor.4; XLD core.24 / XML stems.10. User accepted MuScriptor Large for strings: now the default, YourMT3+ retained. Toe Goodbye listening is complete: the user found the three models broadly similar, with slightly weaker cymbal tails from ADTOF. No drum-default switch was requested; ADTOF remains default and three full-song results are cached. Guitar tiers unchanged. See work/toe-drums-20260917/HANDOFF.md.
 

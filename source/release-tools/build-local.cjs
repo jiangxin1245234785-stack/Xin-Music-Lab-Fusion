@@ -6,6 +6,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  const runtime=require(path.join(sourceRoot,'shared-analysis/runtime-config.cjs'));
  const resolved=runtime.read(configFile),raw=JSON.parse(fs.readFileSync(configFile)),version=raw.releaseVersion;
  if(typeof version!=='string' || !/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/.test(version))throw Error('Explicit releaseVersion required');
+ const shippedConfig=runtime.rebase(configFile,output);
  const inspection=runtime.inspect(resolved);if(!inspection.ok)throw Error('Runtime paths missing: '+JSON.stringify(inspection.missing));
  if(!fs.existsSync(path.join(electronRoot,'electron.exe')))throw Error('Electron distribution missing');
  for(const name of ['xld-runtime-baseline','fusion-runtime-baseline','shared-analysis'])if(!fs.existsSync(path.join(sourceRoot,name)))throw Error('Source missing: '+name);
@@ -18,7 +19,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  const excluded=new Set(['node_modules','.git','__pycache__','tests','desktop-build','scripts','.venv','artifacts']);
  for(const name of ['xld-runtime-baseline','fusion-runtime-baseline','shared-analysis']){
   const from=path.join(sourceRoot,name);
-  fs.cpSync(from,path.join(apps,name),{recursive:true,filter:file=>!path.relative(from,file).split(path.sep).some(part=>excluded.has(part)) && !path.basename(file).startsWith('start-') && !path.basename(file).startsWith('setup_')});
+  fs.cpSync(from,path.join(apps,name),{recursive:true,filter:file=>!path.relative(from,file).split(path.sep).some(part=>excluded.has(part)) && !path.basename(file).startsWith('start-') && !path.basename(file).startsWith('setup_') && !['development-settings.json','runtime.local.json','.env','auth.json','credentials.json'].includes(path.basename(file))});
  }
  const appRoot=path.join(output,'resources/app');fs.mkdirSync(appRoot,{recursive:true});
  fs.copyFileSync(path.join(__dirname,'bootstrap.cjs'),path.join(appRoot,'bootstrap.cjs'));
@@ -34,7 +35,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
   fs.appendFileSync(preload,"\ncontextBridge.exposeInMainWorld('XinRelease',Object.freeze({info:()=>ipcRenderer.invoke('release:info'),help:()=>ipcRenderer.invoke('release:help'),status:locale=>ipcRenderer.invoke('release:status',locale)}));\n");
  }
  fs.writeFileSync(path.join(appRoot,'package.json'),JSON.stringify({name:'xin-music-suite',version,main:'bootstrap.cjs'}));
- fs.writeFileSync(path.join(output,'runtime.json'),JSON.stringify({...raw,paths:Object.fromEntries(Object.entries(raw.paths).map(([key,value])=>[key,path.isAbsolute(value)?value:path.relative(output,resolved.paths[key]).replaceAll('\\','/')]))},null,2));
+ fs.writeFileSync(path.join(output,'runtime.json'),JSON.stringify(shippedConfig,null,2));
  const template=fs.readFileSync(path.join(__dirname,raw.kind==='isolated-runtime'?'BUNDLE-README.md':'RELEASE-README.md'),'utf8');
  fs.writeFileSync(path.join(output,'README.md'),template.replaceAll('{{VERSION}}',version));
  fs.writeFileSync(path.join(output,'使用说明.html'),fs.readFileSync(path.join(__dirname,'USER-GUIDE.html'),'utf8').replaceAll('{{VERSION}}',version));

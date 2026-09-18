@@ -21,3 +21,10 @@ const malformed=diagnose(root,path.join(root,'report'),{check:()=>{throw Error('
 assert.equal(malformed.ok,false);assert.equal(malformed.complete,false);
 assert(fs.readFileSync(path.join(root,'report/检查结果.txt'),'utf8').includes('Invalid runtime.json'));
 console.log('Diagnostics: missing Python, missing drums, timeout and malformed config passed.');
+
+assert(!missing.probes.find(item=>item.name==='highres').required.includes('guitar-gaps'),'Retired GAPS is not a release requirement');
+const withAddons=JSON.parse(fs.readFileSync(config,'utf8'));withAddons.paths.XLD_YOURMT3_PYTHON='shared/python.exe';withAddons.paths.XLD_MUSCRIPTOR_PYTHON='shared/python.exe';fs.writeFileSync(config,JSON.stringify(withAddons));
+const addonCheck=check(config,root,{probe:()=>({status:0,stdout:JSON.stringify(ids.map(id=>({id,available:true}))),stderr:''})});
+assert.equal(addonCheck.probes.length,9);assert.equal(addonCheck.probes.find(p=>p.name==='muscriptor').ok,false);assert.equal(addonCheck.probes.find(p=>p.name==='yourmt3').ok,false);
+const allIds=addonCheck.probes.flatMap(p=>p.required);const ready=check(config,root,{probe:()=>({status:0,stdout:JSON.stringify(allIds.map(id=>({id,available:true}))),stderr:''})});assert(ready.probes.every(p=>p.ok));
+console.log('Diagnostics addon / retired-model regression: PASS');

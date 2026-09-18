@@ -42,3 +42,11 @@ runtime.json 按清单覆盖所列环境变量；相对路径以清单所在目�
 保留旧用户档案名称，以兼容配置与单实例行为。测试专用配置重定向只有 XLD_TEST、XML_TEST 同时为 1 且设置 XIN_RELEASE_TEST_ROOT 才启用；不改变正常启动。
 
 Windows 虚拟环境不能仅复制后即假设独立；目前 .pth 共享库和基础 Python 的实际位置在 runtime-report.json 中。后续若做可迁移环境包，先重建环境并在无 Python 机器验证，不以本机缓存成功代替。
+
+## Portable preview configuration (2026-09-18)
+
+`configure-bundle.cjs` now exports `configure({runtimeRoot, configFile, releaseVersion, channel: "preview"})`. Both input paths must be absolute; generated entries are relative to the config file. Standard sibling addons are detected, including MuScriptor shared YourMT3 Python. Explicit addon paths are supported. `build-local.cjs` rebases all entries at the output location, including legacy absolute input configs, and rejects cross-volume references rather than silently retaining machine-specific paths. Keep releases and runtime on the same volume and move them together.
+
+The preview channel uses AppData/XinMusicPreview, independent from normal and development profiles; no developer seed is copied. User-selected music/output paths stay absolute. Local historical scripts are not all portable; do not mass-rewrite user data, historical evidence or third-party sources.
+
+Run `node source/release-tools/test-portable.cjs` and `node source/release-tools/test-diagnostics.cjs` from the project root. Full suites remain in each application. See work/portable-paths-20260918/HANDOFF.md for real relocation evidence and remaining CPU/clean-machine limitations.
