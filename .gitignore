@@ -3,6 +3,8 @@
 !/.gitignore
 !/.gitattributes
 !/README.md
+!/LICENSE
+!/THIRD_PARTY_NOTICES.md
 !/SOURCE_OF_TRUTH.md
 !/DEVELOPMENT_LOG.md
 !/CLAUDE_HANDOFF.md
