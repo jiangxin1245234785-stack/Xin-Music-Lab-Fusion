@@ -14,9 +14,16 @@
     let result = null, sequence = 0, switching = false, removeMediaListeners = null;
     let midiResult = null, midiSequence = 0;
     const canTranscribe = () => result?.ok && ['bass', 'piano', 'guitar', 'drums'].includes(select.value);
+    // Kept in step with MANUAL_ENGINE in xld-runtime-baseline/core/derived-assets.cjs; a renderer cannot require
+    // it, so tests/midi-revision-record.cjs pins the two together rather than trusting them to stay equal.
+    const MANUAL_ENGINE = 'manual-revision';
+    const manualActive = () => Boolean(midiResult?.ok && midiResult.engine === MANUAL_ENGINE);
     function sync() {
       if (midiRun) {
-        midiRun.disabled = isBusy() || switching || !canTranscribe() || !bridge?.runMidi;
+        // A hand-edited revision cannot be transcribed over from here: this button re-runs a model and takes the
+        // active pointer, and the edit was not made in this app. The main process refuses it as well
+        // (desktop/main.cjs, 'midi-manual-active'); disabling it is so the refusal is never needed.
+        midiRun.disabled = isBusy() || switching || !canTranscribe() || !bridge?.runMidi || manualActive();
         midiReveal.disabled = !midiResult?.ok;
         bind(midiRun, midiResult?.ok ? 'midi.redo' : 'midi.run', midiResult?.ok ? '重新转谱' : '转 MIDI');
       }
@@ -37,7 +44,8 @@
       const response = await bridge?.readMidi?.(track.id, stem).catch(() => null);
       if (request !== midiSequence || track.id !== getTrack()?.id || stem !== select.value) return;
       midiResult = response?.ok ? response : null;
-      if (midiResult?.noteCount > 0) bind(midiStatus, 'midi.ready', 'MIDI 已就绪 · ' + midiResult.noteCount + ' 个音符', { count: midiResult.noteCount });
+      if (manualActive()) bind(midiStatus, 'midi.manual', '当前使用人工修订 · ' + (midiResult.noteCount || 0) + ' 个音符 · 在 XLD 中编辑或切换版本', { count: midiResult.noteCount || 0 });
+      else if (midiResult?.noteCount > 0) bind(midiStatus, 'midi.ready', 'MIDI 已就绪 · ' + midiResult.noteCount + ' 个音符', { count: midiResult.noteCount });
       else if (midiResult) bind(midiStatus, 'midi.noNotes', '未识别到音符，可重新转谱');
       else bind(midiStatus, 'midi.empty', '转谱保留母曲时间位置，可导入外部软件编辑');
       sync();
@@ -130,7 +138,7 @@
       onTask(response.task || { ...task, status: 'failed', cancellable: false, message: response.detail || response.error });
       if (track.id === getTrack()?.id) {
         await refreshMidi();
-        if (!response.ok && stem === select.value) bind(midiStatus, response.error === 'analysis-cancelled' ? 'stems.cancelled' : 'midi.failed', response.error === 'analysis-cancelled' ? '已取消，原有结果保留' : '转谱失败，请查看分析状态或运行日志');
+        if (!response.ok && stem === select.value) bind(midiStatus, response.error === 'analysis-cancelled' ? 'stems.cancelled' : response.error === 'midi-manual-active' ? 'midi.manualRefused' : 'midi.failed', response.error === 'analysis-cancelled' ? '已取消，原有结果保留' : response.error === 'midi-manual-active' ? '当前版本是人工修订，未重新转谱' : '转谱失败，请查看分析状态或运行日志');
       }
       sync();
     });

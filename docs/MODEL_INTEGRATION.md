@@ -1,3 +1,9 @@
+# setup.1 实装进度 / Implementation status
+
+2026-09-26：配置窗口、本地环境导入、依赖/文件检查、配置保存、脱敏诊断和 MIDI 基础环境在线安装已实装。自动准备各 AI 后端依赖、下载权重与向导内短音频推理尚未实现。下面保留完整设计提案；已实现项以本段为准。
+
+Setup UI, local environment import, availability checks, configuration saving, redacted diagnostics and optional base MIDI environment installation are implemented. Automatic AI dependency/weight installation and in-wizard audio test inference remain future work. The original proposal below is retained; this status takes precedence.
+
 # Model integration / 模型接入
 
 [README](../README.md) · [中文](#中文) · [English](#english)

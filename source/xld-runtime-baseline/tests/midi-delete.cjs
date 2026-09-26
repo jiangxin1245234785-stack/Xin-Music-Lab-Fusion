@@ -11,10 +11,12 @@ const {createMidiDeletion}=require('../core/midi-delete.cjs');
  async function create(engine){const profile=profileFor(engine),runId=crypto.randomUUID(),prefix='midi/strings/'+runId+'/',stat=await fs.stat(source.path);await fs.mkdir(path.join(directory,prefix),{recursive:true});await fs.writeFile(path.join(directory,prefix+'strings.mid'),Buffer.from('4d546864000000060000000103c04d54726b0000000400ff2f00','hex'));await fs.writeFile(path.join(directory,prefix+'notes.json'),JSON.stringify({schemaVersion:1,kind:'notes',trackId:track.id,stem:'strings',sourceRunId:source.runId,timeOrigin:0,duration:1,notes:[{start:0,end:.5,pitch:60,velocity:100}]}));const result={schemaVersion:1,kind:'midi',trackId:track.id,stem:'strings',sourceRunId:source.runId,runId,source:{path:source.path,size:stat.size,mtimeMs:stat.mtimeMs},sourceTarget:'strings',program:48,engine,model:profile.model,options:profile.options,backend:profile.checkpoint?{checkpointSha256:profile.checkpoint.sha256}:{},timeOrigin:0,duration:1,noteCount:1,tempoMode:'fixed-timebase',quantized:false,file:prefix+'strings.mid',notesFile:prefix+'notes.json'};await midi.activate(track,result);return result;}
  const selection=r=>({stem:r.stem,engine:r.engine,runId:r.runId});
  try{
-  assert.equal(defaultEngine('strings'),'strings-muscriptor-large');assert.equal(defaultEngine('piano'),'piano-highres');
+  assert.equal(defaultEngine('strings'),'strings-muscriptor-large');assert.equal(defaultEngine('piano'),'piano-transkun');
   const your=await create('strings-muscriptor-large'),basic=await create('basic-pitch'),input=selection(basic);
   assert((await manager.clear(track,input,async()=>false)).canceled);assert((await midi.read(track,'strings','basic-pitch')).ok);assert.equal(trashes.length,0);
-  await assert.rejects(manager.plan(track,{...input,runId:'../outside'}),/changed/);
+  // The traversal guard now fires inside runRecordPath's validId, before any path is joined, so a malformed
+  // runId reads as an invalid selection rather than as a changed one.
+  await assert.rejects(manager.plan(track,{...input,runId:'../outside'}),/midi-delete-invalid/);
   const extra=path.join(directory,path.dirname(basic.file),'user.txt');await fs.writeFile(extra,'keep');await assert.rejects(manager.clear(track,input,async()=>true),/unknown-files/);await fs.rm(extra);
   await assert.rejects(manager.clear(track,input,async()=>{await fs.appendFile(path.join(directory,basic.notesFile),' ');return true;}),/changed/);assert.equal(trashes.length,0);
   const fail=createMidiDeletion({assets,getRoot:()=>root,trash:async()=>{throw Error('Recycle Bin failure');}});await assert.rejects(fail.clear(track,input,async()=>true),/Recycle Bin failure/);assert((await midi.read(track,'strings','basic-pitch')).ok);
@@ -35,9 +37,13 @@ const {createMidiDeletion}=require('../core/midi-delete.cjs');
   assert.equal((await midi.read(track,'strings','strings-muscriptor-large')).runId,kept.runId,'the current version wins over an earlier one');
   const versions=async()=>(await midi.listRuns(track,'strings','strings-muscriptor-large')).filter(r=>r.status!=='files-missing').map(r=>[r.runId,r.status]).sort();
   assert.deepEqual(await versions(),[[kept.runId,'current'],[earlierId,'superseded']].sort());
-  const removed=await manager.clear(track,selection(kept),async()=>true);assert(removed.deleted);assert.equal(removed.activated,null);
+  // Deleting the active run now rolls the stem back to the surviving earlier version of the same engine instead
+  // of leaving it silent. Before runs had addresses the successor search could only reach another engine.
+  const removed=await manager.clear(track,selection(kept),async plan=>{assert.equal(plan.fallbackSameEngine,true);assert.equal(plan.fallback.runId,earlierId);return true;});
+  assert(removed.deleted);assert.equal(removed.activated,'strings-muscriptor-large');assert.equal(removed.displacedRunId,earlierId);
+  assert.equal((await midi.read(track,'strings')).runId,earlierId,'the stem rolls back rather than going silent');
   assert((await fs.stat(path.join(directory,earlier.file))).isFile());assert((await fs.stat(path.join(directory,'midi/strings/runs',earlierId+'.json'))).isFile());assert.equal(await fs.readFile(source.path,'utf8'),'WAV must stay');
   assert.deepEqual(await versions(),[[earlierId,'superseded']],'deleting the current run leaves the earlier version intact');
-  console.log('MIDI deletion PASS: defaults, cancel, specific model/source, fallback, recycle restore, unknown files, stale content/source, trash failure, last result, junction guard and earlier version survival');
+  console.log('MIDI deletion PASS: defaults, cancel, specific model/source, fallback, recycle restore, unknown files, stale content/source, trash failure, last result, junction guard, earlier version survival and same-engine rollback');
  }finally{await fs.rm(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

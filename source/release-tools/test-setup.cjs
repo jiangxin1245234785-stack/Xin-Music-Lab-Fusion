@@ -1,0 +1,26 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+const core=require('./setup-core.cjs');
+(async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'xin-setup-test-')),python=path.join(root,'python.exe');fs.writeFileSync(python,'fixture');
+ const runner=path.join(root,'resources/apps/xld-runtime-baseline/analysis-midi/revise.py');fs.mkdirSync(path.dirname(runner),{recursive:true});fs.writeFileSync(runner,'fixture');
+ const config={schemaVersion:1,releaseVersion:'0.5.0-preview.setup.1',paths:{XLD_MIDI_PYTHON:'old.exe',XLD_MUSCRIPTOR_ROOT:'old-models'},flags:{HF_HUB_OFFLINE:'1'}};
+ fs.writeFileSync(path.join(root,'runtime.json'),JSON.stringify(config));
+ assert.throws(()=>core.save(root,'midi',{XLD_MIDI_PYTHON:'relative.exe'}));
+ assert.throws(()=>core.save(root,'midi',{XLD_MIDI_PYTHON:python,TOKEN:'private'}));
+ assert.throws(()=>core.save(root,'unknown',{XLD_MIDI_PYTHON:python}));
+ assert.throws(()=>core.save(root,'midi',{XLD_MIDI_PYTHON:root}));
+ assert.equal(JSON.parse(fs.readFileSync(path.join(root,'runtime.json'))).paths.XLD_MIDI_PYTHON,'old.exe');
+ let call;
+ const probe=await core.probe(root,'midi',{XLD_MIDI_PYTHON:python},{execute:async(exe,args,options)=>{call={exe,args,env:options.env};return {code:0,out:'[{"id":"manual-revision","available":true}]',err:''};}});
+ assert(probe.ok);assert.equal(probe.scope,'midi-roundtrip');assert(call.args.includes('--engines'));assert(!call.env.PYTHONPATH);assert.equal(call.env.XLD_MUSCRIPTOR_ROOT,path.join(root,'old-models'));
+ const fail=await core.probe(root,'midi',{XLD_MIDI_PYTHON:python},{execute:async()=>({code:1,out:'',err:'missing dependency'})});assert(!fail.ok);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(root,'runtime.json'))).paths.XLD_MIDI_PYTHON,'old.exe','failed probe never saves');
+ assert(core.save(root,'midi',{XLD_MIDI_PYTHON:python}).restartRequired);const saved=JSON.parse(fs.readFileSync(path.join(root,'runtime.json')));assert.equal(saved.paths.XLD_MIDI_PYTHON,'python.exe');assert.equal(saved.paths.XLD_MUSCRIPTOR_ROOT,'old-models');assert.deepEqual(saved.flags,config.flags);
+ const abort=new AbortController();abort.abort();await assert.rejects(()=>core.run(process.execPath,['-e','setTimeout(()=>{},10000)'],{signal:abort.signal}),/Cancelled/);
+ await assert.rejects(()=>core.run(process.execPath,['-e','setTimeout(()=>{},10000)'],{timeout:100}),/Timed out/);
+ const secret='hf_'+'a'.repeat(25);const redacted=core.redact('Error at D:/Users/private/model\n'+secret);assert(!redacted.includes('private'));assert(!redacted.includes(secret));
+ const policy=require('./interface-policy.cjs');assert(!policy.includeAppFile('analysis-harmony/btc/btc_model.py'));assert(policy.includeAppFile('analysis-harmony/harmony_runner.py'));
+ assert(root.startsWith(path.join(os.tmpdir(),'xin-setup-test-')));fs.rmSync(root,{recursive:true,force:true});
+ console.log('Setup PASS: scoped validation, independent checks, failed check preservation, relative save, environment isolation, timeout/cancel, redaction, vendor exclusions');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,39 +1,9 @@
-# Xin Music Lab · {{VERSION}}
+# Xin Music · {{VERSION}}
 
-**当前为开发预览包。** 需要配置好的分析环境和模型；尚未完成无开发环境电脑的独立验收，不是仅复制 EXE 就能使用的通用安装包。
+本版新增鼓 MIDI 备选引擎 “ADTOF · DrumSep 7 类”：鼓点仍由 ADTOF 检测，MDX23C DrumSep 把鼓轨分离为 kick / snare / toms / hh / ride / crash 六轨，用于把镲片拆成 crash 与 ride、并按各击在自己 stem 上的能量给出本曲内的相对力度（32–127）。ADTOF 保持默认，MuScriptor 鼓备选不变；分离权重（CC BY-NC-ND）在 runtime/addons/drumsep-v1，不随包。相对力度不是录音真实力度。
 
-## 打开哪个程序
+上一版（chords.2）把和弦主引擎从 BTC 换成 ChordMini · BTC-CL（同架构、同 170 类词表的蒸馏版），依据是四首整曲（MEGURI、toe、BCNR Nancy、七里香）的对照页与用户拍板：XLD 专辑批量与和弦页默认选中 ChordMini（不可用时退回 BTC），XML 加权共识给 ChordMini 最高先验（1.5，BTC 1.35，其余 1）。BTC 与 consonance-ACE · Conformer（根音 / 低音 / 音级分解输出，保留转位）保留为备选，已有 BTC 结果继续可读、可在 XML 单选。和弦 runner 与 BTC / ACE 代码随程序发布，权重留在 runtime（BTC 在 runtime/0.5.0，ChordMini 与 ACE 在 runtime/addons/chords-v1）。
 
-- **XLD.exe**：本地曲库、分轨、MIDI、段落与和弦分析。
-- **XML.exe**：音乐可视化，读取 XLD 的分析结果。
+钢琴默认仍为 Transkun V2（piano.2），其他声部默认、模型参数、分轨、细分与融合不变。ai 环境补齐了 soxr 与 packaging（此前缺失时四个旧和弦引擎无法启动）。
 
-首次使用建议从 XLD 开始。保留完整程序目录；已在运行旧版本时，先关闭旧窗口。
-
-## 第一次使用
-
-1. 用“检查环境.cmd”核对当前包配置的运行环境；遇到缺失项，先完成环境配置。
-2. 在 XLD 点击“更换曲库”，选择自己的音乐文件夹。
-3. 展开“资料库”，点击分析资料库旁的“更改”，选择结果保存目录。
-4. 选一首熟悉的歌，进入“分轨”生成并试听 WAV。
-5. 进入“MIDI”生成单声部或使用一键 MIDI。需要弦乐时，先选择一份已有的 Mega53 整曲弦乐来源。
-6. 使用结果旁的目录按钮取得 WAV、单声部 MIDI 或融合 MIDI。
-
-## 模型与文件
-
-吉他默认 MuScriptor Medium，复杂曲可比较 Large；弦乐默认 Large；钢琴 / 贝斯使用 HiRes；鼓默认 ADTOF，保留 MuScriptor 备选。模型需已安装且可用。
-
-资料库的“存储管理”用于清理生成的音频；MIDI 页可删除不满意的转谱结果。核对对象后再清理，满意结果可保留。原曲与模型权重不属于 WAV 清理范围。
-
-## 遇到问题
-
-按 F1 或点击版本入口查看随包使用说明。运行“检查环境.cmd”，记录版本、系统、显卡、模型和失败步骤，向提供测试包的人反馈。诊断可能包含个人路径，分享前请检查。
-
-## 升级
-
-关闭应用，使用新版本完整目录，保留曲库和分析资料库。不要只替换 EXE。运行环境是否能搬迁取决于 runtime.json 和实际环境配置，不能假设复制文件夹即可。
-
-## 路径与搬迁
-
-本次预览的 runtime.json 将环境与权重路径保存为相对于配置文件的路径。一起搬迁 releases/{{VERSION}} 与 runtime（包含 0.5.0 和 addons），保留目录层级；不要只复制 EXE 或版本目录。MuScriptor 当前共用 YourMT3 的 Python，不能漏掉共享环境。
-
-预览版偏好与在用版本隔离。首次默认使用系统“音乐”和“文档/Xin Music Lab/Analysis”，可在界面重新选择已有曲库与分析资料库。用户选择的目录继续保存绝对路径，不自动移动文件。
+双击 XLD.exe 开始，XML.exe 负责可视化，F1 查看使用说明。保留 releases/{{VERSION}} 与 runtime 的相对目录，不要单独复制 EXE。仅本机开发版，未做干净 Windows 验收。

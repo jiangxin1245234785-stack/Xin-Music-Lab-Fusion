@@ -13,6 +13,12 @@ const HEADER=Buffer.from('4d546864000000060000000103c04d54726b0000000400ff2f00',
   // A version bump edits the models.json entry in place, so every profile needs its own model string and identity.
   assert.equal(new Set(PROFILES.map(p=>p.model)).size,PROFILES.length,'model strings are unique');
   assert.equal(new Set(PROFILES.map(identityOf)).size,PROFILES.length,'profile identities are unique');
+  // The hand-edit profile is not in PROFILES on purpose (it is not a model and must not be offered as one), so it
+  // has to be brought into the uniqueness gate by hand or it would be the one identity nobody checks.
+  const {MANUAL}=require('../core/derived-assets.cjs');
+  const withManual=[...PROFILES,MANUAL];
+  assert.equal(new Set(withManual.map(p=>p.model)).size,withManual.length,'the manual profile has its own model string');
+  assert.equal(new Set(withManual.map(identityOf)).size,withManual.length,'and its own identity');
   assert.equal(engineOf({model:MODEL}),'basic-pitch','engine-less legacy records resolve by model string');
   const audio=path.join(root,'song.wav');await fs.writeFile(audio,'source');const stat=await fs.stat(audio);
   const track={id:'history-track-1234567890',title:'Song',artist:'Artist',album:'Album',number:1,filePath:audio};

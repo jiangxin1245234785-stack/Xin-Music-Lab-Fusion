@@ -21,6 +21,12 @@ async function main() {
         child.stdout=new EventEmitter(); child.stderr=new EventEmitter();
         child.stdout.setEncoding=child.stderr.setEncoding=()=>{};
         child.kill=()=>{setImmediate(()=>child.emit('close',null)); return true;};
+        // Runtime discovery is not a transcription job. Complete its probe instead of leaving an
+        // unresolved Promise that lets Node exit silently before the second half of this test.
+        if(args.includes('--engines')){
+          setImmediate(()=>{child.stdout.emit('data','[]');child.emit('close',0);});
+          return child;
+        }
         children.push(child); return child;
       }};
     }};
@@ -108,18 +114,31 @@ async function main() {
     assert.equal((await service.run(track,'muscriptor-medium',{stem:'strings'})).error,'midi-engine-unsupported');
     // New drum tiers must use the MuScriptor interpreter and independent caches.
     assert.equal(require('../core/derived-assets.cjs').defaultEngine('strings'),'strings-muscriptor-large');
-    assert.equal(require('../core/derived-assets.cjs').defaultEngine('drums'),'drums-adtof');
+    assert.equal(require('../core/derived-assets.cjs').defaultEngine('drums'),'drums-adtof-stems');   // drums.2
     let childCount=7;
+    // drums-muscriptor Medium/Large retired 2026-09-19. R3's listening verdict on the three drum engines was
+    // "broadly similar", so neither could be given a sentence saying when it is worth switching to it, and under
+    // the one-default rule an alternative without that sentence does not survive. Retiring stops new runs and
+    // does nothing else: the ids still resolve, so anything they ever wrote stays readable and stays deletable.
+    const offered=await service.midiEngines();
     for(const engine of ['drums-muscriptor-medium','drums-muscriptor-large']) {
-      const job=service.run(track,engine,{stem:'drums'}),child=await nextChild(++childCount);
-      await output(child);child.emit('close',0);assert((await job).ok);
-      const saved=await service.readMidi(track,'drums',engine);assert(saved.ok);
-      assert((await service.run(track,engine,{stem:'drums'})).cached);
-      const cancel=service.run(track,engine,{stem:'drums',force:true});await nextChild(++childCount);service.cancel();
-      assert.equal((await cancel).error,'analysis-cancelled');
-      assert.equal((await service.readMidi(track,'drums',engine)).runId,saved.runId);
-      assert.equal((await service.run(track,engine,{stem:'guitar'})).error,'midi-engine-unsupported');
+      assert.equal((await service.run(track,engine,{stem:'drums'})).error,'midi-engine-unsupported','a retired engine refuses to start');
+      assert.equal(children.length,childCount,'and spawns no process');
+      assert(!offered.some(item=>item.id===engine),engine+' is no longer offered: '+offered.map(i=>i.id).join(','));
+      assert(profileFor(engine),engine+' must stay resolvable, or its stored results become unreadable');
+      assert(Array.isArray(await service.listMidiRuns(track,'drums',engine)),engine+' runs stay listable');
     }
+    // The drum engines that survive, and the one sentence each earns its place with.
+    assert.deepEqual(offered.filter(item=>item.stems.includes('drums')).map(item=>item.id).sort(),
+      ['drums-adtof','drums-adtof-stems'],'two drum engines remain: the default and the no-DrumSep fallback');
+    // Piano: Transkun V2 runs beside HiRes with an independent cache through the shared highres interpreter path.
+    const pianoJob=service.run(track,'piano-highres',{stem:'piano'}),pianoChild=await nextChild(++childCount);await output(pianoChild);pianoChild.emit('close',0);assert((await pianoJob).ok);
+    const transkunJob=service.run(track,'piano-transkun',{stem:'piano'}),transkunChild=await nextChild(++childCount);
+    assert.equal(transkunChild.args[transkunChild.args.indexOf('--engine')+1],'piano-transkun');await output(transkunChild);transkunChild.emit('close',0);assert((await transkunJob).ok);
+    const transkun=await service.readMidi(track,'piano','piano-transkun');assert(transkun.ok&&transkun.matches===true);
+    assert((await service.readMidi(track,'piano','piano-highres')).ok,'HiRes piano cache untouched by the new engine');
+    assert.equal((await service.readMidi(track,'piano')).runId,transkun.runId);assert((await service.run(track,'piano-transkun',{stem:'piano'})).cached);
+    assert.equal((await service.run(track,'piano-transkun',{stem:'bass'})).error,'midi-engine-unsupported');
     // Model-version history: an earlier version of bass-highres stays readable, is not reused as cache, and survives the new run.
     const versioned=await service.readMidi(track,'bass','bass-highres');assert(versioned.ok&&versioned.matches===true);
     const recordPath=id=>path.join(root,'midi/bass/runs',id+'.json');assert((await fs.stat(recordPath(versioned.runId))).isFile(),'promoted output is the per-run record');
@@ -138,14 +157,100 @@ async function main() {
     const redone=await service.readMidi(track,'bass','bass-highres');assert.notEqual(redone.runId,replacement.runId);
     await assert.rejects(fs.stat(recordPath(replacement.runId)),{code:'ENOENT'},'a same-version recompute replaces the previous run');await assert.rejects(fs.stat(path.join(root,'midi/bass',replacement.runId)),{code:'ENOENT'});
     assert((await fs.stat(recordPath(versioned.runId))).isFile(),'a different version is never cleaned up by a recompute');
+    // --- A/B between two versions of one engine, end to end ---------------------------------------------------
+    // Everything below happens without widening the identity rule: :145-148 above still hold verbatim.
+    const B1=versioned.runId;
+    const pointers=[path.join(root,'midi/bass.json'),path.join(root,'midi/bass/bass-highres.json'),
+      path.join(root,`midi/bass/by-source/${stemRunId}/active.json`),path.join(root,`midi/bass/by-source/${stemRunId}/bass-highres.json`)];
+    const pointerKeys=async()=>Promise.all(pointers.map(async file=>Object.keys(JSON.parse(await fs.readFile(file,'utf8'))).sort().join(',')));
+    const beforeSwitch=await pointerKeys();
+    const inventory=async()=>(await service.listMidiRuns(track,'bass','bass-highres')).map(r=>[r.runId,r.status,r.active,r.kept]);
+    // 4. Switch. No child process, no task: the records are already on disk, only pointers move.
+    const spawnsBefore=children.length;
+    const rolled=await assets.midi.activateRun(track,'bass',B1);
+    assert(rolled.ok&&rolled.runId===B1&&rolled.matches===false,'rolling back needs no rerun');
+    assert.equal(children.length,spawnsBefore,'switching spawns nothing');
+    assert.equal((await service.readMidi(track,'bass')).runId,B1);
+    assert.deepEqual(await pointerKeys(),beforeSwitch,'no derived field leaked into any pointer copy');
+    let listed=await inventory();
+    assert.deepEqual(listed.map(([id,,active])=>[id===B1,active]).sort(),[[false,false],[true,true]].sort(),'active follows the rollback');
+    assert.deepEqual(Array.from((await service.listMidiRuns(track,'bass','bass-highres')).find(r=>r.runId===redone.runId).pointed),[],'the displaced run is unreachable');
+    assert((await fs.stat(path.join(root,'midi/bass',redone.runId))).isDirectory(),'and its files are intact');
+    // 5. 不误命中: with the earlier version active, Generate is not a cache hit — it really re-runs the model.
+    const afterSwitch=service.run(track,'bass-highres',{stem:'bass'});const afterChild=await nextChild(++childCount);await output(afterChild);afterChild.emit('close',0);
+    const B4result=await afterSwitch;assert(B4result.ok&&!B4result.cached,'a rolled-back stem is never a cache hit');
+    const B4=(await service.readMidi(track,'bass','bass-highres')).runId;assert.notEqual(B4,B1);
+    // Retention: B1 is `previous` and protected; the orphan left by the rollback has the identity that is now
+    // active, so it is reclaimed on the spot instead of accumulating.
+    assert.deepEqual((await inventory()).map(([id,status])=>[id===B4?'new':id===B1?'B1':id,status]).sort(),
+      [['B1','superseded'],['new','current']].sort(),'the version the user chose survives, the orphan is reclaimed');
+    await assert.rejects(fs.stat(path.join(root,'midi/bass',redone.runId)),{code:'ENOENT'},'the orphan really is gone');
+    assert((await fs.stat(recordPath(B1))).isFile(),'and the rolled-back version is untouched');
+    // 6. Roll back again and pin it: the sweep must never touch a kept run.
+    assert((await assets.midi.activateRun(track,'bass',B1)).ok);
+    assert.deepEqual(await assets.midi.keepRun(track,'bass',B1,true),{ok:true,runId:B1,kept:true});
+    const marker=path.join(root,'midi/bass/kept',B1+'.json');
+    const markerBody=await fs.readFile(marker,'utf8');
+    const again=service.run(track,'bass-highres',{stem:'bass'});const againChild=await nextChild(++childCount);await output(againChild);againChild.emit('close',0);assert((await again).ok);
+    // The second one is forced: with the current version active again, a plain Generate would be a cache hit.
+    const thrice=service.run(track,'bass-highres',{stem:'bass',force:true});const thriceChild=await nextChild(++childCount);await output(thriceChild);thriceChild.emit('close',0);assert((await thrice).ok);
+    assert((await fs.stat(recordPath(B1))).isFile(),'a kept run survives every sweep');
+    assert((await fs.stat(path.join(root,'midi/bass',B1))).isDirectory());
+    assert.equal(await fs.readFile(marker,'utf8'),markerBody,'and its marker is untouched');
+    assert.deepEqual((await inventory()).find(([id])=>id===B1).slice(2),[false,true],'kept, not active');
+    // 6b. The pin has to hold against the *other* deletion too — the same-version cleanup above the sweep is a
+    // hard fs.rm, not a Recycle Bin move, so a pinned run reaching it would be gone for good.
+    const pinnedActive=(await service.readMidi(track,'bass','bass-highres')).runId;
+    assert((await service.listMidiRuns(track,'bass','bass-highres')).find(r=>r.runId===pinnedActive)?.active,'the run we are about to pin is the active one');
+    await assets.midi.keepRun(track,'bass',pinnedActive,true);
+    const pinnedMarker=path.join(root,'midi/bass/kept',pinnedActive+'.json'),pinnedBody=await fs.readFile(pinnedMarker,'utf8');
+    const sameVersion=service.run(track,'bass-highres',{stem:'bass',force:true});const sameChild=await nextChild(++childCount);await output(sameChild);sameChild.emit('close',0);
+    const sameResult=await sameVersion;assert(sameResult.ok);
+    assert.notEqual((await service.readMidi(track,'bass','bass-highres')).runId,pinnedActive,'the new run is active');
+    assert((await fs.stat(recordPath(pinnedActive))).isFile(),'a pinned run survives the same-version cleanup');
+    assert((await fs.stat(path.join(root,'midi/bass',pinnedActive))).isDirectory(),'files and all');
+    assert.equal(await fs.readFile(pinnedMarker,'utf8'),pinnedBody,'and its marker is untouched');
+    // The report crosses the vm realm boundary, so compare values rather than object identity.
+    assert.deepEqual(Array.from(sameResult.retention?.skipped||[]).map(s=>s.runId+':'+s.reason).filter(v=>v.startsWith(pinnedActive)),
+      [pinnedActive+':kept'],'and the run report says why it was spared: '+JSON.stringify(sameResult.retention));
+    await assets.midi.keepRun(track,'bass',pinnedActive,false);
+
+    // 7. Delete by runId — impossible before runs had addresses.
+    const deletion=require('../core/midi-delete.cjs').createMidiDeletion({assets,getRoot:()=>root,trash:async directory=>fs.rm(directory,{recursive:true,force:true})});
+    await assets.midi.keepRun(track,'bass',B1,false);
+    const live=(await service.readMidi(track,'bass','bass-highres')).runId;
+    const removedOld=await deletion.clear(track,{stem:'bass',engine:'bass-highres',runId:B1},async()=>true);
+    assert(removedOld.deleted&&!removedOld.activated,'deleting a superseded run leaves the active one alone');
+    assert.equal((await service.readMidi(track,'bass')).runId,live,'and its pointers are untouched');
+    // Deleting the active run rolls the stem back to the surviving run of the same engine.
+    await assets.midi.activateRun(track,'bass',live);
+    const spare=service.run(track,'bass-highres',{stem:'bass',force:true});const spareChild=await nextChild(++childCount);await output(spareChild);spareChild.emit('close',0);assert((await spare).ok);
+    const newest=(await service.readMidi(track,'bass','bass-highres')).runId;
+    const survivor=(await service.listMidiRuns(track,'bass','bass-highres')).find(r=>r.runId!==newest&&['current','superseded'].includes(r.status));
+    if(survivor) {
+      const removedActive=await deletion.clear(track,{stem:'bass',engine:'bass-highres',runId:newest},async()=>true);
+      assert.equal(removedActive.displacedRunId,survivor.runId,'the successor is the same engine, not the default one');
+      const back=await service.readMidi(track,'bass');
+      assert.equal(back.runId,survivor.runId);assert((await fs.stat(path.join(root,back.file))).isFile(),'its MIDI is really there');
+    }
+    assert.equal(await fs.readFile(audio,'utf8'),'source','the source WAV is never touched by any of this');
+    // 8. The cache branch is untouched by all of the above: with a current-version run active, a non-forced run is
+    // still a plain cache hit and spawns nothing. The other direction — a rolled-back stem is never a cache hit —
+    // is pinned at step 5 above, and those two together are the whole 不误命中 guarantee.
+    const settled=await service.readMidi(track,'bass','bass-highres');assert(settled.ok&&settled.matches===true,JSON.stringify(settled));
+    const spawnsAtEnd=children.length;
+    const stillCached=await service.run(track,'bass-highres',{stem:'bass'});
+    assert(stillCached.cached,'the cache branch survived the round: '+JSON.stringify(stillCached));
+    assert.equal(children.length,spawnsAtEnd,'and it really spawned nothing');
     manifest.runId=randomUUID();await fs.writeFile(path.join(root,'stems.json'),JSON.stringify(manifest));
     assert.equal((await service.readMidi(track,'bass')).error,'midi-stale');
     assert.equal((await assets.readMidiDirectory(track)).ok,false,'Old WAV source cannot enable current output folder');
     assert.equal(service.task(),null);
-    console.log('midi-models: PASS (legacy preservation, independent caches, activation, wrong-model rejection, cancellation, version history, stale source)');
+    console.log('midi-models: PASS (legacy preservation, independent caches, activation, wrong-model rejection, cancellation, version history, rollback and regeneration A/B, delete by runId, stale source)');
   } finally {
     if(path.dirname(path.resolve(root))===path.resolve(os.tmpdir()) && path.basename(root).startsWith('xld-midi-test-'))
       await fs.rm(root,{recursive:true,force:true});
   }
 }
-main().catch(error=>{console.error(error);process.exitCode=1;});
+const watchdog=setTimeout(()=>{console.error('midi-models: unfinished async test');process.exit(1);},30000);
+main().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>clearTimeout(watchdog));

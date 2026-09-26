@@ -242,6 +242,36 @@ assert.equal(
   'DURATION_MISMATCH'
 );
 
+// chords.2: ChordMini leads the weighted consensus. With BTC slightly more confident on a different
+// root, the ChordMini prior (1.5 vs 1.35) must still win; a BTC-only manifest keeps working unchanged.
+{
+  const priorAdapter = api.create();
+  const manifest = {
+    ...baseManifest,
+    harmony: [
+      { engine: { id: 'chord-btc', name: 'BTC', version: 'fixture-v1' }, segments: [{ start: 0, end: 200, label: 'Em', confidence: 0.72 }] },
+      { engine: { id: 'chord-chordmini', name: 'ChordMini · BTC-CL', version: 'fixture-v1' }, segments: [{ start: 0, end: 200, label: 'G', confidence: 0.66 }] },
+      { engine: { id: 'chord-consonance', name: 'consonance-ACE', version: 'fixture-v1' }, segments: [{ start: 0, end: 200, label: 'Em7', confidence: 0.9 }] }
+    ]
+  };
+  assert.equal(priorAdapter.load(manifest, { trackId: expected.trackId, sourcePath: expected.sourcePath }).ok, true);
+  priorAdapter.setPlaybackDuration(200900);
+  const transport = { mode: 'internal', state: 'playing', trackId: expected.trackId, durationMs: 200900, epoch: 0 };
+  const led = priorAdapter.frameAt(50000, { clock: { frameIndex: 1, nowMs: 1000, deltaMs: 100 }, transport, structureEngineId: 'auto', harmonyEngineId: 'consensus' });
+  // Weights: ChordMini 0.66*1.5 = 0.99 (G) vs BTC 0.72*1.35 + ACE 0.9*1 = 1.872 (E) — agreement of two engines still wins,
+  // so ACE and BTC together beat ChordMini alone; ChordMini leads only against BTC by itself.
+  assert.equal(led.labels.chord, 'Em', 'two agreeing engines outvote a lone ChordMini');
+  const duel = api.create();
+  assert.equal(duel.load({ ...manifest, harmony: manifest.harmony.slice(0, 2) }, { trackId: expected.trackId, sourcePath: expected.sourcePath }).ok, true);
+  duel.setPlaybackDuration(200900);
+  const duelFrame = duel.frameAt(50000, { clock: { frameIndex: 1, nowMs: 1000, deltaMs: 100 }, transport, structureEngineId: 'auto', harmonyEngineId: 'consensus' });
+  assert.equal(duelFrame.labels.chord, 'G', 'ChordMini prior must beat a slightly more confident BTC');
+  assert.equal(duel.cursorAt(50000, { structureEngineId: 'auto', harmonyEngineId: 'consensus' }).harmony.token, 'consensus:chord-chordmini:0');
+  const single = duel.cursorAt(50000, { structureEngineId: 'auto', harmonyEngineId: 'chord-btc' });
+  assert.equal(single.harmony.token, 'chord-btc:0', 'single-engine BTC selection must still work');
+  assert.deepEqual(api.constants.HARMONY_PRIOR, { 'chord-chordmini': 1.5, 'chord-btc': 1.35, 'chord-consonance': 1, 'chord-hybrid': 1, 'chord-cqt': 1, 'chord-cens': 1 });
+}
+
 const adapterSource = fs.readFileSync(
   path.join(__dirname, '..', 'xld-timeline-provider-adapter.js'),
   'utf8'

@@ -1,6 +1,6 @@
 (function(root) {
   'use strict';
-  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onBatchState, isBatchCancelled, localizeError=value=>value}) {
+  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onBatchState, onMidiActivated, onMidiListen, getPlaybackPosition, beforeMerge, isBatchCancelled, localizeError=value=>value}) {
     const select=document.getElementById('derivedSelect'), audition=document.getElementById('derivedAudition');
     const refreshButton=document.getElementById('derivedRefresh'), wavButton=document.getElementById('derivedWav');
     const midiButton=document.getElementById('derivedMidi'), status=document.getElementById('derivedStatus');
@@ -13,6 +13,14 @@
     const inSourceScope=record=>record && record.trackId===getSelected()?.id && record.sourceRunId===sourceKey();
     const midiFor=(stem,engine)=>result?.variants?.[stem]?.[engine] || (result?.midi?.[stem]?.engine===engine || (engine==='basic-pitch' && result?.midi?.[stem]?.model==='basic-pitch-0.4.0-onnx')?result?.midi?.[stem]:null);
     const activeMidi=(stem,midi)=>midi?.ok && result?.midi?.[stem]?.ok && result.midi[stem].runId===midi.runId;
+    // Kept in step with MANUAL_ENGINE in core/derived-assets.cjs; a renderer cannot require it, so
+    // tests/midi-revision-record.cjs pins the two together rather than trusting them to stay equal.
+    const MANUAL_ENGINE='manual-revision';
+    // The record actually in use for a stem, whatever produced it. Every model-shaped lookup in this file goes
+    // through the selected MODEL, so a hand-edited revision is invisible to all of them — which is why the panel
+    // used to describe a stem the user had just edited as having no result.
+    const activeRecord=(stem=midiStem())=>result?.midi?.[stem]?.ok?result.midi[stem]:null;
+    const manualActive=(stem=midiStem())=>activeRecord(stem)?.engine===MANUAL_ENGINE;
     const sourceName=()=>(stemModels||[]).find(model=>model.id===result?.engine)?.name || result?.engine || result?.model || '—';
     const mergeRun=document.getElementById('midiMergeRun'), mergeOpen=document.getElementById('midiMergeOpen'), mergeFolder=document.getElementById('midiMergeFolder');
     let mergeMessage=null;
@@ -34,6 +42,13 @@
     }
     const hasMidi=()=>Object.values(result?.midi||{}).some(m=>m?.ok) || Object.values(result?.variants||{}).some(v=>Object.values(v).some(m=>m?.ok));
     const mergeText=(key,params)=>rt('runtime.merge.'+key,params);
+    async function requestMerge(track){
+      const latest=await bridge.readDerived(track.id);
+      const parts=Object.entries(latest?.midi||{}).filter(([,m])=>m?.ok&&m.noteCount>0).map(([stem,m])=>({stem,runId:m.runId}));
+      const prepared=await beforeMerge?.(track.id,parts);
+      if(prepared?.ok===false)return prepared;
+      return bridge.mergeMidi(track.id);
+    }
     function renderMerge(busy) {
       for(const [id,key] of [['midiMergeTitle','title'],['midiMergeBadge','badge'],['midiMergeHint','hint'],['midiMergeRun','run'],['midiMergeOpen','open'],['midiMergeFolder','folder']]) document.getElementById(id).textContent=mergeText(key);
       const parts=supportedParts().filter(stem=>result?.midi?.[stem]?.ok && result.midi[stem].noteCount>0);
@@ -46,9 +61,13 @@
       }
       mergeRun.disabled=busy || parts.length<2;
       mergeOpen.disabled=mergeFolder.disabled=!result?.merged?.ok;
-      document.getElementById('midiMergeStatus').textContent=inSourceScope(mergeMessage) ? mergeText(mergeMessage.key,{error:mergeMessage.error})
+      // A skipped part is appended to whatever the line already says, including "merged". A merge that succeeded
+      // without a voice is the case this exists for, so the notice must survive the success message.
+      const left=(result?.merged?.skipped||[]).map(item=>mergeText('skippedItem',{stem:item.stem,reason:localizeError(item.reason)})).join(mergeText('skippedJoin'));
+      const leftOut=left?' · '+mergeText('skipped',{list:left}):'';
+      document.getElementById('midiMergeStatus').textContent=(inSourceScope(mergeMessage) ? mergeText(mergeMessage.key,{error:mergeMessage.error})
         : result?.merged?.ok ? mergeText('ready',{parts:result.merged.parts.length,notes:result.merged.noteCount})
-        : !getSelected()?mergeText('choose'):parts.length<2?mergeText('needsParts'):mergeText('pending');
+        : !getSelected()?mergeText('choose'):result?.merged?.error?.startsWith('merge-draft-')?localizeError(result.merged.error):parts.length<2?mergeText('needsParts'):mergeText('pending'))+leftOut;
     }
 
     const stemModelsElement=document.getElementById('derivedStemModels');
@@ -73,6 +92,17 @@
       if(['basic-pitch','yourmt3-plus'].includes(choices.strings))delete choices.strings;
       localStorage.setItem('xld.midi.models',JSON.stringify(choices));localStorage.setItem('xld.midi.strings-default','muscriptor-large-v2');
     }}catch(_){}
+    // One-time upgrade (drums.2): the 7-class DrumSep engine becomes the drum default after the user's listening
+    // verdict. Only a stored choice of the old default is dropped; anything the user picked on purpose is kept.
+    try {if(localStorage.getItem('xld.midi.drums-default')!=='adtof-stems-v1'){
+      if(choices.drums==='drums-adtof')delete choices.drums;
+      localStorage.setItem('xld.midi.models',JSON.stringify(choices));localStorage.setItem('xld.midi.drums-default','adtof-stems-v1');
+    }}catch(_){}
+    // One-time upgrade (piano.2): Transkun V2 becomes the piano default after the user's BCNR listening test; explicit later choices are kept.
+    try {if(localStorage.getItem('xld.midi.piano-default')!=='transkun-v2'){
+      if(choices.piano==='piano-highres')delete choices.piano;
+      localStorage.setItem('xld.midi.models',JSON.stringify(choices));localStorage.setItem('xld.midi.piano-default','transkun-v2');
+    }}catch(_){}
     function candidates(stem=midiStem()) {return (models||[]).filter(model=>model.stems.includes(stem)).sort((a,b)=>Number(b.defaultFor===stem)-Number(a.defaultFor===stem));}
     function defaultModel(stem=midiStem()) {const list=candidates(stem);return list.find(model=>model.defaultFor===stem && model.available)||list.find(model=>model.id==='basic-pitch' && model.available)||list.find(model=>model.available)||list[0];}
     function selectedModel(stem=midiStem()) {return candidates(stem).find(model=>model.id===choices[stem])||defaultModel(stem);}
@@ -95,7 +125,7 @@
         const item=document.createElement('span'), cached=midiFor(stem,model?.id);
         const state=cached?.ok&&cached.matches!==false&&!force.checked?'reuse':!model?.available?'unavailable':force.checked?'regenerate':'generate';
         item.className=state==='reuse'?'ready':'';
-        item.textContent=stem+' · '+(model?.name || '—')+' · '+batchText(state,{count:cached?.noteCount||0});list.append(item);
+        item.textContent=stem+' · '+(manualActive(stem)?rt('runtime.assets.runStatus.manual')+' · ':'')+(model?.name || '—')+' · '+batchText(state,{count:cached?.noteCount||0});list.append(item);
       }
       document.getElementById('midiBatchStatus').textContent=inSourceScope(batchReport) ? batchText(batchReport.key,batchReport)
         : !getSelected()?batchText('choose'):!plan.length?batchText('needsStems'):unavailable?batchText('unavailableHint'):force.checked?batchText('force',{count:plan.length}):batchText('ready');
@@ -159,12 +189,123 @@
         copy.append(status);
         const badge=document.createElement('span');badge.className='engine-badge';badge.textContent=rt(model.id===preferred?.id?'runtime.assets.modelDefault':'runtime.assets.modelAlternative');
         card.append(radio,copy,badge);
-        card.addEventListener('click',()=>{choices[midiStem()]=model.id;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}message=null;render();});
+        card.addEventListener('click',()=>{choices[midiStem()]=model.id;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}message=null;versionMessage=null;render();});
         modelsElement.append(card);
       }
-      document.getElementById('derivedMidiScope').textContent=selected?rt('runtime.assets.modelScope',{stem:midiStem()}):'';
+      document.getElementById('derivedMidiScope').textContent=manualActive()?rt('runtime.assets.runStatus.manual'):selected?rt('runtime.assets.modelScope',{stem:midiStem()}):'';
       document.getElementById('derivedMidiHint').textContent=!candidates().length?rt('runtime.assets.modelChoose'):
-        !models?rt('runtime.assets.modelLoading'):/^(strings|drums)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':'runtime.assets.modelHint');
+        !models?rt('runtime.assets.modelLoading'):/^(strings|drums)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):selectedModel()?.id==='piano-transkun'?rt('runtime.assets.transkunHint'):selectedModel()?.id==='drums-adtof-stems'?rt('runtime.assets.drumStemsHint'):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':'runtime.assets.modelHint');
+    }
+    // Which runs exist is scoped exactly like the rest of this panel: track, source, stem, engine. Values are
+    // {state:'loading'|'ready'|'error', runs}. render() only ever reads it; the fetch writes it and re-renders once.
+    const versionsBlock=document.getElementById('derivedMidiVersionsBlock'), versionsList=document.getElementById('derivedMidiVersions');
+    const versionCache=new Map();let versionMessage=null;
+    const versionKey=()=>[getSelected()?.id,sourceKey(),midiStem(),selectedModel()?.id].join('|');
+    const pill=(className,text)=>{const node=document.createElement('span');node.className=className;node.textContent=text;return node;};
+    const stamp=value=>{const date=new Date(value||0);return value&&Number.isFinite(date.getTime())?date.toLocaleString():'\u2014';};
+    function renderVersions(busy) {
+      document.getElementById('derivedMidiVersionsSummary').textContent=rt('runtime.assets.runVersions');
+      const track=getSelected(),engine=selectedModel()?.id,key=versionKey();
+      versionsBlock.hidden=!track||!engine||!bridge.listMidiRuns;
+      if(versionsBlock.hidden){versionsList.replaceChildren();return;}
+      // Fetch on open, not on every render: listRuns re-verifies every run's files.
+      if(!versionCache.has(key)&&versionsBlock.open){versionCache.set(key,{state:'loading',runs:[]});loadVersions(track,midiStem(),engine,key);}
+      versionsList.replaceChildren();
+      if(!versionsBlock.open)return;
+      const state=versionCache.get(key);
+      if(!state||state.state==='loading'){versionsList.append(pill('derived-hint',rt('runtime.assets.runLoading')));return;}
+      if(state.state==='error'){versionsList.append(pill('derived-hint',rt('runtime.assets.runFailed',{error:localizeError(state.error)})));return;}
+      // 'files-missing' runs are the deliberate Recycle-Bin residue: one footer line, never an actionable row.
+      const rows=state.runs.filter(run=>run.status!=='files-missing'),recycled=state.runs.length-rows.length;
+      if(!rows.length)versionsList.append(pill('derived-hint',rt('runtime.assets.runNone')));
+      const sourceChanged=rows.some(run=>run.status==='source-changed');
+      for(const run of rows) {
+        const row=document.createElement('div');row.className='version-row'+(run.active?' active':'');
+        const manual=run.engine===MANUAL_ENGINE;
+        row.dataset.runId=run.runId;row.dataset.engine=run.engine||'';
+        row.title=run.runId.slice(0,8)+' \u00b7 '+(manual?rt('runtime.assets.runStatus.manual'):(run.model||engine));
+        const copy=document.createElement('div');copy.className='version-copy';
+        if(run.active)copy.append(pill('version-pill',rt('runtime.assets.runActive')));
+        copy.append(pill('version-label',rt('runtime.assets.runLabel',{time:stamp(run.createdAt),count:run.noteCount??0})));
+        // The model string is the actual version discriminator; a uuid tells nobody anything. A revision has no
+        // model, and printing its placeholder string would only suggest one made it.
+        if(run.model&&!manual)copy.append(pill('model-engine-name',run.model));
+        // A revision is superseded forever \u2014 no model version will ever match it \u2014 so the plain status word would
+        // read \u300c\u65e7\u7248\u672c\u300d permanently and be indistinguishable from an obsolete draft.
+        copy.append(pill('version-state',rt('runtime.assets.runStatus.'+(manual?'manual':run.status==='source-changed'?'sourceChanged':run.status==='invalid'?'invalid':run.status))));
+        if(manual&&['source-changed','invalid'].includes(run.status))copy.append(pill('version-state',rt('runtime.assets.runStatus.'+(run.status==='source-changed'?'sourceChanged':'invalid'))));
+        if(run.kept)copy.append(pill('version-pill kept',rt('runtime.assets.runKept')));
+        const actions=document.createElement('div');actions.className='version-actions';
+        const switchable=!busy&&!run.active&&['current','superseded'].includes(run.status);
+        for(const [name,label,enabled,handler] of [
+          ['switch',rt('runtime.assets.runSwitch'),switchable,()=>switchVersion(run)],
+          ['keep',rt(run.kept?'runtime.assets.runUnkeep':'runtime.assets.runKeep'),!busy,()=>keepVersion(run)],
+          // Unpin before deleting, mirroring how kept storage rows behave.
+          ['delete',rt('runtime.assets.runDelete'),!busy&&!run.kept&&Boolean(bridge.deleteMidi),()=>deleteVersion(run)],
+          ['reveal',rt('runtime.assets.runReveal'),true,()=>revealVersion(run)]]) {
+          const button=document.createElement('button');button.type='button';button.className='quiet-button';button.dataset.versionAction=name;
+          button.textContent=label;button.disabled=!enabled;button.addEventListener('click',handler);actions.append(button);
+        }
+        row.append(copy,actions);versionsList.append(row);
+      }
+      if(recycled>0)versionsList.append(pill('derived-hint',rt('runtime.assets.runTrashedFooter',{count:recycled})));
+      versionsList.append(pill('derived-hint',rt(sourceChanged?'runtime.assets.runSourceChangedHint':'runtime.assets.runRecycledHint')));
+      if(versionMessage)versionsList.append(pill('derived-hint',versionMessage));
+    }
+    async function loadVersions(track,stem,engine,key) {
+      const ask=async engineId=>{try{const value=await bridge.listMidiRuns({trackId:track.id,stem,engine:engineId});
+        return value?.ok?{ok:true,runs:value.runs||[]}:{ok:false,error:value?.error||'request-failed'};}catch(error){return {ok:false,error:String(error)};}};
+      // Hand-edited revisions are fetched every time, whatever model is selected. The panel is keyed on the
+      // selected model, and a revision belongs to no model — so without this second, unconditional query the
+      // user's own edits would have no row at all, and therefore no way to switch back to them and, worse, no
+      // 保留 button. Work you cannot see is work you cannot pin.
+      const [model,manual]=await Promise.all([ask(engine),ask(MANUAL_ENGINE)]);
+      versionCache.set(key,model.ok?{state:'ready',runs:[...(manual.runs||[]),...model.runs],manualError:manual.ok?null:manual.error}
+        :{state:'error',error:model.error,runs:[]});
+      if(versionKey()===key)render();
+    }
+    async function switchVersion(run) {
+      const track=getSelected();if(!track||pending||getBusy())return;
+      const stem=midiStem();
+      pending=true;versionMessage=null;render();
+      let response;try{response=await bridge.activateMidiRun({trackId:track.id,stem,engine:run.engine,runId:run.runId});}catch(error){response={ok:false,error:String(error)};}
+      // 'xld.midi.models' is the per-stem MODEL preference. A revision is not a model: selectedModel() discards an
+      // unknown id and falls back to the default, so writing it here would make the panel refuse to stay where the
+      // user put it — permanently, and across restarts.
+      if(response?.ok&&run.engine!==MANUAL_ENGINE){choices[stem]=run.engine;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}}
+      versionCache.clear();
+      try{await refresh();}finally{pending=false;}
+      versionMessage=response?.ok?rt('runtime.assets.runSwitched',{time:stamp(run.createdAt),count:run.noteCount??0})
+        :rt('runtime.assets.runSwitchFailed',{error:localizeError(response?.error||'request-failed')});
+      // The timeline note lane is built from the active pointer, so a switch has to redraw it.
+      if(response?.ok)onMidiActivated?.();
+      render();
+    }
+    async function keepVersion(run) {
+      const track=getSelected();if(!track||pending||getBusy())return;
+      pending=true;versionMessage=null;render();
+      try{await bridge.keepMidiRun({trackId:track.id,stem:midiStem(),runId:run.runId,value:!run.kept});}catch(_){}
+      versionCache.clear();
+      try{await refresh();}finally{pending=false;}
+      render();
+    }
+    async function deleteVersion(run) {
+      const track=getSelected();if(!track||pending||getBusy()||!bridge.deleteMidi)return;
+      const stem=midiStem();
+      pending=true;versionMessage=null;render();
+      let response;try{response=await bridge.deleteMidi({trackId:track.id,stem,engine:run.engine,runId:run.runId});}catch(error){response={ok:false,error:String(error)};}
+      if(response?.activated&&response.activated!==MANUAL_ENGINE){choices[stem]=response.activated;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}}
+      versionCache.clear();
+      try{await refresh();}finally{pending=false;}
+      if(response?.deleted)onMidiActivated?.();
+      if(!response?.canceled)versionMessage=rt(response?.deleted?'runtime.assets.deleteMidiDone':'runtime.assets.deleteMidiFailed',
+        {error:localizeError(response?.error||'request-failed')});
+      render();
+    }
+    async function revealVersion(run) {
+      const track=getSelected();if(!track)return;
+      const response=await bridge.revealDerived(track.id,'midi',midiStem(),run.engine,run.runId).catch(()=>null);
+      if(!response?.ok){message='runtime.assets.folderFailed';render();}
     }
     let trackId=null, result=null, sequence=0, switching=false, playback=null, message=null;
     const item=()=>auditionStems().find(stem=>stem.name===select.value);
@@ -182,7 +323,8 @@
       document.getElementById('derivedForceLabel').textContent=rt(view==='midi'?'runtime.assets.forceMidi':'runtime.assets.forceStems');
       document.getElementById('derivedMidiSelectLabel').textContent=rt('runtime.assets.midiSelect');
       midiSelect.setAttribute('aria-label',rt('runtime.assets.midiSelect'));
-      midiAudition.textContent=rt('runtime.assets.audition');
+      midiAudition.textContent=rt('runtime.transport.listenWav');
+      const midiListen=document.getElementById('derivedMidiListen');if(midiListen){midiListen.textContent=rt('runtime.transport.listenMidi');midiListen.title=rt('runtime.transport.currentMidi');midiListen.disabled=!result?.midi?.[midiStem()]?.ok || !result.midi[midiStem()].noteCount || switching;}
       document.getElementById('derivedMidiSource').textContent=result?.ok?rt('runtime.assets.midiSource',{model:sourceName()}):rt(inputFor('strings')?'runtime.assets.stringsOnly':'runtime.midiBatch.needsStems');
       document.getElementById('refinementMidiBoundary').textContent=rt('runtime.assets.refinementBoundary');
       const busy=pending || getBusy();
@@ -199,7 +341,7 @@
       deleteMidiButton.textContent=rt('runtime.assets.deleteMidi');
       deleteMidiButton.disabled=busy||!selectedMidi()?.ok||!bridge.deleteMidi;
       midiButton.textContent=rt(selectedMidi()?.ok?'runtime.assets.partMidi':'runtime.assets.midi');
-      renderStemModels(busy); renderModels(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy);
+      renderStemModels(busy); renderModels(busy); renderVersions(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy);
       const failure=selectedFailure();
       if(deletionMessage && inSourceScope(deletionMessage) && deletionMessage.stem===midiStem() && deletionMessage.engine===selectedModel()?.id) status.textContent=rt(deletionMessage.key,deletionMessage);
       else if(failure) status.textContent=rt('runtime.assets.failedDetail',{model:failure.model || rt('runtime.assets.separate'),error:localizeError(failure.detail)});
@@ -210,13 +352,17 @@
       else if(!result?.ok && !(view==='midi' && inputFor(midiStem()))) status.textContent=rt(result?.error==='stems-stale'?'runtime.assets.stale':'runtime.assets.missing');
       else {
         const midi=selectedMidi(),model=view==='midi'?selectedModel():null;
-        status.textContent=model ? rt(midi?.ok?(midi.noteCount===0?'runtime.assets.modelEmptyResult':midi.matches===false?'runtime.assets.modelSupersededResult':activeMidi(midiStem(),midi)?'runtime.assets.modelActiveResult':'runtime.assets.modelSavedResult'):'runtime.assets.modelNoResult',{model:model.name,count:midi?.noteCount||0}) : rt('runtime.assets.ready');
+        // Before the model lookup, because the model lookup cannot see this. A revision is permanently
+        // matches:false, so the line below would have called the user's own edit 「来自旧模型版本」 and told them to
+        // press 生成 MIDI to replace it — the one sentence in the app that recruits the user into destroying it.
+        if(view==='midi'&&manualActive()) status.textContent=rt('runtime.assets.manualActiveResult',{count:activeRecord()?.noteCount||0});
+        else status.textContent=model ? rt(midi?.ok?(midi.noteCount===0?'runtime.assets.modelEmptyResult':midi.matches===false?'runtime.assets.modelSupersededResult':activeMidi(midiStem(),midi)?'runtime.assets.modelActiveResult':'runtime.assets.modelSavedResult'):'runtime.assets.modelNoResult',{model:model.name,count:midi?.noteCount||0}) : rt('runtime.assets.ready');
       }
       onChange?.();
     }
     function reset() {
       sequence++; trackId=getSelected()?.id || null; result=null; message=null; mergeMessage=null; batchReport=null; stringsMessage=null;
-      forceByView.stems=forceByView.midi=force.checked=false; midiSelect.replaceChildren();
+      forceByView.stems=forceByView.midi=force.checked=false; midiSelect.replaceChildren(); versionCache.clear(); versionMessage=null;
       select.replaceChildren(new Option(rt('runtime.assets.original'),'original')); render();
     }
     async function refresh() {
@@ -226,9 +372,11 @@
       const request=++sequence;
       const [response]=await Promise.all([bridge.readDerived(track.id).catch(()=>({ok:false,error:'read-failed',stems:[]})),loadModels(),loadStemModels()]);
       if(request!==sequence || track.id!==getSelected()?.id) return;
-      const choice=select.value, midiChoice=midiStem(), previousSource=sourceKey();
+      const choice=select.value, midiChoice=midiStem(), previousSource=sourceKey(), previousRun=selectedMidi()?.runId;
       trackId=track.id; result=response; message=null;
-      if(previousSource!==sourceKey()){mergeMessage=null;batchReport=null;}
+      if(previousSource!==sourceKey()){mergeMessage=null;batchReport=null;versionCache.clear();versionMessage=null;}
+      // A run, a batch or a task completion changes which versions exist without moving the source key.
+      if(previousRun!==selectedMidi()?.runId){versionCache.clear();versionMessage=null;}
       for(const [key,failure] of failures) {
         if(failure.trackId!==track.id || (failure.kind==='midi' && failure.sourceRunId!==inputFor(failure.stem)?.runId)) continue;
         const updated=failure.kind==='stems'?result?.stemVariants?.[failure.engine]:result?.variants?.[failure.stem]?.[failure.engine];
@@ -255,7 +403,7 @@
       if(!track || !source || switching) return;
       const same=getCurrent()?.id===track.id;
       if(!forcePlay && !same) {render();return;}
-      const start=same ? Number(audio.currentTime)||0 : 0;
+      const start=getPlaybackPosition?.(track.id) ?? (same ? Number(audio.currentTime)||0 : 0);
       const shouldPlay=forcePlay || (same && !audio.paused);
       switching=true; message=null; render();
       try {await playTrack(track,queueFor(track),shouldPlay,start,source);}
@@ -270,8 +418,9 @@
     }
     select.addEventListener('change',()=>{message=null;render();switchAudio(false);});
     audition.addEventListener('click',()=>switchAudio(true));
-    midiSelect.addEventListener('change',()=>{message=null;render();});
+    midiSelect.addEventListener('change',()=>{message=null;versionMessage=null;render();});
     midiAudition.addEventListener('click',()=>switchAudio(true,inputFor(midiStem())?.audioUrl));
+    document.getElementById('derivedMidiListen')?.addEventListener('click',()=>onMidiListen?.(midiStem()));
     refreshButton.addEventListener('click',()=>{models=null;stemModels=null;refresh();});
     stringsSelect.addEventListener('change',async()=>{
       const track=getSelected(),value=(result?.strings?.choices||[]).find(item=>item.runId===stringsSelect.value);
@@ -282,14 +431,16 @@
       if(getSelected()?.id===track.id){stringsMessage=response?.ok?null:rt('runtime.assets.stringsSelectFailed',{error:localizeError(response?.error||'request-failed')});if(response?.ok&&value&&inputFor('strings'))midiSelect.value='strings';}
       render();
     });
+    versionsBlock.addEventListener('toggle',()=>render());
     force.addEventListener('change',()=>{forceByView[view]=force.checked;render();});
     deleteMidiButton.addEventListener('click',async()=>{
       const track=getSelected(),stem=midiStem(),engine=selectedModel()?.id,midi=selectedMidi(),sourceRunId=sourceKey();
       if(!track||pending||getBusy()||!midi?.ok||!bridge.deleteMidi)return;
       pending=true;deletionMessage=null;message=null;render();
       let response;try{response=await bridge.deleteMidi({trackId:track.id,stem,engine,runId:midi.runId});}catch(error){response={ok:false,error:String(error)};}
+      versionCache.clear();versionMessage=null;
       if(response?.deleted){failures.delete(failureKey(track.id,'midi',stem,engine));batchReport=null;mergeMessage=null;
-        if(response.activated){choices[stem]=response.activated;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}}
+        if(response.activated&&response.activated!==MANUAL_ENGINE){choices[stem]=response.activated;try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}}
       }
       try{await refresh();}finally{pending=false;}
       if(getSelected()?.id===track.id && sourceKey()===sourceRunId && !response?.canceled){
@@ -363,7 +514,7 @@
                 mergeSkipped=true;return {ok:true,skipped:true};
               }
             }
-            const response=step.kind==='merge'?await bridge.mergeMidi(track.id):await bridge.runDerived(track.id,'midi',step.stem,regenerate,step.engine);
+            const response=step.kind==='merge'?await requestMerge(track):await bridge.runDerived(track.id,'midi',step.stem,regenerate,step.engine);
             if(response.task)onTask(response.task);
             if(response.ok && step.stem) {failures.delete(failureKey(track.id,'midi',step.stem,step.engine,step.sourceRunId));await refresh();}
             return response;
@@ -385,7 +536,7 @@
       pending=true;mergeMessage={trackId:track.id,sourceRunId,key:'working'};
       onTask({trackId:track.id,trackTitle:track.title,engine:'midi-merge',engineName:mergeText('title'),status:'starting',progress:0});render();
       let response;
-      try {response=await bridge.mergeMidi(track.id);}catch(error){response={ok:false,error:String(error)};}
+      try {response=await requestMerge(track);}catch(error){response={ok:false,error:String(error)};}
       onTask(response.task || null);
       try {await refresh();} finally {pending=false;}
       if(getSelected()?.id===track.id)mergeMessage=response.ok?null:{trackId:track.id,sourceRunId,key:response.error==='analysis-cancelled'?'cancelled':'failed',error:localizeError(response.detail || response.error)};

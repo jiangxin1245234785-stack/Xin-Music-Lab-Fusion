@@ -26,7 +26,6 @@
     "stems": [
       "piano"
     ],
-    "defaultFor": "piano",
     "model": "piano-highres-c3fa9730725b",
     "backend": "highres",
     "modelType": "Note_pedal",
@@ -43,6 +42,32 @@
       "frameThreshold": 0.1,
       "pedalOffsetThreshold": 0.2,
       "midiTempo": 120
+    }
+  },
+  {
+    "id": "piano-transkun",
+    "name": "Transkun V2",
+    "stems": [
+      "piano"
+    ],
+    "defaultFor": "piano",
+    "model": "transkun-2.0.1-50a80010-aug-noext-v1",
+    "backend": "transkun",
+    "checkpoint": {
+      "file": "pretrained/2.0.pt",
+      "sha256": "50a80010effc2a59ffcd068a95cd2b29bd7f23a27a3515bc3ccd209c89a3d44c",
+      "size": 56408978,
+      "repository": "pypi:transkun",
+      "revision": "2.0.1"
+    },
+    "options": {
+      "configFile": "2.0.conf",
+      "configSha256": "d3d989214eb148230ee5df476d994dcde6af595904d3f968f1221d2e3bea5ac6",
+      "checkpointVariant": "pip-2.0-augmented-no-pedal-extension",
+      "segmentHopSeconds": 8,
+      "segmentSeconds": 16,
+      "midiTempo": 120,
+      "adapterVersion": 1
     }
   },
   {
@@ -103,7 +128,6 @@
     "stems": [
       "drums"
     ],
-    "defaultFor": "drums",
     "model": "adtof-5class-1bc986e596ec-v1",
     "backend": "adtof",
     "checkpoint": {
@@ -124,6 +148,72 @@
       "velocity": 100,
       "midiTempo": 120
     }
+  },
+  {
+    "id": "drums-adtof-stems",
+    "name": "ADTOF · DrumSep 7 类",
+    "stems": [
+      "drums"
+    ],
+    "model": "adtof-5class-1bc986e596ec+drumsep-mdx23c6-d2a4aa53-v1",
+    "backend": "adtof-stems",
+    "checkpoint": {
+      "file": "adtof_frame_rnn_pytorch_weights.pth",
+      "sha256": "1bc986e596ec47ba0b44916f87cd4a39f0b2bec23596df3fb5d0e87749217320",
+      "size": 3617805,
+      "repository": "xavriley/ADTOF-pytorch",
+      "revision": "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
+    },
+    "options": {
+      "kickThreshold": 0.22,
+      "snareThreshold": 0.24,
+      "tomThreshold": 0.32,
+      "hihatThreshold": 0.22,
+      "cymbalThreshold": 0.3,
+      "chunkFrames": 3000,
+      "contextFrames": 500,
+      "midiTempo": 120,
+      "drumNoteSeconds": 0.1,
+      "kit": {
+        "file": "aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt",
+        "sha256": "d2a4aa53eb584d21eead358a4e66d1882ad182911be018f052b5da73be9096d0",
+        "size": 437652699,
+        "config": "config_drumsep_mdx23c_6stem.yaml",
+        "configSha256": "bd6f471e3bfdd81ef9d9cd9f57a86e3d5e11b8941a5951db8a3c8585a6b4cfc1",
+        "architecture": "mdx23c-tfc-tdf-v3",
+        "stems": [
+          "kick",
+          "snare",
+          "toms",
+          "hh",
+          "ride",
+          "crash"
+        ],
+        "repository": "github:jarredou/models (deleted; mirror huggingface:Sucial/MSST-WebUI)",
+        "revision": "aufr33-jarredou_MDX23C_DrumSep_model_v0.1",
+        "license": "CC-BY-NC-ND-4.0"
+      },
+      "kitBatch": 4,
+      "drumMap": {
+        "kick": 36,
+        "snare": 38,
+        "tom": 47,
+        "hihat": 42,
+        "crash": 49,
+        "ride": 51
+      },
+      "windowPreSeconds": 0.01,
+      "windowPostSeconds": 0.08,
+      "energyFrameSeconds": 0.005,
+      "rideRatio": 1.0,
+      "velocityFloor": 32,
+      "velocityCeil": 127,
+      "percentileLow": 10,
+      "percentileHigh": 98,
+      "minimumHitsForClassScale": 4,
+      "adapterVersion": 1
+    },
+    "defaultFor": "drums"
   },
   {
     "id": "yourmt3-plus",
@@ -300,7 +390,10 @@
       "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
       "adapterVersion": 2,
       "drumNoteSeconds": 0.1
-    }
+    },
+    "retiredFor": [
+      "drums"
+    ]
   },
   {
     "id": "drums-muscriptor-large",
@@ -328,6 +421,9 @@
       "adapterVersion": 2,
       "weightDtype": "float16",
       "drumNoteSeconds": 0.1
-    }
+    },
+    "retiredFor": [
+      "drums"
+    ]
   }
 ]

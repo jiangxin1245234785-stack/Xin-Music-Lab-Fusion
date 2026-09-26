@@ -6,6 +6,7 @@
   <title>Xin's Local Deck</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="workbench.css">
 </head>
 <body class="workspace-app">
   <div class="noise"></div>
@@ -39,6 +40,14 @@
       </section></details>
   </header>
 
+  <dialog id="resultSweepDialog" class="storage-dialog" aria-labelledby="resultSweepTitle">
+    <div class="storage-heading"><div><h2 id="resultSweepTitle">全库结果清理</h2><p id="resultSweepSummary"></p></div><button id="resultSweepClose" class="quiet-button">关闭</button></div>
+    <div class="storage-toolbar"><select id="resultSweepFilter" aria-label="结果类型" data-i18n-aria-label="static.sweep.filter.aria"></select><button id="resultSweepRefresh" class="quiet-button">刷新</button></div>
+    <p id="resultSweepHelp" class="derived-hint" data-i18n="static.sweep.help">按「碎片」排序：短于两秒的段落越多，切分越可能是噪声。删除移至回收站，可还原；不触碰人工标注与音频。</p>
+    <p id="resultSweepStatus" role="status" aria-live="polite"></p>
+    <div id="resultSweepRows" class="sweep-rows"></div>
+    <div class="storage-footer"><strong id="resultSweepSelected"></strong><button id="resultSweepClear" class="danger-button" disabled>删除所选</button></div>
+  </dialog>
   <dialog id="storageDialog" class="storage-dialog" aria-labelledby="storageTitle">
     <div class="storage-heading"><div><h2 id="storageTitle">存储管理</h2><p id="storageSummary"></p></div><button id="storageClose" class="quiet-button">关闭</button></div>
     <p id="storageRoot" class="storage-path"></p>
@@ -98,7 +107,7 @@
       <section class="analysis-target">
         <div class="workspace-cover"><img id="workspaceCover" alt="" hidden><span id="workspaceCoverFallback">XLD</span></div><div class="workspace-target-copy"><span class="eyebrow"><span data-workspace-copy="selected">工作曲目</span></span><strong id="analysisTargetTitle">请单击选择一首曲目</strong><small id="analysisTargetMeta">单击只选择，双击或 ▶ 才播放</small></div>
       <button id="workspaceLocate" class="quiet-button" data-workspace-copy="locate">定位曲目</button></section>
-      <nav class="workspace-tabs" role="tablist" aria-label="工作台"><button type="button" id="workspace-tab-overview" role="tab" data-workspace-tab="overview" aria-selected="true" tabindex="0" aria-controls="workspaceContent" data-workspace-copy="overview">概览</button><button type="button" id="workspace-tab-section" role="tab" data-workspace-tab="section" data-lab="section" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="section">段落</button><button type="button" id="workspace-tab-harmony" role="tab" data-workspace-tab="harmony" data-lab="harmony" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="harmony">和弦</button><button type="button" id="workspace-tab-stems" role="tab" data-workspace-tab="stems" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="stems">分轨</button><button type="button" id="workspace-tab-midi" role="tab" data-workspace-tab="midi" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="midi">MIDI</button></nav>
+      <nav class="workspace-tabs" role="tablist" aria-label="工作台"><button type="button" id="workspace-tab-overview" role="tab" data-workspace-tab="overview" aria-selected="true" tabindex="0" aria-controls="workspaceContent" data-workspace-copy="overview">概览</button><button type="button" id="workspace-tab-section" role="tab" data-workspace-tab="section" data-lab="section" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="section">段落</button><button type="button" id="workspace-tab-harmony" role="tab" data-workspace-tab="harmony" data-lab="harmony" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="harmony">和弦</button><button type="button" id="workspace-tab-stems" role="tab" data-workspace-tab="stems" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="stems">分轨</button><button type="button" id="workspace-tab-midi" role="tab" data-workspace-tab="midi" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="midi">转谱</button><button type="button" id="workspace-tab-timeline" role="tab" data-workspace-tab="timeline" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="timeline">时间轴</button></nav>
       </div>
       <section id="taskCard" class="task-card hidden" aria-live="polite">
         <div class="task-topline">
@@ -116,6 +125,72 @@
   <div id="workspaceResults" class="workspace-results"></div>
   <section class="workspace-export"><div><strong data-workspace-copy="toXml">用于 XML 可视化</strong><p data-workspace-copy="exportHint">段落、和弦与人工标签通过现有接口交给 XML。</p></div><button id="exportMusicLabButton" class="icon-text-button" disabled data-i18n="static.result.export">更新 Music Lab 接口</button>
         <span id="integrationStatus">版本化 JSON · 尚未导出</span></section>
+</section><section id="workspaceTimeline" class="timeline-card" hidden aria-labelledby="timelineTitle">
+  <div class="timeline-head"><div><h2 id="timelineTitle">时间轴</h2><p id="timelineHint"></p></div>
+    <div class="timeline-zoom"><label class="timeline-strip"><span id="timelineStripLabel">轨下条带</span><select id="timelineStrip"><option value="role">演奏方式</option><option value="harmony">和声关系</option><option value="off">关闭</option></select></label><button type="button" id="timelineLocate" class="quiet-button">定位光标</button><button type="button" id="timelineAnnotate" class="quiet-button" aria-pressed="false">标注</button><button type="button" id="timelineFocusExit" class="quiet-button" hidden>返回全部轨</button><button type="button" id="timelineZoomOut" class="quiet-button" aria-label="缩小">−</button><button type="button" id="noteTimelineZoomLabel" class="quiet-button" title="适应全曲">适应全曲</button><button type="button" id="timelineZoomIn" class="quiet-button" aria-label="放大">+</button></div></div>
+  <div class="timeline-audition">
+    <button type="button" id="timelineAudition" class="quiet-button" aria-pressed="false" disabled>试听本轨</button>
+    <select id="timelineAuditionScope" aria-label="试听范围"><option value="mix">全部 MIDI</option><option value="single">当前乐器</option></select>
+    <select id="timelineMixPreset" aria-label="混播预设"><option value="custom" disabled>自定义</option><option value="midi">仅 MIDI</option><option value="wav">全部 WAV</option><option value="hybrid">MIDI 优先</option></select>
+    <button type="button" id="timelineOriginal" class="quiet-button">原曲 A/B</button>
+    <span id="timelineRefinements"></span>
+    <select id="timelineAuditionSource" aria-label="WAV / MIDI"><option value="midi">MIDI</option><option value="wav">WAV</option></select>
+    <button type="button" id="midiEditToggle" class="quiet-button" aria-pressed="false" disabled>编辑音符</button>
+    <button type="button" id="timelineSelectNotes" class="quiet-button" aria-pressed="false" disabled>选择音符</button>
+    <button type="button" id="timelineLoopChoose" class="quiet-button" aria-pressed="false" disabled>圈选区间</button>
+    <input id="timelineLoopStart" type="number" min="0" step="0.001" placeholder="0.000" disabled><span>–</span>
+    <input id="timelineLoopEnd" type="number" min="0" step="0.001" placeholder="0.000" disabled>
+    <button type="button" id="timelineLoopEnable" class="quiet-button" aria-pressed="false" disabled>循环</button>
+    <button type="button" id="timelineLoopClear" class="quiet-button" disabled>清除</button>
+    <button type="button" id="midiExport" class="quiet-button" disabled>导出 MIDI</button>
+    <button type="button" id="timelineMixReset" class="quiet-button">重置监听</button>
+    <span id="timelineAuditionStatus" role="status"></span>
+  </div>
+  <div id="timelineSelection" class="timeline-selection" hidden>
+    <strong id="timelineSelectionCount" role="status"></strong>
+    <div id="timelineSelectionProperties" class="timeline-selection-properties" hidden>
+      <span id="timelineSelectionPitch"></span><span id="timelineSelectionStart"></span><span id="timelineSelectionEnd"></span>
+      <span id="timelineSelectionLength"></span><span id="timelineSelectionVelocity"></span>
+    </div>
+    <button type="button" id="timelineSelectionClear" class="quiet-button">清除选择</button>
+    <span id="timelineSelectionHint"></span>
+  </div>
+  <div id="midiEditBar" class="midi-edit-bar" hidden>
+    <div class="midi-edit-actions">
+      <button type="button" id="midiEditUndo" class="quiet-button">撤销</button><button type="button" id="midiEditRedo" class="quiet-button">重做</button>
+      <button type="button" id="midiEditDelete" class="quiet-button">删除所选</button>
+      <button type="button" id="midiEditJoin" class="quiet-button">合并所选</button>
+      <input id="midiEditSplitAt" class="midi-split-time" type="number" min="0" step="0.001" placeholder="光标（秒）">
+      <button type="button" id="midiEditSplit" class="quiet-button">拆分单音</button>
+      <label><span id="midiEditPitchLabel">音高</span><input id="midiEditPitch" type="number" min="0" max="127" step="1"></label>
+      <label><span id="midiEditStartLabel">开始（秒）</span><input id="midiEditStart" type="number" min="0" step="0.001"></label>
+      <label><span id="midiEditEndLabel">结束（秒）</span><input id="midiEditEnd" type="number" min="0" step="0.001"></label>
+      <label><span id="midiEditVelocityLabel">力度</span><input id="midiEditVelocity" type="number" min="1" max="127" step="1"></label>
+      <button type="button" id="midiEditApply" class="quiet-button">应用</button>
+      <button type="button" id="midiEditSave" class="quiet-button midi-edit-save">保存修订</button><button type="button" id="midiEditReset" class="quiet-button">恢复原始</button>
+    </div>
+    <div id="midiEditShapePreview" class="midi-shape-preview" hidden>
+      <span><strong id="midiEditShapeSummary"></strong><small id="midiEditShapeHint"></small></span>
+      <button type="button" id="midiEditShapeApply" class="quiet-button">应用到草稿</button><button type="button" id="midiEditShapeCancel" class="quiet-button">取消预览</button>
+    </div>
+    <div class="midi-edit-info"><span id="midiEditStatus" role="status" aria-live="polite"></span><span id="midiEditHint"></span></div>
+  </div>
+  <p id="midiOutputStatus" class="midi-output-status" role="status"></p>
+  <details id="midiDrafts" class="midi-drafts" hidden><summary id="midiDraftSummary">草稿</summary><div id="midiDraftList"></div></details>
+  <div id="timelineMixer" hidden></div>
+  <p id="timelineSummary" class="timeline-summary"></p><small id="timelineReference" class="derived-hint"></small>
+  <div id="timelineLanes" class="timeline-lanes"></div>
+  <form id="timelineEditor" class="timeline-editor" hidden>
+    <span id="timelineEditorKind" class="timeline-editor-kind"></span>
+    <label><span id="timelineEditorStartLabel">开始</span><input type="text" id="timelineEditorStart" inputmode="decimal" autocomplete="off"></label>
+    <label><span id="timelineEditorEndLabel">结束</span><input type="text" id="timelineEditorEnd" inputmode="decimal" autocomplete="off"></label>
+    <label class="timeline-editor-label"><span id="timelineEditorLabelLabel">标签</span><input type="text" id="timelineEditorLabel" maxlength="80" autocomplete="off"></label>
+    <button type="submit" id="timelineEditorSave" class="quiet-button">保存</button>
+    <button type="button" id="timelineEditorDelete" class="quiet-button" hidden>删除</button>
+    <button type="button" id="timelineEditorCancel" class="quiet-button">取消</button>
+    <span id="timelineEditorStatus" class="timeline-editor-status" aria-live="polite"></span>
+  </form>
+  <p id="timelineReadout" class="timeline-readout" aria-live="polite"></p>
 </section><section id="workspaceDerived" class="derived-card" hidden aria-labelledby="derivedHeading">
         <div class="derived-head"><strong id="derivedHeading">分轨与 MIDI</strong><button id="derivedRefresh" class="icon-text-button" disabled>刷新</button></div>
         <div class="derived-source"><span data-workspace-copy="source">试听音源</span>          <div id="derivedWavHint" class="derived-hint"></div>
@@ -154,9 +229,10 @@
           <div class="midi-work-grid">
             <section class="midi-single-card" aria-labelledby="derivedMidiHeading">          <div class="derived-block-head"><span id="derivedMidiHeading">MIDI 转谱</span><small id="derivedMidiScope"></small></div>
           <div class="compact-field"><label id="derivedMidiSelectLabel" for="derivedMidiSelect">转谱声部</label>
-          <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听</button></div>
+          <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听 WAV</button><button id="derivedMidiListen" class="secondary-button" disabled>试听 MIDI</button></div>
           </div><div id="derivedModels" class="engine-list midi-engine-list" role="group" aria-label="MIDI 模型"></div>
           <details class="compact-help"><summary data-workspace-copy="modelNotes">模型说明</summary><small id="derivedMidiHint" class="derived-hint">选择 bass、piano、guitar 或 drums 后生成 MIDI</small></details>
+          <details id="derivedMidiVersionsBlock" class="compact-help"><summary id="derivedMidiVersionsSummary">模型版本</summary><div id="derivedMidiVersions" class="midi-version-list"></div></details>
           <div class="derived-actions"><button id="derivedTranscribe" class="primary-button" disabled>生成 MIDI</button><button id="derivedMidi" class="icon-text-button" disabled>打开 MIDI 目录</button><button id="derivedDeleteMidi" class="icon-text-button" disabled>删除 MIDI</button></div>
 </section>
             <div class="midi-song-stack">          <section class="midi-batch-card">
@@ -249,6 +325,7 @@
 </details><details class="workspace-details"><summary data-workspace-copy="manage">结果管理</summary><div class="result-actions" aria-label="分析结果管理" data-i18n-aria-label="static.result.actions.aria">
         <button id="deleteAnalysisButton" class="danger-button" disabled data-i18n="static.result.deleteCurrent">删除当前结果</button>
         <button id="deleteAllAnalysisButton" class="icon-text-button" disabled data-i18n="static.result.clearTrack">清空本曲分析</button>
+        <button id="resultSweepButton" class="icon-text-button">全库结果清理</button>
 </div></details></section>
         <details id="workspaceLogs" class="workspace-details"><summary data-workspace-copy="logs">任务日志</summary><div id="analysisLog" class="analysis-log"><span>等待分析任务</span></div></details>
       </div>
@@ -256,7 +333,7 @@
   </main>  <footer class="player-dock">
     <div class="now-playing">
       <div class="mini-cover"><img id="playerCover" alt=""><span id="miniFallback">XLD</span></div>
-      <div class="now-copy"><small id="workspacePlaybackState"></small><strong id="nowTitle">尚未播放</strong><span id="nowArtist">从唱片库选择一首歌</span></div>
+      <div class="now-copy"><small id="workspacePlaybackState"></small><strong id="nowTitle">尚未播放</strong><span id="nowArtist">从唱片库选择一首歌</span><small id="playbackSource" role="status"></small></div>
     </div>
     <div class="transport">
       <div class="transport-buttons">
@@ -290,9 +367,20 @@
   <script src="i18n/runtime-messages.js"></script>
   <script src="midi-batch.js"></script>
   <script src="derived-controls.js"></script>
+  <script src="midi-edit.js"></script>
+  <script src="midi-editor-controls.js"></script>
+  <script src="track-layout.js"></script>
+<script src="timeline-controls.js"></script>
   <script src="refinement-controls.js"></script>
   <script src="storage-controls.js"></script>
+    <script src="result-sweep-controls.js"></script>
+  <script src="workbench-shell.js"></script>
+  <script src="workbench-results.js"></script>
+  <script src="workbench-properties.js"></script>
   <script src="workspace-controls.js"></script>
+  <script src="wav-stream.js"></script>
+<script src="audition-controls.js"></script>
+  <script src="playback-controls.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

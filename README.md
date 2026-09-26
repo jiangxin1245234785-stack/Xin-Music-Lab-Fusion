@@ -2,7 +2,7 @@
 
 **本地音乐分析、分轨与 MIDI 工作台 · Local music analysis, stem separation & MIDI workbench**
 
-[中文](#中文) · [English](#english) · [Download / 下载](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.ui.1) · [Model setup / 模型接入](docs/MODEL_INTEGRATION.md)
+[中文](#中文) · [English](#english) · [Download / 下载](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1) · [Model setup / 模型接入](docs/MODEL_INTEGRATION.md)
 
 ## 中文
 
@@ -13,15 +13,15 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 
 ### 下载与版本
 
-在 [Windows 预览版 Release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.ui.1) 的 **Assets** 中下载 `Xin-Music-Lab-0.5.0-preview.ui.1-win-x64.zip`，完整解压后运行 `XLD.exe` 或 `XML.exe`。不要只移动 EXE。
+在 [Windows 预览版 Release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1) 的 **Assets** 中下载 `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`，完整解压后运行 `XLD.exe` 或 `XML.exe`。不要只移动 EXE。
 
 **GitHub 的 Code → Download ZIP / Source code 是源码，不是可直接运行的程序。** 程序包不含模型权重、Python 或 AI 依赖。不配置模型也可体验曲库、播放和音频可视化；分析功能需要对应后端。
 
 | 版本范围 | 状态 |
 |---|---|
-| 已上传界面预览包 `0.5.0-preview.ui.1` | 基于 XLD core.26 / XML stems.11；当前下载入口 |
-| 最新本机工作台 `0.5.0-dev.workbench.8` | 基于 XLD core.69 / XML stems.13；已进行本机验证，**尚未上传为新发行包或完整源码快照** |
-| 本次 GitHub 更新（2026-09-25） | 双语 README、原创代码 MIT 声明、第三方说明与模型接入方案；不更新程序包 |
+| 新版第三方试用包 `0.5.0-preview.setup.1` | XLD core.69 / XML stems.13；首次配置、MIDI 基础环境安装、模型导入检查 |
+| 旧版 `0.5.0-preview.ui.1` | 保留旧资产，供回退；功能较少 |
+| 本次更新（2026-09-26） | 新 Windows ZIP、匹配的过滤后源码 ZIP、SHA-256 校验值；无模型权重 |
 
 截至本次更新，仓库仍为私有，下载需要访问权限。版本记录见[发布状态](docs/RELEASE_STATUS.md)。这是个人项目预览版，尚未完成干净 Windows 环境的完整验收。
 
@@ -38,12 +38,12 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 | 结果管理 | 比较模型结果、打开目录、清理生成文件 |
 | 音乐可视化 | 使用音频与已有分析结果驱动视觉表现 |
 
-**后续本机开发版**已增加统一时间轴、轨道折叠与排序、轨头 WAV/MIDI 监听、静音/独奏/音量、音符编辑与撤销/重做、人工修订版本、段落和和弦标注，以及集中的结果与属性面板。这些功能尚不包含在上述下载包中。人工修订与机器原始结果分开保存；当前编辑功能也不等于完整 DAW。
+**新版试用包**包含统一时间轴、轨道折叠与排序、轨头 WAV/MIDI 监听、静音/独奏/音量、音符编辑与撤销/重做、人工修订版本、段落和和弦标注，以及集中的结果与属性面板。人工修订与机器原始结果分开保存；当前编辑功能也不等于完整 DAW。
 
 ### 开始使用
 
 1. 解压预览包，启动 XLD，选择自己的曲库和输出目录。
-2. 按[模型接入说明](docs/MODEL_INTEGRATION.md)配置所需后端，先用短音频检查。
+2. 在顶部“配置”选择存储位置；可自动安装 MIDI 保存/导出环境，再导入已有 AI 环境。详情见[模型接入说明](docs/MODEL_INTEGRATION.md)。
 3. 选择歌曲 → 分轨 → 试听 → 选择声部与模型 → 生成 MIDI。
 4. 比较结果、保留需要的版本；需要可视化时打开 XML。
 
@@ -73,15 +73,15 @@ Xin Music Lab is a personal project for instrumental music, post-rock and comple
 
 ### Download and version status
 
-Open the [Windows preview release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.ui.1), expand **Assets**, and download `Xin-Music-Lab-0.5.0-preview.ui.1-win-x64.zip`. Extract the entire archive and launch `XLD.exe` or `XML.exe`. Keep the accompanying files beside the executables.
+Open the [Windows preview release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1), expand **Assets**, and download `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`. Extract the entire archive and launch `XLD.exe` or `XML.exe`. Keep the accompanying files beside the executables.
 
 **GitHub’s Code → Download ZIP / Source code downloads source, not a runnable application.** The application archive contains no model weights, Python environments or AI dependencies. Library browsing, playback and audio visualization are available without models; analysis requires the corresponding backend.
 
 | Version scope | Status |
 |---|---|
-| Uploaded interface preview `0.5.0-preview.ui.1` | XLD core.26 / XML stems.11; the current downloadable package |
-| Latest local workbench `0.5.0-dev.workbench.8` | XLD core.69 / XML stems.13; tested locally, **not yet uploaded as a new release or complete source snapshot** |
-| This GitHub update (2026-09-25) | Bilingual README, MIT license for original code, third-party notices and model integration proposal; no new application package |
+| New third-party preview `0.5.0-preview.setup.1` | XLD core.69 / XML stems.13; first-run setup, base MIDI installation and backend import/checks |
+| Previous `0.5.0-preview.ui.1` | Older assets retained for rollback; fewer features |
+| This update (2026-09-26) | New Windows ZIP, matching filtered source ZIP and SHA-256 checksums; no model weights |
 
 The repository remains private as of this update, so downloads require access. See [release status](docs/RELEASE_STATUS.md). This is a personal-project preview; full validation on a clean Windows machine is still outstanding.
 
@@ -98,12 +98,12 @@ The **uploaded interface preview** provides these workflows. AI steps require se
 | Result management | Compare model results, open output folders and remove generated files |
 | Music visualization | Drive visuals from audio and existing analysis results |
 
-The **later local development build** adds a shared timeline, track folding/reordering, track-header WAV/MIDI monitoring, mute/solo/volume, note editing and undo/redo, manual revisions, section/chord annotations, and consolidated result/property panels. These features are not in the linked download yet. Manual revisions remain separate from machine originals; the editor is not a complete DAW.
+The **new preview** includes a shared timeline, track folding/reordering, track-header WAV/MIDI monitoring, mute/solo/volume, note editing and undo/redo, manual revisions, section/chord annotations, and consolidated result/property panels. Manual revisions remain separate from machine originals; the editor is not a complete DAW.
 
 ### Getting started
 
 1. Extract the preview, launch XLD, and select your music library and output directory.
-2. Configure a required backend using the [bilingual model integration guide](docs/MODEL_INTEGRATION.md), then test a short clip.
+2. Open Setup from the header. Install the base MIDI save/export environment if needed, then import existing AI environments. See the [bilingual integration guide](docs/MODEL_INTEGRATION.md).
 3. Select a song → separate stems → listen → choose a part and model → generate MIDI.
 4. Compare and retain useful results; open XML when you want visualization.
 

@@ -1,8 +1,11 @@
 (function(root) {
   'use strict';
-  const tabs = ['overview', 'section', 'harmony', 'stems', 'midi'];
+  const tabs = ['overview', 'section', 'harmony', 'stems', 'midi', 'timeline'];
+  // The overview keeps one status card per result type; the timeline is a view, not a result type.
+  tabs.push('properties');
+  const resultCards = ['section', 'harmony', 'stems', 'midi'];
   const sections = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf', 'songformer'];
-  const harmonies = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc'];
+  const harmonies = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
 
   // Partial long-song runs must remain visibly partial even when a result exists.
   function isPartial(result, duration) {
@@ -16,14 +19,16 @@
     return end < total - 1.25;
   }
 
-  function create({getState, getDerived, audio, rt, setActiveLab, setDerivedView, selectAlbum, refresh}) {
+  function create({getState, getDerived, getTimeline, audio, rt, setActiveLab, setDerivedView, selectAlbum, refresh}) {
     const $ = id => document.getElementById(id);
     const copy = (key,params) => rt('runtime.workspace.'+key,params);
     const content = $('workspaceContent');
     let active = 'overview', level = 'albums', refreshing = false, refreshErrorTrack = null;
     const scrollPositions = {};
+    const shell = root.XldWorkbenchShell.create({show,copy,getTimeline});
+    const panel = $('workbenchPanelBody');
     const cards = new Map();
-    for (const key of tabs.slice(1)) {
+    for (const key of resultCards) {
       const card = document.createElement('button');
       card.type = 'button'; card.className = 'workspace-result'; card.dataset.workspaceGo = key;
       const top = document.createElement('span'); top.className = 'workspace-result-top';
@@ -34,11 +39,16 @@
       card.append(top,detail,action); $('workspaceResults').append(card);
       cards.set(key,{card,title,status,detail,action});
     }
+    const resultHub = root.XldWorkbenchResults.create({show,getState});
+    const properties = root.XldWorkbenchProperties.create({show,getState});
     function show(next) {
       if (!tabs.includes(next)) return;
-      scrollPositions[active] = content.scrollTop;
+      scrollPositions[active] = panel.scrollTop;
       active = next;
       $('workspaceOverview').hidden = active !== 'overview';
+      $('workspaceProperties').hidden = active !== 'properties';
+      $('workspaceTimeline').hidden = false;
+      shell.show(active);
       $('workspaceLab').hidden = !['section','harmony'].includes(active);
       $('workspaceDerived').hidden = !['stems','midi'].includes(active);
       document.querySelector('.derived-wav-block').hidden = active !== 'stems';
@@ -52,9 +62,11 @@
         button.classList.toggle('active',selected);
         button.setAttribute('aria-selected',String(selected)); button.tabIndex = selected ? 0 : -1;
       }
-      content.setAttribute('aria-labelledby','workspace-tab-'+active);
-      content.dataset.view = active;
-      content.scrollTop = scrollPositions[active] || 0;
+      content.setAttribute('aria-labelledby','workspace-tab-timeline');
+      content.dataset.view = 'timeline';
+      panel.setAttribute('aria-labelledby','workspace-tab-'+active);
+      panel.dataset.view = active;
+      panel.scrollTop = scrollPositions[active] || 0;
       render();
     }
     function showLibrary(next) {
@@ -77,6 +89,9 @@
       };
     }
     function render() {
+      shell.render();
+      resultHub.render();
+      properties.render();
       const state = getState(), selected = state.selectedTrack;
       const snapshot = getDerived(), derived = snapshot.trackId === selected?.id ? snapshot.result : null;
       for (const element of document.querySelectorAll('[data-workspace-copy]')) element.textContent = copy(element.dataset.workspaceCopy);
@@ -116,7 +131,7 @@
         elements.card.dataset.ready = String(Boolean(selected && summary.ready));
         elements.card.disabled = !selected;
         const task = state.activeTask;
-        const ids = key==='section'?sections:key==='harmony'?harmonies:key==='stems'?['demucs-6s','bs-roformer-sw']:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','drums-adtof','basic-pitch','guitar-gaps','piano-highres','bass-highres'];
+        const ids = key==='section'?sections:key==='harmony'?harmonies:key==='stems'?['demucs-6s','bs-roformer-sw']:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','drums-adtof','drums-adtof-stems','basic-pitch','guitar-gaps','piano-highres','piano-transkun','bass-highres'];
         if (task && selected && task.trackId===selected.id && ids.includes(task.engine)) elements.status.textContent = copy('running')+' '+Math.round((task.progress||0)*100)+'%';
       }
       $('workspaceMidiEmpty').hidden = Boolean(derived?.ok || derived?.strings?.active);
@@ -137,7 +152,7 @@
     for (const button of document.querySelectorAll('[data-library-level]')) button.addEventListener('click',()=>showLibrary(button.dataset.libraryLevel));
     $('workspaceLocate').addEventListener('click',()=>{
       const state=getState(), album=state.library?.albums?.find(album=>album.tracks.some(track=>track.id===state.selectedTrack?.id));
-      if (album) {selectAlbum(album);showLibrary('tracks');document.querySelector('.track-row.selected')?.scrollIntoView({block:'nearest'});}
+      if (album) {shell.openLibrary();selectAlbum(album);showLibrary('tracks');document.querySelector('.track-row.selected')?.scrollIntoView({block:'nearest'});}
     });
     $('workspaceRefresh').addEventListener('click',async()=>{
       if (refreshing || !getState().selectedTrack) return;

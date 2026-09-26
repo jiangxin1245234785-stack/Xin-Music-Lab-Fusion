@@ -34,14 +34,17 @@ assert(app.includes('function nextUncoveredRange'), 'long-track coverage detecti
 assert(app.includes('AI_MIN_RANGE_SECONDS = 15'), 'one-second SongFormer tail guard is missing');
 assert(app.includes("setSegmentStatus('runtime.segment.success'"), 'segment task must visibly leave the running state');
 assert(main.includes("contract: 'xld.music-lab/2'"), 'Music Lab harmony contract is missing');
-assert(main.includes("const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc']"), 'Harmony engine registry is missing');
+// The ids have one definition now (core/result-engines.cjs); these two used to carry their own copy.
+assert(main.includes("require('../core/result-engines.cjs')"), 'main must take the engine ids from the registry');
+assert(core.includes("require('./result-engines.cjs')"), 'the service must take the engine ids from the registry');
 assert(core.includes("'features-harmony'"), 'shared harmony feature cache is missing');
 assert(main.includes('harmony: harmonyAnalyses.map(normalizeTimeline)'), 'Music Lab harmony lane export is missing');
 assert(app.includes("activeLab: 'section'"), 'lab isolation state is missing');
 assert(app.includes("'harmony-all'"), 'lab-scoped deletion is missing');
 assert(html.includes('data-lab="harmony"'), 'Harmony Lab switcher is missing');
-const runtimeRoot = process.env.XLD_RUNTIME_ROOT || 'D:/Program Files/xin-local-deck-beta';
-assert(fs.existsSync(path.join(runtimeRoot, 'analysis-harmony', 'harmony_runner.py')), 'Shared Harmony runner is missing');
+assert(fs.existsSync(path.join(__dirname, '..', 'analysis-harmony', 'harmony_runner.py')), 'Harmony runner must ship with the source tree');
+assert(fs.existsSync(path.join(__dirname, '..', 'analysis-harmony', 'vendor', 'ace', 'ACE', 'inference.py')), 'Vendored consonance-ACE code is missing');
+assert(!fs.existsSync(path.join(__dirname, '..', 'analysis-harmony', 'btc', 'weights')), 'Chord weights must stay in runtime/, not in source');
 assert(core.includes("'.next.' + task.taskId + '.json'"), 'analysis staging output is missing');
 assert(core.includes('promoteResult(staging, output,'), 'validated result promotion is missing');
 assert(main.includes("RESULT_ENGINE_IDS.some(id => file === `${id}.json`)"), 'result loading must ignore metadata JSON');

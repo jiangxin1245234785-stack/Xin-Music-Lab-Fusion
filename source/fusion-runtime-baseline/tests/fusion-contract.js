@@ -108,7 +108,8 @@ assert(app.includes('glitchWebglRenderer.render'), 'the visual source must feed 
 assert(app.includes('boundarySerial'), 'offline section boundaries must become discrete events');
 assert(!app.includes("localStorage.setItem('smoke-resonance-"), 'Fusion must not overwrite original XML settings');
 assert(!fusion.includes('validateManifest(state.manifest'), 'manifest validation belongs in the privileged main process and shared adapter');
-assert(fusion.includes("'chord-btc': 1.35"), 'BTC-weighted harmony consensus policy is missing');
+assert(fusion.includes("'chord-chordmini': 1.5, 'chord-btc': 1.35"), 'ChordMini-led harmony consensus policy is missing');
+assert(fusion.includes("'chord-consonance': 1.0"), 'consonance-ACE must vote at the base prior');
 assert(fusion.includes('sectionSignals') && fusion.includes('climax: section.climax'), 'typed offline section mapping is missing');
 assert(fusion.includes('8s PROOF'), 'proof mode is missing');
 assert(main.includes('xldTimelineProvider.validateManifest'), 'main process must validate XLD manifests through the shared adapter');

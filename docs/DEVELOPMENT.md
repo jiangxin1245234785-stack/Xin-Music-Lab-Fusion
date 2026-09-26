@@ -4,6 +4,8 @@
 
 ## 当前基线
 
+2026-09-26 更新：`0.5.0-preview.setup.1` 将 core.69 / stems.13 工作台与第三方配置窗口打包。详情见 [RELEASE_STATUS](RELEASE_STATUS.md)。下列早期打包记录保留供溯源。
+
 最近本机预览包：`0.5.0-preview.paths.1`；XLD `0.5.0-dev.core.26`，XML `0.5.0-dev.stems.11`。本轮增加可搬迁配置与独立预览偏好，模型和算法未改动。后续以 [SOURCE_OF_TRUTH](../SOURCE_OF_TRUTH.md) 顶部为准。
 
 ## 阅读顺序

@@ -1,6 +1,6 @@
 {
   "name": "xins-music-lab-fusion",
-  "version": "0.5.0-dev.stems.11",
+  "version": "0.5.0-dev.stems.13",
   "description": "Xin's Music Lab Fusion · Canvas sources plus WebGL2 feedback glitch",
   "main": "desktop/main.cjs",
   "author": {

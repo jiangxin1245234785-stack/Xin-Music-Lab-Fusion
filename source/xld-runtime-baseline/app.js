@@ -66,13 +66,19 @@ const state = {
 let playbackSequence = 0, cancelPendingMetadata = null;
 let workspaceControls = null;
 let refinementControls = null;
+let timelineControls = null;
+let auditionControls = null;
+let playbackControls = null;
 const derivedControls = window.XldDerivedControls.create({
   bridge: window.XLD, audio: dom.audioElement, getSelected: () => state.selectedTrack,
   getCurrent: () => state.currentTrack, queueFor: track => albumForTrack(track)?.tracks || [],
-  playTrack, rt, localizeError: runtimeLocale.localizeBackendMessage, onPlaybackChange: renderNowPlayingCopy,
+  playTrack, rt, onMidiListen:listenMidi, beforeMerge:(trackId,parts)=>midiEditorControls.prepareMerge(trackId,parts), getPlaybackPosition:playbackPosition, localizeError: runtimeLocale.localizeBackendMessage, onPlaybackChange: renderNowPlayingCopy,
   getBusy: () => Boolean(state.activeTask || state.batchRunning), onTask: applyTask,
   onChange: () => {workspaceControls?.render();refinementControls?.update();},
   isBatchCancelled: () => state.batchCancelled,
+  // Switching versions changes which notes the timeline draws for that stem; onChange fires on every render.
+  // The audition is holding one of those note arrays, so it has to be told too or it keeps sounding the old version.
+  onMidiActivated: () => {auditionControls?.stop();timelineControls?.refresh();},
   onBatchState: ({running,index,total,reset}) => {
     if(reset)state.batchCancelled=false;
     state.batchRunning=running;state.batchIndex=index;state.batchTotal=total;
@@ -80,8 +86,11 @@ const derivedControls = window.XldDerivedControls.create({
   }
 });
 derivedControls.reset();
-window.XldStorageControls.create({bridge:window.XLD,getBusy:()=>Boolean(state.activeTask||state.batchRunning),beforeClear:()=>{for(const player of document.querySelectorAll('audio'))player.pause();},onChanged:async()=>{await derivedControls.refresh();await refinementControls?.refresh();await refreshAnalysisSummary();}});
-refinementControls=window.XldRefinementControls.create({bridge:window.XLD,getSelected:()=>state.selectedTrack,getCurrent:()=>state.currentTrack,getDerived:()=>derivedControls.snapshot(),getTask:()=>state.activeTask,getBusy:()=>Boolean(state.activeTask||state.batchRunning),audio:dom.audioElement,rt,onTask:applyTask});
+window.XldResultSweepControls?.create({bridge:window.XLD,rt,getBusy:()=>Boolean(state.activeTask||state.batchRunning),localizeError:runtimeLocale.localizeBackendMessage,
+  onChanged:async()=>{await refreshAnalysisSummary();if(state.selectedTrack)await loadTrackAnalysis(state.selectedTrack.id);}});
+window.XldStorageControls.create({bridge:window.XLD,getBusy:()=>Boolean(state.activeTask||state.batchRunning),// A synthesised part is not an <audio> element, so the sweep below would walk straight past it.
+beforeClear:()=>{playbackControls?.stop();for(const player of document.querySelectorAll('audio'))player.pause();auditionControls?.stop();},onChanged:async()=>{await derivedControls.refresh();await refinementControls?.refresh();await refreshAnalysisSummary();}});
+refinementControls=window.XldRefinementControls.create({bridge:window.XLD,getSelected:()=>state.selectedTrack,getCurrent:()=>state.currentTrack,getDerived:()=>derivedControls.snapshot(),getTask:()=>state.activeTask,getBusy:()=>Boolean(state.activeTask||state.batchRunning),audio:dom.audioElement,rt,onTask:applyTask,onAudition:value=>playbackControls?.preview(value),onStop:()=>playbackControls?.releasePreview(),getPlaybackPosition:playbackPosition});
 
 const segmentColors = ['#8f7cff','#5cc9b3','#df72aa','#ddbd62','#6ba0dc','#a97fd2','#df896f','#79b877','#c1a0ff'];
 const engineShortNames = { msaf: 'SC', 'msaf-sf': 'SF', 'msaf-foote': 'FT', 'msaf-cnmf': 'CN', songformer: 'AI' };
@@ -95,10 +104,13 @@ const functionLabelColors = {
 };
 const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
 const AI_ENGINE_IDS = ['songformer'];
-const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc'];
+const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
+// Primary chord engine (user decision 2026-09-18 after the four-track comparison): ChordMini leads,
+// BTC stays as the alternative and fallback.
+const PRIMARY_HARMONY_ENGINE = 'chord-chordmini';
 const SECTION_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS];
 const KNOWN_ENGINE_IDS = [...SECTION_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
-Object.assign(engineShortNames, { 'chord-cqt': 'CQ', 'chord-cens': 'CE', 'chord-hybrid': 'HX' });
+Object.assign(engineShortNames, { 'chord-cqt': 'CQ', 'chord-cens': 'CE', 'chord-hybrid': 'HX', 'chord-btc': 'BTC', 'chord-chordmini': 'CM', 'chord-consonance': 'ACE' });
 const chordRootColors = {
   C: '#e76f8f', 'C#': '#ef8a6f', D: '#e9b45f', Eb: '#c6ca62', E: '#8dcc70', F: '#65c795',
   'F#': '#56c5bf', G: '#5aa9df', Ab: '#7c8fe0', A: '#9a79df', Bb: '#be72cf', B: '#dc73b0', N: '#555b69'
@@ -265,6 +277,7 @@ function renderNowPlayingCopy() {
     dom.nowTitle.textContent = rt('runtime.player.none');
     dom.nowArtist.textContent = rt('runtime.player.choose');
   }
+  renderPlayback();
 }
 
 function renderLibrarySummary() {
@@ -505,8 +518,9 @@ function openTrackById(trackId) {
   return true;
 }
 
-async function selectTrack(track) {
+async function selectTrack(track, fromPlayback = false) {
   if (!track) return;
+  if(state.selectedTrack?.id!==track.id&&!fromPlayback){playbackSequence++;cancelPendingMetadata?.();playbackControls?.stop();}
   state.selectedTrack = track;
   state.analysisLoading = true;
   localStorage.setItem('xld:selectedTrack', track.id);
@@ -662,6 +676,8 @@ async function runSegmentAnalysis() {
 
 async function playTrack(track, queue = state.queue, autoPlay = true, startAt = null, sourceUrl = null) {
   if (!track) return;
+  if(state.currentTrack?.id!==track.id)playbackControls?.clearLoop();
+  playbackControls?.claim('main');
   const playbackRequest = ++playbackSequence;
   cancelPendingMetadata?.(); cancelPendingMetadata = null;
   const playbackUrl = sourceUrl || (state.currentTrack?.id === track.id ? dom.audioElement.getAttribute('src') : null) || track.fileUrl;
@@ -670,7 +686,7 @@ async function playTrack(track, queue = state.queue, autoPlay = true, startAt = 
   state.queueIndex = state.queue.findIndex(item => item.id === track.id);
   state.currentTrack = track;
   if (album && state.selectedAlbum?.id !== album.id) selectAlbum(album);
-  if (state.selectedTrack?.id !== track.id) await selectTrack(track);
+  if (state.selectedTrack?.id !== track.id) await selectTrack(track,true);
 
   if (playbackRequest !== playbackSequence) return;
   const sameSource = dom.audioElement.getAttribute('src') === playbackUrl;
@@ -697,6 +713,16 @@ async function playTrack(track, queue = state.queue, autoPlay = true, startAt = 
   if (autoPlay) {
     try { await dom.audioElement.play(); } catch (error) { logAnalysis('runtime.playback.failed', { error: error.message }); }
   }
+}
+
+// play() resolves only once playback actually begins, so anything that pauses in the meantime rejects it. Starting
+// the audition does exactly that, deliberately — the two are never meant to sound together — and a bare play()
+// would leave an unhandled AbortError in the console every time. The failure is still reported, the same way an
+// awaited play() reports it.
+function startPlayback() {
+  dom.audioElement.play()?.catch(error => {
+    if (error?.name !== 'AbortError') logAnalysis('runtime.playback.failed', { error: error.message });
+  });
 }
 
 function updateMediaSession(track, album) {
@@ -767,6 +793,7 @@ async function loadTrackAnalysis(trackId) {
   clearTagEditor();
   renderEngines();
   renderComparison();
+  timelineControls?.refresh();
   renderManualTags();
   updateResultActions();
 }
@@ -1309,8 +1336,8 @@ async function runAllAnalyses() {
 }
 
 // Whole-album batch: per track run one section engine (SongFormer auto-segment,
-// falling back to any available MSAF) + one chord engine (BTC, falling back to
-// any available chord engine). Strictly serial, reuses the batch/cancel state.
+// falling back to any available MSAF) + one chord engine (ChordMini since chords.2,
+// falling back to BTC, then any available chord engine). Strictly serial, reuses the batch/cancel state.
 async function runAlbumBatch() {
   const album = state.selectedAlbum;
   if (!album || !album.tracks?.length || state.activeTask || state.batchRunning) return;
@@ -1318,7 +1345,7 @@ async function runAlbumBatch() {
     || pool.find(id => state.engines.find(item => item.id === id)?.available)
     || null;
   const sectionEngine = pick('songformer', SECTION_ENGINE_IDS);
-  const chordEngine = pick('chord-btc', HARMONY_ENGINE_IDS);
+  const chordEngine = pick(PRIMARY_HARMONY_ENGINE, ['chord-btc', ...HARMONY_ENGINE_IDS]);
   const plan = [];
   if (sectionEngine) plan.push(sectionEngine);
   if (chordEngine) plan.push(chordEngine);
@@ -1391,8 +1418,9 @@ dom.shuffleAlbumButton.addEventListener('click', () => {
   if (tracks.length) playTrack(tracks[Math.floor(Math.random() * tracks.length)], tracks);
 });
 dom.playButton.addEventListener('click', () => {
+  if(playbackControls)return playbackControls.toggle();
   if (!state.currentTrack) return playTrack(state.selectedTrack || state.selectedAlbum?.tracks[0], state.selectedAlbum?.tracks || []);
-  if (dom.audioElement.paused) dom.audioElement.play(); else dom.audioElement.pause();
+  if (dom.audioElement.paused) startPlayback(); else dom.audioElement.pause();
 });
 dom.previousButton.addEventListener('click', () => stepTrack(-1));
 dom.nextButton.addEventListener('click', () => stepTrack(1));
@@ -1407,17 +1435,20 @@ dom.repeatButton.addEventListener('click', () => {
   renderRepeatTitle();
 });
 dom.volumeBar.addEventListener('input', () => {
-  dom.audioElement.volume = Number(dom.volumeBar.value);
+  if(playbackControls)playbackControls.setVolume(Number(dom.volumeBar.value));else dom.audioElement.volume = Number(dom.volumeBar.value);
   localStorage.setItem('xld:volume', dom.volumeBar.value);
 });
 dom.seekBar.addEventListener('pointerdown', () => { state.seeking = true; });
 dom.seekBar.addEventListener('input', () => {
-  if (!Number.isFinite(dom.audioElement.duration)) return;
-  dom.currentTime.textContent = formatTime((Number(dom.seekBar.value) / 1000) * dom.audioElement.duration);
+  const end=playbackControls?.info().end ?? dom.audioElement.duration;
+  if (!Number.isFinite(end)) return;
+  dom.currentTime.textContent = formatTime((Number(dom.seekBar.value) / 1000) * end);
 });
 dom.seekBar.addEventListener('change', () => {
-  if (Number.isFinite(dom.audioElement.duration)) dom.audioElement.currentTime = (Number(dom.seekBar.value) / 1000) * dom.audioElement.duration;
+  if(playbackControls)playbackControls.seek(Number(dom.seekBar.value)/1000*playbackControls.info().end);
+  else if (Number.isFinite(dom.audioElement.duration)) dom.audioElement.currentTime = (Number(dom.seekBar.value) / 1000) * dom.audioElement.duration;
   state.seeking = false;
+  playbackControls?.tick();
 });
 dom.revealButton.addEventListener('click', () => (state.currentTrack || state.selectedTrack) && window.XLD.revealTrack((state.currentTrack || state.selectedTrack).id));
 // Main workspace tabs own navigation and call setActiveLab for the shared lab.
@@ -1501,9 +1532,12 @@ dom.audioElement.addEventListener('timeupdate', () => {
   }
   if (state.currentTrack) localStorage.setItem('xld:lastPosition', String(dom.audioElement.currentTime));
   updatePlaybackIndicators();
+  timelineControls?.updatePlayhead();
 });
 dom.audioElement.addEventListener('ended', () => {
-  if (state.repeat === 'one') { dom.audioElement.currentTime = 0; dom.audioElement.play(); }
+  if(playbackControls?.owner()!=='main')return;
+  if(playbackControls?.loop()?.enabled){playbackControls.seek(playbackControls.loop().start);playbackControls.play();return;}
+  if (state.repeat === 'one') { dom.audioElement.currentTime = 0; startPlayback(); }
   else stepTrack(1);
 });
 dom.audioElement.addEventListener('error', () => logAnalysis('runtime.playback.loadFailed', { error: runtimeError(dom.audioElement.error?.message) }));
@@ -1516,11 +1550,11 @@ document.addEventListener('keydown', event => {
 });
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => dom.audioElement.play());
-  navigator.mediaSession.setActionHandler('pause', () => dom.audioElement.pause());
+  navigator.mediaSession.setActionHandler('play', () => playbackControls?.play());
+  navigator.mediaSession.setActionHandler('pause', () => playbackControls?.pause());
   navigator.mediaSession.setActionHandler('previoustrack', () => stepTrack(-1));
   navigator.mediaSession.setActionHandler('nexttrack', () => stepTrack(1));
-  navigator.mediaSession.setActionHandler('seekto', details => { if (Number.isFinite(details.seekTime)) dom.audioElement.currentTime = details.seekTime; });
+  navigator.mediaSession.setActionHandler('seekto', details => { if (Number.isFinite(details.seekTime)) playbackControls?.seek(details.seekTime); });
 }
 
 window.XLD.onAnalysisTask(async task => {
@@ -1535,7 +1569,7 @@ window.XLD.onAnalysisTask(async task => {
     await refreshAnalysisSummary();
     if (state.selectedTrack?.id === task.trackId) {
       await loadTrackAnalysis(task.trackId);
-      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','piano-highres','bass-highres','midi-merge','drums-adtof','mega-53'].includes(task.engine)) await derivedControls.refresh();
+      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53'].includes(task.engine)) await derivedControls.refresh();
     }
     // Keep the terminal result visible until it is dismissed or a new task starts.
   }
@@ -1568,6 +1602,8 @@ function refreshRuntimeLocaleUi() {
   renderRepeatTitle();
   renderNowPlayingCopy();
   derivedControls.render();
+  timelineControls?.render();
+  auditionControls?.render();
   dom.playButton.setAttribute('aria-label', rt(dom.audioElement.paused ? 'runtime.playback.playAria' : 'runtime.playback.pauseAria'));
   dom.albumGrid.scrollTop = scroll.albums;
   dom.trackList.scrollTop = scroll.tracks;
@@ -1609,6 +1645,7 @@ async function bootstrap() {
   renderAnalysisLogs();
   dom.audioElement.volume = Number(localStorage.getItem('xld:volume') || .82);
   dom.volumeBar.value = String(dom.audioElement.volume);
+  playbackControls?.setVolume(dom.audioElement.volume);
   await refreshLibrary();
   const [engines, settings, task, separationModes] = await Promise.all([
     window.XLD.getAnalysisEngines(),
@@ -1623,7 +1660,8 @@ async function bootstrap() {
   }
   state.settings = settings;
   state.selectedEngineByLab.section = state.engines.find(engine => SECTION_ENGINE_IDS.includes(engine.id) && engine.available)?.id || null;
-  state.selectedEngineByLab.harmony = state.engines.find(engine => HARMONY_ENGINE_IDS.includes(engine.id) && engine.available)?.id || null;
+  state.selectedEngineByLab.harmony = state.engines.find(engine => engine.id === PRIMARY_HARMONY_ENGINE && engine.available)?.id
+    || state.engines.find(engine => HARMONY_ENGINE_IDS.includes(engine.id) && engine.available)?.id || null;
   state.selectedEngine = state.selectedEngineByLab.section;
   dom.analysisRootLabel.textContent = compactPath(settings?.analysisRoot || rt('runtime.common.notSet'));
   dom.analysisRootLabel.title = settings?.analysisRoot || '';
@@ -1638,15 +1676,166 @@ async function bootstrap() {
     selectAlbum(rememberedAlbum);
     await selectTrack(rememberedAlbum.tracks.find(track => track.id === rememberedTrack));
   }
-  workspaceControls.show('overview');
+  workspaceControls.show('timeline');
   workspaceControls.showLibrary(state.selectedTrack ? 'tracks' : 'albums');
   state.bootstrapped = true;
   window.__xldAppReady = true;
   await acceptOpenRequest();
 }
 
+
+function playbackPosition(trackId=state.selectedTrack?.id) {
+  const p=playbackControls?.info();
+  if(p?.trackId===trackId)return p.time;
+  return state.currentTrack?.id===trackId ? Number(dom.audioElement.currentTime)||0 : 0;
+}
+function renderPlayback() {
+  if(!playbackControls)return;
+  const p=playbackControls.info(),track=p.track;
+  setTransportIcon(dom.playButton,p.playing||p.loading?'pause':'play');
+  dom.playButton.setAttribute('aria-label',rt(p.playing||p.loading?'runtime.playback.pauseAria':'runtime.playback.playAria'));
+  if(!state.seeking){dom.currentTime.textContent=formatTime(p.time||0);dom.seekBar.value=p.end>0?Math.round((p.time||0)/p.end*1000):0;}
+  dom.durationTime.textContent=formatTime(p.end||0);dom.seekBar.disabled=!p.available;
+  dom.repeatButton.disabled=p.id!=='main';
+  if(track){dom.nowTitle.textContent=track.title;dom.nowArtist.textContent=track.artist+' · '+track.album;}
+  const label=document.getElementById('playbackSource');
+  if(label){label.textContent=p.error?rt(p.error==='range'?'runtime.transport.range':'runtime.transport.failed'):p.label||'';label.title=label.textContent;}
+  const status=document.getElementById('workspacePlaybackState');
+  if(status)status.textContent=rt(p.loading?'runtime.audition.loading':p.playing?'runtime.workspace.playing':p.available?'runtime.workspace.paused':'runtime.workspace.player');
+}
+function setupPlayback(){
+ const main=dom.audioElement,refine=document.getElementById('refinementAudio');
+ let preview=null,previewEpoch=0,metadataCleanup=null;
+ const total=(track,fallback)=>Number.isFinite(fallback)&&fallback>0?fallback:Number(track?.duration)||0;
+ const previewStop=()=>{previewEpoch++;metadataCleanup?.();metadataCleanup=null;refine.pause();};
+ playbackControls=window.XldPlaybackControls.create({
+  volume:Number(dom.volumeBar.value),
+  onClaim:id=>{if(id!=='main'){playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;}const p=playbackControls?.info();if(p?.track) {setCover(dom.playerCover,dom.miniFallback,albumForTrack(p.track)?.coverUrl);updateMediaSession(p.track,albumForTrack(p.track));}},
+  onChange:()=>{renderPlayback();auditionControls?.render();timelineControls?.updatePlayhead();},
+  sources:{
+   main:{
+    info:()=>({track:state.currentTrack,trackId:state.currentTrack?.id,available:Boolean(state.currentTrack&&main.getAttribute('src')),playing:!main.paused,loading:Boolean(cancelPendingMetadata),time:Number(main.currentTime)||0,start:0,end:total(state.currentTrack,main.duration),
+      label:state.currentTrack&&derivedControls.playingStem(state.currentTrack)?'WAV · '+derivedControls.playingStem(state.currentTrack):rt('runtime.transport.original')}),
+    play:()=>{if(!state.currentTrack||state.selectedTrack?.id!==state.currentTrack.id)return playTrack(state.selectedTrack||state.selectedAlbum?.tracks[0],state.selectedAlbum?.tracks||[]);return main.play();},
+    pause:()=>{playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;main.pause();},stop:()=>{playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;main.pause();},seek:t=>{main.currentTime=t;},volume:v=>{main.volume=v;}
+   },
+   audition:{
+    scheduledLoop:true,currentLoop:()=>auditionControls.loop(),
+    info:()=>{const lane=timelineControls.laneFor(auditionControls.laneId()||timelineControls.focus()),track=state.selectedTrack,mix=auditionControls.mixInfo(),mixed=mix.scope==='mix';return {track,trackId:track?.id,available:mixed?mix.available:Boolean(lane),playing:auditionControls.playing(),loading:auditionControls.loading(),time:auditionControls.time()||0,start:0,end:total(track,mixed?mix.duration:lane?.duration),
+      label:mixed?(mix.wav?'WAV / MIDI · ':'MIDI · ')+rt('runtime.mix.source',{count:mix.audible})+(mix.isDraft?' · '+rt('runtime.transport.draft'):''):(auditionControls.mode()==='midi'?'MIDI':'WAV')+' · '+(lane?.instrument?.name||lane?.stem||'')+(auditionControls.mode()==='wav'? ' · '+rt('runtime.transport.groupWav') : lane?.isDraft?' · '+rt('runtime.transport.draft'):' · '+rt('runtime.transport.saved'))};},
+    play:()=>auditionControls.toggle(),pause:()=>auditionControls.pause(),stop:()=>auditionControls.stop(),seek:t=>auditionControls.seek(t),volume:v=>auditionControls.setVolume(v),
+    loop:value=>{const old=auditionControls.loop();if(!value){if(old)auditionControls.clearLoop();}else if(!old||old.start!==value.start||old.end!==value.end||old.enabled!==value.enabled)auditionControls.setLoop(value.start,value.end,value.enabled);}
+   },
+   refinement:{
+    info:()=>({track:preview?.track,trackId:preview?.track?.id,available:Boolean(preview),playing:!refine.paused,loading:Boolean(metadataCleanup),time:(preview?.start||0)+(Number(refine.currentTime)||0),start:preview?.start||0,end:preview?.end||0,label:'WAV · '+rt('runtime.transport.refinement')+' · '+(preview?.label||'')}),
+    play:()=>refine.play(),pause:previewStop,stop:previewStop,
+    seek:t=>{refine.currentTime=t-(preview?.start||0);},volume:v=>{refine.volume=v;}
+   }
+  }
+ });
+ playbackControls.preview=async value=>{
+  const previous=playbackPosition(value.track.id);previewStop();preview=value;
+  playbackControls.claim('refinement');const token=++previewEpoch;
+  const offset=previous>=value.start&&previous<value.end?previous-value.start:0;
+  refine.src=value.url;
+  if(refine.readyState<1)await new Promise(resolve=>{
+   const done=()=>{refine.removeEventListener('loadedmetadata',done);refine.removeEventListener('error',done);metadataCleanup=null;resolve();};
+   metadataCleanup=done;refine.addEventListener('loadedmetadata',done,{once:true});refine.addEventListener('error',done,{once:true});
+   refine.load();
+  });
+  if(token!==previewEpoch||playbackControls.owner()!=='refinement')return false;
+  if(refine.error)return playbackControls.play();
+  refine.currentTime=offset;return playbackControls.play();
+ };
+ playbackControls.releasePreview=()=>{previewStop();preview=null;if(playbackControls.owner()==='refinement')playbackControls.claim('main');};
+ refine.controls=false;
+ for(const event of ['play','pause','timeupdate','loadedmetadata','ended','error'])refine.addEventListener(event,()=>playbackControls.tick());
+ main.addEventListener('play',()=>playbackControls.claim('main'));
+ playbackControls.setVolume(Number(dom.volumeBar.value));
+ window.addEventListener('beforeunload',()=>playbackControls.stop());
+ function frame(){if(playbackControls.info().playing)playbackControls.tick();requestAnimationFrame(frame);}requestAnimationFrame(frame);
+}
+async function listenMidi(stem){
+ const track=state.selectedTrack?.id,position=playbackPosition(track),request=++playbackSequence;
+ workspaceControls.show('timeline');
+ await timelineControls.refresh();
+ if(state.selectedTrack?.id!==track||request!==playbackSequence)return;
+ const lane=timelineControls.firstLaneForStem(stem);if(!lane)return;
+ timelineControls.setFocus(lane.laneId);await auditionControls.setScope('single');await auditionControls.setMode('midi');
+ if(state.selectedTrack?.id===track&&request===playbackSequence)auditionControls.start(lane.laneId,position);
+}
+
+timelineControls = window.XldTimelineControls.create({
+  bridge: window.XLD, audio: dom.audioElement, getState: () => state, rt,
+  playTrack, albumTracks: track => albumForTrack(track)?.tracks || [],
+  formatTime: formatPreciseTime, parseTime: parseClock,
+  // Marks made on the chart are the same annotations the section lab writes, so both views refresh from one answer.
+  onAnnotationsChanged: tags => {
+    state.annotations = Array.isArray(tags) ? tags : [];
+    if (state.editingTagId && !state.annotations.some(tag => tag.id === state.editingTagId)) clearTagEditor();
+    renderManualTags();
+    renderComparison();
+    updateResultActions();
+    setIntegrationStatus('runtime.integration.auto');
+  },
+  // Focusing a different part, or reloading the lanes after a version switch, means what is sounding is no longer
+  // what is on screen.
+  onLanesChanged: () => {auditionControls?.lanesChanged();},
+  onSeek: seconds => playbackControls?.info().trackId===state.selectedTrack?.id ? playbackControls.seek(seconds) : false,
+  onLoop: (start,end) => playbackControls?.setLoop(start,end) || false,
+  getLoop: () => playbackControls?.loop(),
+  decorateLane:(lane,head,options)=>auditionControls?.decorateLane(lane,head,options)
+});
+timelineControls.bind();
+auditionControls = window.XldAuditionControls.create({
+  getLane: id => timelineControls?.laneFor(id) || null,
+  getLanes: () => timelineControls?.allLanes() || [],
+  getCatalog:()=>timelineControls?.mixCatalog(),
+  getMixError:()=>timelineControls?.mixError(),
+  chooseRefinement:(parent,id)=>timelineControls.chooseRefinement(parent,id),
+  readWavChunk:(key,index)=>window.XLD.readWavChunk(state.selectedTrack?.id,key,index),
+  onOriginal:async()=>{
+    const track=state.selectedTrack;if(!track)return;
+    const current=playbackControls.info(),position=current.trackId===track.id?current.time:0,active=current.playing;
+    if(current.id==='audition'){
+      await playTrack(track,albumForTrack(track)?.tracks||[],active,position,track.fileUrl);
+    }else{
+      await auditionControls.setScope('mix');
+      playbackControls.claim('audition');auditionControls.seek(position);
+      if(active)await auditionControls.start('@mix',position);
+    }
+  },
+  isOriginal:()=>playbackControls?.owner()==='main',
+
+  getFocus: () => timelineControls?.focus() || null,
+  getTrackKey: () => state.selectedTrack?.id || null,
+  rt,
+  // Start where the playhead already is, so what you hear lines up with what you were looking at.
+  positionHint: () => playbackPosition(),
+  // WebAudio has no timeupdate, so the playhead is driven from here while a part is sounding.
+  onTick: () => {timelineControls?.updatePlayhead();playbackControls?.tick();},
+  loopControls:{state:()=>playbackControls?.info(),set:(a,b)=>playbackControls?.setLoop(a,b),enable:value=>playbackControls?.enableLoop(value),clear:()=>playbackControls?.clearLoop()},
+  onStateChange: () => {
+    // Two sources at once is R6's subject, not this round's: starting one stops the other.
+    if (auditionControls?.playing() || auditionControls?.loading()) playbackControls?.claim('audition');
+    else if(!auditionControls?.laneId()&&playbackControls?.owner()==='audition')playbackControls.claim('main');
+    renderPlayback();
+  }
+});
+const midiEditorControls=window.XldMidiEditorControls.create({
+  bridge:window.XLD,timeline:timelineControls,rt,
+  onPreview:()=>playbackControls?.pause(),
+  onEdited:()=>auditionControls?.notesChanged(),
+  onSaved:()=>derivedControls.refresh()
+});
+timelineControls.setEditor(midiEditorControls);
+midiEditorControls.bind();
+setupPlayback();
+timelineControls.setTimeSource(() => playbackControls?.info().trackId===state.selectedTrack?.id ? playbackControls.info().time : null);
+auditionControls.bind();
+for(const event of ['play','pause','timeupdate','loadedmetadata'])dom.audioElement.addEventListener(event,()=>playbackControls?.tick());
 workspaceControls = window.XldWorkspaceControls.create({
-  getState: () => state, getDerived: () => derivedControls.snapshot(), audio: dom.audioElement, rt,
+  getState: () => state, getDerived: () => derivedControls.snapshot(), getTimeline: () => timelineControls, audio: dom.audioElement, rt,
   setActiveLab, setDerivedView: value => derivedControls.setView(value), selectAlbum,
   refresh: async () => {
     const track = state.selectedTrack;

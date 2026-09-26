@@ -1,3 +1,11 @@
+# setup.1 配置窗口 / Setup window
+
+2026-09-26：新版顶部“配置”可选择曲库与输出目录，自动安装 MIDI 保存/导出基础环境，导入已有模型环境、检查并保存路径。保存后重新打开应用。AI 依赖和权重仍按上游说明自行准备；检查可用性不等于完成真实音频推理。
+
+The new Setup window provides location selection, optional installation of the base MIDI save/export environment, and import/check/save for existing AI environments. Reopen the app after saving. AI dependencies and weights remain separately installed; availability checks do not certify audio inference.
+
+以下手改 runtime.json 的内容保留给旧版或进阶用户。 / Manual runtime.json instructions below remain for older builds and advanced users.
+
 # 模型自配说明
 
 适用：0.5.0-preview.ui.1（core.26 / stems.11）。应用只提供工作台和接入接口；模型、Python、GPU 依赖与授权由使用者自行准备。文中路径相对于解压目录。其他开发版的默认或新后端可能不同，请以随包清单为准。
@@ -84,6 +92,19 @@ Mega53 从上游 v1.0.21 获取 ckpt 与 yaml，在 XLD_REFINE_ROFORMER_MODELS �
 这些高级后端仍需人工配置，未提供通用的一键安装步骤。ADTOF 的外部 vendor 源码与权重不在界面包内；如自行取得适用授权，适配器期望 analysis-midi/vendor/adtof_pytorch 下的代码与 data/adtof_frame_rnn_pytorch_weights.pth（版本见 models.json）。AudioSep 还需要与本适配器匹配的 separator.pt、conditions.npz、manifest.json，不能仅指定原始大 checkpoint。
 
 段落/和弦需要 XLD_RUNTIME_ROOT / XLD_STABLE_RUNTIME_ROOT 指向配套 analysis、analysis-ai、analysis-harmony runner 目录，同时配置 XLD_PYTHON、XLD_AI_PYTHON、XLD_HARMONY_PYTHON；这些旧后端的完整安装尚未整理成第三方可复现流程。本界面版不承诺照一条命令就能启用所有引擎。不需要这些功能时保持未配置即可。
+
+### 和弦对照引擎（chords-v1）
+
+ChordMini 与 consonance-ACE 的代码随 XLD 发布（analysis-harmony/btc 与 analysis-harmony/vendor/ace），权重不随包。自行准备时在 XLD_CHORDS_ROOT 下放置：
+
+- models/chordmini/btc_model_best.pth：ChordMini（MIT，https://github.com/ptnghia-j/ChordMini，commit aa6e3a8d），sha256 e0a12ca6d881f81e01dfb459b4836ec7dac8d8f87b0170a412b5807256b3a1fc，35,942,692 字节。由 XLD_HARMONY_PYTHON（ai 环境，含 torch、librosa、soxr、packaging）加载。
+- models/consonance-ace/conformer_decomposed_smooth.ckpt：consonance-ACE（MIT，https://github.com/andreamust/consonance-ACE，commit d17633ae），sha256 6ab1a314366fefb3d09e351ae7cb7f826a9e0718e94e7ff164df844ba7bcd954，57,624,994 字节。由 XLD_CHORDS_PYTHON 运行，该解释器需在 ai 环境之上再有 lightning 2.5、gin-config、harte-library、pumpp。
+
+BTC 权重 btc_model_large_voca.pt 仍位于 XLD_RUNTIME_ROOT/analysis-harmony/btc/weights。未配置 XLD_CHORDS_ROOT / XLD_CHORDS_PYTHON 时，两个新引擎显示不可用，其余和弦引擎不受影响。
+
+### 鼓组分离（drumsep-v1）
+
+`drums-adtof-stems` 在 ADTOF 之上需要 MDX23C DrumSep 6 stem 权重：XLD_DRUMSEP_ROOT 下放置 `aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt`（sha256 d2a4aa53eb584d21eead358a4e66d1882ad182911be018f052b5da73be9096d0，437,652,699 字节）与 `config_drumsep_mdx23c_6stem.yaml`（sha256 bd6f471e3bfdd81ef9d9cd9f57a86e3d5e11b8941a5951db8a3c8585a6b4cfc1）。权重由 aufr33 / jarredou 发布，许可 **CC BY-NC-ND 4.0**（原仓库 github.com/jarredou/models 已删除，HF 镜像 Sucial/MSST-WebUI、noblebarkrr/mvsepless_resources、Politrees/UVR_resources 的文件 sha 一致）：只能个人非商业原样使用，不能再分发或制作衍生权重，因此不随任何包提供。模型代码（MSST，MIT）随 XLD 发布于 analysis-midi/vendor/mdx23c，运行在 XLD_HIGHRES_PYTHON。未配置 XLD_DRUMSEP_ROOT 时该引擎显示不可用，ADTOF 不受影响。
 
 ## 失败排查
 

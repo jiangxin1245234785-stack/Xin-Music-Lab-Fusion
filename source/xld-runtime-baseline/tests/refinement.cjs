@@ -9,7 +9,13 @@ const {createRefinement}=require('../core/refinement.cjs');
  const parent={ok:true,runId:crypto.randomUUID(),stems:[{name:'other',audioUrl:pathToFileURL(input).href,frames:320000,sampleRate:32000,channels:2}]};
  const track={id:'test',filePath:input};let spawnCount=0,mode='ok';
  const assets={directory:()=>root,readStems:async()=>parent};
- let probeCount=0;const source=createRefinement({assets,probeAudio:async()=>{probeCount++;return {frames:320000,sampleRate:32000,channels:2};},python:()=>process.execPath,spawnProcess:(_python,args)=>{
+ // A preview-only engine: not full-track, one narrow target list, no mix source. The guards below describe
+ // exactly this shape, and after AudioSep and Bowed Strings retired no shipped engine has it any more — so the
+ // fixture declares it rather than the product carrying a retired model to keep these assertions alive.
+ const PREVIEW_ONLY={id:'fixture-preview',name:'夹具·仅预览',nameEn:'Fixture preview-only',backend:'audiosep',
+  targets:['strings','violin'],default:false,fullTrack:false};
+ const profiles=[...require('../analysis-refine/profiles.json'),PREVIEW_ONLY];
+ let probeCount=0;const source=createRefinement({assets,profiles,probeAudio:async()=>{probeCount++;return {frames:320000,sampleRate:32000,channels:2};},python:()=>process.execPath,spawnProcess:(_python,args)=>{
   spawnCount++;const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();
   const value=key=>args[args.indexOf('--'+key)+1];child.kill=()=>{child.emit('close',1);return true;};
   setImmediate(async()=>{
@@ -25,10 +31,21 @@ const {createRefinement}=require('../core/refinement.cjs');
    await fs.writeFile(output,JSON.stringify(result));child.stdout.write(JSON.stringify({progress:.8,message:'test'})+'\n');child.emit('close',0);
   });return child;
  }});
- const opts={engine:'audiosep-strings',start:0,duration:30};
+ const opts={engine:'fixture-preview',start:0,duration:30};
  const run=(options=opts,extras={})=>source.generate(track,options,{runId:crypto.randomUUID(),onChild:()=>{},onProgress:()=>{},cancelled:()=>false,beforeCommit:()=>{},...extras});
  try{
   const good=await run();assert(good.ok);assert.equal(good.duration,10);assert.equal(spawnCount,1);
+  // Retirement stops new runs and nothing else. Every run a retired engine produced stays readable, stays
+  // cached and stays deletable — that is the whole difference between flagging one and deleting its entry.
+  const offered=(await source.available()).map(item=>item.id);
+  for(const engine of ['audiosep-strings','bowed-strings-v2']) {
+   assert(!offered.includes(engine),engine+' is no longer offered: '+offered.join(','));
+   await assert.rejects(run({...opts,engine}),/已退役/,engine+' refuses to start');
+   assert.equal(spawnCount,1,'and spawns no process');
+   assert(require('../core/refinement.cjs').profileFor(engine),engine+' must stay resolvable for its old results');
+   assert((await source.context(track,{...opts,engine})).cacheKey,engine+' keeps a readable cache key');
+  }
+  assert((await source.available({includeRetired:true})).map(item=>item.id).includes('audiosep-strings'),'and can still be listed on request');
   assert((await run()).cached);assert.equal(spawnCount,1);
   assert(!(await source.keep(track,{...opts,runId:crypto.randomUUID()})).ok);
   assert((await source.keep(track,{...opts,runId:good.runId})).kept);

@@ -2,15 +2,24 @@
 const fs=require('node:fs/promises'),fsSync=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process'),{fileURLToPath,pathToFileURL}=require('node:url');
 const PROFILES=require('../analysis-refine/profiles.json');
 const profileFor=id=>PROFILES.find(profile=>profile.id===id);
+// Retirement stops an engine being offered for new runs. It deliberately does NOT touch profileFor, read(),
+// context() or the cache key, so every run a retired engine ever produced stays readable and stays deletable.
+const isRetired=id=>Boolean(profileFor(id)?.retired);
 const idPattern=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
-function createRefinement({assets,python=engine=>profileFor(engine)?.backend==='roformer'?process.env.XLD_ROFORMER_PYTHON:process.env.XLD_HIGHRES_PYTHON,spawnProcess=spawn,probeAudio}) {
+// `profiles` is injectable for the same reason `python`, `spawnProcess` and `probeAudio` are: the guards below
+// (scope-invalid, source-invalid, target validation) describe a preview-only engine, and no engine that ships
+// today is one. A test must be able to define that shape without the product carrying a model to keep it alive.
+function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,probeAudio}) {
+ const profileOf=id=>profiles.find(profile=>profile.id===id);
+ const retired=id=>Boolean(profileOf(id)?.retired);
+ const interpreter=python||(engine=>profileOf(engine)?.backend==='roformer'?process.env.XLD_ROFORMER_PYTHON:process.env.XLD_HIGHRES_PYTHON);
  const runner=path.join(__dirname,'../analysis-refine/runner.py');
  const probeCache=new Map();
  async function probe(input,engine,stat){
   const key=JSON.stringify([input,stat.size,stat.mtimeMs]);
   if(probeCache.has(key))return probeCache.get(key);
   const info=probeAudio?await probeAudio(input):await new Promise((resolve,reject)=>{
-   const child=spawnProcess(python(engine),[runner,'--probe','--input',input],{windowsHide:true,env:{...process.env,PYTHONUTF8:'1',PYTHONDONTWRITEBYTECODE:'1'}});
+   const child=spawnProcess(interpreter(engine),[runner,'--probe','--input',input],{windowsHide:true,env:{...process.env,PYTHONUTF8:'1',PYTHONDONTWRITEBYTECODE:'1'}});
    let out='',err='';const timer=setTimeout(()=>{child.kill();reject(Error('读取音频信息超时'));},15000);
    child.stdout.on('data',part=>{out=(out+part).slice(-4000);});child.stderr.on('data',part=>{err=(err+part).slice(-2000);});
    child.once('error',error=>{clearTimeout(timer);reject(error);});child.once('close',code=>{clearTimeout(timer);if(code!==0)return reject(Error(err.trim()||'无法读取原曲，请选择已有 WAV 音轨'));try{resolve(JSON.parse(out));}catch(error){reject(error);}});
@@ -20,9 +29,9 @@ function createRefinement({assets,python=engine=>profileFor(engine)?.backend==='
  }
  const directory=track=>path.join(assets.directory(track),'refinement');
  async function context(track,options={}) {
-  const engine=options.engine||PROFILES.find(profile=>profile.default)?.id||PROFILES[0].id,scope=options.scope||'preview';
+  const engine=options.engine||profiles.find(profile=>profile.default)?.id||profiles[0].id,scope=options.scope||'preview';
   let start=Number(options.start??0),duration=Number(options.duration??30);
-  const profile=profileFor(engine),target=options.target||'strings',device=options.device||'auto';
+  const profile=profileOf(engine),target=options.target||'strings',device=options.device||'auto';
   if(!profile)throw Error('refinement-engine-invalid');
   if(!['preview','full'].includes(scope)||(scope==='full'&&engine!=='mega-53'))throw Error('refinement-scope-invalid');
   if(!profile.targets.includes(target)||!['auto','cuda','cpu'].includes(device))throw Error('refinement-options-invalid');
@@ -82,16 +91,17 @@ function createRefinement({assets,python=engine=>profileFor(engine)?.backend==='
   await require('./derived-assets.cjs').writeAtomic(path.join(folder,result.cacheKey+'.json'),{schemaVersion:1,runId:result.runId,cacheKey:result.cacheKey,parentRunId:result.parentRunId,keptAt:new Date().toISOString()});
   return {...result,kept:true};
  }
- async function available() {
-  return PROFILES.map(profile=>{
+ async function available({includeRetired=false}={}) {
+  return profiles.filter(profile=>includeRetired||!profile.retired).map(profile=>{
    const root=process.env[profile.backend==='roformer'?'XLD_REFINE_ROFORMER_MODELS':'XLD_REFINE_MODELS'];let ready=false;
-   try{const manifest=JSON.parse(fsSync.readFileSync(path.join(root,'manifest.json'),'utf8'));const names=profile.backend==='audiosep'?['separator.pt','conditions.npz']:['checkpoint','config'].map(key=>manifest.models[profile.asset][key].file);ready=Boolean(python(profile.id)&&fsSync.existsSync(python(profile.id))&&names.every(name=>fsSync.existsSync(path.join(root,name))));}catch(_){}
+   try{const manifest=JSON.parse(fsSync.readFileSync(path.join(root,'manifest.json'),'utf8'));const names=profile.backend==='audiosep'?['separator.pt','conditions.npz']:['checkpoint','config'].map(key=>manifest.models[profile.asset][key].file);ready=Boolean(interpreter(profile.id)&&fsSync.existsSync(interpreter(profile.id))&&names.every(name=>fsSync.existsSync(path.join(root,name))));}catch(_){}
    return {...profile,available:ready,...(profile.id==='mega-53'?{targetDetails:require('../analysis-refine/mega-targets.json')}:{})};
   });
  }
  async function generate(track,options,{runId,onChild,onProgress,cancelled,beforeCommit}) {
   const ctx=await context(track,options);
   const cached=await read(track,options);if(cached.ok){if(cancelled())throw Error('analysis-cancelled');return {...cached,cached:true};}
+  if(retired(ctx.engine))throw Error('细分模型已退役');
   if(!idPattern.test(runId)||!(await available()).find(item=>item.id===ctx.engine)?.available)throw Error('细分模型尚未安装');
   await fs.mkdir(ctx.directory,{recursive:true});
   const staging=path.join(ctx.directory,'.next.'+runId+'.json');let committed=false;
@@ -100,7 +110,7 @@ function createRefinement({assets,python=engine=>profileFor(engine)?.backend==='
    if(cancelled())throw Error('analysis-cancelled');
    const args=[runner,'--scope',ctx.scope,'--engine',ctx.engine,'--target',ctx.target,'--device',ctx.device,'--input',ctx.input,'--output',staging,'--start',String(ctx.start),'--duration',String(ctx.duration),'--track-id',track.id,'--parent-run',ctx.parentRunId||'', '--source-stem',ctx.sourceStem,'--run-id',runId,'--cache-key',ctx.cacheKey];
    await new Promise((resolve,reject)=>{
-    const child=spawnProcess(python(ctx.engine),args,{windowsHide:true,env:{...process.env,PYTHONUTF8:'1',PYTHONDONTWRITEBYTECODE:'1'}});onChild(child);
+    const child=spawnProcess(interpreter(ctx.engine),args,{windowsHide:true,env:{...process.env,PYTHONUTF8:'1',PYTHONDONTWRITEBYTECODE:'1'}});onChild(child);
     let stdout='',stderr='';const consume=line=>{try{const message=JSON.parse(line);onProgress(message);}catch(_){}};
     child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
     child.stdout.on('data',chunk=>{stdout+=chunk;const lines=stdout.split(/\r?\n/);stdout=lines.pop();lines.forEach(consume);});
@@ -122,4 +132,4 @@ function createRefinement({assets,python=engine=>profileFor(engine)?.backend==='
  }
  return {context,validate,read,keep,available,generate};
 }
-module.exports={createRefinement,PROFILES,profileFor};
+module.exports={createRefinement,PROFILES,profileFor,isRetired};

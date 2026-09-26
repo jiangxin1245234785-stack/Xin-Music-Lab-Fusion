@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict'),M=require('../midi-edit.js');
+const base=[[1,1.4,60,80,0,0],[1.45,2,60,90,0,1],[1.6,1.8,64,70,0,2],[2.1,2.5,60,100,0,3]];
+const s=M.create(base,{duration:5,instrument:0}),original=s.notes();
+const preview=s.previewJoin(['0:1','0:0']);assert.deepEqual(s.notes(),original);assert(!s.dirty());assert(!s.canUndo());
+assert.deepEqual(preview.notes,[[1,2,60,80,0,0]]);
+assert.deepEqual(s.commit(preview),['0:0']);assert.equal(s.notes().length,3);
+assert(s.undo());assert.deepEqual(s.notes(),original);assert(s.redo());assert.equal(s.notes().length,3);s.undo();
+assert.throws(()=>s.previewJoin(['0:0']),/join-count/);
+assert.throws(()=>s.previewJoin(['0:0','0:2']),/join-pitch/);
+assert.throws(()=>s.previewJoin(['0:0','0:3']),/join-neighbor/);
+const stale=s.previewJoin(['0:0','0:1']);s.set('0:2',[1.6,1.8,64,71]);assert.throws(()=>s.commit(stale),/shape-stale/);s.undo();
+const p=s.previewSplit('0:0',1.2);assert.deepEqual(s.notes(),original);assert.equal(p.notes[0][1],p.notes[1][0]);assert.equal(p.notes[1][3],80);
+const ids=s.commit(p);assert.equal(ids.length,2);assert.equal(s.notes().length,5);s.undo();assert.deepEqual(s.notes(),original);s.redo();assert.equal(s.notes().length,5);
+s.reset();assert.throws(()=>s.previewSplit('0:0',1),/split-inside/);assert.throws(()=>s.previewSplit('0:0',1.4),/split-inside/);assert.throws(()=>s.previewSplit('0:0',null),/split-inside/);
+assert.throws(()=>s.previewSplit('0:0',1.001),/split-short/);
+assert.equal(s.previewSplit('0:0',1.005).notes.length,2);
+const slow=M.create(base,{duration:5,instrument:0,minDuration:.02});assert.throws(()=>slow.previewSplit('0:0',1.01),/split-short/);
+const overlap=M.create([[.9,1.5,60,90,0,7],...base],{duration:5,instrument:0});
+assert.throws(()=>overlap.previewJoin(['0:0','0:1']),/join-overlap/);assert.throws(()=>overlap.previewSplit('0:0',1.2),/join-overlap/);
+const selectedOverlap=M.create([[1,2,60,30,0,1],[1.5,3,60,90,0,2]],{duration:4,instrument:0});
+selectedOverlap.commit(selectedOverlap.previewJoin(['0:1','0:2']));assert.deepEqual(selectedOverlap.notes(),[[1,3,60,30,0,1]]);
+// Joining removes intentional repeated onsets too: explicit selection, no interval heuristics.
+const repeats=M.create([[0,.2,60,70,0,0],[4,4.2,60,80,0,1]],{duration:5,instrument:0});
+assert.deepEqual(repeats.previewJoin(['0:0','0:1']).notes,[[0,4.2,60,70,0,0]]);
+const recovery=M.create(original,{duration:5,instrument:0,restored:s.notes()});assert(!recovery.canUndo());
+console.log('note shape: PASS (read-only preview, selection rules, overlaps, split minimum, identities, stale preview, single undo/redo)');

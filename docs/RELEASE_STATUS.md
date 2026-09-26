@@ -1,3 +1,17 @@
+# 2026-09-26 · 0.5.0-preview.setup.1
+
+新版试用包已准备：最新工作台、首次配置、模型导入检查与 MIDI 基础环境安装。附带匹配的过滤后源码 ZIP 和 SHA-256。旧 ui.1 资产保留。仓库可见性不变。
+
+New preview: latest workbench, first-run setup, backend import/checks and optional base MIDI environment installation. Includes a matching filtered source archive and SHA-256 checksums. Older ui.1 assets remain. Repository visibility is unchanged.
+
+验证：XLD/XML 现有回归通过；新建独立 Python 3.12.10 环境完成 MIDI 读写；实际两个 EXE 无模型启动、配置保存及双语布局通过。**尚未完成另一台干净 Windows 或完整 AI 安装/推理验收，仍为 prerelease。**
+
+Validation: existing XLD/XML regressions; fresh managed Python with MIDI roundtrip; both packaged executables, no-model startup, setup persistence and bilingual layout. **Clean-machine and full AI installation/inference acceptance remain pending. Prerelease only.**
+
+---
+
+## Previous record / 先前记录
+
 # Release status / 发布状态
 
 Updated / 更新：2026-09-25

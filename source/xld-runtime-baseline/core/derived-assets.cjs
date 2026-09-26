@@ -25,14 +25,35 @@ function derivedDirectory(track, root) {
 }
 const PROFILES = Object.freeze(require('../analysis-midi/models.json'));
 const ENGINE_IDS = Object.freeze(PROFILES.map(profile => profile.id));
-const profileFor = engine => PROFILES.find(profile => profile.id === engine);
-// A stored result belongs to its engine even after that engine's model version changed.
-// Only records written before per-engine manifests lack `engine`; they resolve by model string.
-const profileForResult = result => result?.engine ? PROFILES.find(profile => profile.id === result.engine) : PROFILES.find(profile => profile.model === result?.model);
 const defaultEngine = stem => PROFILES.find(profile => profile.defaultFor === stem)?.id || 'basic-pitch';
 const ENGINE = 'basic-pitch';
 const MODEL = 'basic-pitch-0.4.0-onnx';
 const STEMS = Object.freeze([...new Set(PROFILES.flatMap(profile => profile.stems))]);
+
+// A hand-edited revision is a version like any other — read, listed, switchable, merged, drawn on the timeline —
+// except that no model made it. It still needs a profile, because verify() refuses any record whose engine it
+// cannot resolve and that refusal reads as 'midi-invalid': the interface would present the user's own edit as a
+// damaged file.
+//
+// It deliberately does NOT go into analysis-midi/models.json. That array is the MODEL REGISTRY: it feeds the engine
+// menu, ENGINE_IDS (which is what makes an engine startable at all), the per-stem variants grid, and the Python
+// runner's own --engine choices. An entry there would be offered to the user as something to run, and there is
+// nothing to run.
+//
+// `options` must stay empty. profileMismatch() compares the profile's declared options against the record's before
+// anything else and returns 'midi-invalid' on any difference — a harsher verdict than the 'midi-model-invalid'
+// that merely makes a record superseded. Declaring options here would turn every revision into a damaged record.
+//
+// The id is 'manual-revision' rather than 'manual' because 'manual' is already the engine id of the hand-made
+// SECTION and CHORD annotations. Two different things under one id in one app is how a later round confuses them.
+const MANUAL_ENGINE = 'manual-revision';
+const MANUAL = Object.freeze({id: MANUAL_ENGINE, name: 'Manual revision', stems: STEMS, model: 'manual-revision-v1', options: {}});
+const PROFILE_LOOKUP = Object.freeze([...PROFILES, MANUAL]);
+const profileFor = engine => PROFILE_LOOKUP.find(profile => profile.id === engine);
+// A stored result belongs to its engine even after that engine's model version changed.
+// Only records written before per-engine manifests lack `engine`; they resolve by model string, and no record that
+// old can be a revision, so that branch stays on the model registry.
+const profileForResult = result => result?.engine ? PROFILE_LOOKUP.find(profile => profile.id === result.engine) : PROFILES.find(profile => profile.model === result?.model);
 const OPTIONS = Object.freeze({ onsetThreshold: 0.5, frameThreshold: 0.3, minimumNoteMs: 127.7, midiTempo: 120 });
 const validId = value => /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value || '');
 const sha256 = data => require('node:crypto').createHash('sha256').update(data).digest('hex');
@@ -215,8 +236,9 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
     await writeAtomic(manifestPath(track, result.stem, profile.id), result);
     await writeAtomic(manifestPath(track, result.stem), result);
   }
-  // Read-only inventory of every run this stem still has a record or pointer for, including superseded versions.
-  async function listRuns(track, stem, engine = null) {
+  // Every record and pointer this stem still has, keyed by runId. listRuns projects it; readRun, the keep marker
+  // and retention all read the same inventory, so "which runs exist" has exactly one definition.
+  async function collectRuns(track, stem, engine = null) {
     if (!STEMS.includes(stem)) throw new Error('midi-stem-unsupported');
     if (engine && !profileFor(engine)?.stems.includes(stem)) throw new Error('midi-engine-unsupported');
     const base = path.join(analysisDirectory(track), 'midi', stem);
@@ -234,12 +256,86 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
       if(pointer) entry.pointed.push(pointer);
       runs.set(raw.runId, entry);
     }
+    return {base, runs};
+  }
+  // A run the user pinned. Deliberately a directory, so listRuns' `.json` filter never sees it, and a distinct
+  // `kind`, so storage.cjs does not count the marker as a dependency of the stems WAV.
+  const keptPath = (track, stem, runId) => {
+    if (!STEMS.includes(stem)) throw new Error('midi-stem-unsupported');
+    if (!validId(runId)) throw new Error('midi-invalid');
+    return path.join(analysisDirectory(track), 'midi', stem, 'kept', runId + '.json');
+  };
+  async function listKept(track, stem) {
+    if (!STEMS.includes(stem)) throw new Error('midi-stem-unsupported');
+    try {
+      const names = await fs.readdir(path.join(analysisDirectory(track), 'midi', stem, 'kept'));
+      return new Set(names.filter(name => name.endsWith('.json')).map(name => path.basename(name, '.json')).filter(validId));
+    } catch(error) {if(error.code === 'ENOENT') return new Set(); throw error;}
+  }
+  // Pinning requires the runId to be one this stem actually has, so a typo cannot leave a marker pinning nothing.
+  // Unpinning never checks: a marker whose run is gone is exactly the state that has to stay clearable.
+  async function keepRun(track, stem, runId, value) {
+    const file = keptPath(track, stem, runId);
+    if (!value) {await fs.rm(file, {force: true}); return {ok: true, runId, kept: false};}
+    const {runs} = await collectRuns(track, stem);
+    const entry = runs.get(runId);
+    if (!entry) throw new Error('midi-missing');
+    await writeAtomic(file, {schemaVersion: 1, kind: 'midi-keep', stem, engine: engineOf(entry.raw), runId, keptAt: new Date().toISOString()});
+    return {ok: true, runId, kept: true};
+  }
+  // Address a run by its id instead of by whichever pointer happens to name it. The return is deliberately nested:
+  // `run` is the on-disk record and nothing else, so no derived field can ride into activate() through cleanMidi.
+  async function readRun(track, stem, runId, {engine = null, backfill = false} = {}) {
+    const recordFile = runRecordPath(track, stem, runId); // validId rejects '../outside' before any path is joined
+    const kept = (await listKept(track, stem)).has(runId);
+    const {runs} = await collectRuns(track, stem);
+    const pointed = (runs.get(runId)?.pointed || []).slice().sort();
+    const record = await readJson(recordFile) ?? runs.get(runId)?.raw ?? null;
+    if (!record) return {ok: false, error: 'midi-missing', record: null, status: 'files-missing', pointed, kept};
+    const fail = (error, status) => ({ok: false, error, record, status, pointed, kept});
+    // checkRecord only pins `file` against whatever runId the body claims, so a record named A whose body says B
+    // would otherwise let a caller act on B while the dialog says A.
+    if (record.runId !== runId) return fail('midi-invalid', 'invalid');
+    try {checkRecord(record, track, stem);} catch(error) {return {ok: false, error: error.message, record: null, status: 'invalid', pointed, kept};}
+    if (engine && engineOf(record) !== engine) return fail('midi-invalid', 'invalid');
+    let current = null, sourceError = null;
+    try {current = await source(track, stem);} catch(error) {sourceError = error.message;}
+    try {
+      // Non-strict on purpose: a superseded run stays readable, which is exactly what activate() accepts.
+      const verified = await verify(record, track, stem, {source: current});
+      // After verify, so a run whose payload is gone is never materialised as a record storage would then count.
+      if (backfill && !fsSync.existsSync(recordFile)) await writeAtomic(recordFile, record);
+      return {ok: true, run: record, identity: verified.identity, matches: verified.matches,
+        status: sourceError ? 'source-changed' : verified.matches ? 'current' : 'superseded', reason: sourceError,
+        directory: path.dirname(path.join(analysisDirectory(track), verified.file)), pointed, kept};
+    } catch(error) {
+      const reason = error.code === 'ENOENT' ? 'midi-missing' : error.message;
+      return fail(reason, error.code === 'ENOENT' ? 'files-missing' : ['midi-stale', 'midi-string-source-stale'].includes(reason) ? 'source-changed' : 'invalid');
+    }
+  }
+  // Roll back to, or pin, an earlier version. No process and no task lock: activate() is the same primitive a fresh
+  // run uses, and it verifies against the current source rather than the current model version.
+  async function activateRun(track, stem, runId, {engine = null} = {}) {
+    const view = await readRun(track, stem, runId, {engine, backfill: true});
+    if (!view.ok) return {ok: false, error: view.error, status: view.status};
+    if (view.status !== 'current' && view.status !== 'superseded') return {ok: false, error: view.reason || 'midi-stale', status: view.status};
+    await activate(track, view.run);
+    return read(track, stem, engineOf(view.run));
+  }
+  // Read-only inventory of every run this stem still has a record or pointer for, including superseded versions.
+  async function listRuns(track, stem, engine = null) {
+    const {runs} = await collectRuns(track, stem, engine);
+    const kept = await listKept(track, stem);
+    // Computed like read(), not from the flat pointer label: read() prefers by-source/<src>/active.json and returns
+    // the first *matching* candidate, so the two disagree after a torn write and after a delete leaves one dangling.
+    const activeRead = await read(track, stem);
     let current = null, sourceError = null;
     try {current = await source(track, stem);} catch(error) {sourceError = error.message;}
     const entries = [];
     for(const [runId, {raw, pointed}] of runs) {
       const entry = {runId, engine: engineOf(raw), model: raw.model ?? null, sourceRunId: raw.sourceRunId ?? null, sourceTarget: raw.sourceTarget ?? null,
-        noteCount: raw.noteCount ?? null, createdAt: raw.createdAt ?? null, file: raw.file ?? null, pointed: pointed.sort()};
+        noteCount: raw.noteCount ?? null, createdAt: raw.createdAt ?? null, file: raw.file ?? null, pointed: pointed.sort(),
+        active: activeRead.ok && activeRead.runId === runId, kept: kept.has(runId)};
       try {
         const verified = await verify(raw, track, stem, {source: current});
         Object.assign(entry, {identity: verified.identity, matches: verified.matches, directory: path.dirname(path.join(analysisDirectory(track), verified.file)),
@@ -252,7 +348,7 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
     }
     return entries.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || a.runId.localeCompare(b.runId));
   }
-  return {source, manifestPath, sourceManifest, runRecordPath, validate, verify, read, listRuns, removeRun, activate, archiveCurrent};
+  return {source, manifestPath, sourceManifest, runRecordPath, keptPath, validate, verify, read, readRun, collectRuns, listRuns, listKept, keepRun, removeRun, activate, activateRun, archiveCurrent};
 }
 
 function createDerivedAssets({analysisRoot}) {
@@ -331,4 +427,4 @@ function createDerivedAssets({analysisRoot}) {
  return {stringSources,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
 }
 
-module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, profileFor, profileForResult, defaultEngine, identityOf, engineOf, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};
+module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, MANUAL, MANUAL_ENGINE, profileFor, profileForResult, defaultEngine, identityOf, engineOf, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};

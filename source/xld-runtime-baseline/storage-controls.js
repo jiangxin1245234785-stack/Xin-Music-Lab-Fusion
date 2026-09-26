@@ -17,7 +17,7 @@
    for(const option of $('storageMode').options)option.textContent=option.value==='trash'?t('移至回收站','Recycle Bin'):t('永久删除 · 释放空间','Delete permanently');
    $('storageSummary').textContent=data?t('资料库 ','Library ')+size(data.bytes)+' · WAV '+size(data.wavBytes)+' · '+data.rows.length+t(' 组音频',' audio results'):t('读取目录后显示体积','Scan to measure storage');
    $('storageRoot').textContent=data?.root||'';
-   $('storageHelp').textContent=t('整组管理生成音频。已保留项不参与清理；有关联细分或 MIDI 的基础分轨受保护。批选跳过当前使用的基础分轨。回收站清空后才会释放空间；永久删除需再次确认。原曲、MIDI、段落和人工标注不会删除。','Manage complete generated results. Kept results and base stems with refinement/MIDI dependencies are protected. Bulk selection skips active base stems. Recycle Bin must be emptied to free space; permanent deletion requires confirmation. Songs, MIDI, sections and annotations stay intact.');
+   $('storageHelp').textContent=t('整组管理生成音频。已保留项不参与清理；有关联细分或 MIDI 的基础分轨受保护。批选跳过当前使用的基础分轨。回收站清空后才会释放空间；永久删除需再次确认。原曲、段落和人工标注不会删除；本面板不删除 MIDI，MIDI 版本在 MIDI 页管理。','Manage complete generated results. Kept results and base stems with refinement/MIDI dependencies are protected. Bulk selection skips active base stems. Recycle Bin must be emptied to free space; permanent deletion requires confirmation. Songs, sections and annotations stay intact; this panel never deletes MIDI — MIDI versions are managed in the MIDI tab.');
    $('storageStatus').textContent=message||(data?.warnings?.length?data.warnings.join('\n'):'');
    $('storageRows').replaceChildren();
    for(const row of rows()){

@@ -9,9 +9,8 @@ const { spawn } = require('child_process');
 const midiModule = require('./derived-assets.cjs');
 const {setInterval, clearInterval} = require('node:timers');
 
-const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
-const AI_ENGINE_IDS = ['songformer'];
-const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
+const resultEngines = require('./result-engines.cjs');
+const {MSAF_ENGINE_IDS, AI_ENGINE_IDS, HARMONY_ENGINE_IDS} = resultEngines;
 const STEM_ENGINE_ID = 'demucs-6s';
 const STEM_ENGINE_IDS = midiModule.SEPARATION_ENGINE_IDS;
 const RESULT_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
@@ -204,7 +203,7 @@ function createService(options = {}) {
       },
       analyses: results.filter(result => !HARMONY_ENGINE_IDS.includes(result.engine?.id)).map(normalize),
       harmony: results.filter(result => HARMONY_ENGINE_IDS.includes(result.engine?.id)).map(normalize),
-      manualTags: tags.map(tag => ({ ...tag }))
+      manualTags: tags.filter(tag => tag.kind !== 'chord').map(tag => ({ ...tag }))
     };
     await writeJsonAtomic(path.join(directory, 'music-lab.json'), manifest);
     return manifest;
@@ -242,6 +241,8 @@ function createService(options = {}) {
   const midiAssets = derivedAssets.midi;
   const midiMerge = require('./midi-merge.cjs').createMidiMerge({analysisRoot: () => analysisRoot});
   const refinement = require('./refinement.cjs').createRefinement({assets:derivedAssets,python:engine=>pythonFor(require('./refinement.cjs').profileFor(engine)?.backend==='roformer'?'bs-roformer-sw':'piano-highres')});
+  // Without a trash callback (headless, XML, tests) retention reports surplus runs instead of deleting them.
+  const midiRetention = require('./midi-retention.cjs').createMidiRetention({assets: derivedAssets, getRoot: () => analysisRoot, trash: options.trash});
 
   async function runRefinement(track, engine, runOptions, onTask) {
     const task={taskId:crypto.randomUUID(),track,engine,engineName:require('./refinement.cjs').profileFor(engine).name,status:'starting',progress:0,phase:'refine',message:'准备 '+(runOptions.sourceStem||'other')+(runOptions.scope==='full'?' 整曲':' 片段'),startedAt:new Date().toISOString(),startedAtMs:Date.now(),child:null,cancelled:false,onTask};
@@ -280,12 +281,19 @@ function createService(options = {}) {
     if (!track?.id || !track?.filePath || !fsSync.existsSync(track.filePath)) return { ok: false, error: 'track-missing' };
     if (engine === 'midi-merge') return runMerge(track,onTask);
     if (require('./refinement.cjs').profileFor(engine)) return runRefinement(track,engine,runOptions,onTask);
+    // There is no model behind a hand-edited revision, so it is never something to start. It is kept out of
+    // ENGINE_IDS precisely so it cannot be, and this says so in words rather than letting it fall through to
+    // 'engine-unavailable', which reads like a missing runtime.
+    if (engine === midiModule.MANUAL_ENGINE) return { ok: false, error: 'midi-manual-not-runnable' };
     const isStems = STEM_ENGINE_IDS.includes(engine);
     const isMidi = midiModule.ENGINE_IDS.includes(engine);
     const midiStem = runOptions.stem;
     if (isMidi && !midiModule.STEMS.includes(midiStem)) return { ok: false, error: 'midi-stem-unsupported' };
     if (isMidi && (!midiModule.profileFor(engine).stems.includes(midiStem) || midiModule.profileFor(engine).retiredFor?.includes(midiStem))) return {ok:false,error:'midi-engine-unsupported'};
     if (!isStems && !isMidi && !RESULT_ENGINE_IDS.includes(engine)) return { ok: false, error: 'engine-unavailable' };
+    // Retired engines stop being startable. Everything else about them is unchanged: their stored results stay
+    // readable, stay in music-lab.json and stay deletable, which is the difference between a flag and a removal.
+    if (!isStems && !isMidi && resultEngines.isRetiredResultEngine(engine)) return { ok: false, error: 'engine-retired' };
     const python = pythonFor(engine);
     const runner = runnerFor(engine);
     if (!isMidi && !isStems && (!python || !fsSync.existsSync(runner))) return { ok: false, error: 'runtime-missing' };
@@ -301,7 +309,7 @@ function createService(options = {}) {
     const logPath = path.join(analysisRoot, 'logs', 'analysis.jsonl');
     const output = isMidi ? midiAssets.runRecordPath(track, midiStem, task.taskId) : isStems ? derivedAssets.stemsManifestPath(track, engine) : path.join(directory, engine + '.json');
     const staging = path.join(directory, engine + '.next.' + task.taskId + '.json');
-    let committed = false;
+    let committed = false, midiFinish = null;
     const log = async (event, extra = {}) => {
       try {
         await fs.mkdir(path.dirname(logPath), { recursive: true });
@@ -317,10 +325,20 @@ function createService(options = {}) {
         // A readable result from an earlier model version is not a cache hit for the current version.
         if (cached.ok && !task.cancelled && (!isMidi || cached.matches)) {
           task.committing = true;
-          if(isMidi) await midiAssets.activate(track, cached);
-          else await derivedAssets.activateStems(track, cached);
+          // A cache hit produces nothing new, so activating it is pure side effect — and if the version currently
+          // in use is a hand-edited revision, that side effect silently replaces the user's own work with a model
+          // run they did not ask to switch to. Report the hit honestly and leave the pointer where it is; changing
+          // versions is what the version panel is for.
+          //
+          // Deliberately narrow (STOP-AND-ASK 3): this covers only "the active version is a revision". A genuine
+          // model run that produces a new result still takes the pointer, because that is what generating means.
+          const active = isMidi ? await midiAssets.read(track, midiStem) : null;
+          const keepsRevision = Boolean(active?.ok && active.engine === midiModule.MANUAL_ENGINE && active.runId !== cached.runId);
+          if (isMidi && !keepsRevision) await midiAssets.activate(track, cached);
+          else if (!isMidi) await derivedAssets.activateStems(track, cached);
           task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = isMidi ? '已读取 MIDI' : '已读取分轨';
-          return { ok: true, kind: isMidi ? 'midi' : 'stems', cached: true, result: cached, task: taskSnapshot(task) };
+          return { ok: true, kind: isMidi ? 'midi' : 'stems', cached: true, result: cached, task: taskSnapshot(task),
+            ...(isMidi ? {activated: !keepsRevision, keptActive: keepsRevision ? active.runId : null} : {}) };
         }
       }
       if (!python || !fsSync.existsSync(runner)) throw new Error('runtime-missing');
@@ -396,7 +414,25 @@ function createService(options = {}) {
         await midiAssets.activate(track, result);
         response = { ok: true, kind: 'midi', result: await midiAssets.read(track, midiStem, engine) };
         // Same model version: replace the earlier run. A different version stays on disk as readable history.
-        if (previous?.ok && previous.runId !== task.taskId && previous.identity === response.result.identity) await midiAssets.removeRun(directory, midiStem, previous.runId);
+        // A pinned run is exempt: this is a hard fs.rm, not a Recycle Bin move, and 保留 promises the opposite.
+        // If the markers cannot be read, keep the run — never delete what we could not verify is unpinned.
+        let keptPrevious = false;
+        if (previous?.ok && previous.runId !== task.taskId && previous.identity === response.result.identity) {
+          try { keptPrevious = (await midiAssets.listKept(track, midiStem)).has(previous.runId); } catch (_) { keptPrevious = true; }
+          if (!keptPrevious) await midiAssets.removeRun(directory, midiStem, previous.runId);
+        }
+        // Bounded version history. Contained on purpose: a sweep that fails must not turn a successful run into a
+        // failed task, so its only trace is response.retention.warning.
+        let retention;
+        try {
+          retention = await midiRetention.sweep(track, midiStem, engine, {activeIdentity: response.result.identity,
+            protect: [task.taskId, previous?.ok ? previous.runId : null].filter(Boolean)});
+        } catch (error) { retention = {removed: [], trashed: [], skipped: [], warning: error.message}; }
+        if (keptPrevious) retention.skipped.push({runId: previous.runId, reason: 'kept'});
+        response.retention = retention;
+        // The activated record, not the current profile: after a rollback or a pin those are different versions.
+        midiFinish = {model: response.result.model ?? null, identity: response.result.identity ?? null, runId: response.result.runId ?? null,
+          retained: {removed: retention.removed.length, trashed: retention.trashed.length, skipped: retention.skipped.length}};
       } else if (isStems) {
         await derivedAssets.activateStems(track, result);
         response = { ok: true, kind: 'stems', result: await readStems(track) };
@@ -419,7 +455,7 @@ function createService(options = {}) {
       await fs.rm(staging, { force: true }).catch(() => {});
       if (isStems && !committed) await removeStemRun(directory, task.taskId);
       if (isMidi && !committed) await midiAssets.removeRun(directory, midiStem, task.taskId);
-      await log('finish', { message: task.message, model: isStems ? midiModule.separationProfile(engine).model : isMidi ? midiModule.profileFor(engine).model : null });
+      await log('finish', { message: task.message, model: isStems ? midiModule.separationProfile(engine).model : isMidi ? midiModule.profileFor(engine).model : null, ...(midiFinish || {}) });
       if (activeTask === task) activeTask = null;
       emitTask(task, onTask);
     }

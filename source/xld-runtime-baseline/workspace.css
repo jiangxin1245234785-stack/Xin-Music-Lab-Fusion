@@ -73,6 +73,64 @@
 .workspace-result[data-ready=true] .workspace-result-top > span { color:var(--mint); background:rgba(143,231,206,.08); }
 .workspace-result-detail { min-height:3em; line-height:1.65; color:var(--muted); font-size:calc(11px * var(--font-scale)); overflow-wrap:anywhere; }
 .workspace-result-action { margin-top:auto; color:var(--mint); font-size:calc(11px * var(--font-scale)); }
+/* Timeline view (timeline.1): one shared time axis for section, chord and note lanes. */
+.timeline-card { display:flex; flex-direction:column; gap:10px; min-height:0; }
+.timeline-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.timeline-head h2 { margin:0; font-size:calc(15px * var(--font-scale)); }
+.timeline-head p { margin:4px 0 0; color:var(--muted); font-size:calc(11px * var(--font-scale)); line-height:1.6; max-width:760px; }
+.timeline-zoom { display:flex; align-items:center; gap:8px; flex:none; }
+.timeline-zoom > span { color:var(--muted); font-size:calc(10px * var(--font-scale)); min-width:66px; text-align:center; }
+.timeline-strip { display:flex; align-items:center; gap:6px; }
+.timeline-strip span { color:var(--muted); font-size:calc(10px * var(--font-scale)); white-space:nowrap; }
+.timeline-strip select { min-height:28px; font-size:calc(10px * var(--font-scale)); }
+.timeline-summary { margin:0; color:var(--muted); font-size:calc(10px * var(--font-scale)); }
+.timeline-lanes { overflow-x:auto; overflow-y:auto; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.015); padding:10px 0; min-height:200px; }
+.timeline-empty { padding:36px 18px; text-align:center; color:var(--muted); font-size:calc(11px * var(--font-scale)); }
+.tl-canvas { position:relative; min-width:100%; }
+.tl-scale { position:relative; height:22px; margin:0 12px 6px calc(180px + 12px); cursor:grab; touch-action:none; }
+.tl-scale.panning { cursor:grabbing; }
+.tl-scale span { position:absolute; transform:translateX(-50%); color:var(--muted); font-size:calc(9px * var(--font-scale)); }
+.tl-row { display:grid; grid-template-columns:180px 1fr; gap:12px; align-items:stretch; padding:3px 12px; }
+/* Pinned to the left edge so a zoomed, panned axis still says which lane you are looking at. */
+.tl-row-head { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:2px; position:sticky; left:0; z-index:2; background:var(--panel-strong); padding-right:6px; }
+.tl-row-head strong { font-size:calc(10px * var(--font-scale)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-row-head span { color:var(--muted); font-size:calc(9px * var(--font-scale)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-row-body { position:relative; height:26px; background:rgba(255,255,255,.03); border-radius:5px; overflow:hidden; cursor:pointer; touch-action:none; }
+.tl-notes-row .tl-row-body { height:72px; }
+/* Keeps .tl-row-head background: a transparent head lets notes show through the lane name once it is pinned. */
+.tl-row-toggle { appearance:none; border:0; padding:0 6px 0 0; text-align:left; color:inherit; font:inherit; cursor:pointer; border-radius:6px; }
+.tl-row-toggle:hover strong, .tl-row-toggle:focus-visible strong { color:var(--violet); }
+.tl-row-toggle:focus-visible { outline:1px solid var(--violet); outline-offset:2px; }
+/* One lane on its own: tall enough that a semitone is a readable row rather than a pixel. */
+.tl-focused .tl-notes-row .tl-row-body { height:min(clamp(240px, 50vh, 560px), var(--tl-pitch-height, 560px)); min-height:180px; }
+.tl-pitch-scroll { position:absolute; top:0; bottom:0; width:16px; overflow-y:scroll; overflow-x:hidden; z-index:4; background:var(--panel-strong); scrollbar-color:var(--muted) var(--panel-strong); }
+.tl-pitch-space { width:1px; pointer-events:none; }
+#noteTimelineZoomLabel { min-width:66px; font-size:calc(10px * var(--font-scale)); }
+.tl-row-focused .tl-row-head strong { color:var(--text); }
+/* Annotating: lanes become a drawing surface, so say so with the cursor and a live interval marker. */
+.tl-annotating .tl-row-body { cursor:crosshair; }
+.tl-annotating .tl-manual .tl-row-body { outline:1px dashed var(--line); outline-offset:-1px; }
+.tl-draft { position:absolute; top:0; bottom:0; background:rgba(157,134,255,.32); border:1px solid var(--violet); pointer-events:none; }
+.timeline-editor { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:rgba(255,255,255,.02); }
+.timeline-editor label { display:flex; align-items:center; gap:6px; font-size:calc(10px * var(--font-scale)); color:var(--muted); }
+.timeline-editor input { min-height:30px; width:118px; font-size:calc(11px * var(--font-scale)); }
+.timeline-editor-label { flex:1; min-width:180px; }
+.timeline-editor-label input { width:100%; }
+.timeline-editor-kind { font-size:calc(10px * var(--font-scale)); color:var(--violet); font-weight:600; }
+.timeline-editor-status { flex-basis:100%; color:var(--gold); font-size:calc(10px * var(--font-scale)); min-height:1.2em; }
+#timelineAnnotate.active { color:var(--violet); border-color:var(--violet); }
+.tl-seg { position:absolute; top:0; bottom:0; padding:0 3px; font-size:calc(9px * var(--font-scale)); line-height:26px; color:#10121a; overflow:hidden; white-space:nowrap; border-right:1px solid rgba(0,0,0,.35); }
+.tl-seg.current { outline:1px solid var(--text); outline-offset:-1px; }
+.tl-notes { position:absolute; top:0; display:block; pointer-events:none; }
+.tl-note-selection { position:absolute; top:0; display:block; pointer-events:none; }
+/* How the part is being played, under the notes it describes. */
+.tl-roles { position:absolute; left:0; right:0; bottom:0; height:6px; pointer-events:none; }
+.tl-focused .tl-roles { height:11px; }
+.tl-role { position:absolute; top:0; bottom:0; opacity:.85; pointer-events:auto; }
+.tl-playhead { position:absolute; top:0; bottom:0; width:2px; background:var(--text); opacity:0; pointer-events:none; }
+.tl-playhead.visible { opacity:.9; }
+.timeline-readout { margin:0; color:var(--muted); font-size:calc(10px * var(--font-scale)); min-height:1.4em; }
+@media (max-width:1280px) { .tl-row { grid-template-columns:132px 1fr; } .tl-scale { margin-left:calc(132px + 12px); } }
 .workspace-export { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; border-top:1px solid var(--line); margin-top:24px; padding:22px 0 8px; }
 .workspace-export > div { flex:1; min-width:200px; }
 .workspace-export strong { display:block; font-size:calc(12px * var(--font-scale)); margin-bottom:5px; }
@@ -92,6 +150,8 @@
 .workspace-app .engine-copy strong { font-size:calc(12px * var(--font-scale)); white-space:normal; overflow:visible; overflow-wrap:anywhere; }
 .workspace-app .engine-copy span { display:block; white-space:normal; line-height:1.45; font-size:calc(9px * var(--font-scale)); }
 .workspace-app .engine-badge { font-size:calc(9px * var(--font-scale)); }
+.workspace-app .version-row { padding:6px 8px; }
+.workspace-app .version-actions .quiet-button { padding:2px 6px; }
 .workspace-app #workspaceLab .analysis-heading { margin:0 0 10px; }
 .workspace-app #labTitle { font-size:calc(17px * var(--font-scale)); }
 .workspace-app #labEyebrow { display:none; }
@@ -339,3 +399,145 @@
 .workspace-app .refinement-result-card { padding:11px; border:1px solid var(--line); border-radius:9px; background:rgba(255,255,255,.018); }
 .workspace-app .refinement-result-card[hidden] { display:none; }
 .workspace-app .refinement-result-card .derived-actions { margin-top:8px; }
+
+/* Model versions: rows of plain text plus small quiet buttons. Never nested inside an engine card, which is one
+   button whose click handler swallows everything. */
+.midi-version-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.midi-version-list .derived-hint { display:block; line-height:1.5; }
+.version-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  padding:7px 9px; border:1px solid rgba(255,255,255,0.08); border-radius:9px; background:rgba(255,255,255,0.02); }
+.version-row.active { border-color:rgba(122,162,247,0.45); background:rgba(122,162,247,0.08); }
+.version-copy { display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0; }
+.version-label { font-size:calc(11px * var(--font-scale)); }
+.version-state { font-size:calc(10px * var(--font-scale)); opacity:0.75; }
+.version-pill { font-size:calc(9px * var(--font-scale)); padding:2px 6px; border-radius:999px; background:rgba(122,162,247,0.22); }
+.version-pill.kept { background:rgba(101,199,149,0.22); }
+.version-actions { display:flex; gap:4px; flex-shrink:0; }
+.version-actions .quiet-button { font-size:calc(10px * var(--font-scale)); padding:3px 8px; }
+
+/* Full-library result sweep. Each row draws the segmentation it is asking you to judge, because a path and a
+   date cannot tell a noisy segmentation from a clean one. */
+.sweep-rows { display:flex; flex-direction:column; gap:6px; max-height:52vh; overflow:auto; padding:2px; }
+.sweep-row { display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; align-items:start;
+  padding:8px 10px; border:1px solid rgba(255,255,255,0.08); border-radius:9px; background:rgba(255,255,255,0.02); }
+.sweep-row.chosen { border-color:rgba(227,111,142,0.5); background:rgba(227,111,142,0.08); }
+.sweep-copy { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.sweep-copy strong { font-size:calc(12px * var(--font-scale)); overflow-wrap:anywhere; }
+.sweep-meta { font-size:calc(10px * var(--font-scale)); opacity:0.8; }
+.sweep-bar { display:flex; height:10px; border-radius:3px; overflow:hidden; background:rgba(255,255,255,0.05); }
+.sweep-piece { display:block; height:100%; background:rgba(122,162,247,0.55); box-shadow:inset -1px 0 0 rgba(0,0,0,0.45); }
+.sweep-piece.fragment { background:#e36fae; }
+
+/* Compact comparison transport. */
+.timeline-audition { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.timeline-audition button, .timeline-audition select, .timeline-audition input { min-height:30px!important; height:30px; padding:3px 9px!important; font-size:calc(11px * var(--font-scale)); }
+.timeline-audition input { width:88px; min-width:0; }
+.timeline-audition select { width:auto; max-width:200px; }
+.timeline-audition > span { color:var(--muted); font-size:calc(10px * var(--font-scale)); }
+#timelineAuditionStatus { flex:1; min-width:180px; }
+.timeline-audition button[aria-pressed=true] { border-color:var(--mint); color:var(--mint); background:rgba(150,220,205,.10); }
+.tl-loop-range { position:absolute; top:0; bottom:0; border-left:1px dashed var(--muted); border-right:1px dashed var(--muted); background:rgba(166,151,242,.06); pointer-events:none; z-index:2; }
+.tl-loop-range.enabled { border-color:var(--mint); background:rgba(145,223,204,.10); }
+.timeline-zoom { flex-wrap:wrap; justify-content:flex-end; }
+
+.timeline-selection { display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px; padding:6px 10px; background:rgba(149,219,203,.04); border:1px solid var(--line); border-radius:8px; font-size:calc(11px * var(--font-scale)); }
+.timeline-selection[hidden], .timeline-selection-properties[hidden] { display:none; }
+.timeline-selection strong { color:var(--mint); font-weight:600; }
+.timeline-selection-properties { display:flex; flex-wrap:wrap; gap:6px 14px; font-variant-numeric:tabular-nums; }
+.timeline-selection button { min-height:26px!important; padding:3px 8px!important; font-size:inherit; margin-left:auto; }
+#timelineSelectionHint { color:var(--muted); font-size:calc(10px * var(--font-scale)); }
+.tl-note-selecting .tl-notes-row .tl-row-body { cursor:crosshair; }
+.tl-note-marquee { position:absolute; border:1px solid var(--mint); background:rgba(151,226,207,.13); pointer-events:none; z-index:3; }
+
+/* Compact MIDI editing controls. */
+.midi-edit-bar{border:1px solid #39354d;border-radius:9px;padding:8px 10px;margin:6px 0 10px;background:#171622}
+.midi-edit-bar[hidden]{display:none}
+.midi-edit-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.midi-edit-actions label{display:flex;align-items:center;gap:5px;font-size:12px;color:#a5a3b1}
+.midi-edit-actions input{width:90px;min-width:0;height:30px;padding:3px 5px;font-size:13px;border:1px solid #3a3845;border-radius:5px;background:#101018;color:#ecebf3}
+#midiEditPitch,#midiEditVelocity{width:62px}
+.midi-edit-actions .quiet-button{min-height:30px;padding:4px 10px;font-size:12px}
+.midi-edit-actions .midi-edit-save{color:#d5caff;border-color:#7563bd;margin-left:auto}
+.midi-edit-info{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;margin-top:6px;font-size:11px;color:#9290a4}
+#midiEditStatus{color:#b5dace}
+#midiEditToggle[aria-pressed="true"]{border-color:#ac93ff;color:#dfd2ff}
+.tl-edit-ghost{position:absolute;pointer-events:none;z-index:8;background:#bea3ff77;border:1px solid #e2cfff;box-sizing:border-box}
+
+.midi-output-status{margin:4px 0;font-size:12px;color:#b7dacf;overflow-wrap:anywhere}
+.midi-output-status:empty{display:none}
+.midi-drafts{margin:6px 0;border:1px solid #34323f;border-radius:7px;padding:5px 9px;font-size:12px}
+.midi-drafts[hidden]{display:none}
+.midi-drafts summary{cursor:pointer;color:#bfb4da}
+.midi-draft-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:5px}
+.midi-draft-row .quiet-button{font-size:12px;padding:3px 8px;min-height:28px}
+#midiDraftList small{display:block;color:#aaa4b8;margin-top:6px}
+
+/* R12: keep the current sound source visible without enlarging the dock. */
+#playbackSource { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; color:var(--accent, #a99aff); font-size:11px; }
+#derivedMidiAudition, #derivedMidiListen { padding:8px 10px; white-space:nowrap; flex-shrink:0; }
+
+/* R14: parent strips stay compact; leaf controls remain outside the focus button. */
+.tl-mixer { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
+.tl-mixer[hidden] { display:none; }
+.tl-stem-mix { display:flex; align-items:center; gap:4px; padding:4px 7px; border:1px solid var(--border, #32323c); border-radius:7px; }
+.tl-stem-mix strong { font-size:11px; min-width:40px; }
+.tl-stem-mix input { width:62px; height:18px; accent-color:#a68bfa; }
+.tl-ms.quiet-button { min-width:25px; width:25px; padding:3px 4px; font-size:11px; line-height:18px; border-radius:5px; }
+.tl-ms[aria-pressed="true"] { background:#6652a5; color:white; border-color:#b7a0ff; }
+.tl-mix-head { display:flex; flex-direction:column; justify-content:center; gap:3px; }
+.tl-mix-head > .tl-row-toggle { padding:0; border:0; border-radius:0; background:transparent; min-width:0; text-align:left; color:inherit; }
+.tl-mix-head > .tl-row-toggle strong, .tl-mix-head > .tl-row-toggle span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-lane-mix { display:flex; gap:4px; align-items:center; }
+.tl-lane-mix small { font-size:10px; color:var(--muted,#999); }
+.tl-mix-reset.quiet-button { padding:5px 8px; font-size:11px; }
+#timelineAuditionScope { max-width:120px; }
+
+/* R15: compact source selection; all controls remain available at narrow widths. */
+.tl-stem-mix select { width:80px; min-width:0; min-height:28px; padding:3px 7px; font-size:12px; }
+#timelineRefinements {display:inline-flex;gap:6px;flex-wrap:wrap;}
+#timelineRefinements select {max-width:230px;min-height:30px;font-size:12px;padding:3px 7px;}
+#timelineMixPreset {min-width:110px;}
+.tl-stem-mix strong {max-width:135px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* R16: a compact, explicit review before note topology changes. */
+.midi-edit-actions .midi-split-time {width:106px;min-width:0;}
+.midi-shape-preview {display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #b17b45;border-radius:9px;background:#30231944;}
+.midi-shape-preview[hidden] {display:none;}
+.midi-shape-preview>span {flex:1;min-width:160px;}
+.midi-shape-preview strong,.midi-shape-preview small {display:block;}
+.midi-shape-preview small {color:var(--muted);font-size:12px;margin-top:3px;}
+.midi-shape-preview .quiet-button {white-space:nowrap;}
+@media(max-width:900px){.midi-shape-preview{flex-wrap:wrap;}}
+
+/* R17: controls travel with their track; folded rows are projections of the same notes. */
+.tl-track-tools {position:absolute;left:0;top:4px;display:flex;gap:1px;align-items:center;}
+.tl-mix-head {padding-left:26px;gap:4px;}
+.tl-track-tools .tl-fold {min-height:22px;min-width:20px;padding:0 3px;font-size:12px;}
+.tl-drag-handle {appearance:none;cursor:grab;background:transparent;border:0;color:var(--muted);padding:1px 3px;font-size:15px;line-height:20px;}
+.tl-drag-handle:active {cursor:grabbing;}
+.tl-mix-head:has(.tl-fold) {padding-top:25px;}
+.tl-row-head:has(>.tl-drag-handle) {padding-left:22px;}
+.tl-row-head>.tl-drag-handle {position:absolute;left:0;top:4px;}
+.tl-parent-mix {flex-wrap:nowrap;gap:3px;}
+.tl-parent-mix select,.tl-edit-target {background:#171721;color:var(--text);border:1px solid #3b3848;border-radius:5px;font-size:11px;height:26px;min-width:0;max-width:66px;padding:2px 3px;}
+.tl-edit-target {max-width:100%;width:100%;}
+.tl-track-menu {position:relative;}
+.tl-track-menu summary {list-style:none;cursor:pointer;border:1px solid #3b3848;border-radius:5px;padding:1px 5px;line-height:22px;font-size:12px;}
+.tl-track-options {position:absolute;z-index:8;left:-130px;top:28px;width:155px;padding:10px;background:#1b1926;border:1px solid #514767;border-radius:7px;box-shadow:0 6px 20px #0009;}
+.tl-track-options label {font-size:11px;display:flex;flex-direction:column;gap:5px;}
+.tl-track-options input {width:130px;}
+.tl-row-head:has(details[open]) {z-index:8;}
+.tl-group-row .tl-row-body {height:auto;min-height:72px;display:flex;align-items:center;color:var(--muted);font-size:11px;padding:0 10px;cursor:default;}
+.tl-notes-row:has([data-layout-parent]:not([data-layout-parent=""])) {margin-left:0;}
+.tl-drop-before {box-shadow:inset 0 2px #ac93ff;}
+.tl-drop-after {box-shadow:inset 0 -2px #ac93ff;}
+#timelineMixer {display:none;}
+
+.tl-track-tools {flex-direction:column;top:5px;}
+.tl-mix-head:has(.tl-fold) {padding-top:0;}
+.tl-parent-mix select {max-width:60px;width:60px;}
+.tl-parent-mix .tl-ms.quiet-button {min-width:23px;width:23px;padding:2px;}
+
+/* Keep source labels readable in a narrow workbench as well. */
+.tl-parent-mix select {flex:0 0 56px;min-width:56px;}
+@media(max-width:1280px){.tl-row {grid-template-columns:180px 1fr;}.tl-scale {margin-left:calc(180px + 12px);}}

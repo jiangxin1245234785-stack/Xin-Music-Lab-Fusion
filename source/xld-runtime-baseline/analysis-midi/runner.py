@@ -30,7 +30,7 @@ def available_engines():
     results = []
     for profile in PROFILES.values():
         packages = ['basic_pitch'] if profile['backend'] == 'basic-pitch' else ['piano_transcription_inference', 'torchlibrosa', 'pretty_midi', 'mido', 'importlib_resources']
-        if profile['backend'] == 'adtof':
+        if profile['backend'] in ('adtof', 'adtof-stems'):
             packages = ['torch', 'librosa', 'pretty_midi', 'soundfile']
         ready = all(importlib.util.find_spec(name) is not None for name in packages)
         if profile['backend'] == 'highres':
@@ -46,6 +46,12 @@ def available_engines():
         if profile['backend'] == 'yourmt3':
             from yourmt3 import ready as yourmt3_ready
             ready = yourmt3_ready(profile)
+        if profile['backend'] == 'transkun':
+            from transkun_backend import ready as transkun_ready
+            ready = transkun_ready(profile)
+        if profile['backend'] == 'adtof-stems':
+            from drumkit import ready as drumkit_ready
+            ready = ready and drumkit_ready(profile)
         results.append({'id': profile['id'], 'available': bool(ready)})
     return results
 STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48}
@@ -72,7 +78,7 @@ def validate_midi_roundtrip(midi, midi_file):
 
 
 def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
-               source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings"):
+               source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings", keep_kit=None):
     profile = PROFILES[engine]
     if stem not in profile["stems"] or stem in profile.get('retiredFor', []):
         raise ValueError("模型不支持当前声部")
@@ -123,9 +129,15 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         elif profile['backend'] == 'yourmt3':
             from yourmt3 import predict as yourmt3_predict
             detected, backend = yourmt3_predict(input_path, profile, notify, duration)
+        elif profile['backend'] == 'adtof-stems':
+            from drumkit import predict as drumkit_predict
+            detected, backend = drumkit_predict(input_path, profile, notify, duration, keep_kit=keep_kit)
         elif profile['backend'] == 'adtof':
             from drums import predict as drum_predict
             detected, backend = drum_predict(input_path, profile, notify, duration)
+        elif profile['backend'] == 'transkun':
+            from transkun_backend import predict as transkun_predict
+            detected, backend = transkun_predict(input_path, profile, notify, duration)
         else:
             from highres import predict as highres_predict
             detected, backend = highres_predict(input_path, profile, notify, duration)
@@ -169,6 +181,10 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         backend['programMode'] = 'source-string-timbre; native groups retained' if stem == 'strings' else 'source-guitar-timbre; native groups combined, all notes retained'
     notes = [{"start": note.start, "end": note.end, "pitch": note.pitch, "velocity": note.velocity}
              for part in midi.instruments for note in part.notes]
+    if profile['backend'] == 'adtof-stems':
+        # Per-hit provenance (ADTOF class, kit stem, energy) lives in notes.json, not in the result manifest.
+        from drumkit import annotate
+        notes = annotate(notes, backend.pop('annotations', []))
     after = input_path.stat()
     if (source_stat.st_size, source_stat.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
         raise ValueError("分轨文件在转谱期间发生变化，请重试")
@@ -212,6 +228,7 @@ def main():
     parser.add_argument("--source-run-id", required=False)
     parser.add_argument("--run-id", required=False)
     parser.add_argument("--string-target", choices=STRING_PROGRAMS, default="strings")
+    parser.add_argument("--keep-kit", type=Path, required=False, help="adtof-stems only: write the separated kit stems to this directory (verification)")
     args = parser.parse_args()
     if args.engines:
         print(json.dumps(available_engines()))
@@ -220,7 +237,7 @@ def main():
         if getattr(args, name) is None:
             parser.error('--' + name.replace('_', '-') + ' is required')
     try:
-        transcribe(args.input, args.output, args.track_id, args.stem, args.source_run_id, args.run_id, engine=args.engine, string_target=args.string_target)
+        transcribe(args.input, args.output, args.track_id, args.stem, args.source_run_id, args.run_id, engine=args.engine, string_target=args.string_target, keep_kit=args.keep_kit)
     except Exception as error:
         emit(str(error), phase="failed")
         print(str(error), file=sys.stderr)

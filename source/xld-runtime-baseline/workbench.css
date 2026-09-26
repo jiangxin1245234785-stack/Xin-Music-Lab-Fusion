@@ -1,0 +1,84 @@
+/* Persistent workbench: existing controllers and DOM nodes keep ownership of state. */
+.workspace-app .workspace-topline{display:flex;align-items:center;gap:12px;padding:10px 16px;flex-wrap:nowrap}
+.workspace-app .analysis-target{flex:1;min-width:0;margin:0}
+.workspace-app .workbench-actions{display:flex;gap:6px;flex-shrink:0}
+.workspace-app .workbench-actions button,.workspace-app .workbench-panel-head button{min-height:30px;padding:5px 10px;font-size:12px}
+.workspace-app .workbench-actions button[aria-pressed=true]{border-color:var(--mint);color:var(--mint)}
+.workspace-app .app-shell.workbench-library-hidden{grid-template-columns:minmax(0,1fr)}
+.workbench-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.workbench-body>#workspaceContent{min-width:0;flex:1;padding:12px;overflow:auto}
+#workbenchPanel{width:420px;max-width:48%;min-width:340px;display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--panel-strong);min-height:0}
+.workbench-panel-head{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.workbench-panel-head strong{flex:1;font-size:13px}
+#workbenchPanel .workspace-tabs{display:flex;flex-wrap:wrap;margin:0;padding:4px 8px;gap:0;flex-shrink:0}
+#workbenchPanel .workspace-tabs button{font-size:12px;padding:8px;min-height:32px;flex:1}
+#workbenchPanelBody{overflow:auto;min-height:0;padding:12px;flex:1}
+.workbench-body.panel-expanded #workbenchPanel{width:72%;max-width:72%}
+.workbench-body.panel-expanded>#workspaceContent{min-width:240px}
+#workbenchPanelBody .workspace-results,#workbenchPanelBody .midi-work-grid,#workbenchPanelBody .derived-engine-list{grid-template-columns:minmax(0,1fr)}
+#workbenchPanelBody .derived-source{flex-wrap:wrap;gap:8px}
+#workbenchPanelBody .derived-source>*{min-width:0}
+#workbenchPanelBody .derived-head,#workbenchPanelBody .workspace-overview-head{gap:8px}
+#workbenchPanelBody h2{font-size:20px}
+#workbenchPanelBody button,#workbenchPanelBody select{max-width:100%}
+#workbenchPanelBody .engine-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.workspace-app #workspaceTimeline{gap:7px}
+.workspace-app #timelineHint{font-size:11px;line-height:1.5;max-width:75ch}
+.workspace-app #timelineSummary,.workspace-app #timelineReference{font-size:11px}
+.workspace-app .timeline-head{gap:8px}
+.workspace-app .timeline-toolbar{gap:4px}
+.workspace-app .timeline-toolbar button{min-height:28px;padding:4px 8px}
+@media(max-width:1150px){#workbenchPanel{width:380px;max-width:55%;min-width:300px}.workbench-body.panel-expanded #workbenchPanel{max-width:100%;width:100%;position:absolute;inset:0;z-index:8}.workbench-body{position:relative}.workspace-app .workbench-actions button{font-size:11px;padding:5px 7px}}
+
+/* Expanded tools overlay the work area; the timeline retains its state underneath. */
+.workbench-body{position:relative}
+.workbench-body.panel-expanded #workbenchPanel{position:absolute;inset:0;width:100%;max-width:100%;z-index:8;border-left:0}
+.workspace-app .workbench-actions button,.workspace-app .workbench-panel-head button{background:#171a24;color:var(--text);border:1px solid var(--line);border-radius:8px;cursor:pointer;font-family:inherit}
+.workspace-app .workbench-actions button:hover,.workspace-app .workbench-panel-head button:hover{background:#252638;border-color:var(--mint)}
+.workspace-app .workbench-actions button:focus-visible,.workspace-app .workbench-panel-head button:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.workspace-app .timeline-head{flex-wrap:wrap}
+.workspace-app .timeline-head>div:first-child{flex:1 1 220px;min-width:0}
+
+#workbenchPanelBody .derived-source{grid-template-columns:minmax(0,1fr);gap:6px}
+#workbenchPanelBody .derived-source .derived-hint{grid-column:1;grid-row:auto;overflow-wrap:break-word}
+#workbenchPanelBody .derived-source .derived-choice{grid-column:1;grid-row:auto;min-width:0;width:100%}
+
+/* Results center: compact actions, original output and draft components. */
+#workbenchResultsHub{display:grid;gap:14px;margin-top:12px}
+#workbenchResultsHub>section{border-top:1px solid var(--line);padding-top:10px;min-width:0}
+#workbenchResultsHub h3{font-size:13px;margin:0 0 8px}
+#resultTools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+#resultTools button{min-height:32px;font-size:12px;padding:6px;text-align:left}
+.result-module-links{display:flex;gap:6px;flex-wrap:wrap}
+#workbenchResultsHub .midi-drafts{margin:0}
+#workbenchResultsHub .midi-merge-card{margin:10px 0}
+#workbenchResultsHub .workspace-export{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
+#workbenchPanelBody .workspace-results{gap:6px;grid-template-columns:repeat(2,minmax(0,1fr))}
+#workbenchPanelBody .workspace-result{padding:9px;gap:5px;min-width:0}
+#workbenchPanelBody .workspace-result-top{flex-wrap:wrap;gap:4px}
+#workbenchPanelBody .workspace-result-detail{font-size:11px;overflow-wrap:anywhere}
+#workbenchPanelBody .workspace-result-action{font-size:11px}
+#workbenchResultsHub .derived-hint{white-space:normal;overflow-wrap:anywhere}
+
+#workspaceProperties{display:grid;gap:14px}
+#workspaceProperties h3{font-size:13px;margin:0 0 8px}
+#workspaceProperties section,#workspaceProperties details{min-width:0}
+#workspaceProperties summary{font-size:13px;cursor:pointer;margin-bottom:8px}
+#propertyListening{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#propertyListening select{min-width:90px;max-width:100%;background:#171a24;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px}
+#propertyListening>span{flex-basis:100%;min-width:0}
+.property-loop{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+.property-loop strong{flex-basis:100%;font-size:12px;font-weight:400;color:var(--muted)}
+.property-loop input{width:100px;min-width:0;background:#171a24;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px}
+#workspaceProperties .midi-edit-actions{display:flex;flex-wrap:wrap;gap:7px}
+#workspaceProperties .midi-edit-actions label{flex:1 1 140px;min-width:0}
+#workspaceProperties .midi-edit-actions label input{width:100%;min-width:0}
+#workspaceProperties .midi-edit-info{display:flex;flex-direction:column;gap:7px}
+#workspaceProperties .midi-shape-preview{flex-wrap:wrap}
+#workspaceProperties .timeline-editor{display:flex;flex-wrap:wrap;gap:8px}
+#workspaceProperties .timeline-editor label{flex:1 1 130px;min-width:0}
+#workspaceProperties .timeline-editor input{width:100%;min-width:0}
+#workspaceProperties .timeline-selection-properties{flex-wrap:wrap}
+#workspaceProperties .property-notes{border-top:1px solid var(--line);padding-top:10px}
+#workspaceProperties button{min-height:30px;padding:5px 9px}
+#workspaceProperties #timelineHint{max-width:none}

@@ -590,6 +590,12 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const core = require('./midi-assets.cjs');
     if (!core.STEMS.includes(payload?.stem)) return {ok:false,error:'midi-stem-unsupported'};
     const active = await xldAnalysis.readMidi(track, payload.stem);
+    // A hand-edited revision must never be transcribed over from here. This handler picks the engine itself, and
+    // the renderer passes force = true whenever any MIDI exists (stem-controls.js), so the cache branch that
+    // protects a revision in the workbench is never reached: without this line the button silently replaces the
+    // user's own edit with fresh model output. Replacing an edit is a decision, and it belongs where the edit is
+    // made, not behind a button in the visualizer.
+    if (active.ok && active.engine === core.MANUAL_ENGINE) return {ok: false, error: 'midi-manual-active'};
     const activeProfile = active.ok ? core.profileForResult(active) : null;
     const reusable = activeProfile && !activeProfile.retiredFor?.includes(payload.stem);
     const models = reusable ? [] : (await xldAnalysis.midiEngines()).filter(model=>model.stems.includes(payload.stem));

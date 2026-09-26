@@ -1,11 +1,13 @@
 'use strict';
-const path=require('node:path'),{fileURLToPath}=require('node:url');
+const fs=require('node:fs'),path=require('node:path'),{fileURLToPath}=require('node:url');
 function install({root,isXml,version,electron,runtime,interfaceOnly=false}) {
   const {app,BrowserWindow,ipcMain,dialog}=electron;
   const product=isXml?"Xin’s Music Lab":"Xin’s Local Deck";
   const entry=path.join(root,'resources/apps',isXml?'fusion-runtime-baseline':'xld-runtime-baseline','index.html');
   const guide=path.join(root,'使用说明.html');
   let helpWindow=null;
+  const setup=interfaceOnly?require('./setup-window.cjs').install({root,electron,runtime,isXml}):null;
+  const setupMarker=()=>path.join(app.getPath('userData'),'xin-setup-seen.json');
   const isMain=contents=>{try{return path.resolve(fileURLToPath(contents.getURL()))===path.resolve(entry);}catch(_){return false;}};
   function openHelp(parent) {
     if(helpWindow && !helpWindow.isDestroyed()) {if(process.env.XLD_TEST!=='1' && process.env.XML_TEST!=='1'){helpWindow.show();helpWindow.focus();}return;}
@@ -20,7 +22,8 @@ function install({root,isXml,version,electron,runtime,interfaceOnly=false}) {
     helpWindow.loadFile(guide).catch(error=>{helpWindow?.close();dialog.showErrorBox('无法打开使用说明',error.message);});
   }
   const guard=(event)=>{if(!isMain(event.sender))throw Error('release-action-unavailable');};
-  ipcMain.handle('release:info',(event)=>{guard(event);return {version,product,interfaceOnly};});
+  ipcMain.handle('release:info',(event)=>{guard(event);return {version,product,interfaceOnly,setupNeeded:!!setup&&!isXml&&!fs.existsSync(setupMarker())};});
+  ipcMain.handle('release:setup',(event,locale)=>{guard(event);if(!setup)return {ok:false};setup.open(BrowserWindow.fromWebContents(event.sender),locale||'zh-CN');fs.mkdirSync(path.dirname(setupMarker()),{recursive:true});fs.writeFileSync(setupMarker(),JSON.stringify({version}));return {ok:true};});
   ipcMain.handle('release:help',(event)=>{guard(event);openHelp(BrowserWindow.fromWebContents(event.sender));return {ok:true};});
   ipcMain.handle('release:status',async(event,locale)=>{
     guard(event);const english=locale==='en-US';let status;

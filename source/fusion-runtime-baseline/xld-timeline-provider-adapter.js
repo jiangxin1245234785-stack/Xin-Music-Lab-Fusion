@@ -31,8 +31,11 @@
     'msaf-sf',
     'msaf-foote'
   ]);
+  // Keep identical to CHORD_ENGINE_PRIOR in fusion.js (ChordMini primary since chords.2).
   const HARMONY_PRIOR = Object.freeze({
+    'chord-chordmini': 1.5,
     'chord-btc': 1.35,
+    'chord-consonance': 1,
     'chord-hybrid': 1,
     'chord-cqt': 1,
     'chord-cens': 1

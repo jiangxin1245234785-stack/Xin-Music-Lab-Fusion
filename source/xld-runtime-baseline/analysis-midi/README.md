@@ -4,11 +4,11 @@ runner.py 将已有单声部 WAV 转为 MIDI 和 notes.json。models.json 是 Py
 
 | 声部 | 默认模型（已就绪时） | 备选 |
 |---|---|---|
-| piano | HiRes Piano | Basic Pitch |
+| piano | Transkun V2（预测力度与延音踏板；用户 BCNR 听评后于 piano.2 设为默认） | HiRes Piano、Basic Pitch |
 | guitar | MuScriptor Medium | MuScriptor Large（复杂曲）；GAPS / Basic Pitch / YourMT3+ 仅保留历史结果 |
 | bass | HiRes Bass | Basic Pitch |
 | strings | MuScriptor Large | MuScriptor Medium、YourMT3+、Basic Pitch |
-| drums | ADTOF | MuScriptor Medium / Large |
+| drums | ADTOF | ADTOF · DrumSep 7 类（drums.1 起，见下）、MuScriptor Medium / Large |
 
 默认沿用用户试听后的验收结论（见 docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md §5）；精确 ID、选项与 checkpoint 以 models.json 为准。Basic Pitch 保持原模型和参数，用于对照。
 
@@ -19,6 +19,14 @@ runner.py 将已有单声部 WAV 转为 MIDI 和 notes.json。models.json 是 Py
 Basic Pitch：D:\Caches\codex\runtimes\xld-midi（原环境）。专用模型：D:\Caches\codex\runtimes\xld-midi-highres，Python 3.12.14，通过本环境的 xld-shared-runtime.pth 只读引用已有 XLD AI site-packages，从而复用 torch 2.11.0+cu128。新增依赖列在 requirements-highres.lock。此环境依赖本机已有 XLD AI 安装，并非独立分发包。
 
 权重：D:\Caches\codex\models\xld-midi-highres。环境变量 XLD_HIGHRES_PYTHON、XLD_HIGHRES_MODELS 可覆盖路径；Basic Pitch 仍使用 XLD_MIDI_PYTHON。numba 与 matplotlib 缓存明确放在 D:\Caches\codex\cache 下，避免尝试写入共享的安装环境。runner --engines 仅检查包和权重就绪状态；完整兼容性由真实推理验证。
+
+## Transkun V2（core.27 起）
+
+钢琴备选引擎 `piano-transkun`（Yan & Duan，ISMIR 2024，pip 包 transkun 2.0.1，MIT）。权重与配置随 pip 包提供（`pretrained/2.0.pt`，自带增广、不做踏板延音），用 `--no-deps` 装入 highres 环境，见 requirements-highres.lock；适配器 transkun_backend.py 用 soundfile 读音频、直接调用 `TransKun.transcribe`，保留预测力度与 CC64 踏板，不重采样、不量化。`backend` 记录 checkpointSha256、configSha256、checkpointVariant、transcribeSeconds、peakGpuMiB。用户在 BCNR《Nancy Tries to Take the Night》上听评认为 HiRes 有杂糅的根音（钢琴共鸣音识别不准），接受 Transkun V2 为钢琴默认（piano.2）；HiRes 保留为备选，旧结果继续可读。
+
+## ADTOF · DrumSep 7 类（drums.1 起）
+
+`drums-adtof-stems`（`backend: adtof-stems`，`drumkit.py`）：鼓点与 5 类仍来自 ADTOF（`drums.py` 的 `activations()`，与 `drums-adtof` 共用、输出逐字节一致）；鼓轨先由 MDX23C DrumSep 6 stem（`XLD_DRUMSEP_ROOT`，CC BY-NC-ND，代码 vendored 于 `vendor/mdx23c`，MIT）分离成 kick / snare / toms / hh / ride / crash。镲片击按 ride 与 crash stem 在 [onset−10 ms, onset+80 ms] 的 5 ms 帧 RMS 峰值比较归到 51 或 49；每一击的力度取自己 stem 同窗口的 RMS 峰值 dB，按输出键做曲内归一化（10 / 98 百分位 → 32–127，该键 < 4 击时用全曲池）。`backend.velocityMode = "stem-energy-relative"`：相对力度，不是录音真实力度。GM 键：kick 36（ADTOF 基线仍为 35）、snare 38、tom 47、hihat 42、crash 49、ride 51（`options.drumMap`）；`backend.classMap` 记录每个键对应的 ADTOF 原类，`notes.json` 每条 note 另有 `adtofPitch / stem / energyDb`。鼓组 stem 不落盘（六轨 FLOAT32 每 7 分钟曲约 0.9 GB）；CLI `--keep-kit DIR` 可写出供试听。分离在 GPU 上约为曲长的 1/40（toe 425 s → 11 s，峰值 1.1 GiB）；OOM 时退 CPU。
 
 ## 输出与兼容
 

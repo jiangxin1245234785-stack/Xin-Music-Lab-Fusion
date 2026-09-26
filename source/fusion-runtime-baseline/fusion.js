@@ -233,12 +233,14 @@
     C: 'solar', 'C#': 'ember', D: 'synthwave', 'D#': 'ultraviolet', E: 'toxic', F: 'moon',
     'F#': 'aurora', G: 'toxic', 'G#': 'ultraviolet', A: 'ember', 'A#': 'solar', B: 'moon'
   });
-  const engineNames = Object.freeze({ 'chord-cqt': 'CQT', 'chord-cens': 'CENS', 'chord-hybrid': 'HYBRID', 'chord-btc': 'BTC' });
-  // Consensus vote weight per engine. BTC is the SOTA model (real softmax
-  // confidence, ~89% acc) so it carries a higher prior; the Librosa template
-  // engines corroborate. A confident BTC leads unless the others strongly agree
-  // on a different root.
-  const CHORD_ENGINE_PRIOR = Object.freeze({ 'chord-btc': 1.35, 'chord-hybrid': 1.0, 'chord-cqt': 1.0, 'chord-cens': 1.0 });
+  const engineNames = Object.freeze({ 'chord-cqt': 'CQT', 'chord-cens': 'CENS', 'chord-hybrid': 'HYBRID', 'chord-btc': 'BTC', 'chord-chordmini': 'CHORDMINI', 'chord-consonance': 'ACE' });
+  // Consensus vote weight per engine. ChordMini (BTC-CL student, same 170-class
+  // vocabulary) is the primary chord engine since chords.2 and carries the highest
+  // prior; BTC keeps its previous weight as the alternative; consonance-ACE reports a
+  // root-softmax confidence that is not comparable, so it votes at 1 like the Librosa
+  // template engines. A confident ChordMini leads unless the others strongly agree
+  // on a different root. Must stay identical to HARMONY_PRIOR in xld-timeline-provider-adapter.js.
+  const CHORD_ENGINE_PRIOR = Object.freeze({ 'chord-chordmini': 1.5, 'chord-btc': 1.35, 'chord-consonance': 1.0, 'chord-hybrid': 1.0, 'chord-cqt': 1.0, 'chord-cens': 1.0 });
 
   function formatClock(seconds) {
     const value = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
@@ -811,7 +813,7 @@
       dom.sectionEngineSelect.value = state.sectionEngine;
     }
     if (dom.chordEngineSelect) {
-      const options = [`<option value="consensus">${uiText('fusion.engine.weightedConsensus', '加权共识 · BTC+CQT+CENS+Hybrid')}</option>`].concat(
+      const options = [`<option value="consensus">${uiText('fusion.engine.weightedConsensus', '加权共识 · ChordMini+BTC+ACE+CQT+CENS+Hybrid')}</option>`].concat(
         harmony.map(h => {
           const id = engineId(h);
           return `<option value="${id}">${h.engine?.name || engineNames[id] || id.toUpperCase()}</option>`;
@@ -1156,12 +1158,13 @@
     );
     harmony.classList.toggle('is-ready', track.hasHarmony);
     badges.append(structure, harmony);
-    if (Array.isArray(track.harmonyEngines) && track.harmonyEngines.includes('chord-btc')) {
-      const btc = document.createElement('b');
-      btc.textContent = 'B';
-      dynamicI18n?.bindAttribute(btc, 'title', 'fusion.runtime.btcReady', undefined, '已有 BTC 和弦');
-      btc.classList.add('is-ready', 'is-btc');
-      badges.append(btc);
+    const hasChordMini = Array.isArray(track.harmonyEngines) && track.harmonyEngines.includes('chord-chordmini');
+    if (hasChordMini || (Array.isArray(track.harmonyEngines) && track.harmonyEngines.includes('chord-btc'))) {
+      const neural = document.createElement('b');
+      neural.textContent = hasChordMini ? 'M' : 'B';
+      dynamicI18n?.bindAttribute(neural, 'title', hasChordMini ? 'fusion.runtime.chordminiReady' : 'fusion.runtime.btcReady', undefined, hasChordMini ? '已有 ChordMini 和弦' : '已有 BTC 和弦');
+      neural.classList.add('is-ready', 'is-btc');
+      badges.append(neural);
     }
     button.append(number, copy, badges);
     button.addEventListener('click', () => loadTrack(track.id));

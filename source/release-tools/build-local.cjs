@@ -25,6 +25,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  const appRoot=path.join(output,'resources/app');fs.mkdirSync(appRoot,{recursive:true});
  fs.copyFileSync(path.join(__dirname,'bootstrap.cjs'),path.join(appRoot,'bootstrap.cjs'));
  fs.copyFileSync(path.join(__dirname,'release-shell.cjs'),path.join(appRoot,'release-shell.cjs'));
+ if(interfaceOnly)for(const name of ['setup-core.cjs','setup-install.cjs','setup-window.cjs','setup-preload.cjs','setup.html','setup.js','setup.css'])fs.copyFileSync(path.join(__dirname,name),path.join(appRoot,name));
  const diagnostics=path.join(output,'resources/diagnostics');fs.mkdirSync(diagnostics,{recursive:true});
  for(const name of ['check-runtime.cjs','diagnose.cjs'])fs.copyFileSync(path.join(__dirname,name),path.join(diagnostics,name));
  fs.writeFileSync(path.join(output,'检查环境.cmd'),fs.readFileSync(path.join(__dirname,'check-environment.cmd'),'utf8').replace(/\r?\n/g,'\r\n'));
@@ -33,7 +34,8 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
   const index=path.join(apps,name,'index.html');
   fs.writeFileSync(index,fs.readFileSync(index,'utf8').replace('</head>','<link rel="stylesheet" href="../shared-analysis/release-ui.css">\n</head>').replace('</body>','<script src="../shared-analysis/release-ui.js"></script>\n</body>'));
   const preload=path.join(apps,name,'desktop/preload.cjs');
-  fs.appendFileSync(preload,"\ncontextBridge.exposeInMainWorld('XinRelease',Object.freeze({info:()=>ipcRenderer.invoke('release:info'),help:()=>ipcRenderer.invoke('release:help'),status:locale=>ipcRenderer.invoke('release:status',locale)}));\n");
+  fs.appendFileSync(preload,"\ncontextBridge.exposeInMainWorld('XinRelease',Object.freeze({info:()=>ipcRenderer.invoke('release:info'),help:()=>ipcRenderer.invoke('release:help'),status:locale=>ipcRenderer.invoke('release:status',locale),setup:locale=>ipcRenderer.invoke('release:setup',locale)}));\n");
+  if(interfaceOnly){const file=path.join(apps,name,'package.json'),pkg=JSON.parse(fs.readFileSync(file));if(pkg.author&&typeof pkg.author==='object')delete pkg.author.email;delete pkg.scripts;fs.writeFileSync(file,JSON.stringify(pkg,null,2));}
  }
  fs.writeFileSync(path.join(appRoot,'package.json'),JSON.stringify({name:'xin-music-suite',version,main:'bootstrap.cjs'}));
  fs.writeFileSync(path.join(output,'runtime.json'),JSON.stringify(shippedConfig,null,2));
@@ -41,6 +43,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  fs.writeFileSync(path.join(output,'README.md'),template.replaceAll('{{VERSION}}',version));
  fs.writeFileSync(path.join(output,'使用说明.html'),fs.readFileSync(path.join(__dirname,interfaceOnly?'INTERFACE-GUIDE.html':'USER-GUIDE.html'),'utf8').replaceAll('{{VERSION}}',version));
  if(interfaceOnly)fs.copyFileSync(path.join(__dirname,'MODEL-SETUP.md'),path.join(output,'MODEL-SETUP.md'));
+ if(interfaceOnly){fs.copyFileSync(path.resolve(sourceRoot,'../LICENSE'),path.join(output,'PROJECT-LICENSE.txt'));fs.copyFileSync(path.join(__dirname,'DISTRIBUTION-NOTICES.md'),path.join(output,'THIRD_PARTY_NOTICES.md'));}
  const files=[];function scan(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())scan(file);else files.push({path:path.relative(output,file).replaceAll('\\','/'),bytes:fs.statSync(file).size,sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')});}}
  scan(output);fs.writeFileSync(path.join(output,'release-manifest.json'),JSON.stringify({version,kind:raw.kind||'local-external-runtime',branding,appVersions:Object.fromEntries(['xld-runtime-baseline','fusion-runtime-baseline'].map(name=>[name,JSON.parse(fs.readFileSync(path.join(sourceRoot,name,'package.json'))).version])),createdAt:new Date().toISOString(),files},null,2));
  return {output,files:files.length,bytes:files.reduce((sum,file)=>sum+file.bytes,0)};

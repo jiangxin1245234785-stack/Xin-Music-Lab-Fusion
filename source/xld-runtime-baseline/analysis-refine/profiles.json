@@ -77,7 +77,11 @@
       "strings"
     ],
     "default": false,
-    "fullTrack": false
+    "fullTrack": false,
+    "retired": {
+      "since": "2026-09-19",
+      "reason": "Mega53 完胜；bowed 把部分人声与失真剪进目标轨（用户试听 2026-09）"
+    }
   },
   {
     "id": "audiosep-strings",
@@ -89,6 +93,10 @@
       "violin"
     ],
     "default": false,
-    "fullTrack": false
+    "fullTrack": false,
+    "retired": {
+      "since": "2026-09-19",
+      "reason": "AudioSep 电子声音混入严重（用户试听 2026-09）"
+    }
   }
 ]

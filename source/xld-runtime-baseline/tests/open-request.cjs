@@ -9,6 +9,12 @@ const {writeRequest,consumeRequest}=require('../core/open-request.cjs');
   await writeRequest(root,{source:'second',locale:'en-US'});
   const values=await Promise.all([consumeRequest(root),consumeRequest(root)]);
   assert.equal(values.filter(Boolean).length,1);assert.equal(values.find(Boolean).source,'second');assert.equal(values.find(Boolean).locale,'en-US');
+  for(let round=0;round<30;round++){
+    await writeRequest(root,{source:'stress-'+round});
+    const claimed=await Promise.all(Array.from({length:8},()=>consumeRequest(root)));
+    assert.equal(claimed.filter(Boolean).length,1,'one consumer per request, round '+round);
+    assert.equal(claimed.find(Boolean).source,'stress-'+round);
+  }
   await writeRequest(root,{source:'old'});const old=consumeRequest(root);await writeRequest(root,{source:'new'});
   assert.equal((await old).source,'old');assert.equal((await consumeRequest(root)).source,'new');
   await fs.writeFile(path.join(root,'.xml-open-request.json'),'{bad');assert.equal(await consumeRequest(root),null);

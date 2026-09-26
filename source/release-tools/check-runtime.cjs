@@ -6,8 +6,12 @@ function check(file,sourceRoot,{probe=spawnSync,onProgress=()=>{}}={}){
  const probes=[
   ['sections',config.paths.XLD_PYTHON,path.join(config.paths.XLD_RUNTIME_ROOT,'analysis/runner.py')],
   ['songformer',config.paths.XLD_AI_PYTHON,path.join(config.paths.XLD_RUNTIME_ROOT,'analysis-ai/songformer_runner.py')],
-  ['harmony',config.paths.XLD_HARMONY_PYTHON,path.join(config.paths.XLD_RUNTIME_ROOT,'analysis-harmony/harmony_runner.py')],
+  ['harmony',config.paths.XLD_HARMONY_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-harmony/harmony_runner.py')],
+  ...(config.paths.XLD_CHORDS_PYTHON?[['chords',config.paths.XLD_CHORDS_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-harmony/harmony_runner.py')]]:[]),
   ['basic-pitch',config.paths.XLD_MIDI_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/runner.py')],
+  // The revision writer runs on the same interpreter but is not an engine, so nothing else would have noticed a
+  // missing pretty_midi there until a save failed. Its probe does a real round trip, not a bare import.
+  ['revision',config.paths.XLD_MIDI_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/revise.py')],
   ['highres',config.paths.XLD_HIGHRES_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-midi/runner.py')],
   ['roformer',config.paths.XLD_ROFORMER_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-separation/runner.py')],
   ['demucs',config.paths.XLD_AI_PYTHON,path.join(sourceRoot,'xld-runtime-baseline/analysis-separation/runner.py')],
@@ -20,7 +24,7 @@ function check(file,sourceRoot,{probe=spawnSync,onProgress=()=>{}}={}){
   const result=probe(python,['-X','utf8',runner,'--engines'],{env,windowsHide:true,encoding:'utf8',timeout:120000,maxBuffer:1024*1024});
   const stdout=result.stdout||'',stderr=result.stderr||'';
   let engines=[];try{const start=stdout.indexOf('['),end=stdout.lastIndexOf(']'),parsed=JSON.parse(stdout.slice(start,end+1));if(Array.isArray(parsed))engines=parsed;}catch(_){}
-  const required={sections:['msaf','msaf-sf','msaf-foote','msaf-cnmf'],songformer:['songformer'],harmony:['chord-cqt','chord-cens','chord-hybrid','chord-btc'],'basic-pitch':['basic-pitch'],highres:['piano-highres','bass-highres','drums-adtof'],yourmt3:['yourmt3-plus'],muscriptor:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large'],roformer:['bs-roformer-sw'],demucs:['demucs-6s'],refinement:['audiosep-strings'],'refinement-roformer':['bowed-strings-v2','mega-53']}[name];
+  const required={sections:['msaf','msaf-sf','msaf-foote','msaf-cnmf'],songformer:['songformer'],harmony:['chord-cqt','chord-cens','chord-hybrid','chord-btc',...(config.paths.XLD_CHORDS_ROOT?['chord-chordmini']:[])],chords:['chord-consonance'],'basic-pitch':['basic-pitch'],revision:['manual-revision'],highres:['piano-highres','bass-highres','drums-adtof',...(config.paths.XLD_DRUMSEP_ROOT?['drums-adtof-stems']:[])],yourmt3:['yourmt3-plus'],muscriptor:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large'],roformer:['bs-roformer-sw'],demucs:['demucs-6s'],refinement:['audiosep-strings'],'refinement-roformer':['bowed-strings-v2','mega-53']}[name];
   const parent=path.dirname(python),venv=path.basename(parent).toLowerCase()==='scripts'?path.dirname(parent):parent,cfg=path.join(venv,'pyvenv.cfg');
   const inherited=[];const site=path.join(venv,'Lib/site-packages');
   if(fs.existsSync(site))for(const entry of fs.readdirSync(site).filter(name=>name.endsWith('.pth')))inherited.push({file:path.join(site,entry),content:fs.readFileSync(path.join(site,entry),'utf8')});

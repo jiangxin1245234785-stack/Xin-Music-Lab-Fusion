@@ -1,6 +1,6 @@
 (function(root){
  'use strict';
- function create({bridge,getSelected,getCurrent,getDerived,getTask,getBusy,audio,rt,onTask}) {
+ function create({bridge,getSelected,getCurrent,getDerived,getTask,getBusy,audio,rt,onTask,onAudition,onStop,getPlaybackPosition}) {
   const $=id=>document.getElementById(id),text=(key,params)=>rt('runtime.refinement.'+key,params);
   const player=$('refinementAudio'),start=$('refinementStart'),targetSelect=$('refinementTarget'),deviceSelect=$('refinementDevice'),scopeSelect=$('refinementMode'),sourceSelect=$('refinementSource'),groupSelect=$('refinementGroup');
   let engine=localStorage.getItem('xld.refinement.v3.engine')||'mega-53',target='strings',models=[],result=null,identity='',sequence=0,pending=false,loading=false,message=null;
@@ -19,7 +19,7 @@
   const source=()=>getDerived()?.trackId===getSelected()?.id?getDerived()?.result:null;
   const route=()=>JSON.stringify([getSelected()?.id,sourceName(),sourceName()==='mix'?null:source()?.runId,engine,target,deviceSelect.value,scope(),scope()==='full'?0:start.value]);
   const refining=task=>models.some(model=>model.id===task?.engine);
-  function stop(){player.pause();player.removeAttribute('src');player.load();for(const button of document.querySelectorAll('[data-refinement-audio]'))button.setAttribute('aria-pressed','false');}
+  function stop(){onStop?.();player.pause();player.removeAttribute('src');player.load();for(const button of document.querySelectorAll('[data-refinement-audio]'))button.setAttribute('aria-pressed','false');}
   function render(){
    for(const [id,key] of Object.entries({refinementTitle:'title',refinementScope:'scope',refinementHint:'hint',refinementStartLabel:'start',refinementUseTime:'useTime',refinementCancel:'cancel',refinementFolder:'folder'}))$(id).textContent=text(key);
    const busy=pending||getBusy(),task=getTask(),isRefining=refining(task),full=scope()==='full';
@@ -82,7 +82,7 @@
   groupSelect.addEventListener('change',()=>{group=groupSelect.value;const candidates=details().filter(item=>group==='all'||item.group===group);if(!candidates.some(item=>item.id===target))target=candidates[0]?.id||'strings';message=null;refresh();});
   targetSelect.addEventListener('change',()=>{target=targetSelect.value;message=null;refresh();});
   deviceSelect.addEventListener('change',()=>{localStorage.setItem('xld.refinement.device',deviceSelect.value);message=null;refresh();});
-  $('refinementUseTime').onclick=()=>{start.value=String(Math.floor(audio.currentTime||0));start.dispatchEvent(new Event('change'));};
+  $('refinementUseTime').onclick=()=>{start.value=String(Math.floor(getPlaybackPosition?.(getSelected()?.id) ?? (audio.currentTime||0)));start.dispatchEvent(new Event('change'));};
   $('refinementRun').onclick=async()=>{
    if(pending||getBusy()||$('refinementRun').disabled)return;
    const request=payload(),key=route();pending=true;message=null;stop();render();let response;
@@ -99,7 +99,9 @@
   };
   $('refinementFolder').onclick=async()=>{const key=route();const reply=await bridge.revealRefinement(payload()).catch(error=>({ok:false,error:String(error)}));if(!reply.ok&&key===route()){message={key:'failed',error:reply.error};render();}};
   for(const button of document.querySelectorAll('[data-refinement-audio]'))button.onclick=()=>{
-   if(!result?.ok)return;const name=button.dataset.refinementAudio,current=player.currentTime||0;audio.pause();
+   if(!result?.ok)return;const name=button.dataset.refinementAudio;
+   if(onAudition){onAudition({track:getSelected(),url:result.urls[name],start:result.timeOrigin,end:result.timeOrigin+result.duration,label:name==='target'?targetName():text(name)});for(const candidate of document.querySelectorAll('[data-refinement-audio]'))candidate.setAttribute('aria-pressed',String(candidate===button));return;}
+   const current=player.currentTime||0;audio.pause();
    player.onloadedmetadata=()=>{player.currentTime=Math.min(current,Math.max(0,player.duration-.01));};player.src=result.urls[name];player.play().catch(()=>{message={key:'playFailed'};render();});
    for(const candidate of document.querySelectorAll('[data-refinement-audio]'))candidate.setAttribute('aria-pressed',String(candidate===button));
   };

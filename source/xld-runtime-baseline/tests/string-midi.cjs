@@ -30,14 +30,44 @@ const {createStorage}=require('../core/storage.cjs');
   assert.equal((await assets.stringSources.list(track)).choices.length,2);assert.equal(await assets.stringSources.current(track),null);
   await assert.rejects(assets.stringSources.select(track,{runId:group.runId,cacheKey:'../escape'}),/invalid/);
   await assets.stringSources.select(track,group);const first=await midi();assert.equal(first.program,48);assert((await assets.readMidi(track,'strings')).ok);
-  await assets.stringSources.select(track,violin);assert(!(await assets.readMidi(track,'strings')).ok,'Changed source cannot reuse old MIDI');const second=await midi();assert.equal(second.program,40);
+  await midi('bass');await midi('piano');
+  const merge=require('../core/midi-merge.cjs').createMidiMerge({analysisRoot});
+  await assets.stringSources.select(track,violin);
+  assert.equal((await assets.readMidi(track,'strings')).error,'midi-string-source-stale','the stale window is what this covers');
+  // Used to throw and take the whole merge with it: 'midi-string-source-stale' is only the strings spelling of
+  // 'midi-stale', which plan() already tolerated — the stem was the only difference.
+  const stale=await merge.plan(track);
+  assert(stale.ok,'bass and piano are enough to merge: '+JSON.stringify(stale.error));
+  assert.deepEqual(stale.parts.map(p=>p.stem),['bass','piano'],'and strings is not among them');
+  assert.deepEqual(stale.skipped,[{stem:'strings',reason:'midi-string-source-stale'}],JSON.stringify(stale.skipped));
+  // read() carries it too, which is what the panel shows before anything has been merged. A merge that quietly
+  // drops a voice and reports success is the failure this whole change exists to prevent.
+  const unmerged=await merge.read(track);
+  assert(!unmerged.ok&&unmerged.error==='merge-missing',JSON.stringify(unmerged.error));
+  assert.deepEqual(unmerged.skipped,stale.skipped,'the skip list survives read()\'s catch');
+  const copy=await fs.readFile(path.join(__dirname,'..','i18n','runtime-messages.js'),'utf8');
+  for(const reason of ['midi-missing','midi-empty','midi-stale','midi-string-source-stale'])
+   assert(new RegExp(String.raw`'${reason}':\['[^']+','[^']+'\]`).test(copy),reason+' must read as a sentence in both locales');
+  for(const key of ['skipped','skippedItem','skippedJoin'])
+   assert.equal((copy.match(new RegExp('"runtime\.merge\.'+key+'"','g'))||[]).length,2,key+' in both locales');
+  // Brackets and the list joiner are punctuation, and punctuation is language: the English sentence must not
+  // be wrapped in full-width Chinese brackets.
+  assert(/"runtime\.merge\.skippedItem": "\{stem\} \(\{reason\}\)"/.test(copy),'the English item uses ASCII brackets');
+  const second=await midi();assert.equal(second.program,40);
+  assert.deepEqual((await merge.plan(track)).skipped,[],'once this source has its own MIDI, nothing is skipped');
   await assets.stringSources.select(track,group);assert.equal((await assets.readMidi(track,'strings')).runId,first.runId,'Switching back restores source cache');
   await assert.rejects(assets.midi.validate({...first,program:40},track,'strings'),/source-stale/);
-  await midi('bass');const merge=require('../core/midi-merge.cjs').createMidiMerge({analysisRoot});const plan=await merge.plan(track);assert(plan.ok);assert.deepEqual(plan.parts.map(p=>p.stem),['bass','strings']);assert.equal(plan.parts[1].sourceRunId,group.runId);
+  const plan=await merge.plan(track);assert(plan.ok);assert.deepEqual(plan.parts.map(p=>p.stem),['bass','piano','strings']);assert.equal(plan.parts[2].sourceRunId,group.runId,'the strings part still carries the source it was made from');assert.deepEqual(plan.skipped,[]);
   const storage=createStorage({getRoot:()=>analysisRoot});const row=(await storage.scan()).rows.find(r=>r.runId===group.runId);assert.equal(row.dependencyCount,1);assert(row.blocked.includes('MIDI'));
-  await assets.stringSources.select(track,null);assert(!(await assets.readMidi(track,'strings')).ok);assert(!(await merge.plan(track)).ok);assert.equal((await storage.scan()).rows.find(r=>r.runId===group.runId).dependencyCount,1,'Disabling inclusion must not lose dependency protection');
+  await assets.stringSources.select(track,null);assert(!(await assets.readMidi(track,'strings')).ok);
+  // With bass and piano present the merge still goes ahead. What this line is really about is that strings is
+  // not in it, and that clearing the source does not drop the dependency protection on the WAV it came from.
+  const withoutStrings=await merge.plan(track);
+  assert(withoutStrings.ok&&!withoutStrings.parts.some(p=>p.stem==='strings'),JSON.stringify(withoutStrings.parts.map(p=>p.stem)));
+  assert.deepEqual(withoutStrings.skipped,[],'a source you deliberately cleared is not a part that was left out');
+  assert.equal((await storage.scan()).rows.find(r=>r.runId===group.runId).dependencyCount,1,'Disabling inclusion must not lose dependency protection');
   await assets.stringSources.select(track,group);await fs.rename(path.join(directory,'refinement',group.runId,'target.wav'),path.join(directory,'refinement',group.runId,'missing.wav'));
   assert.equal(await assets.stringSources.current(track),null);assert((await assets.stringSources.list(track)).unavailable);assert(!(await assets.readMidi(track,'strings')).ok);
-  console.log('String MIDI PASS: full-only sources, explicit inclusion, target programs, per-source cache restore, merge identity, deletion dependency and missing WAV');
+  console.log('String MIDI PASS: full-only sources, explicit inclusion, target programs, per-source cache restore, merge identity, skipped parts reported not fatal, deletion dependency and missing WAV');
  }finally{if(old===undefined)delete process.env.XLD_REFINE_ROFORMER_MODELS;else process.env.XLD_REFINE_ROFORMER_MODELS=old;await fs.rm(root,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
