@@ -1,0 +1,34 @@
+{
+  "version": "0.5.0-preview.setup.1",
+  "sourceCommit": "02f8d0d",
+  "url": "https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1",
+  "draft": false,
+  "prerelease": true,
+  "assets": [
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 229,
+      "sha256": "d3085ac6668a50db5ffc045af54c1b0f0e1884cb1c11c6616bebe312a4d43987"
+    },
+    {
+      "name": "Xin-Music-Lab-0.5.0-preview.setup.1-source.zip",
+      "bytes": 5975100,
+      "sha256": "66b36c574a1a02189a4b005b20082e95e3cdb8ebf044d7baa9c060ac6f2f1543"
+    },
+    {
+      "name": "Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip",
+      "bytes": 235695570,
+      "sha256": "68ca1c5ceb3145b054340c7c786a97e9ddcba01b3278e5654d6f79894e652a08"
+    }
+  ],
+  "validation": {
+    "existingXldTests": true,
+    "existingXmlTests": true,
+    "freshManagedPythonMidiRoundtrip": true,
+    "packagedSetupUi": true,
+    "binaryManifestFiles": 1119,
+    "cleanWindowsMachine": false,
+    "automaticAiEnvironmentInstallation": false
+  },
+  "repositoryVisibility": "private"
+}

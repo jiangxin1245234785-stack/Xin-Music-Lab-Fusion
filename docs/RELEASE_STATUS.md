@@ -1,6 +1,6 @@
 # 2026-09-26 · 0.5.0-preview.setup.1
 
-新版试用包已准备：最新工作台、首次配置、模型导入检查与 MIDI 基础环境安装。附带匹配的过滤后源码 ZIP 和 SHA-256。旧 ui.1 资产保留。仓库可见性不变。
+新版试用包已发布：最新工作台、首次配置、模型导入检查与 MIDI 基础环境安装。附带匹配的过滤后源码 ZIP 和 SHA-256。旧 ui.1 资产保留。仓库可见性不变。
 
 New preview: latest workbench, first-run setup, backend import/checks and optional base MIDI environment installation. Includes a matching filtered source archive and SHA-256 checksums. Older ui.1 assets remain. Repository visibility is unchanged.
 
