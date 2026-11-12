@@ -1,0 +1,881 @@
+<title>人声替换台</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column. The voices as a switch bank grouped by language, the close pairs as
+   A/B cards with a verdict each, one free note, and the transport docked at the foot where
+   a thumb reaches it. Dark-first, the same panel language as 音色对照台 and 待听评. */
+:root {
+  --bg: #13161a; --panel: #1b1f25; --panel-lit: #232931; --edge: #2d343d;
+  --fg: #e8e6e1; --dim: #8b9099; --faint: #5c636d;
+  --signal: #f0a830; --signal-soft: rgba(240,168,48,.14);
+  --live: #5fd3a6; --live-soft: rgba(95,211,166,.14);
+  --warn: #e8705a; --warn-soft: rgba(232,112,90,.15);
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(0,0,0,.35);
+  color-scheme: dark;
+  --ui: "Archivo", system-ui, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+        "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 22px 0; max-width: 820px; margin-inline: auto;
+}
+h1 { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.sub { color: var(--dim); font-size: .84rem; margin: 6px 0 0; }
+.store { font-family: var(--mono); font-size: .74rem; color: var(--faint); margin: 8px 0 0; }
+.store.bad { color: var(--warn); }
+h2 { font-size: .72rem; font-weight: 600; margin: 26px 0 8px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--dim); }
+.hint { color: var(--dim); font-size: .8rem; margin: -2px 0 10px; }
+
+/* --- voice bank ------------------------------------------------------------ */
+.group + .group { margin-top: 14px; }
+.group h3 { font-size: .7rem; font-weight: 600; letter-spacing: .09em; color: var(--faint);
+  margin: 0 0 6px; }
+.rows { display: grid; gap: 6px; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 9px;
+  scroll-margin-block: 16px 140px;
+}
+.row.on { border-color: var(--signal); background: var(--signal-soft); }
+.pick {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 11px; align-items: center;
+  min-width: 0; width: 100%; text-align: left; cursor: pointer; padding: 10px 12px;
+  background: transparent; border: 0; border-radius: 9px; color: var(--fg); font: inherit;
+}
+.row:not(.on) .pick:hover { background: var(--panel-lit); }
+.pick:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.lamp { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--faint); }
+.row.ready .lamp { background: var(--edge); border-color: var(--faint); }
+.row.on .lamp { background: var(--live); border-color: var(--live); box-shadow: 0 0 7px var(--live); }
+.row.failed .lamp { background: transparent; border-color: var(--warn); }
+.who { min-width: 0; }
+.name { font-weight: 600; font-size: .95rem; }
+.desc { color: var(--dim); font-size: .8rem; margin-left: 7px; }
+.row.on .desc { color: var(--fg); }
+.nums { display: block; font-family: var(--mono); font-size: .7rem; color: var(--faint);
+  margin-top: 2px; font-variant-numeric: tabular-nums; }
+.tools { display: flex; align-items: center; gap: 5px; padding: 8px 10px 8px 4px; }
+.tool {
+  font: 600 .78rem var(--ui); padding: 6px 10px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--dim);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.tool.ref { min-width: 48px; }
+.tool:hover:not(:disabled) { color: var(--fg); border-color: var(--faint); }
+.tool:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.tool:disabled { opacity: .4; cursor: not-allowed; }
+.tool.ref[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
+.tool[data-v="keep"][aria-pressed="true"], .tool[data-v="distinct"][aria-pressed="true"],
+.tool[data-v="fixed"][aria-pressed="true"] {
+  color: var(--live); border-color: var(--live); background: var(--live-soft); }
+.tool[data-v="drop"][aria-pressed="true"], .tool[data-v="same"][aria-pressed="true"],
+.tool[data-v="still"][aria-pressed="true"] {
+  color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+
+/* --- close pairs ----------------------------------------------------------- */
+.pairs { display: grid; gap: 8px; }
+.pair { background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+  padding: 12px; display: grid; gap: 9px; box-shadow: var(--shadow); }
+.pair-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pair-title { font-weight: 600; font-size: .95rem; }
+.pair-sim { font-family: var(--mono); font-size: .72rem; color: var(--faint); white-space: nowrap; }
+.ab, .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ab button {
+  font: 600 .86rem var(--ui); padding: 9px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--dim);
+}
+.ab button:hover { color: var(--fg); border-color: var(--faint); }
+.ab button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.ab button[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
+.ab .tag { font-family: var(--mono); font-weight: 500; font-size: .72rem; margin-right: 6px; opacity: .8; }
+.verdict .tool { padding: 8px; }
+
+textarea {
+  width: 100%; min-height: 64px; resize: vertical; font-family: var(--ui); font-size: .86rem;
+  padding: 9px 11px; border-radius: 9px; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); line-height: 1.5;
+}
+textarea:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+textarea:disabled { opacity: .5; }
+.saved { font-family: var(--mono); font-size: .71rem; color: var(--faint); margin-top: 5px; min-height: 1.1em; }
+.saved.on { color: var(--live); }
+.foot { color: var(--faint); font-size: .76rem; margin: 22px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--edge); display: grid; gap: 6px; }
+.foot kbd { font-family: var(--mono); font-size: .7rem; background: var(--panel-lit);
+  border: 1px solid var(--edge); border-radius: 4px; padding: 0 5px; color: var(--dim); }
+
+/* --- transport dock -------------------------------------------------------- */
+.dock {
+  position: sticky; bottom: 0; margin-top: 14px; padding-top: 14px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--bg) 80%, transparent);
+}
+.transport { display: flex; align-items: center; gap: 14px; background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); }
+#play {
+  flex: none; width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); cursor: pointer; display: grid; place-items: center;
+}
+#play:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+#play:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+#play:disabled { opacity: .45; cursor: progress; }
+#play .glyph { display: block; width: 0; height: 0; }
+#play.paused .glyph { border-left: 13px solid currentColor; border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent; margin-left: 4px; }
+#play.playing .glyph { width: 13px; height: 15px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+.meter { flex: 1 1 auto; min-width: 0; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.now { font-weight: 600; font-size: .95rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now span { color: var(--signal); }
+.clock { font-family: var(--mono); font-size: .74rem; color: var(--faint); font-variant-numeric: tabular-nums; flex: none; }
+.track { position: relative; height: 20px; cursor: pointer; touch-action: none; margin-top: 2px; }
+.track::before { content: ""; position: absolute; inset: 8px 0 auto; height: 4px; border-radius: 2px; background: var(--edge); }
+.fill { position: absolute; left: 0; top: 8px; height: 4px; border-radius: 2px; background: var(--signal); width: 0; }
+.track:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
+.meter-bottom { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 26px; }
+.engine { font-family: var(--mono); font-size: .72rem; color: var(--dim); min-width: 0; }
+.engine.bad { color: var(--warn); }
+.versions { display: inline-flex; flex: none; border: 1px solid var(--edge); border-radius: 7px; overflow: hidden; }
+.versions button { font: 600 .74rem var(--ui); padding: 4px 9px; border: 0; cursor: pointer;
+  background: var(--panel-lit); color: var(--dim); }
+.versions button + button { border-left: 1px solid var(--edge); }
+.versions button[aria-pressed="true"] { background: var(--signal-soft); color: var(--signal); }
+.versions button:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+
+/* --- spots worth hearing ---------------------------------------------------- */
+.spots { display: grid; gap: 8px; }
+.spot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, auto); gap: 8px 14px;
+  align-items: center; background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+  padding: 11px 12px; box-shadow: var(--shadow); }
+.jump { min-width: 0; text-align: left; font: inherit; color: var(--fg); background: transparent;
+  border: 0; padding: 0; cursor: pointer; }
+.jump .when { font-weight: 600; font-size: .95rem; }
+.jump .when::before { content: "▶"; font-size: .7rem; color: var(--signal); margin-right: 7px; }
+.jump:hover .when { color: var(--signal); }
+.jump:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 4px; }
+.jump .what { display: block; font-family: var(--mono); font-size: .72rem; color: var(--faint); margin-top: 2px; }
+
+@media (max-width: 460px) {
+  .row, .spot { grid-template-columns: 1fr; }
+  .tools { padding: 0 12px 10px 35px; }
+  .transport { gap: 11px; padding: 9px 11px; }
+}
+</style>
+
+<header>
+  <h1>人声替换台</h1>
+  <p class="sub" id="sub"></p>
+  <p class="store" id="store">正在连接存储…</p>
+</header>
+
+<main>
+  <section id="spotsSection" aria-labelledby="spots-h" hidden>
+    <h2 id="spots-h">重点听这几处</h2>
+    <p class="hint" id="spotsHint"></p>
+    <div class="spots" id="spots"></div>
+  </section>
+
+  <h2 id="bank-h">声音</h2>
+  <div id="bank" role="group" aria-labelledby="bank-h"></div>
+
+  <section id="pairsSection" aria-labelledby="pairs-h">
+    <h2 id="pairs-h">可能分不开的几对</h2>
+    <p class="hint" id="pairsHint"></p>
+    <div class="pairs" id="pairs"></div>
+  </section>
+
+  <h2 id="note-h">整体感受</h2>
+  <textarea id="overall" aria-labelledby="note-h" disabled
+    placeholder="哪几个最好、哪里有电子味、咬字糊不糊……想到什么写什么（可空）"></textarea>
+  <div class="saved" id="overallSaved"></div>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<div class="dock">
+  <div class="transport">
+    <button id="play" class="paused" type="button" disabled aria-label="播放"><span class="glyph"></span></button>
+    <div class="meter">
+      <div class="meter-top">
+        <div class="now">正在听 <span id="nowName">原唱</span></div>
+        <div class="clock" id="clock">0.0 / 0.0s</div>
+      </div>
+      <div class="track" id="track" role="slider" tabindex="0" aria-label="播放位置"
+           aria-valuemin="0" aria-valuemax="30" aria-valuenow="0"><div class="fill" id="fill"></div></div>
+      <div class="meter-bottom">
+        <div class="engine" id="engine">正在载入原唱…</div>
+        <div class="versions" id="versions" role="group" aria-label="版本" hidden>
+          <button type="button" data-version="after" aria-pressed="true">修正后</button>
+          <button type="button" data-version="before" aria-pressed="false">修正前</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const M = /*@MANIFEST@*/null;
+const $ = id => document.getElementById(id);
+const mod = (x, m) => ((x % m) + m) % m;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (!M) {
+  $('sub').textContent = '这是模板，还没有清单——用 make_bench.py 生成页面。';
+  throw new Error('bench.html opened without a manifest');
+}
+
+const SEG = M.seconds;
+const ORIGINAL = {id: 'original', name: '原唱', desc: '分离出来的人声，没换', group: '参照',
+                  file: M.original.file};
+const LIST = [ORIGINAL, ...M.voices];
+const BY = Object.fromEntries(LIST.map(v => [v.id, v]));
+const pairKey = p => p.a + '__' + p.b;
+
+const countOf = kind => M.voices.filter(v => (v.kind || 'tts') === kind).length;
+$('sub').textContent = [M.caption,
+  [countOf('tts') && `${countOf('tts')} 个合成声音`, countOf('rvc') && `${countOf('rvc')} 个社区 RVC 模型`]
+    .filter(Boolean).join(' + '),
+  `每段 ${Math.round(SEG)} 秒，已对齐响度。点哪个就立刻换，唱到哪儿都不断。`]
+  .filter(Boolean).join(' · ');
+$('track').setAttribute('aria-valuemax', SEG.toFixed(1));
+
+/* --- page ------------------------------------------------------------------ */
+const rows = {};
+const groups = [];
+for (const voice of LIST) {
+  let group = groups.find(g => g.name === voice.group);
+  if (!group) groups.push(group = {name: voice.group, items: []});
+  group.items.push(voice);
+}
+for (const group of groups) {
+  const wrap = document.createElement('div');
+  wrap.className = 'group';
+  const head = document.createElement('h3');
+  head.textContent = group.name;
+  const list = document.createElement('div');
+  list.className = 'rows';
+  for (const voice of group.items) list.appendChild(rows[voice.id] = makeRow(voice));
+  wrap.append(head, list);
+  $('bank').appendChild(wrap);
+}
+
+function makeButton(text, className, verdict) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = text;
+  button.setAttribute('aria-pressed', 'false');
+  if (verdict) { button.dataset.v = verdict; button.disabled = true; }
+  return button;
+}
+
+function makeRow(voice) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'pick';
+  pick.setAttribute('aria-pressed', 'false');
+  pick.innerHTML = '<span class="lamp"></span><span class="who"><span class="name"></span>'
+    + '<span class="desc"></span><span class="nums"></span></span>';
+  pick.querySelector('.name').textContent = voice.name;
+  pick.querySelector('.desc').textContent = voice.desc;
+  pick.querySelector('.nums').textContent = voice.id === 'original'
+    ? '对照用，所有声音都从这一段换出来'
+    : [voice.refHz ? `参考 ${Math.round(voice.refHz)} Hz` : '', ...rvcFacts(voice),
+       `像原唱 ${voice.likeOriginal.toFixed(2)}`].filter(Boolean).join(' · ');
+  pick.addEventListener('click', () => select(voice.id));
+  row.appendChild(pick);
+  if (voice.id !== 'original') {
+    const tools = document.createElement('div');
+    tools.className = 'tools';
+    if (voice.reference) {                       // RVC models have no reference clip
+      const ref = makeButton('参考', 'tool ref');
+      ref.setAttribute('aria-label', `听${voice.name}的参考原声`);
+      ref.addEventListener('click', () => playReference(voice.id));
+      tools.append(ref);
+    }
+    const keep = makeButton('留', 'tool', 'keep');
+    const drop = makeButton('删', 'tool', 'drop');
+    for (const button of [keep, drop]) button.addEventListener('click', () => setVerdict(voice.id, button.dataset.v));
+    tools.append(keep, drop);
+    row.appendChild(tools);
+  }
+  return row;
+}
+
+/* What a community model is and what was done to it: the octave it was moved (it only
+   ever moves in octaves, so it stays in the song's key) and where it came from. */
+function rvcFacts(voice) {
+  if (voice.kind !== 'rvc') return [];
+  const shift = !voice.octave ? '原调'
+    : `${voice.octave > 0 ? '升' : '降'}${['', '一', '两'][Math.abs(voice.octave)] || Math.abs(voice.octave)}个八度`;
+  const license = voice.license.startsWith('未声明') ? '许可' + voice.license : voice.license;
+  return [shift, voice.who, license];
+}
+
+const pairCards = {};
+if (!M.close.length) $('pairsSection').hidden = true;
+$('pairsHint').textContent = `模型自己的说话人编码器打分超过 ${M.closeThreshold} 的组合（全库两两平均 ${M.meanPairSimilarity.toFixed(2)}）。`
+  + '点 A、B 来回切，听耳朵能不能分开。分不开的，下一步要么砍掉一个，要么调高贴参考的力度再拉开。';
+for (const pair of M.close) {
+  const card = document.createElement('div');
+  card.className = 'pair';
+  card.innerHTML = '<div class="pair-top"><span class="pair-title"></span><span class="pair-sim"></span></div>'
+    + '<div class="ab"></div><div class="verdict"></div>';
+  card.querySelector('.pair-title').textContent = `${BY[pair.a].name} ⇄ ${BY[pair.b].name}`;
+  card.querySelector('.pair-sim').textContent = `相似度 ${pair.similarity.toFixed(2)}`;
+  for (const [tag, id] of [['A', pair.a], ['B', pair.b]]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.id = id;
+    button.setAttribute('aria-pressed', 'false');
+    button.innerHTML = `<span class="tag">${tag}</span>`;
+    button.append(BY[id].name);
+    button.addEventListener('click', () => select(id));
+    card.querySelector('.ab').appendChild(button);
+  }
+  for (const [text, verdict] of [['分得开', 'distinct'], ['分不开', 'same']]) {
+    const button = makeButton(text, 'tool', verdict);
+    button.addEventListener('click', () => setPair(pairKey(pair), verdict));
+    card.querySelector('.verdict').appendChild(button);
+  }
+  $('pairs').appendChild(card);
+  pairCards[pairKey(pair)] = card;
+}
+
+const spotCards = {};
+const spotKey = spot => `${spot.start.toFixed(2)}-${spot.end.toFixed(2)}`;
+const repairs = M.repairs || [];
+if (repairs.length) {
+  $('spotsSection').hidden = false;
+  $('spotsHint').textContent = '转换时音高被拽低一个八度、现在已经抬回原位的地方'
+    + (M.repairGlitches ? `（另有 ${M.repairGlitches} 处只有几帧长的毛刺，也一起修了）` : '')
+    + '。点时间会从前一秒半开始放，再用底部的「修正后 / 修正前」切着听。';
+}
+for (const spot of repairs) {
+  const card = document.createElement('div');
+  card.className = 'spot';
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'jump';
+  jump.innerHTML = '<span class="when"></span><span class="what"></span>';
+  jump.querySelector('.when').textContent = `${spot.start.toFixed(1)} 秒` + (spot.label ? ` · ${spot.label}` : '');
+  jump.querySelector('.what').textContent =
+    `被拽到 ${spot.from}，抬回 ${spot.to} · 长 ${(spot.end - spot.start).toFixed(2)} 秒`;
+  jump.addEventListener('click', () => playFrom(Math.max(0, spot.start - 1.5)));
+  const verdict = document.createElement('div');
+  verdict.className = 'verdict';
+  for (const [text, value] of [['修正后对了', 'fixed'], ['还不对', 'still']]) {
+    const button = makeButton(text, 'tool', value);
+    button.addEventListener('click', () => setSpot(spotKey(spot), value));
+    verdict.appendChild(button);
+  }
+  card.append(jump, verdict);
+  $('spots').appendChild(card);
+  spotCards[spotKey(spot)] = card;
+}
+
+if (M.hasBefore) $('versions').hidden = false;
+$('versions').querySelectorAll('button').forEach(button =>
+  button.addEventListener('click', () => setVersion(button.dataset.version)));
+
+$('foot').innerHTML = '<span>键盘：<kbd>空格</kbd> 播放／暂停 · <kbd>↑</kbd><kbd>↓</kbd> 换声音 · '
+  + '<kbd>←</kbd><kbd>→</kbd> 前后 3 秒 · <kbd>0</kbd> 回原唱 · <kbd>`</kbd> 回到上一个'
+  + (M.hasBefore ? ' · <kbd>B</kbd> 修正前后' : '') + '。</span>';
+const explain = document.createElement('span');
+explain.textContent = '「像原唱」是模型自己的说话人编码器（campplus）打的分'
+  + (M.baseline ? `：拿原唱自己当参考做的恒等转换是 ${M.baseline.toFixed(2)}，` : '，')
+  + '越低说明换得越开。「参考」放的是这个声音本来的样子（一段 TTS 说话），用来对照转出来像不像它'
+  + (countOf('rvc') ? '；社区 RVC 模型是训练好的，没有参考片段。' : '。');
+$('foot').appendChild(explain);
+
+/* --- audio engine ----------------------------------------------------------
+   Every loaded voice loops the same SEG-second span on one shared clock, so they stay
+   phase-locked: switching is a gain change, which lands instantly and without a click.
+   Voices load lazily (the one you pick jumps the queue); a voice that arrives mid-play is
+   started at whatever point the shared clock has reached, so it joins in step. */
+let ctx = null, master = null;
+const buffers = new Map(), gains = new Map(), sources = new Map(), jobs = new Map(), failed = new Set();
+let startedAt = null, parked = 0, running = false, dragPos = null;
+let current = 'original', previous = null, refId = null;
+/* Two versions of each conversion when the page compares a fix: they share the clock like
+   everything else, so flipping the version is a gain change too. Buffers are keyed by
+   voice and version; the original has one version. The "before" set loads only when it is
+   asked for, so a phone that never flips does not hold twice the audio. */
+let version = 'after';
+const keyOf = (id, which = version) =>
+  id === 'original' ? 'original' : (which === 'before' && BY[id].before ? id + '|before' : id);
+const idOf = key => key.split('|')[0];
+const fileOf = key => key === 'original' ? M.original.file
+  : key.endsWith('|before') ? BY[idOf(key)].before : BY[key].file;
+const queue = LIST.map(v => keyOf(v.id));
+let active = 0;
+
+function setEngine(text, bad) {
+  $('engine').textContent = text;
+  $('engine').classList.toggle('bad', !!bad);
+}
+
+function refreshEngine() {
+  const keys = LIST.map(v => keyOf(v.id));
+  const loaded = keys.filter(k => buffers.has(k)).length, bad = keys.filter(k => failed.has(k)).length;
+  const tail = keys.length - loaded - bad > 0 ? ` · 已载入 ${loaded}/${keys.length}`
+    : bad ? ` · ${bad} 段没载入` : '';
+  if (refId) return setEngine(`在听${BY[refId].name}的参考原声（TTS 说话）`);
+  if (failed.has(keyOf(current))) return setEngine(`${BY[current].name} 没载入，换一个试试${tail}`, true);
+  if (!buffers.has(keyOf(current))) return setEngine(`${BY[current].name} 载入中…${tail}`);
+  if (startedAt === null) return setEngine(`就绪 · 按播放开始${tail}`);
+  setEngine((running ? '播放中 · 点任意一个声音立刻换' : '已暂停') + tail);
+}
+
+function decode(raw) {
+  return new Promise((resolve, reject) => {
+    const promise = ctx.decodeAudioData(raw, resolve, reject);
+    if (promise && typeof promise.catch === 'function') promise.catch(() => {});
+  });
+}
+
+function fetchVoice(key) {
+  if (jobs.has(key)) return jobs.get(key);
+  const file = fileOf(key);
+  const job = fetch('audio/' + file)
+    .then(response => {
+      if (!response.ok) throw new Error(`${file} ${response.status}`);
+      return response.arrayBuffer();
+    })
+    .then(decode)
+    .then(buffer => {
+      if (buffer.duration + 0.005 < SEG) throw new Error(`${file} 只有 ${buffer.duration.toFixed(2)}s`);
+      buffers.set(key, buffer);
+      const gain = ctx.createGain();
+      gain.gain.value = key === keyOf(current) ? 1 : 0;
+      gain.connect(master);
+      gains.set(key, gain);
+      if (startedAt !== null) startSource(key, ctx.currentTime + 0.04);
+      $('play').disabled = false;
+    })
+    .catch(error => { failed.add(key); console.error(error); })
+    .finally(() => { paintRow(idOf(key)); refreshEngine(); });
+  jobs.set(key, job);
+  return job;
+}
+
+function want(key) {
+  if (jobs.has(key)) return;
+  const at = queue.indexOf(key);
+  if (at >= 0) queue.splice(at, 1);
+  active++;
+  fetchVoice(key).finally(() => { active--; pump(); });
+}
+
+function pump() {
+  while (active < 3 && queue.length) {
+    const id = queue.shift();
+    if (jobs.has(id)) continue;
+    active++;
+    fetchVoice(id).finally(() => { active--; pump(); });
+  }
+}
+
+function startSource(id, when) {
+  const old = sources.get(id);
+  if (old) { try { old.stop(); } catch (error) { /* never started */ } old.disconnect(); }
+  const source = ctx.createBufferSource();
+  source.buffer = buffers.get(id);
+  source.loop = true;
+  source.loopStart = 0;
+  source.loopEnd = SEG;
+  source.connect(gains.get(id));
+  source.start(when, mod(when - startedAt, SEG));
+  sources.set(id, source);
+}
+
+function startAll(offset) {
+  const when = ctx.currentTime + 0.04;
+  startedAt = when - offset;
+  for (const id of buffers.keys()) startSource(id, when);
+}
+
+function position() {
+  if (startedAt === null || !ctx) return parked;
+  return Math.max(0, ctx.currentTime - startedAt) % SEG;
+}
+
+function seek(seconds) {
+  const target = Math.min(Math.max(seconds, 0), SEG - 0.05);
+  if (startedAt === null) { parked = target; return; }
+  startAll(target);
+}
+
+function applyGains() {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const live = keyOf(current);
+  for (const [key, gain] of gains) {
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(key === live ? 1 : 0, now, 0.006);
+  }
+}
+
+function select(id) {
+  if (!BY[id] || id === current) return;
+  previous = current;
+  current = id;
+  want(keyOf(id));
+  applyGains();
+  paintAll();
+  refreshEngine();
+}
+
+function setVersion(which) {
+  if (!M.hasBefore || which === version) return;
+  version = which;
+  want(keyOf(current));
+  applyGains();
+  paintAll();
+  refreshEngine();
+}
+
+function playFrom(seconds) {
+  seek(seconds);
+  if (!running) toggle();
+}
+
+function setRunning(state) {
+  running = state;
+  $('play').className = state ? 'playing' : 'paused';
+  $('play').setAttribute('aria-label', state ? '暂停' : '播放');
+  refreshEngine();
+}
+
+async function toggle() {
+  if (!ctx || !buffers.size) return;
+  stopReference();
+  try {
+    if (startedAt === null) { await ctx.resume(); startAll(parked); setRunning(true); }
+    else if (running) { await ctx.suspend(); setRunning(false); }
+    else { await ctx.resume(); setRunning(true); }
+  } catch (error) {
+    setEngine('播放没能开始：' + error.message, true);
+  }
+}
+
+/* The reference is a separate one-shot clip, so it plays through a media element and the
+   loop is paused while it does — two voices at once would defeat the comparison. */
+const refAudio = new Audio();
+refAudio.preload = 'none';
+refAudio.addEventListener('ended', () => { refId = null; paintAll(); refreshEngine(); });
+
+function playReference(id) {
+  if (refId === id) { stopReference(); return; }
+  if (running) { ctx.suspend(); setRunning(false); }
+  refId = id;
+  refAudio.src = 'audio/' + BY[id].reference;
+  refAudio.play().catch(error => {
+    refId = null;
+    paintAll();
+    setEngine('参考放不出来：' + error.message, true);
+  });
+  paintAll();
+  refreshEngine();
+}
+
+function stopReference() {
+  if (!refId) return;
+  refAudio.pause();
+  refId = null;
+  paintAll();
+  refreshEngine();
+}
+
+function boot() {
+  // iOS mutes Web Audio under the ringer switch unless the session is declared playback.
+  if (navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (error) { /* older Safari */ } }
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (error) {
+    setEngine('这个浏览器放不了 Web Audio，换 Chrome、Edge 或 Safari 试试。', true);
+    return;
+  }
+  master = ctx.createGain();
+  master.connect(ctx.destination);
+  pump();
+}
+
+/* --- paint ----------------------------------------------------------------- */
+const verdicts = {}, pairVerdicts = {}, spotVerdicts = {};
+
+function paintRow(id) {
+  const row = rows[id];
+  if (!row) return;
+  row.classList.toggle('on', id === current);
+  row.classList.toggle('ready', buffers.has(keyOf(id)));
+  row.classList.toggle('failed', failed.has(keyOf(id)));
+  row.querySelector('.pick').setAttribute('aria-pressed', id === current ? 'true' : 'false');
+  const ref = row.querySelector('.ref');
+  if (ref) {
+    ref.setAttribute('aria-pressed', refId === id ? 'true' : 'false');
+    ref.textContent = refId === id ? '停' : '参考';
+  }
+  row.querySelectorAll('.tool[data-v]').forEach(button =>
+    button.setAttribute('aria-pressed', verdicts[id] === button.dataset.v ? 'true' : 'false'));
+}
+
+function paintPairs() {
+  for (const [key, card] of Object.entries(pairCards)) {
+    card.querySelectorAll('.ab button').forEach(button =>
+      button.setAttribute('aria-pressed', button.dataset.id === current ? 'true' : 'false'));
+    card.querySelectorAll('.tool[data-v]').forEach(button =>
+      button.setAttribute('aria-pressed', pairVerdicts[key] === button.dataset.v ? 'true' : 'false'));
+  }
+}
+
+function paintSpots() {
+  for (const [key, card] of Object.entries(spotCards)) {
+    card.querySelectorAll('.tool[data-v]').forEach(button =>
+      button.setAttribute('aria-pressed', spotVerdicts[key] === button.dataset.v ? 'true' : 'false'));
+  }
+}
+
+function paintAll() {
+  for (const id of Object.keys(rows)) paintRow(id);
+  paintPairs();
+  paintSpots();
+  $('versions').querySelectorAll('button').forEach(button =>
+    button.setAttribute('aria-pressed', button.dataset.version === version ? 'true' : 'false'));
+  $('nowName').textContent = BY[current].name
+    + (M.hasBefore && current !== 'original' ? (version === 'after' ? ' · 修正后' : ' · 修正前') : '');
+}
+
+let lastPct = '', lastClock = '', lastValue = '';
+function tick() {
+  const at = dragPos !== null ? dragPos : position();
+  const pct = (at / SEG * 100).toFixed(2);
+  if (pct !== lastPct) { $('fill').style.width = pct + '%'; lastPct = pct; }
+  const clock = `${at.toFixed(1)} / ${SEG.toFixed(1)}s`;
+  if (clock !== lastClock) { $('clock').textContent = clock; lastClock = clock; }
+  const value = at.toFixed(0);
+  if (value !== lastValue) { $('track').setAttribute('aria-valuenow', value); lastValue = value; }
+  requestAnimationFrame(tick);
+}
+
+/* --- input ----------------------------------------------------------------- */
+$('play').addEventListener('click', toggle);
+
+const track = $('track');
+const fractionAt = event => {
+  const box = track.getBoundingClientRect();
+  return Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+};
+track.addEventListener('pointerdown', event => {
+  track.setPointerCapture(event.pointerId);
+  dragPos = fractionAt(event) * SEG;
+});
+track.addEventListener('pointermove', event => {
+  if (dragPos !== null && track.hasPointerCapture(event.pointerId)) dragPos = fractionAt(event) * SEG;
+});
+// Restart the sources once, on release: restarting nineteen of them per pointer move
+// would make dragging stutter for nothing.
+track.addEventListener('pointerup', () => {
+  if (dragPos === null) return;
+  const target = dragPos;
+  dragPos = null;
+  seek(target);
+});
+track.addEventListener('pointercancel', () => { dragPos = null; });
+
+function step(direction) {
+  const index = LIST.findIndex(v => v.id === current);
+  const next = LIST[mod(index + direction, LIST.length)];
+  select(next.id);
+  rows[next.id].scrollIntoView({block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth'});
+}
+
+document.addEventListener('keydown', event => {
+  if (event.target.closest && event.target.closest('textarea, input')) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const key = event.key;
+  if (key === ' ') { event.preventDefault(); toggle(); }
+  else if (key === 'ArrowDown') { event.preventDefault(); step(1); }
+  else if (key === 'ArrowUp') { event.preventDefault(); step(-1); }
+  else if (key === 'ArrowLeft') { event.preventDefault(); seek(mod(position() - 3, SEG)); }
+  else if (key === 'ArrowRight') { event.preventDefault(); seek(mod(position() + 3, SEG)); }
+  else if (key === 'Home') { event.preventDefault(); seek(0); }
+  else if (key === '0') select('original');
+  else if (key === '`' && previous) select(previous);
+  else if ((key === 'b' || key === 'B') && M.hasBefore) setVersion(version === 'after' ? 'before' : 'after');
+});
+
+/* --- verdicts -------------------------------------------------------------- */
+let db = null, writable = false;
+const use = name => (window.claude && typeof window.claude.use === 'function')
+  ? window.claude.use(name) : Promise.resolve(null);
+
+function setStore(text, bad) {
+  $('store').textContent = text;
+  $('store').classList.toggle('bad', !!bad);
+}
+
+function setInputs(enabled) {
+  document.querySelectorAll('.tool[data-v]').forEach(button => { button.disabled = !enabled; });
+  $('overall').disabled = !enabled;
+}
+
+function refreshStore() {
+  if (!db || !writable) return;
+  const keep = M.voices.filter(v => verdicts[v.id] === 'keep').length;
+  const drop = M.voices.filter(v => verdicts[v.id] === 'drop').length;
+  const pairs = M.close.filter(p => pairVerdicts[pairKey(p)]).length;
+  const spots = repairs.filter(s => spotVerdicts[spotKey(s)]).length;
+  setStore((repairs.length ? `重点 ${spots} / ${repairs.length} 处 · ` : '')
+    + `已判 ${keep + drop} / ${M.voices.length} 个声音（留 ${keep} · 删 ${drop}）`
+    + (M.close.length ? ` · ${pairs} / ${M.close.length} 对` : '') + ' · 自动保存');
+}
+
+// One write at a time per document, in click order; the last click is what stays.
+const chains = {};
+function persist(path, body) {
+  if (!db || !writable) return;
+  chains[path] = (chains[path] || Promise.resolve()).then(async () => {
+    try {
+      if (body) await db.doc(path).set(body);
+      else await db.doc(path).delete();
+    } catch (error) {
+      if (error && error.code === 'invalid_argument') {
+        writable = false;
+        setInputs(false);
+        setStore('这个视图不能写入，判断没保存——用拥有者身份打开这页。', true);
+      } else {
+        setStore('没保存上（' + (error && error.code || error) + '），再点一次试试。', true);
+      }
+    }
+  });
+}
+
+function setVerdict(id, verdict) {
+  verdicts[id] = verdicts[id] === verdict ? '' : verdict;   // clicking again clears a mis-tap
+  paintRow(id);
+  refreshStore();
+  persist('verdicts/' + id, verdicts[id] ? {verdict: verdicts[id], at: new Date().toISOString()} : null);
+}
+
+function setPair(key, verdict) {
+  pairVerdicts[key] = pairVerdicts[key] === verdict ? '' : verdict;
+  paintPairs();
+  refreshStore();
+  persist('pairs/' + key, pairVerdicts[key] ? {verdict: pairVerdicts[key], at: new Date().toISOString()} : null);
+}
+
+function setSpot(key, verdict) {
+  spotVerdicts[key] = spotVerdicts[key] === verdict ? '' : verdict;
+  paintSpots();
+  refreshStore();
+  persist('repairs/' + key, spotVerdicts[key] ? {verdict: spotVerdicts[key], at: new Date().toISOString()} : null);
+}
+
+let noteTimer = null;
+$('overall').addEventListener('input', () => {
+  clearTimeout(noteTimer);
+  // One write per pause in typing, never one per keystroke.
+  noteTimer = setTimeout(() => {
+    noteTimer = null;
+    const note = $('overall').value.trim();
+    persist('notes/overall', note ? {note, at: new Date().toISOString()} : null);
+    $('overallSaved').textContent = note ? '已记下 ' + new Date().toLocaleTimeString() : '';
+    $('overallSaved').className = note ? 'saved on' : 'saved';
+  }, 700);
+});
+
+function onDbError(error) {
+  writable = false;
+  setInputs(false);
+  setStore('存储出错（' + (error && error.code) + '），还能听，但判断记不下了。', true);
+}
+
+(async function connect() {
+  db = await use('db');
+  if (!db) {
+    setStore('这里存不了判断。照常听就行，结论直接在对话里告诉我。', true);
+    return;
+  }
+  const user = await use('user');
+  const may = user ? await user.can('data.write') : null;
+  if (may === false) {
+    setStore('你在这一页只能听，不能记判断。');
+    return;
+  }
+  writable = true;
+  setInputs(true);
+  refreshStore();
+  db.collection('verdicts').onSnapshot(snapshot => {
+    const seen = new Set();
+    for (const doc of snapshot.docs) {
+      seen.add(doc.id);
+      verdicts[doc.id] = (doc.data() || {}).verdict || '';
+    }
+    for (const id of Object.keys(verdicts)) if (!seen.has(id)) verdicts[id] = '';
+    paintAll();
+    refreshStore();
+  }, onDbError);
+  db.collection('pairs').onSnapshot(snapshot => {
+    const seen = new Set();
+    for (const doc of snapshot.docs) {
+      seen.add(doc.id);
+      pairVerdicts[doc.id] = (doc.data() || {}).verdict || '';
+    }
+    for (const key of Object.keys(pairVerdicts)) if (!seen.has(key)) pairVerdicts[key] = '';
+    paintPairs();
+    refreshStore();
+  }, onDbError);
+  db.collection('repairs').onSnapshot(snapshot => {
+    const seen = new Set();
+    for (const doc of snapshot.docs) {
+      seen.add(doc.id);
+      spotVerdicts[doc.id] = (doc.data() || {}).verdict || '';
+    }
+    for (const key of Object.keys(spotVerdicts)) if (!seen.has(key)) spotVerdicts[key] = '';
+    paintSpots();
+    refreshStore();
+  }, onDbError);
+  db.doc('notes/overall').onSnapshot(doc => {
+    const body = doc.exists ? doc.data() : null;
+    if (document.activeElement !== $('overall') && !noteTimer) $('overall').value = (body && body.note) || '';
+    if (body && body.at) {
+      $('overallSaved').textContent = '已记下 ' + new Date(body.at).toLocaleString();
+      $('overallSaved').className = 'saved on';
+    }
+  }, onDbError);
+})();
+
+paintAll();
+refreshEngine();
+boot();
+tick();
+</script>

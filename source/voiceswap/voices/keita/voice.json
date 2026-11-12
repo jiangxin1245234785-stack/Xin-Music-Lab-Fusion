@@ -1,0 +1,17 @@
+{
+  "name": "keita",
+  "label": "圭太 · 日语男声",
+  "engine": "edge-tts",
+  "voice": "ja-JP-KeitaNeural",
+  "rate": "+0%",
+  "script": "月が昇るころ、川の水はゆっくりと南へ流れていきます。遠くで誰かが歌っている声が、とても静かに聞こえてきます。",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 9.79,
+    "rmsDb": -18.8,
+    "voicedShare": 0.694,
+    "medianHz": 100.8
+  }
+}

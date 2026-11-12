@@ -1,0 +1,107 @@
+{
+  "name": "哈基米三件套 v1",
+  "_samples_note": "把切好的 wav 放进 kits/samples/，再用 tools/measure_root.py 测出 rootHz 替换下面的占位值。占位值是错的，不改音高全错。",
+  "samples": {
+    "hajimi": {
+      "file": "samples/hajimi.wav",
+      "rootHz": 261.63,
+      "_hint": "有稳定基频，用 --mode pitch 测"
+    },
+    "dogbark": {
+      "file": "samples/dogbark.wav",
+      "rootHz": 155.56,
+      "_hint": "非乐音，用 --mode peak 测主共振峰"
+    },
+    "dingdong": {
+      "file": "samples/dingdong.wav",
+      "rootHz": 2000.0,
+      "_hint": "非乐音，用 --mode peak 测主共振峰"
+    }
+  },
+
+  "_voices_note": "路由键先精确匹配再回退到 stem：'guitar/distorted electric guitar' 找不到就用 'guitar'。follow 决定音长跟乐谱(note)还是跟素材(sample)，auto = 鼓跟素材、其余跟乐谱。",
+  "voices": {
+    "guitar": {
+      "sample": "hajimi",
+      "gain": 0.6,
+      "pan": 0.3,
+      "follow": "note"
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "dogbark",
+      "gain": 0.6,
+      "pan": -0.4,
+      "follow": "note"
+    },
+    "piano": {
+      "sample": "hajimi",
+      "gain": 0.5,
+      "pan": -0.2
+    },
+    "strings": {
+      "sample": "hajimi",
+      "transpose": 12,
+      "gain": 0.4,
+      "pan": 0.15
+    },
+    "bass": {
+      "sample": "dogbark",
+      "transpose": -12,
+      "gain": 0.9
+    },
+
+    "drums/kick": {
+      "sample": "dogbark",
+      "pitched": false,
+      "transpose": -7,
+      "follow": "sample",
+      "maxDur": 0.2,
+      "gain": 1.0
+    },
+    "drums/snare": {
+      "sample": "dingdong",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9
+    },
+    "drums/hihat": {
+      "sample": "dingdong",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.05,
+      "gain": 0.5,
+      "pan": 0.25
+    },
+    "drums/openhat": {
+      "sample": "dingdong",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.3,
+      "gain": 0.5,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "dogbark",
+      "pitched": false,
+      "transpose": -3,
+      "follow": "sample",
+      "maxDur": 0.25,
+      "gain": 0.8
+    },
+    "drums/crash": {
+      "sample": "dingdong",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.5
+    },
+    "drums/ride": {
+      "sample": "dingdong",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.12,
+      "gain": 0.45,
+      "pan": 0.5
+    }
+  }
+}

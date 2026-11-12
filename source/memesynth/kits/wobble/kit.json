@@ -1,0 +1,149 @@
+{
+  "name": "Wobble · Dubstep",
+  "_note": "由 tools/make_kits.py wobble 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "wobble": {
+      "file": "samples/wobble.wav",
+      "rootHz": 110.0,
+      "_label": "Wobble 贝斯 · 每秒 4 次"
+    },
+    "talk": {
+      "file": "samples/talk.wav",
+      "rootHz": 220.0,
+      "_label": "会说话的和弦"
+    },
+    "pluck": {
+      "file": "samples/pluck.wav",
+      "rootHz": 220.0,
+      "_label": "方波拨奏"
+    },
+    "darkpad": {
+      "file": "samples/darkpad.wav",
+      "rootHz": 220.0,
+      "_label": "暗垫"
+    },
+    "yoi": {
+      "file": "samples/yoi.wav",
+      "rootHz": 220.0,
+      "_label": "元音主音"
+    },
+    "kick": {
+      "file": "samples/kick.wav",
+      "rootHz": 45.0,
+      "_label": "重底鼓"
+    },
+    "bigsnare": {
+      "file": "samples/bigsnare.wav",
+      "rootHz": 200.0,
+      "_label": "大军鼓 · 带房间"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 8000.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 8000.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 90.0,
+      "_label": "嗵鼓"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 5500.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "wobble",
+      "gain": 1.29,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "guitar": {
+      "sample": "pluck",
+      "gain": 0.64,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "talk",
+      "gain": 1.01,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "darkpad",
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05,
+      "transpose": 12
+    },
+    "vocals": {
+      "sample": "yoi",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "kick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "bigsnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.87,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.07,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.73,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.53,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.73,
+      "pan": 0.42,
+      "maxDur": 0.16
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "name": "Mega Drive · YM2612",
+  "_note": "由 tools/make_kits.py megadrive 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "twang": {
+      "file": "samples/twang.wav",
+      "rootHz": 110.0,
+      "_label": "FM 贝斯 · 弹拨感"
+    },
+    "mdkeys": {
+      "file": "samples/mdkeys.wav",
+      "rootHz": 220.0,
+      "_label": "FM 键盘"
+    },
+    "overdrive": {
+      "file": "samples/overdrive.wav",
+      "rootHz": 220.0,
+      "_label": "FM 失真吉他"
+    },
+    "mdstrings": {
+      "file": "samples/mdstrings.wav",
+      "rootHz": 220.0,
+      "_label": "FM 弦乐"
+    },
+    "mdlead": {
+      "file": "samples/mdlead.wav",
+      "rootHz": 220.0,
+      "_label": "FM 主音 · 颤音"
+    },
+    "dackick": {
+      "file": "samples/dackick.wav",
+      "rootHz": 50.0,
+      "_label": "DAC 底鼓"
+    },
+    "dacsnare": {
+      "file": "samples/dacsnare.wav",
+      "rootHz": 190.0,
+      "_label": "DAC 军鼓"
+    },
+    "psghat": {
+      "file": "samples/psghat.wav",
+      "rootHz": 6000.0,
+      "_label": "噪声闭镲"
+    },
+    "psgopen": {
+      "file": "samples/psgopen.wav",
+      "rootHz": 6000.0,
+      "_label": "噪声开镲"
+    },
+    "dactom": {
+      "file": "samples/dactom.wav",
+      "rootHz": 120.0,
+      "_label": "DAC 嗵鼓"
+    },
+    "daccrash": {
+      "file": "samples/daccrash.wav",
+      "rootHz": 3000.0,
+      "_label": "DAC 吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "twang",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "overdrive",
+      "gain": 0.42,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "mdkeys",
+      "gain": 0.65,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "mdstrings",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "mdlead",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "dackick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/snare": {
+      "sample": "dacsnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/hihat": {
+      "sample": "psghat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "psgopen",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "dactom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/crash": {
+      "sample": "daccrash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "psgopen",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.16,
+      "gain": 1.1,
+      "pan": 0.42
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "name": "氛围 · Ambient",
+  "_note": "由 tools/make_kits.py ambient 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "sub": {
+      "file": "samples/sub.wav",
+      "rootHz": 110.0,
+      "_label": "低音涌动"
+    },
+    "glass": {
+      "file": "samples/glass.wav",
+      "rootHz": 220.0,
+      "_label": "玻璃琴 · 3 秒混响"
+    },
+    "harp": {
+      "file": "samples/harp.wav",
+      "rootHz": 220.0,
+      "_label": "FM 竖琴 · 混响"
+    },
+    "cloud": {
+      "file": "samples/cloud.wav",
+      "rootHz": 220.0,
+      "_label": "云垫 · 慢起音"
+    },
+    "choir": {
+      "file": "samples/choir.wav",
+      "rootHz": 220.0,
+      "_label": "“啊”元音合唱"
+    },
+    "softkick": {
+      "file": "samples/softkick.wav",
+      "rootHz": 42.0,
+      "_label": "远处的底鼓"
+    },
+    "brush": {
+      "file": "samples/brush.wav",
+      "rootHz": 2200.0,
+      "_label": "鼓刷"
+    },
+    "shaker": {
+      "file": "samples/shaker.wav",
+      "rootHz": 7000.0,
+      "_label": "沙锤"
+    },
+    "longshaker": {
+      "file": "samples/longshaker.wav",
+      "rootHz": 7000.0,
+      "_label": "长沙锤"
+    },
+    "softtom": {
+      "file": "samples/softtom.wav",
+      "rootHz": 90.0,
+      "_label": "远嗵鼓"
+    },
+    "wash": {
+      "file": "samples/wash.wav",
+      "rootHz": 3000.0,
+      "_label": "长吊镲 · 慢起"
+    },
+    "bell": {
+      "file": "samples/bell.wav",
+      "rootHz": 1320.0,
+      "_label": "小钟"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "sub",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.06
+    },
+    "guitar": {
+      "sample": "harp",
+      "gain": 0.55,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.08
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "choir",
+      "gain": 0.4,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.08
+    },
+    "piano": {
+      "sample": "glass",
+      "gain": 0.65,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.12
+    },
+    "strings": {
+      "sample": "cloud",
+      "transpose": 12,
+      "gain": 0.34,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.2
+    },
+    "vocals": {
+      "sample": "choir",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.08
+    },
+    "drums/kick": {
+      "sample": "softkick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0
+    },
+    "drums/snare": {
+      "sample": "brush",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9
+    },
+    "drums/hihat": {
+      "sample": "shaker",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "longshaker",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "softtom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0
+    },
+    "drums/crash": {
+      "sample": "wash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.6,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "bell",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.5,
+      "pan": 0.42
+    }
+  }
+}

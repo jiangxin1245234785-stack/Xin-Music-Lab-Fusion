@@ -1,0 +1,152 @@
+{
+  "name": "Commodore 64 · SID",
+  "_note": "由 tools/make_kits.py c64 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "sidbass": {
+      "file": "samples/sidbass.wav",
+      "rootHz": 110.0,
+      "_label": "脉宽贝斯 + 谐振滤波"
+    },
+    "sidkeys": {
+      "file": "samples/sidkeys.wav",
+      "rootHz": 220.0,
+      "_label": "脉宽摆动"
+    },
+    "sidring": {
+      "file": "samples/sidring.wav",
+      "rootHz": 220.0,
+      "_label": "环形调制"
+    },
+    "sidpad": {
+      "file": "samples/sidpad.wav",
+      "rootHz": 220.0,
+      "_label": "双脉宽垫"
+    },
+    "sidlead": {
+      "file": "samples/sidlead.wav",
+      "rootHz": 220.0,
+      "_label": "脉宽主音 · 颤音"
+    },
+    "sidkick": {
+      "file": "samples/sidkick.wav",
+      "rootHz": 50.0,
+      "_label": "底鼓"
+    },
+    "sidsnare": {
+      "file": "samples/sidsnare.wav",
+      "rootHz": 180.0,
+      "_label": "军鼓"
+    },
+    "sidhat": {
+      "file": "samples/sidhat.wav",
+      "rootHz": 6000.0,
+      "_label": "闭镲"
+    },
+    "sidopen": {
+      "file": "samples/sidopen.wav",
+      "rootHz": 6000.0,
+      "_label": "开镲"
+    },
+    "sidtom": {
+      "file": "samples/sidtom.wav",
+      "rootHz": 120.0,
+      "_label": "嗵鼓"
+    },
+    "sidcrash": {
+      "file": "samples/sidcrash.wav",
+      "rootHz": 3000.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "sidbass",
+      "gain": 1.9,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "guitar": {
+      "sample": "sidring",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "sidlead",
+      "gain": 0.38,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "piano": {
+      "sample": "sidkeys",
+      "gain": 0.5,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "strings": {
+      "sample": "sidpad",
+      "transpose": 12,
+      "gain": 0.28,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.04
+    },
+    "vocals": {
+      "sample": "sidlead",
+      "gain": 0.8,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "drums/kick": {
+      "sample": "sidkick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5
+    },
+    "drums/snare": {
+      "sample": "sidsnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5
+    },
+    "drums/hihat": {
+      "sample": "sidhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.9,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "sidopen",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "sidtom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5
+    },
+    "drums/crash": {
+      "sample": "sidcrash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "sidopen",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.16,
+      "gain": 1.0,
+      "pan": 0.42
+    }
+  }
+}

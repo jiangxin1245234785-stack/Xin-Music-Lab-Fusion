@@ -1,0 +1,1996 @@
+<title>音色工作台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2313161a'/%3E%3Cg fill='%23f0a830'%3E%3Crect x='12' y='26' width='7' height='12' rx='3'/%3E%3Crect x='24' y='16' width='7' height='32' rx='3'/%3E%3Crect x='36' y='22' width='7' height='20' rx='3'/%3E%3Crect x='48' y='29' width='7' height='6' rx='3'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: drop zone, then the transcription's own vital signs, then the listening bench.
+   Same panel language as the comparison page — these are one pair of tools. */
+:root {
+  --bg: #13161a; --panel: #1b1f25; --panel-lit: #232931; --edge: #2d343d;
+  --fg: #e8e6e1; --dim: #8b9099; --faint: #5c636d;
+  --signal: #f0a830; --signal-soft: rgba(240,168,48,.14);
+  --live: #5fd3a6; --warn: #e8705a;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(0,0,0,.35);
+  color-scheme: dark;
+  --ui: "Archivo", system-ui, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12); --live: #1f8a66; --warn: #b23c25;
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12); --live: #1f8a66; --warn: #b23c25;
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 0; max-width: 880px; margin-inline: auto;
+}
+h1 { font-size: 1.3rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.lede { color: var(--dim); font-size: .82rem; margin: 5px 0 0; }
+h2 { font-size: .72rem; font-weight: 600; margin: 0; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+.card { background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--shadow); }
+
+#drop {
+  margin-top: 16px; padding: 26px 18px; text-align: center; cursor: pointer;
+  border: 1.5px dashed var(--edge); border-radius: 10px; background: var(--panel);
+  transition: border-color .15s, background .15s;
+}
+#drop:hover, #drop.over { border-color: var(--signal); background: var(--signal-soft); }
+#drop strong { display: block; font-size: 1rem; }
+#drop span { display: block; color: var(--dim); font-size: .8rem; margin-top: 5px; }
+#drop.loaded { padding: 11px 14px; text-align: left; border-style: solid; }
+#drop.loaded strong { font-family: var(--mono); font-size: .85rem; }
+#file { display: none; }
+#steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; padding: 8px 0;
+  position: sticky; top: 0; z-index: 5; background: var(--bg); }
+.stepTab { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 9px; align-items: center; text-align: left;
+  padding: 9px 11px; background: var(--panel); border: 1px solid var(--edge); border-radius: 9px; color: var(--fg);
+  cursor: pointer; font: inherit; min-width: 0; }
+.stepTab .n { grid-row: 1 / 3; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--mono); font-size: .74rem; background: var(--panel-lit); color: var(--dim); }
+.stepTab .l { font-size: .86rem; font-weight: 600; }
+.stepTab .s { font-size: .72rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stepTab:hover:not(:disabled) { background: var(--panel-lit); }
+.stepTab[aria-current="step"] { border-color: var(--signal); background: var(--signal-soft); }
+.stepTab[aria-current="step"] .n { background: var(--signal); color: #16181b; }
+.stepTab.done .n { background: rgba(95,211,166,.18); color: var(--live); }
+.stepTab:disabled { opacity: .5; cursor: not-allowed; }
+.stepTab:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.step { margin-top: 8px; }
+.step > section:first-child, .step > #drop:first-child { margin-top: 0; }
+#stepNav { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
+#stepNav #nextStep { margin-left: auto; }
+#vitalsWrap { margin-top: 16px; }
+#vitalsWrap summary { cursor: pointer; font-size: .8rem; color: var(--dim); padding: 4px 0; }
+#vitalsWrap summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+#vitalsWrap section { margin-top: 8px; }
+@media (max-width: 560px) { #steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 640px) { #step2 .bank { grid-template-columns: 1fr 1fr; } }
+#libFilter { display: block; width: 100%; font: inherit; font-size: .84rem; padding: 9px 12px; color: var(--fg);
+  background: none; border: none; border-bottom: 1px solid var(--edge); border-radius: 10px 10px 0 0; }
+#libFilter:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+#libFilter::placeholder { color: var(--faint); }
+.songs { display: grid; gap: 2px; max-height: 292px; overflow-y: auto; padding: 5px; }
+.song { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%;
+  text-align: left; padding: 7px 9px; background: none; border: 1px solid transparent; border-radius: 7px;
+  color: var(--fg); cursor: pointer; font: inherit; }
+.song:hover { background: var(--panel-lit); }
+.song:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; }
+.song[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); }
+.song .t { display: block; font-size: .87rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song .by { display: block; color: var(--dim); font-size: .73rem; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song .tag { white-space: nowrap; }
+.tag.plain { color: var(--faint); border: 1px solid var(--edge); font-weight: 500; }
+.songs .none { color: var(--faint); font-size: .8rem; padding: 10px; }
+@media (max-width: 520px) { .song { grid-template-columns: 1fr; gap: 4px; } }
+
+section { margin-top: 16px; }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.note { color: var(--faint); font-size: .74rem; }
+
+/* --- vitals ---------------------------------------------------------------- */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .8rem; min-width: 560px; }
+th, td { text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+th { color: var(--dim); font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+th:first-child, td:first-child { text-align: left; }
+td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.name { font-family: var(--ui); max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+tbody tr:last-child td { border-bottom: none; }
+.tag { font-family: var(--ui); font-size: .68rem; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
+.tag.flat { background: rgba(232,112,90,.16); color: var(--warn); }
+.tag.narrow { background: var(--signal-soft); color: var(--signal); }
+.tag.ok { background: rgba(95,211,166,.14); color: var(--live); }
+.flags { display: grid; gap: 6px; margin-top: 10px; }
+.flag { font-size: .8rem; padding: 8px 11px; border-radius: 7px; border-left: 3px solid var(--warn); background: var(--panel-lit); }
+.flag.good { border-left-color: var(--live); }
+.flag b { font-family: var(--mono); font-weight: 500; }
+
+/* --- bench ----------------------------------------------------------------- */
+.transport { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+#play { flex: none; width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); cursor: pointer; display: grid; place-items: center; }
+#play:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+#play:disabled { opacity: .4; cursor: not-allowed; }
+#play .glyph { display: block; width: 0; height: 0; }
+#play.paused .glyph { border-left: 12px solid currentColor; border-top: 8px solid transparent; border-bottom: 8px solid transparent; margin-left: 4px; }
+#play.playing .glyph { width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+.meter { flex: 1 1 auto; min-width: 0; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.now { font-weight: 600; font-size: .92rem; }
+.now span { color: var(--signal); font-family: var(--mono); }
+.clock { font-family: var(--mono); font-size: .73rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.track { height: 5px; border-radius: 3px; background: var(--edge); margin-top: 8px; overflow: hidden; }
+.fill { height: 100%; width: 0; background: var(--signal); }
+@media (prefers-reduced-motion: no-preference) { .fill { transition: width .08s linear; } }
+#state { color: var(--dim); font-size: .78rem; font-family: var(--mono); margin-top: 6px; }
+#state.bad { color: var(--warn); }
+
+#timeline { position: relative; height: 46px; margin-top: 10px; border-radius: 7px; background: var(--panel-lit);
+  border: 1px solid var(--edge); cursor: crosshair; overflow: hidden; }
+#density { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#window { position: absolute; top: 0; bottom: 0; background: var(--signal-soft); border-left: 2px solid var(--signal); border-right: 2px solid var(--signal); pointer-events: none; }
+
+.bank { display: grid; gap: 6px; }
+.kit { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 11px; width: 100%;
+  text-align: left; cursor: pointer; background: var(--panel); color: var(--fg); font-family: var(--ui);
+  border: 1px solid var(--edge); border-left: 3px solid transparent; border-radius: 8px; padding: 9px 12px; font-size: .92rem; }
+.kit:hover:not(:disabled) { background: var(--panel-lit); }
+.kit:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.kit[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); border-left-color: var(--signal); }
+.kit:disabled { opacity: .45; cursor: progress; }
+.num { font-family: var(--mono); font-size: .7rem; color: var(--faint); }
+.kit[aria-pressed="true"] .num { color: var(--signal); }
+.id { display: block; font-family: var(--mono); font-size: .82rem; font-weight: 500; }
+.desc { display: block; color: var(--dim); font-size: .76rem; }
+.kit[aria-pressed="true"] .desc { color: var(--fg); }
+.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--edge); }
+.kit[aria-pressed="true"] .lamp { background: var(--live); box-shadow: 0 0 7px var(--live); }
+
+.buses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.bus { cursor: pointer; background: var(--panel); color: var(--dim); border: 1px solid var(--edge);
+  border-radius: 8px; padding: 8px 5px; font-family: var(--ui); font-size: .84rem; font-weight: 500;
+  text-align: center; display: grid; gap: 2px; }
+.bus:hover:not(:disabled) { background: var(--panel-lit); }
+.bus:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.bus[aria-pressed="true"] { background: var(--panel-lit); color: var(--fg); border-color: var(--faint); }
+.bus:disabled { opacity: .35; cursor: not-allowed; }
+.bus .n { font-family: var(--mono); font-size: .68rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.pad { padding: 13px 14px; display: grid; gap: 11px; }
+.field { display: grid; gap: 4px; }
+.field span { font-size: .72rem; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+.field input { font-family: var(--mono); font-size: .82rem; padding: 8px 10px; border-radius: 7px;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--fg); width: 100%; }
+.field input:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 5px; }
+.pick { display: flex; align-items: center; gap: 7px; font-size: .82rem; font-family: var(--mono);
+  padding: 6px 9px; border: 1px solid var(--edge); border-radius: 7px; background: var(--panel-lit); cursor: pointer; }
+.pick input { accent-color: var(--signal); }
+.check { display: flex; align-items: center; gap: 7px; font-size: .82rem; cursor: pointer; }
+.check input { accent-color: var(--signal); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+button.primary, #revealBtn, #prevStep { font-family: var(--ui); font-size: .85rem; font-weight: 600; cursor: pointer;
+  padding: 8px 16px; border-radius: 7px; border: 1px solid var(--edge); background: var(--panel-lit); color: var(--fg); }
+button.primary { background: var(--signal); border-color: var(--signal); color: #16181b; }
+button.primary:disabled, #revealBtn:disabled, #prevStep:disabled { opacity: .45; cursor: not-allowed; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+#revealBtn:hover:not(:disabled), #prevStep:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+button.link { background: none; border: none; padding: 0; color: var(--signal); cursor: pointer;
+  font: inherit; text-decoration: underline; }
+.flag.done { border-left-color: var(--live); }
+.flag code { font-family: var(--mono); font-size: .74rem; word-break: break-all; }
+/* --- vocal ------------------------------------------------------------------ */
+#vocalDrop { padding: 13px 14px; cursor: pointer; border: 1.5px dashed var(--edge); }
+#vocalDrop:hover, #vocalDrop.over { border-color: var(--signal); background: var(--signal-soft); }
+#vocalDrop strong { display: block; font-size: .9rem; }
+#vocalDrop span { display: block; color: var(--dim); font-size: .78rem; margin-top: 3px; }
+#vocalDrop.loaded { border-style: solid; }
+#vocalDrop.loaded strong { font-family: var(--mono); font-size: .82rem; }
+#vocalFile { display: none; }
+.vgroup { margin-top: 10px; }
+.more { margin-top: 6px; }
+.more summary { cursor: pointer; font-size: .76rem; color: var(--dim); padding: 3px 0; }
+.more summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.more .vbank { margin-top: 5px; }
+.vgroup h3 { font-size: .68rem; font-weight: 600; letter-spacing: .09em; color: var(--faint); margin: 0 0 5px; }
+.vbank { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px; }
+.vbank .kit { grid-template-columns: 1fr auto; padding: 7px 10px; }
+.vbank .id { font-family: var(--ui); font-weight: 600; }
+.vbank .desc { font-size: .72rem; }
+.kit.v-ready .lamp { background: var(--faint); }
+.kit.v-queued .lamp, .kit.v-running .lamp { background: var(--signal); }
+.kit.v-failed .lamp { background: var(--warn); }
+.kit.v-failed .desc { color: var(--warn); }
+@media (prefers-reduced-motion: no-preference) {
+  .kit.v-running .lamp { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+}
+.vol { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: .82rem; }
+.vol input { flex: 1 1 auto; max-width: 260px; accent-color: var(--signal); }
+.vol output { font-family: var(--mono); font-size: .76rem; color: var(--dim); min-width: 48px; }
+.foot { color: var(--faint); font-size: .74rem; margin: 18px 0 24px; padding-top: 11px; border-top: 1px solid var(--edge); }
+.foot kbd { font-family: var(--mono); font-size: .71rem; background: var(--panel-lit); border: 1px solid var(--edge); border-radius: 4px; padding: 1px 5px; color: var(--dim); }
+@media (max-width: 460px) { .buses { grid-template-columns: repeat(2, 1fr); } .kit { gap: 8px; padding: 8px 10px; } }
+
+body { max-width: 1180px; padding-bottom: 96px; }
+#top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#tasks { color: var(--dim); font-size: .78rem; }
+#app { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; margin-top: 14px; align-items: start; }
+#side { position: sticky; top: 12px; }
+#side .songs { max-height: calc(100vh - 330px); min-height: 160px; }
+#side #drop { margin-top: 10px; padding: 12px; }
+#side #drop strong { font-size: .84rem; }
+#side #drop span { font-size: .72rem; }
+#bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+#bar label { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: var(--dim); }
+select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); }
+.plain { cursor: pointer; }
+.plain:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+.plain:disabled { opacity: .45; cursor: not-allowed; }
+#tracks { display: grid; }
+.trk, .trkHead { display: grid; grid-template-columns: 62px 150px minmax(0, 1fr) 110px 30px; gap: 10px; align-items: center; padding: 9px 12px; }
+.trkHead { font-size: .68rem; letter-spacing: .09em; color: var(--faint); padding-bottom: 4px; }
+.trk { border-top: 1px solid var(--edge); }
+.trk .tn { font-weight: 600; font-size: .9rem; }
+.trk .tn small { display: block; font-weight: 400; font-size: .68rem; color: var(--faint); }
+.seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 7px; overflow: hidden; }
+.seg button { font: inherit; font-size: .78rem; padding: 5px 10px; background: none; border: none; color: var(--dim); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--edge); }
+.seg button[aria-pressed="true"] { background: var(--signal-soft); color: var(--signal); font-weight: 600; }
+.seg button:disabled { opacity: .35; cursor: not-allowed; }
+.seg button:focus-visible, .solo:focus-visible, .plain:focus-visible, select:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.who { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .82rem; color: var(--dim); flex-wrap: wrap; }
+.who select, .who .plain { max-width: 100%; }
+.who .tag { white-space: nowrap; }
+.trk input[type=range] { width: 100%; accent-color: var(--signal); }
+.solo { font: inherit; font-size: .72rem; font-weight: 600; width: 28px; height: 26px; border-radius: 6px; border: 1px solid var(--edge);
+  background: none; color: var(--dim); cursor: pointer; }
+.solo[aria-pressed="true"] { background: var(--signal); border-color: var(--signal); color: #16181b; }
+#voicePanel, #exportPanel { margin-top: 14px; }
+#voiceTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#voiceTags button { font: inherit; font-size: .74rem; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--edge);
+  background: none; color: var(--dim); cursor: pointer; }
+#voiceTags button[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); color: var(--signal); font-weight: 600; }
+#voiceTags button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+#deck { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--edge); z-index: 6; }
+#deckIn { max-width: 1180px; margin-inline: auto; display: grid; grid-template-columns: 46px 92px minmax(0, 1fr) auto auto; gap: 12px;
+  align-items: center; padding: 9px max(16px, env(safe-area-inset-left, 0px)); }
+#deck #play { width: 42px; height: 42px; }
+#deck #timeline { margin: 0; height: 34px; }
+#deck .clock { font-family: var(--mono); font-size: .74rem; color: var(--dim); }
+#deck #state { font-size: .7rem; color: var(--faint); }
+#state.bad { color: var(--warn); }
+@media (max-width: 760px) { #app { grid-template-columns: 1fr; } #side { position: static; }
+  .trk, .trkHead { grid-template-columns: 52px minmax(0, 1fr) 30px; } .trkHead span:nth-child(n+3) { display: none; }
+  .trk .who { grid-column: 1 / -1; } .trk input[type=range] { grid-column: 1 / 3; } #deckIn { grid-template-columns: 46px minmax(0, 1fr) auto; } #deck .meta { display: none; } }
+
+/* v7: the main page is one screen. The song list and the track table scroll inside their own
+   boxes if they must; whatever is opened on demand is a drawer over the right side. */
+@media (min-width: 761px) {
+  html { height: 100%; overflow: hidden; }
+  body { height: 100%; box-sizing: border-box; margin-block: 0; display: flex; flex-direction: column; overflow: hidden; padding-block: 12px 0; }
+  #top { flex: none; align-items: center; }
+  #app { flex: 1 1 auto; min-height: 0; margin-top: 10px; position: relative; align-items: stretch; }
+  #side { position: static; display: flex; flex-direction: column; min-height: 0; }
+  #side #library { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #side #library .card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #side .songs { flex: 1 1 auto; min-height: 0; max-height: none; }
+  #side #drop { flex: none; padding: 9px 12px; }
+  #main { min-height: 0; overflow-y: auto; padding-bottom: 8px; }
+  #deck { position: static; flex: none; margin-top: 8px; }
+  #deckIn { padding-inline: 0; }
+}
+.trk { padding-block: 7px; }
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 100%); z-index: 5; overflow-y: auto;
+  margin: 0; padding: 14px 16px; background: var(--bg); border: 1px solid var(--edge); border-radius: 10px;
+  box-shadow: -10px 0 28px rgba(0, 0, 0, .22); }
+.drawer[hidden] { display: none; }
+@media (max-width: 760px) { .drawer { position: static; width: auto; box-shadow: none; margin-top: 14px; } }
+</style>
+<link rel="stylesheet" href="theme.css">
+
+<div id="top">
+  <h1>音色工作台</h1>
+  <div style="display:flex;align-items:center;gap:10px"><span id="tasks"></span>
+    <button type="button" class="plain" id="openHelp">说明</button>
+    <button type="button" class="plain" id="openExport" disabled>导出</button></div>
+</div>
+
+<div id="app">
+  <aside id="side">
+    <section id="library" hidden style="margin-top:0">
+      <div class="head"><h2>曲库</h2><span class="note" id="libNote"></span></div>
+      <div class="card">
+        <input type="search" id="libFilter" placeholder="筛选：歌名、艺人、专辑" aria-label="筛选曲库" spellcheck="false" autocomplete="off">
+        <div class="songs" id="songs" role="group" aria-label="曲库里的歌"></div>
+      </div>
+    </section>
+    <div id="drop" tabindex="0" role="button" aria-label="选择或拖入 MIDI 文件">
+      <strong id="dropTitle">把 merged.mid 拖到这里</strong>
+      <span id="dropHint">也可以点一下选文件 · 文件不会离开你的电脑</span>
+    </div>
+    <input type="file" id="file" accept=".mid,.midi,audio/midi">
+  </aside>
+
+  <main id="main" hidden>
+    <div id="bar">
+      <div id="presets" role="group" aria-label="整套预设"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="plain" id="openVitals">转谱情况 <span id="vitalsSum"></span></button>
+        <button type="button" class="plain" id="savePlan">存为方案</button>
+        <select id="planList" aria-label="套用方案"><option value="">套用方案…</option></select>
+        <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
+        <button type="button" class="plain" id="cmpSave" hidden title="现在这份方案，分别配上这两套预设，各存一份">存成两个方案</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="trkHead"><span></span><span></span><span>轨道</span><span>谁来演</span><span>用什么</span><span>音量</span><span></span><span></span><span>这 12 秒</span></div>
+      <div id="tracks"></div>
+    </div>
+
+
+
+
+  </main>
+    <section id="voicePanel" class="drawer" hidden>
+      <div class="head"><h2>人声由谁来唱</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <div id="vocalDrop" class="card" tabindex="0" role="button" aria-label="选择或拖入人声分轨">
+        <strong id="vocalTitle">把同一首歌的 vocals.wav 拖到这里</strong>
+        <span id="vocalHint">XLD 分离出的人声分轨，和 merged.mid 同一个起点 · 只在本机处理</span>
+      </div>
+      <input type="file" id="vocalFile" accept=".wav,audio/wav">
+      <div id="voiceTags" role="group" aria-label="按类别筛选声音"></div>
+      <div id="voiceBank"></div>
+    </section>
+    <section id="exportPanel" class="drawer" hidden>
+      <div class="head"><h2>导出这份重构</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="note" style="margin:0 0 8px">整首歌 · 48 kHz 立体声 24 bit · 用真正的 memesynth 渲染</p>
+      <div class="card pad">
+        <label class="field"><span>输出目录</span><input type="text" id="outDir" spellcheck="false"></label>
+        <label class="check"><input type="checkbox" id="stems"> 同时写出每条出声的轨</label>
+        <div class="row">
+          <button type="button" id="exportBtn" class="primary">导出</button>
+          <button type="button" id="revealBtn">打开输出目录</button>
+          <span id="exportState" class="note"></span>
+        </div>
+        <div class="track"><div class="fill" id="exportFill"></div></div>
+        <div id="exportLog" class="flags"></div>
+      </div>
+    </section>
+    <section id="vitalsPanel" class="drawer" hidden>
+      <div class="head"><h2>这首转谱的情况</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="note" id="vitalsNote" style="margin:0 0 8px"></p>
+        <div class="card scroll"><table>
+          <thead><tr><th>轨道</th><th>音符</th><th>力度范围</th><th>档位</th><th>动态</th><th>时长中位</th><th>&lt;20ms</th></tr></thead>
+          <tbody id="vitalsBody"></tbody>
+        </table></div>
+        <div class="flags" id="flags"></div>
+          </section>
+    <section id="fullPanel" class="drawer" hidden>
+      <div class="head"><h2>听整首重构</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="note" style="margin:0 0 10px">把现在这份方案整首渲染出来听，和导出是同一条路，听到的就是会导出的。下面 12 秒的循环是随手试的，这里是从头到尾。</p>
+      <div class="row">
+        <button type="button" id="fullBtn" class="primary">渲染整首</button>
+        <span id="fullState" class="note"></span>
+      </div>
+      <div class="track" style="margin-top:10px"><div class="fill" id="fullFill"></div></div>
+      <audio id="fullAudio" controls preload="metadata" style="width:100%;margin-top:12px" hidden></audio>
+      <div id="fullLog" class="flags"></div>
+    </section>
+    <section id="helpPanel" class="drawer" hidden>
+      <div class="head"><h2>说明</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="lede" style="margin:0 0 10px">把一首分好轨、转好谱的歌一条轨一条轨地重新演一遍：每条轨留原声、换一个来演，或者不出声。</p>
+    <p class="foot" style="margin:0;border-top:none;padding-top:0">
+      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。
+      试听在浏览器里算，导出走真正的 memesynth。留原声的轨会对齐到「预设来演这条轨」的音量，所以只留一条轨不会打乱整体平衡。
+      人声转换在后台整首跑，一次一个（保留和声：合成声音约九分钟一个，RVC 一分多钟），转过的会记住。
+    </p>
+    </section>
+</div>
+
+<div id="fxPop" hidden></div>
+<div id="deck"><div id="deckIn">
+  <button id="play" class="paused" disabled aria-label="播放"><span class="glyph"></span></button>
+  <div class="meta"><div class="clock" id="clock">0.0 / 12.0s</div><div id="state">等文件</div></div>
+  <div id="timeline"><canvas id="density"></canvas><div id="window"></div></div>
+  <span class="seg" id="ab" role="group" aria-label="对照"><button type="button" data-ab="orig" aria-pressed="false">原曲</button><button type="button" data-ab="recon" aria-pressed="true">重构</button></span>
+  <button type="button" class="plain" id="openFull" disabled>听整首</button>
+</div></div>
+
+<script src="engine.js"></script>
+<script>
+/* The studio as a rebuild (SPEC v5): six tracks, the same as XLD's separated stems. Each is
+ * kept as the original stem, played by someone else (a kit for instruments, a voice for the
+ * vocal), or silent. The page auditions a 12 s window; the export goes through memesynth. */
+const SPAN = 12.0, RATE = 48000, VOCAL_TARGET_DB = -20, FEATURED_SYNTH = 'xiaoxiao', CEILING = 10 ** (-1.5 / 20);
+const TRACKS = [{id:'drums', zh:'鼓'}, {id:'bass', zh:'贝斯'}, {id:'guitar', zh:'吉他'}, {id:'piano', zh:'钢琴'},
+                {id:'other', zh:'其他'}, {id:'vocals', zh:'人声'}];
+const el = id => document.getElementById(id);
+
+/* A route belongs to the first track whose test it passes; batch.track_of says the same. */
+function trackOf(route) {
+  if (route.startsWith('drums/')) return 'drums';
+  if (route === 'bass') return 'bass';
+  if (route.startsWith('guitar')) return 'guitar';
+  if (route === 'piano') return 'piano';
+  if (route === 'vocals' || route.startsWith('vocals/')) return 'vocals';
+  return 'other';
+}
+
+let kitsIndex = null, kitAudio = {}, score = null, midiName = '', midiBytes = null, exporting = false;
+let ctx = null, master = null, sources = [], startedAt = 0, running = false, windowStart = 0;
+let preset = '', previousPreset = '', ab = 'recon', layers = [], renderTicket = 0, kitWindow = {}, stemWindows = {};
+let song = null, songs = [], songKey = '', flagsByTrack = {}, saveTimer = null;
+let voiceList = [], vocal = null, voiceAudio = {}, wanted = '', pollTimer = null, vocalTicket = 0, vocalBusy = '';
+let vocalPending = false, vocalTouched = false;     // a vocal is on its way; the vocal track was given something
+let voiceTag = '';                                  // the kind of voice the panel is narrowed to
+const cast = {};
+/* What a track can have done to it beyond its level. The same numbers are in effects.py, which
+ * does for the export what the nodes below do while the page plays. */
+const FX = {echoSeconds: 0.3, echoFeedback: 0.4, echoWet: 0.7, roomWet: 0.6};
+const FX_KEYS = ['oct', 'vel', 'tone', 'echo', 'room'];
+const FX_LIMITS = {oct: [-2, 2], vel: [-100, 100], tone: [-100, 100], echo: [0, 100], room: [0, 100]};
+let pair = [];                                      // the two presets being compared, in the order they were picked
+function resetCast() {
+  for (const track of TRACKS) {
+    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '',
+                      oct: 0, vel: 0, tone: 0, echo: 0, room: 0};
+  }
+  vocalTouched = false;
+}
+resetCast();
+
+const safeName = text => text.replace(/[\\/:*?"<>|]/g, '_').trim() || 'song';
+const voiceName = id => id === '@kit' ? '乐器演主旋律' : (voiceList.find(v => v.id === id) || {name: id}).name;
+const kitOf = id => cast[id].kit || preset;
+const routesOf = id => score ? Object.keys(score.routes).filter(route => trackOf(route) === id) : [];
+const hasStem = id => !!song && (song.stems || []).includes(id);
+const setState = (text, bad) => { el('state').className = bad ? 'bad' : ''; el('state').textContent = text; };
+
+function decodeWav(buffer) {
+  const view = new DataView(buffer);
+  let at = 12, bits = 16, channels = 1, data = null, length = 0;
+  while (at + 8 <= view.byteLength) {
+    const id = String.fromCharCode(view.getUint8(at), view.getUint8(at+1), view.getUint8(at+2), view.getUint8(at+3));
+    const size = view.getUint32(at + 4, true);
+    if (id === 'fmt ') { channels = view.getUint16(at + 10, true); bits = view.getUint16(at + 22, true); }
+    if (id === 'data') { data = at + 8; length = size; break; }
+    at += 8 + size + (size % 2);
+  }
+  if (data === null || (bits !== 16 && bits !== 24)) throw new Error('素材只支持 16 / 24 位 WAV');
+  const stride = (bits / 8) * channels;
+  const count = Math.floor(length / stride);
+  const out = new Float32Array(count);
+  if (bits === 16) {
+    for (let i = 0; i < count; i++) out[i] = view.getInt16(data + i * stride, true) / 32768;
+  } else {
+    for (let i = 0; i < count; i++) {
+      const at = data + i * stride;
+      const raw = view.getUint8(at) | (view.getUint8(at + 1) << 8) | (view.getUint8(at + 2) << 16);
+      out[i] = (raw & 0x800000 ? raw - 0x1000000 : raw) / 8388608;
+    }
+  }
+  return out;
+}
+
+/* A stem excerpt as the server sends it: 16-bit PCM, any rate, mono or stereo. */
+function decodeExcerpt(buffer) {
+  const view = new DataView(buffer);
+  let at = 12, channels = 1, rate = RATE, data = null, length = 0;
+  while (at + 8 <= view.byteLength) {
+    const id = String.fromCharCode(view.getUint8(at), view.getUint8(at+1), view.getUint8(at+2), view.getUint8(at+3));
+    const size = view.getUint32(at + 4, true);
+    if (id === 'fmt ') { channels = view.getUint16(at + 10, true); rate = view.getUint32(at + 12, true); }
+    if (id === 'data') { data = at + 8; length = Math.min(size, view.byteLength - data); break; }
+    at += 8 + size + (size % 2);
+  }
+  if (data === null) throw new Error('分轨片段读不了');
+  const count = Math.floor(length / (2 * channels));
+  const left = new Float32Array(count), right = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    left[i] = view.getInt16(data + i * 2 * channels, true) / 32768;
+    right[i] = channels > 1 ? view.getInt16(data + i * 2 * channels + 2, true) / 32768 : left[i];
+  }
+  return {rate, left, right};
+}
+
+/* To the page's rate, by the browser's own resampler, interleaved like the engine's buffers. */
+async function toRate(wav) {
+  const frames = Math.round(SPAN * RATE), out = new Float32Array(frames * 2);
+  if (!wav.left.length) return out;
+  let left = wav.left, right = wav.right;
+  if (wav.rate !== RATE) {
+    const offline = new OfflineAudioContext(2, frames, RATE);
+    const buffer = offline.createBuffer(2, wav.left.length, wav.rate);
+    buffer.getChannelData(0).set(wav.left); buffer.getChannelData(1).set(wav.right);
+    const source = offline.createBufferSource();
+    source.buffer = buffer; source.connect(offline.destination); source.start();
+    const done = await offline.startRendering();
+    left = done.getChannelData(0); right = done.getChannelData(1);
+  }
+  for (let i = 0; i < Math.min(frames, left.length); i++) { out[i * 2] = left[i]; out[i * 2 + 1] = right[i]; }
+  return out;
+}
+
+async function stemWindow(id) {
+  const key = id + '|' + windowStart;
+  if (!stemWindows[key]) {
+    stemWindows[key] = toRate(decodeExcerpt(await fetchBytes(
+      `/api/stem?song=${song.key}&track=${id}&start=${windowStart}&span=${SPAN}`)));
+  }
+  return stemWindows[key];
+}
+
+/* How the song's stems are scaled against the current preset, asked once per song and preset. */
+const levelCache = {};
+let levelNotes = null;
+function stemLevels() {
+  const key = song.key + '|' + preset;
+  if (!levelCache[key]) {
+    setState('量原声的音量（每首歌每套预设量一次，几秒）…');
+    levelCache[key] = api(`/api/levels?song=${song.key}&preset=${encodeURIComponent(preset)}`)
+      .catch(error => { delete levelCache[key]; throw error; });
+  }
+  return levelCache[key];
+}
+
+function rmsOf(data) {
+  if (!data || !data.length) return 0;
+  let energy = 0;
+  for (let i = 0; i < data.length; i++) energy += data[i] * data[i];
+  return Math.sqrt(energy / data.length);
+}
+function scaled(data, factor) {
+  const out = new Float32Array(data.length);
+  for (let i = 0; i < data.length; i++) out[i] = data[i] * factor;
+  return out;
+}
+
+/* --- kits ---------------------------------------------------------------------- */
+async function loadIndex() {
+  kitsIndex = await (await fetch('kits.json')).json();
+  preset = Object.keys(kitsIndex)[0];
+  buildPresets();
+  if (!score) setState(`${Object.keys(kitsIndex).length} 套音色 · 等文件`);
+}
+
+/* A kit's samples are fetched the first time something plays it, and kept. Thirty kits are a
+ * few hundred files and over a hundred megabytes decoded: far too much to take at the door. */
+const kitLoads = {};
+function ensureKit(name) {
+  if (!kitsIndex || !kitsIndex[name]) return Promise.resolve(null);
+  if (!kitLoads[name]) {
+    kitLoads[name] = (async () => {
+      const kit = kitsIndex[name], samples = {}, voices = {};
+      await Promise.all(Object.entries(kit.samples).map(async ([id, entry]) => {
+        const response = await fetch(entry.file);
+        if (!response.ok) throw new Error(`音色 ${name} 的素材 ${id} 取不到`);
+        samples[id] = decodeWav(await response.arrayBuffer());
+      }));
+      for (const [route, voice] of Object.entries(kit.voices)) {
+        voices[Engine.normaliseRoute(route)] = Object.assign({}, voice, {rootHz: kit.samples[voice.sample].rootHz});
+      }
+      kitAudio[name] = {samples, voices};
+      return kitAudio[name];
+    })().catch(error => { delete kitLoads[name]; throw error; });
+  }
+  return kitLoads[name];
+}
+
+/* The score as the kits play it: each replaced track moved by octaves, its dynamics flattened
+ * or widened around the track's own average (effects.shape does the same for the export). */
+let shaped = null;
+function shapedScore() {
+  const mark = TRACKS.map(t => cast[t.id].mode === 'swap' ? cast[t.id].oct + ',' + cast[t.id].vel : '').join('|');
+  if (shaped && shaped.base === score && shaped.mark === mark) return shaped.score;
+  kitWindow = {};
+  let out = score;
+  if (/[1-9]/.test(mark)) {
+    const sums = {}, counts = {};
+    for (const note of score.notes) {
+      const id = trackOf(note.route);
+      sums[id] = (sums[id] || 0) + note.velocity; counts[id] = (counts[id] || 0) + 1;
+    }
+    out = Object.assign({}, score, {notes: score.notes.map(note => {
+      const id = trackOf(note.route), c = cast[id];
+      if (c.mode !== 'swap' || !(c.oct || c.vel)) return note;
+      const mean = sums[id] / counts[id];
+      const velocity = Math.floor(mean + (note.velocity - mean) * Math.pow(2, c.vel / 50) + 0.5);
+      return Object.assign({}, note, {velocity: Math.max(1, Math.min(127, velocity)),
+                                      pitch: note.isDrum ? note.pitch : note.pitch + 12 * c.oct});
+    })});
+  }
+  shaped = {base: score, mark, score: out};
+  return out;
+}
+
+/* --- a song ---------------------------------------------------------------------- */
+function takeFile(file, done) {
+  midiName = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      midiBytes = new Uint8Array(reader.result);   // kept so the server can render the same file
+      const midi = Engine.parseMidi(reader.result);
+      score = Engine.buildScore(midi);
+      if (!score.notes.length) throw new Error('这个文件里没有音符');
+      el('drop').classList.add('loaded');
+      el('dropTitle').textContent = midiName;
+      el('dropHint').textContent = `${score.notes.length} 个音符 · ${score.duration.toFixed(0)} 秒 · 点这里换文件`;
+      showVitals(midi);
+      flagsByTrack = trackFlags(midi);
+      const flags = el('flags').children.length;
+      el('vitalsSum').textContent = flags ? `· ${flags} 条提示` : '';
+      el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false;
+      forgetFull();
+      windowStart = bestWindow();
+      kitWindow = {}; stemWindows = {};
+      drawTimeline();
+      paintTracks();
+      renderWindow();
+    } catch (error) {
+      setState('读不了这个文件：' + error.message, true);
+      el('dropHint').textContent = '读不了这个文件：' + error.message;
+    }
+    if (done) done();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* Which track a flat or narrow MIDI track lands on, so the hint sits on that row. */
+function trackFlags(midi) {
+  const counts = {};
+  for (const track of midi.tracks) {
+    const velocities = track.notes.map(n => n.velocity);
+    const amplitude = v => 20 * Math.log10(Math.max(v, 1) / 127);
+    const flat = new Set(velocities).size <= 4;
+    const narrow = !flat && amplitude(Math.max(...velocities)) - amplitude(Math.min(...velocities)) < 6;
+    if (!flat && !narrow) continue;
+    const id = track.isDrum ? 'drums' : trackOf(Engine.normaliseRoute(track.name || ''));
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+
+function showVitals(midi) {
+  const rows = [];
+  for (const track of midi.tracks) {
+    const velocities = track.notes.map(n => n.velocity);
+    const durations = track.notes.map(n => n.end - n.start).sort((a, b) => a - b);
+    const distinct = new Set(velocities).size;
+    const short = durations.filter(d => d < 0.02).length;
+    const amplitude = v => 20 * Math.log10(Math.max(v, 1) / 127);
+    rows.push({
+      name: track.name || (track.isDrum ? '(鼓，无名)' : '(无名)'),
+      count: track.notes.length,
+      vmin: Math.min(...velocities), vmax: Math.max(...velocities), distinct,
+      spread: amplitude(Math.max(...velocities)) - amplitude(Math.min(...velocities)),
+      median: durations[Math.floor(durations.length / 2)] || 0,
+      short, shortPct: 100 * short / track.notes.length,
+    });
+  }
+  el('vitalsBody').innerHTML = rows.map(row => {
+    // Counting velocity values is not enough: a track can hold 25 of them inside a 2 dB
+    // band and still sound dead. The dB figure is what the renderer actually produces,
+    // since velocity maps straight to amplitude.
+    const grade = row.distinct <= 4 ? 'flat' : row.spread < 6 ? 'narrow' : 'ok';
+    const label = {flat: '平 ', narrow: '窄 ', ok: ''}[grade];
+    return `<tr><td class="name" title="${row.name}">${row.name}</td><td>${row.count}</td>`
+      + `<td>${row.vmin}–${row.vmax}</td><td>${row.distinct}</td>`
+      + `<td><span class="tag ${grade}">${label}${row.spread.toFixed(1)} dB</span></td>`
+      + `<td>${row.median.toFixed(2)}s</td>`
+      + `<td>${row.short ? row.short + ' (' + row.shortPct.toFixed(1) + '%)' : '0'}</td></tr>`;
+  }).join('');
+  el('vitalsNote').textContent = `${midi.tracks.length} 条轨道 · 力度档位是这条轨上不同 velocity 的个数`;
+
+  const flags = [];
+  const flatRows = rows.filter(r => r.distinct <= 4);
+  const flatNotes = flatRows.reduce((sum, r) => sum + r.count, 0);
+  const total = rows.reduce((sum, r) => sum + r.count, 0);
+  if (flatRows.length) {
+    flags.push(`<div class="flag"><b>${flatNotes}</b> 个音符（${(100 * flatNotes / total).toFixed(0)}%）在没有动态的轨上：`
+      + `<b>${flatRows.map(r => r.name).join('、')}</b>。换完音色这些声部会是平的 —— 这是 L1 没做力度的痕迹。</div>`);
+  } else {
+    flags.push('<div class="flag good">每条轨都有真实力度，没有恒定 velocity 的轨。</div>');
+  }
+  const narrow = rows.filter(r => r.distinct > 4 && r.spread < 6);
+  if (narrow.length) {
+    flags.push(`<div class="flag">这些轨有力度但幅度很窄，听上去接近平的：`
+      + narrow.map(r => `<b>${r.name}</b>（${r.spread.toFixed(1)} dB）`).join('、')
+      + `。模型给了力度，只是挤在一个很小的区间里。</div>`);
+  }
+  for (const [reason, count] of Object.entries(score.dropped)) {
+    flags.push(`<div class="flag">丢弃 <b>${count}</b> 个音符：${reason}。</div>`);
+  }
+  for (const text of score.warnings) flags.push(`<div class="flag">${text}</div>`);
+  const shortTotal = rows.reduce((sum, r) => sum + r.short, 0);
+  if (shortTotal > total * 0.02) {
+    flags.push(`<div class="flag">全曲 <b>${shortTotal}</b> 个音符短于 20 毫秒，渲染时会被丢掉。多半是转谱噪声。</div>`);
+  }
+  el('flags').innerHTML = flags.join('');
+}
+
+function bestWindow() {
+  // Open on the busiest stretch: that is where the kits differ most audibly.
+  let best = 0, bestCount = -1;
+  for (let t = 0; t + SPAN <= Math.max(SPAN, score.duration); t += 2) {
+    const count = score.notes.filter(n => n.start >= t && n.start < t + SPAN).length;
+    if (count > bestCount) { bestCount = count; best = t; }
+  }
+  return best;
+}
+
+function drawTimeline() {
+  const canvas = el('density'), box = el('timeline').getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(box.width * dpr));
+  canvas.height = Math.max(1, Math.round(box.height * dpr));
+  const context = canvas.getContext('2d');
+  const buckets = Math.max(1, Math.round(box.width / 3));
+  const counts = new Array(buckets).fill(0);
+  for (const note of score.notes) counts[Math.min(buckets - 1, Math.floor(note.start / score.duration * buckets))]++;
+  const peak = Math.max(1, ...counts);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = getComputedStyle(document.body).getPropertyValue('--faint').trim() || '#5c636d';
+  const barWidth = canvas.width / buckets;
+  for (let i = 0; i < buckets; i++) {
+    const height = (counts[i] / peak) * canvas.height * 0.86;
+    context.fillRect(i * barWidth, canvas.height - height, Math.max(1, barWidth - dpr), height);
+  }
+  positionWindow();
+}
+
+function positionWindow() {
+  const percent = (value) => (value / Math.max(SPAN, score.duration)) * 100;
+  el('window').style.left = percent(windowStart) + '%';
+  el('window').style.width = Math.min(100 - percent(windowStart), percent(SPAN)) + '%';
+}
+
+el('timeline').addEventListener('click', event => {
+  if (!score) return;
+  const box = el('timeline').getBoundingClientRect();
+  const at = ((event.clientX - box.left) / box.width) * Math.max(SPAN, score.duration);
+  moveWindow(Math.max(0, Math.min(Math.max(0, score.duration - SPAN), at - SPAN / 2)));
+});
+function moveWindow(start) {
+  windowStart = start; kitWindow = {}; stemWindows = {};
+  positionWindow(); paintStrips(); renderWindow();
+}
+
+/* --- the track table ---------------------------------------------------------------- */
+function buildTracks() {
+  el('tracks').innerHTML = '';
+  for (const track of TRACKS) {
+    const row = document.createElement('div');
+    row.className = 'trk'; row.dataset.track = track.id;
+    row.style.setProperty('--tc', `var(--t-${track.id})`);
+    row.innerHTML = `<button type="button" class="led" aria-label="${track.zh}出声"></button><span class="bar"></span>`
+      + `<span class="tn">${track.zh}<small></small></span>`
+      + '<span class="seg" role="group"><button type="button" data-mode="orig">原声</button>'
+      + '<button type="button" data-mode="swap">换</button></span>'
+      + '<span class="who"></span>'
+      + `<input type="range" class="db" min="-18" max="6" step="1" value="0" aria-label="${track.zh}音量">`
+      + `<button type="button" class="solo" aria-pressed="false" aria-label="只听${track.zh}">S</button>`
+      + `<button type="button" class="fx" aria-pressed="false" aria-label="${track.zh}的八度、力度和效果">${icon('sliders')}</button>`
+      + '<span class="steps" aria-hidden="true"></span>';
+    row.querySelector('.led').addEventListener('click', () => toggleMute(track.id));
+    for (const button of row.querySelectorAll('.seg button')) {
+      button.addEventListener('click', () => setMode(track.id, button.dataset.mode));
+    }
+    row.querySelector('.db').addEventListener('input', event => {
+      cast[track.id].db = Number(event.target.value);
+      event.target.title = (cast[track.id].db > 0 ? '+' : '') + cast[track.id].db + ' dB';
+      fillRange(event.target);
+      updateGains(); queueSave();
+    });
+    row.querySelector('.solo').addEventListener('click', () => {
+      cast[track.id].solo = !cast[track.id].solo; paintTracks(); updateGains(); queueSave();
+    });
+    row.querySelector('.fx').addEventListener('click', event => openFx(track.id, event.currentTarget));
+    el('tracks').appendChild(row);
+  }
+}
+
+/* --- one track's adjustments: octave, dynamics, tone, echo, room ------------------------------- */
+let fxTrack = '', fxTimer = null;
+const fxActive = c => FX_KEYS.some(key => c[key]);
+function fillRange(input) {
+  const low = Number(input.min), high = Number(input.max);
+  input.style.setProperty('--fill', (100 * (Number(input.value) - low) / (high - low)).toFixed(1) + '%');
+}
+function fxChanged(notes) {
+  paintTracks(); queueSave();
+  clearTimeout(fxTimer);
+  fxTimer = setTimeout(() => {
+    if (notes) renderWindow();                               // the notes changed: render again
+    else if (running) startPlayback(positionInLoop());       // only the sound did: rebuild the nodes
+  }, 140);
+}
+function openFx(id, anchor) {
+  const pop = el('fxPop'), c = cast[id], track = TRACKS.find(t => t.id === id);
+  if (!pop.hidden && fxTrack === id) return closeFx();
+  fxTrack = id;
+  const played = c.mode === 'swap' && !(id === 'vocals' && vocal && c.voice !== '@kit');
+  const row = (key, label, low, high, step, off) => `<label class="fxRow${off ? ' off' : ''}"><span>${label}</span><small>${low}</small>`
+    + `<input type="range" data-key="${key}" min="${FX_LIMITS[key][0]}" max="${FX_LIMITS[key][1]}" step="${step}" value="${c[key]}"${off ? ' disabled' : ''}>`
+    + `<small>${high}</small><output>${c[key]}</output></label>`;
+  pop.style.setProperty('--tc', `var(--t-${id})`);
+  pop.innerHTML = `<b>${track.zh} · 调整</b>`
+    + row('oct', '八度', '低', '高', 1, !played || id === 'drums')
+    + row('vel', '力度', '压平', '夸张', 10, !played)
+    + (played ? '' : '<p class="fxNote">八度和力度改的是音符，只对换了音色的轨有效。</p>')
+    + row('tone', '明暗', '暗', '薄', 5, false)
+    + row('echo', '回声', '无', '多', 5, false)
+    + row('room', '混响', '无', '多', 5, false)
+    + '<button type="button" class="plain" id="fxReset">复位</button>';
+  for (const input of pop.querySelectorAll('input')) {
+    input.addEventListener('input', () => {
+      const key = input.dataset.key;
+      c[key] = Number(input.value);
+      input.parentElement.querySelector('output').textContent = c[key];
+      fillRange(input);
+      fxChanged(key === 'oct' || key === 'vel');
+    });
+  }
+  for (const input of pop.querySelectorAll('input')) fillRange(input);
+  el('fxReset').addEventListener('click', () => { for (const key of FX_KEYS) c[key] = 0; closeFx(); fxChanged(true); });
+  pop.hidden = false;
+  const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
+  pop.style.top = (box.bottom + 6 + height > window.innerHeight ? Math.max(8, box.top - height - 6) : box.bottom + 6) + 'px';
+}
+function closeFx() { el('fxPop').hidden = true; fxTrack = ''; }
+document.addEventListener('click', event => {
+  if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx')) closeFx();
+});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeFx(); });
+
+/* A mode the track cannot have falls to one it can: nothing to keep, or nothing to play. */
+function settle() {
+  for (const track of TRACKS) {
+    const c = cast[track.id], notes = routesOf(track.id).length > 0;
+    if (track.id === 'vocals') {
+      if (vocalPending) continue;                      // what was remembered waits for the vocal to arrive
+      if (c.mode === 'orig' && !vocal) c.mode = 'mute';
+      if (c.mode === 'swap' && !vocal && !notes) c.mode = 'mute';
+      continue;
+    }
+    if (c.mode === 'orig' && !hasStem(track.id)) c.mode = notes ? 'swap' : 'mute';
+    if (c.mode === 'swap' && !notes) c.mode = hasStem(track.id) ? 'orig' : 'mute';
+    if (c.kit && !(kitsIndex || {})[c.kit]) c.kit = null;
+  }
+}
+
+function paintTracks() {
+  if (!score) return;
+  settle();
+  const names = Object.keys(kitsIndex || {});
+  for (const track of TRACKS) {
+    const row = el('tracks').querySelector(`[data-track="${track.id}"]`), c = cast[track.id];
+    const routes = routesOf(track.id), isVocal = track.id === 'vocals';
+    row.querySelector('small').textContent = routes.length ? `转谱 ${routes.length} 路` : '没有转谱';
+    const can = {
+      orig: isVocal ? !!vocal : hasStem(track.id),
+      swap: isVocal ? (!!vocal || routes.length > 0) : routes.length > 0,
+      mute: true,
+    };
+    const why = {
+      orig: isVocal ? '先载入这首歌的人声分轨' : (song ? '这首没有这条分轨' : '从曲库打开的歌才有分出来的原声'),
+      swap: isVocal ? '先载入人声分轨' : '这条轨没有转谱，换不了',
+    };
+    for (const button of row.querySelectorAll('.seg button')) {
+      const mode = button.dataset.mode;
+      button.disabled = !can[mode];
+      button.title = can[mode] ? '' : why[mode];
+      button.setAttribute('aria-pressed', String(c.mode === mode));
+    }
+    const who = row.querySelector('.who');
+    who.innerHTML = '';
+    const text = words => { const span = document.createElement('span'); span.textContent = words; who.appendChild(span); };
+    if (c.mode === 'mute') text('这条轨不出声');
+    else if (c.mode === 'orig') text(isVocal ? '分离出来的原唱' : '分出来的原声');
+    else if (isVocal && vocal && c.voice !== '@kit') {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'plain';
+      const state = (vocal.voices[c.voice] || {}).state;
+      button.textContent = !c.voice ? '选一个声音'
+        : voiceName(c.voice) + (state === 'ready' ? '' : state === 'running' || state === 'queued' ? ' · 转换中'
+          : state === 'failed' ? ' · 转换失败' : !voiceList.some(v => v.id === c.voice) ? ' · 这个声音不在了' : ' · 还没转');
+      button.addEventListener('click', () => openDrawer('voicePanel'));
+      who.appendChild(button);
+    } else {
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', track.zh + '用哪套音色');
+      select.innerHTML = `<option value="">跟随预设 · ${preset}</option>` + names.map(name => `<option value="${name}">${name}</option>`).join('');
+      select.value = c.kit || '';
+      select.addEventListener('change', () => { c.kit = select.value || null; paintTracks(); renderWindow(); queueSave(); });
+      const mark = document.createElement('span');
+      mark.className = 'kicon'; mark.innerHTML = icon(((kitsIndex || {})[kitOf(track.id)] || {}).icon);
+      mark.title = kitOf(track.id);
+      who.appendChild(mark);
+      who.appendChild(select);
+    }
+    if (isVocal && vocalBusy) text(vocalBusy);
+    if (!isVocal && c.mode === 'orig' && levelNotes && song) {
+      const empty = (levelNotes.empty || []).includes(track.id), capped = (levelNotes.capped || []).includes(track.id);
+      if (empty || capped) {
+        const tag = document.createElement('span');
+        tag.className = 'tag flat'; tag.textContent = empty ? '这条分轨是空的' : '这条分轨几乎没声音';
+        tag.title = '分出来的这条轨里基本没有东西，转谱却在这条轨上有音符（多半是误判）。留原声听到的只会是别的乐器漏进来的声音';
+        who.appendChild(tag);
+      }
+    }
+    if (c.mode === 'swap' && (flagsByTrack[track.id] || who.querySelector('select'))) {
+      const tag = document.createElement('span'), count = flagsByTrack[track.id] || 0;
+      tag.className = 'tag narrow' + (count ? '' : ' ghost'); tag.textContent = `提示 ${count}`;
+      tag.title = count ? `转谱有 ${count} 条提示：这条轨的力度是平的或很窄，换完音色会显得死板。详情在「转谱情况」里` : '';
+      who.appendChild(tag);
+    }
+    const led = row.querySelector('.led');
+    led.setAttribute('aria-pressed', String(c.mode !== 'mute'));
+    led.title = c.mode === 'mute' ? '这条轨现在不出声，点一下让它回来' : '点一下让这条轨不出声';
+    row.dataset.muted = String(c.mode === 'mute');
+    const slider = row.querySelector('.db');
+    slider.value = c.db; slider.title = (c.db > 0 ? '+' : '') + c.db + ' dB';
+    slider.disabled = c.mode === 'mute';
+    fillRange(slider);
+    row.querySelector('.solo').setAttribute('aria-pressed', String(!!c.solo));
+    const fx = row.querySelector('.fx');
+    fx.setAttribute('aria-pressed', String(fxActive(c)));
+    fx.title = fxActive(c) ? '这条轨调过：' + [c.oct && `八度 ${c.oct > 0 ? '+' : ''}${c.oct}`, c.vel && `力度 ${c.vel > 0 ? '+' : ''}${c.vel}`,
+      c.tone && `明暗 ${c.tone > 0 ? '+' : ''}${c.tone}`, c.echo && `回声 ${c.echo}`, c.room && `混响 ${c.room}`].filter(Boolean).join('，')
+      : '八度、力度、明暗、回声、混响';
+  }
+  paintPresets();
+  paintCompare();
+  paintStrips();
+  for (const button of el('ab').children) {
+    button.setAttribute('aria-pressed', String(button.dataset.ab === ab));
+    if (button.dataset.ab === 'orig') { button.disabled = !song || !(song.stems || []).length; button.title = button.disabled ? '从曲库打开的歌才有原曲可以对照' : ''; }
+  }
+}
+
+/* The lamp: off silences the track and remembers what it was doing, on brings that back. */
+function toggleMute(id) {
+  const c = cast[id];
+  if (c.mode !== 'mute') { c.last = c.mode; return setMode(id, 'mute'); }
+  return setMode(id, c.last && c.last !== 'mute' ? c.last : (id === 'vocals' ? 'orig' : 'swap'));
+}
+
+/* Where each track has something in this window: transcribed notes, and for a sung vocal
+ * the stretches where it actually sings. */
+const CELLS = 48;
+function paintStrips() {
+  if (!score) return;
+  const lit = {};
+  for (const track of TRACKS) lit[track.id] = new Uint8Array(CELLS);
+  for (const note of score.notes) {
+    if (note.start < windowStart) continue;
+    if (note.start >= windowStart + SPAN) break;
+    lit[trackOf(note.route)][Math.min(CELLS - 1, Math.floor((note.start - windowStart) / SPAN * CELLS))] = 1;
+  }
+  const c = cast.vocals, voice = c.mode === 'orig' ? 'original' : c.voice, audio = vocal && voice !== '@kit' && voiceAudio[voice];
+  if (audio) {
+    const per = Math.round(SPAN * RATE / CELLS), first = Math.round(windowStart * RATE);
+    const floor = 10 ** ((vocal.info.activeRmsDb - 20) / 20);
+    for (let cell = 0; cell < CELLS; cell++) {
+      let energy = 0, count = 0;
+      for (let i = first + cell * per; i < first + (cell + 1) * per && i < audio.length; i += 8) { energy += audio[i] * audio[i]; count++; }
+      lit.vocals[cell] = count && Math.sqrt(energy / count) > floor ? 1 : 0;
+    }
+  }
+  for (const track of TRACKS) {
+    const strip = el('tracks').querySelector(`[data-track="${track.id}"] .steps`);
+    let html = '';
+    for (let cell = 0; cell < CELLS; cell++) html += lit[track.id][cell] ? '<span class="on"></span>' : '<span></span>';
+    strip.innerHTML = html;
+  }
+}
+
+/* --- presets: kinds across, the kits of one kind down ------------------------------------------- */
+const ICONS = {
+  knob: '<circle cx="12" cy="12" r="8"/><path d="M12 12L16.5 7.5"/><path d="M5 20l1.5-1.5M19 20l-1.5-1.5"/>',
+  gamepad: '<rect x="2.5" y="7" width="19" height="10" rx="4"/><path d="M7 10.5v3M5.5 12h3"/><circle cx="15.5" cy="11" r=".6"/><circle cx="17.8" cy="13" r=".6"/>',
+  strings: '<path d="M6 3v18M12 3c2.2 5 2.2 13 0 18M18 3v18"/><path d="M4 5h16M4 19h16"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10.5 20a1.5 1.5 0 0 0 3 0M12 3v2"/>',
+  sine: '<path d="M2 12c2.5-9 5.5-9 8 0s5.5 9 8 0 3-6 4-4"/>',
+  pipes: '<path d="M5 20V9l1.5-2 1.5 2v11M10.5 20V5l1.5-2 1.5 2v15M16 20v-8l1.5-2 1.5 2v8"/><path d="M3 20h18"/>',
+  violin: '<path d="M12 2v7"/><path d="M9.5 9c-2 1-2 3-.5 4-2.5 1-3 6 .5 7.5 1.7.7 3.3.7 5 0 3.5-1.5 3-6.5.5-7.5 1.5-1 1.5-3-.5-4z"/><path d="M12 13v5"/>',
+  gong: '<circle cx="12" cy="13" r="8"/><circle cx="12" cy="13" r="2.5"/><path d="M6.5 6.500L5 3h14l-1.5 3.5"/>',
+  sun: '<path d="M4.5 13a7.5 7.5 0 0 1 15 0"/><path d="M3 13h18M5.5 16h13M8 19h8"/>',
+  saw: '<path d="M2 17L8 6v11l6-11v11l6-11v11"/>',
+  cone: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+  tape: '<rect x="2.500" y="6" width="19" height="12" rx="2"/><circle cx="8.5" cy="12" r="2"/><circle cx="15.5" cy="12" r="2"/><path d="M8.500 14h7"/>',
+  glitch: '<path d="M3 7h9M14 7h3M6 12h13M3 17h5M10 17h11"/><path d="M19 5v4M4 10v4"/>',
+  cloud: '<path d="M7 18a4 4 0 0 1-.5-8 5.500 5.500 0 0 1 10.600-1.200A4.600 4.600 0 0 1 17 18z"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 3v3M12 3v3M15 3v3M9 18v3M12 18v3M15 18v3M3 9h3M3 12h3M3 15h3M18 9h3M18 12h3M18 15h3"/>',
+  cartridge: '<path d="M4 5h16v11h-3v3H7v-3H4z"/><path d="M8 9h8M10 19v-2M12 19v-2M14 19v-2"/>',
+  disco: '<circle cx="12" cy="13" r="8"/><path d="M4 13h16M12 5v16M6.200 8.500c3.500 1.500 8 1.500 11.600 0M6.200 17.500c3.500-1.500 8-1.500 11.600 0M12 2v3"/>',
+  robot: '<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M9 15h6"/><circle cx="12" cy="3.500" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
+  column: '<path d="M6 20h12M7 4h10M8 4v16M12 4v16M16 4v16M5 4c0-1.500 14-1.500 14 0"/>',
+  house: '<path d="M3 11.500L12 4l9 7.500M5.500 10v10h13V10"/><path d="M10 20v-6h4v6"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  shuffle: '<path d="M3 7h4l9 10h5M3 17h4l3-3.500M14 10.500L16 7h5"/><path d="M18.500 4.500L21 7l-2.500 2.500M18.500 14.500L21 17l-2.500 2.500"/>',
+  spark: '<path d="M12 2l2.200 7.800L22 12l-7.800 2.200L12 22l-2.200-7.800L2 12l7.800-2.200z"/>',
+  spiral: '<path d="M12 12a1.500 1.500 0 1 1 1.500 1.500A3.500 3.500 0 1 1 9 10a5.500 5.500 0 1 1 5.500 6.500A7.500 7.500 0 1 1 5.500 8"/>',
+  beat: '<path d="M2 12c1.500-6 3-6 4.500 0s3 6 4.500 0 3-6 4.500 0 3 6 4.500 0"/><path d="M2 12c2-3 3.500-3 5 0s3 3 5 0 3.500-3 5 0 3 3 5 0" opacity=".5"/>',
+  lfo: '<path d="M2 16c2-10 4-10 6 0M8 16c2-10 4-10 6 0M14 16c2-10 4-10 6 0"/><path d="M2 20h20"/>',
+  cowbell: '<path d="M8 6h8l3.500 13h-15z"/><path d="M10 6V3.500h4V6M12 19v2"/>',
+  siren: '<path d="M6 18v-6a6 6 0 0 1 12 0v6M4 18h16v3H4z"/><path d="M12 2v2M4.500 5l1.500 1.500M19.500 5L18 6.500"/>',
+  bolt: '<path d="M13 2L5 13h6l-1 9 8-12h-6z"/>',
+  star: '<path d="M12 3l2.700 5.800 6.300.800-4.600 4.300 1.200 6.200L12 17l-5.600 3.100 1.200-6.200L3 9.600l6.300-.800z"/>',
+  sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
+  note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+};
+const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
+  + `stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.note}</svg>`;
+
+function buildPresets() {
+  const kinds = [];
+  for (const [name, kit] of Object.entries(kitsIndex)) {
+    const label = kit.category || '其他';
+    let kind = kinds.find(k => k.label === label);
+    if (!kind) kinds.push(kind = {label, kits: [], rank: kit.rank == null ? 99 : kit.rank});
+    kind.kits.push(name);
+  }
+  kinds.sort((a, b) => a.rank - b.rank);             // the server says which kind comes first
+  el('presets').innerHTML = '';
+  for (const kind of kinds) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pcat'; wrap.dataset.kits = kind.kits.join(',');
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'pcatBtn'; button.setAttribute('aria-haspopup', 'true');
+    button.innerHTML = `<b>${kind.label}</b><small></small><span class="pmark"></span>`;
+    const menu = document.createElement('div');
+    menu.className = 'pmenu'; menu.hidden = true;
+    for (const name of kind.kits) {
+      const item = document.createElement('button');
+      item.type = 'button'; item.className = 'pitem'; item.dataset.kit = name;
+      item.innerHTML = `<span>${icon(kitsIndex[name].icon)}</span><span><b>${name}</b><small>${kitsIndex[name].blurb || ''}</small></span>`;
+      item.addEventListener('click', () => { menu.hidden = true; selectPreset(name); });
+      menu.appendChild(item);
+    }
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const open = menu.hidden;
+      for (const other of el('presets').querySelectorAll('.pmenu')) other.hidden = true;
+      menu.hidden = !open;
+      // A list that would run off the right edge of the window hangs from the button's right side instead.
+      const box = button.getBoundingClientRect(), wide = menu.offsetWidth || 250;
+      const flip = box.left + wide > document.documentElement.clientWidth && box.right - wide >= 0;
+      menu.style.left = flip ? 'auto' : '0'; menu.style.right = flip ? '0' : 'auto';
+    });
+    wrap.append(button, menu);
+    el('presets').appendChild(wrap);
+  }
+  paintPresets();
+}
+document.addEventListener('click', () => { for (const menu of el('presets').querySelectorAll('.pmenu')) menu.hidden = true; });
+
+function paintPresets() {
+  for (const wrap of el('presets').querySelectorAll('.pcat')) {
+    const kits = wrap.dataset.kits.split(','), on = kits.includes(preset);
+    wrap.classList.toggle('on', on);
+    wrap.querySelector('small').textContent = on ? preset : `${kits.length} 套`;
+    wrap.querySelector('.pmark').innerHTML = icon(kitsIndex[on ? preset : kits[0]].icon);
+    for (const item of wrap.querySelectorAll('.pitem')) item.setAttribute('aria-pressed', String(item.dataset.kit === preset));
+  }
+}
+
+function setMode(id, mode) {
+  const c = cast[id];
+  if (id === 'vocals') vocalTouched = true;
+  if (id === 'vocals' && vocal) {
+    if (mode === 'orig') return chooseVoice('original');
+    if (mode === 'swap') {
+      if (c.voice && c.voice !== 'original' && (vocal.voices[c.voice] || {}).state === 'ready') return chooseVoice(c.voice);
+      c.mode = 'swap'; if (c.voice === 'original') c.voice = '';
+      openDrawer('voicePanel');
+      paintTracks(); paintVoices(); renderWindow(); queueSave();
+      return;
+    }
+  }
+  c.mode = mode;
+  paintTracks(); if (vocal) paintVoices(); renderWindow(); queueSave();
+}
+
+function selectPreset(name) {
+  if (!kitsIndex[name] || name === preset) return;
+  if (!pair.includes(name)) pair = [preset, name];           // the one just left and the one just picked
+  previousPreset = preset; preset = name;
+  paintTracks(); renderWindow(); queueSave();
+}
+/* The last two presets picked, side by side: one click (or `) flips between them at the same
+ * spot in the music, which is the only fair way to compare two sounds. */
+function paintCompare() {
+  const on = pair.length === 2 && pair.includes(preset) && pair.every(name => (kitsIndex || {})[name]);
+  el('cmp').hidden = el('cmpSave').hidden = !on;
+  if (!on) return;
+  el('cmp').innerHTML = '';
+  pair.forEach((name, index) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.textContent = 'AB'[index] + ' · ' + name;
+    button.setAttribute('aria-pressed', String(name === preset));
+    button.title = '在这两套之间来回切（` 键）';
+    button.addEventListener('click', () => selectPreset(name));
+    el('cmp').appendChild(button);
+  });
+}
+el('cmpSave').addEventListener('click', async () => {
+  const title = safeName((song && song.title) || midiName.replace(/\.midi?$/i, ''));
+  try {
+    for (const name of pair) {
+      await api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify({name: `${title} · ${name}`, plan: Object.assign(currentPlan(), {preset: name})})});
+    }
+    setState(`存成了两个方案：「${title} · ${pair[0]}」和「${title} · ${pair[1]}」`);
+    loadPlans();
+  } catch (error) { setState(error.message, true); }
+});
+for (const button of el('ab').children) {
+  button.addEventListener('click', () => { if (!button.disabled && ab !== button.dataset.ab) { ab = button.dataset.ab; paintTracks(); renderWindow(); } });
+}
+
+/* --- rendering the window ------------------------------------------------------------- */
+function vocalLinear() {
+  return vocal ? 10 ** ((VOCAL_TARGET_DB - vocal.info.activeRmsDb) / 20) : 0;
+}
+function vocalWindow(audio) {
+  const frames = Math.round(SPAN * RATE), start = Math.round(windowStart * RATE), gain = vocalLinear();
+  const out = new Float32Array(frames * 2);
+  for (let i = 0; i < frames && start + i < audio.length; i++) out[i * 2] = out[i * 2 + 1] = audio[start + i] * gain;
+  return out;
+}
+
+/* Nothing in here may fail silently: a window that could not be rendered says why. */
+async function renderWindow() {
+  try {
+    await renderWindowNow();
+  } catch (error) {
+    layers = [];
+    el('play').disabled = true;
+    setState('这一段渲染不出来：' + (error && error.message ? error.message : error), true);
+  }
+}
+async function renderWindowNow() {
+  if (!score || !preset) return;
+  const ticket = ++renderTicket, frames = Math.round(SPAN * RATE);
+  const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap').map(t => kitOf(t.id)))];
+  if (playing.some(name => !kitAudio[name])) {
+    setState(`载入音色 ${playing.filter(name => !kitAudio[name]).join('、')}…`);
+    await Promise.all(playing.map(ensureKit));
+    if (ticket !== renderTicket) return;
+  }
+  const started = performance.now(), notes = shapedScore();
+  const kitTrack = (kit, id) => {
+    if (!kitAudio[kit]) return null;
+    if (!kitWindow[kit]) {
+      kitWindow[kit] = Engine.renderScore(notes, {voices: kitAudio[kit].voices}, kitAudio[kit].samples, RATE,
+                                          {from: windowStart, to: windowStart + SPAN, trim: true});
+    }
+    if (!Object.keys(kitWindow[kit].stems).some(route => trackOf(route) === id)) return null;
+    const out = new Float32Array(frames * 2), data = Engine.mixDown(kitWindow[kit], route => trackOf(route) === id);
+    out.set(data.subarray(0, Math.min(data.length, out.length)));
+    return out;
+  };
+  // The kept stems of this window; with 原曲 on, all six.
+  const need = TRACKS.map(t => t.id).filter(id => hasStem(id) && (ab === 'orig' || (id !== 'vocals' && cast[id].mode === 'orig')));
+  const originals = {};
+  try {
+    await Promise.all(need.map(async id => { originals[id] = await stemWindow(id); }));
+  } catch (error) { setState(error.message, true); }
+  if (ticket !== renderTicket) return;
+
+  // A kept stem sits where the preset would have put that track, measured by the server over
+  // the whole song (the numbers the export uses), not over this window: a stretch where the
+  // stem is nearly silent would otherwise be turned up into noise.
+  let factors = {}, spare = 1;
+  if (need.length) {
+    try {
+      const levels = await stemLevels();
+      factors = levels.factors; spare = levels.spare;
+      if (levelNotes !== levels) { levelNotes = levels; paintTracks(); }     // which stems are empty shows on their rows
+    } catch (error) { setState(error.message, true); }
+    if (ticket !== renderTicket) return;
+  }
+  const recon = [];
+  for (const track of TRACKS) {
+    const c = cast[track.id];
+    let data = null;
+    if (track.id === 'vocals') {
+      const voice = c.mode === 'orig' ? 'original' : c.voice;
+      if (c.mode !== 'mute' && vocal && voice && voice !== '@kit' && voiceAudio[voice]) data = vocalWindow(voiceAudio[voice]);
+      else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
+    } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
+    else if (c.mode === 'swap') data = kitTrack(kitOf(track.id), track.id);
+    if (data) recon.push({id: track.id, data});
+  }
+  if (ab === 'orig') {
+    // The song as it was: its six stems as they are, all by the one factor that puts a typical
+    // stem at the level the preset plays it. So the switch compares sound, at about the same
+    // loudness over the song, and a quiet stretch of the original stays quiet.
+    layers = TRACKS.filter(t => originals[t.id]).map(t => ({id: t.id, data: scaled(originals[t.id], spare), raw: true}));
+  } else {
+    layers = recon;
+  }
+  el('play').disabled = !layers.length;
+  setState(layers.length ? `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨');
+  if (running) startPlayback(positionInLoop());
+  const other = pair.find(name => name !== preset);          // the other side of a comparison, ready to flip to
+  if (other) ensureKit(other).catch(() => {});
+}
+
+/* What a layer is played at: its slider, and silence when another track is soloed. The
+ * original song ignores the sliders (it is the reference) but still follows solo. */
+function gainOf(layer) {
+  const solo = TRACKS.some(t => cast[t.id].solo);
+  if (solo && !cast[layer.id].solo) return 0;
+  return layer.raw ? 1 : 10 ** (cast[layer.id].db / 20);
+}
+function masterFactor() {
+  if (!layers.length) return 1;
+  const length = layers[0].data.length, gains = layers.map(gainOf);
+  let peak = 0;
+  for (let i = 0; i < length; i++) {
+    let value = 0;
+    for (let k = 0; k < layers.length; k++) value += layers[k].data[i] * gains[k];
+    if (value > peak) peak = value; else if (-value > peak) peak = -value;
+  }
+  // An echo or a room adds to the peak; how much depends on the music, so leave room for it.
+  let wet = 0;
+  for (const layer of layers) {
+    const fx = fxOf(layer);
+    if (fx) wet = Math.max(wet, 0.5 * FX.echoWet * fx.echo / 100 + 0.5 * FX.roomWet * fx.room / 100);
+  }
+  const ceiling = CEILING / (1 + wet);
+  return peak > ceiling ? ceiling / peak : 1;
+}
+
+const fxOf = layer => layer.raw ? null : cast[layer.id];        // the original song is the reference: nothing is done to it
+const toneHz = tone => tone < 0 ? 18000 * Math.pow(250 / 18000, -tone / 100) : 30 * Math.pow(2500 / 30, tone / 100);
+
+/* One track's tone, echo and room as Web Audio nodes between `input` and `output`. */
+function fxChain(context, input, output, fx, room) {
+  let node = input;
+  if (fx && fx.tone) {
+    const filter = context.createBiquadFilter();
+    filter.type = fx.tone < 0 ? 'lowpass' : 'highpass';
+    filter.frequency.value = toneHz(fx.tone);
+    filter.Q.value = -3;                                        // decibels, for these two types: no resonant bump
+    node.connect(filter); node = filter;
+  }
+  node.connect(output);
+  if (fx && fx.echo) {
+    const delay = context.createDelay(1), back = context.createGain(), wetGain = context.createGain();
+    delay.delayTime.value = FX.echoSeconds; back.gain.value = FX.echoFeedback; wetGain.gain.value = FX.echoWet * fx.echo / 100;
+    node.connect(delay); delay.connect(back); back.connect(delay); delay.connect(wetGain); wetGain.connect(output);
+  }
+  if (fx && fx.room && room) {
+    const space = context.createConvolver(), wetGain = context.createGain();
+    space.normalize = false; space.buffer = room; wetGain.gain.value = FX.roomWet * fx.room / 100;
+    node.connect(space); space.connect(wetGain); wetGain.connect(output);
+  }
+}
+
+/* The room is one impulse response made by the server, so the export convolves with the same one. */
+let roomBuffer = null, roomLoading = null;
+function needRoom() {
+  if (roomBuffer || roomLoading || !ctx) return;
+  roomLoading = fetch('/reverb.wav').then(response => response.arrayBuffer()).then(bytes => ctx.decodeAudioData(bytes))
+    .then(buffer => { roomBuffer = buffer; if (running) startPlayback(positionInLoop()); })
+    .catch(() => { roomLoading = null; setState('混响用的房间取不到，先不加混响', true); });
+}
+
+function positionInLoop() {
+  if (!ctx || !startedAt) return 0;
+  const elapsed = ctx.currentTime - startedAt;
+  return elapsed > 0 ? elapsed % SPAN : 0;
+}
+
+function stopSources() {
+  for (const entry of sources) { try { entry.source.stop(); } catch (error) { /* already stopped */ } }
+  sources = [];
+}
+
+function startPlayback(offset) {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({sampleRate: RATE});
+  if (layers.some(layer => (fxOf(layer) || {}).room)) needRoom();
+  if (!master) { master = ctx.createGain(); master.connect(ctx.destination); }
+  stopSources();
+  const when = ctx.currentTime + 0.06;
+  for (const layer of layers) {
+    const buffer = ctx.createBuffer(2, layer.data.length / 2, RATE);
+    const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+    for (let i = 0; i < left.length; i++) { left[i] = layer.data[i * 2]; right[i] = layer.data[i * 2 + 1]; }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer; source.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = gainOf(layer);
+    fxChain(ctx, source, gain, fxOf(layer), roomBuffer);
+    gain.connect(master);
+    source.start(when, offset % buffer.duration);
+    sources.push({source, gain, layer});
+  }
+  master.gain.value = masterFactor();
+  // Every layer starts in the same call and loops the same length, so they stay locked.
+  startedAt = when - offset;
+}
+
+function updateGains() {
+  if (!ctx || !sources.length) return;
+  const now = ctx.currentTime;
+  for (const entry of sources) entry.gain.gain.setTargetAtTime(gainOf(entry.layer), now, 0.01);
+  master.gain.setTargetAtTime(masterFactor(), now, 0.01);
+}
+
+async function toggle() {
+  if (!layers.length) return;
+  if (!running && !el('fullAudio').paused) el('fullAudio').pause();     // one thing sounds at a time
+  if (!ctx || !sources.length) { startPlayback(0); running = true; }
+  else if (running) { await ctx.suspend(); running = false; }
+  else { await ctx.resume(); running = true; }
+  if (ctx && ctx.state === 'suspended' && running) await ctx.resume();
+  el('play').className = running ? 'playing' : 'paused';
+  el('play').setAttribute('aria-label', running ? '暂停' : '播放');
+}
+el('play').addEventListener('click', toggle);
+document.addEventListener('keydown', event => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type !== 'range') return;
+  const names = Object.keys(kitsIndex || {});
+  const slot = event.key === '0' ? 9 : event.key >= '1' && event.key <= '9' ? Number(event.key) - 1 : -1;   // 1…9, then 0 for the tenth
+  if (slot >= 0 && names[slot]) selectPreset(names[slot]);
+  else if (event.key === ' ') { event.preventDefault(); toggle(); }
+  else if (event.key === '`') { const other = pair.find(name => name !== preset) || previousPreset; if (other) selectPreset(other); }
+  else if (event.key === 'a' || event.key === 'A') { const other = el('ab').querySelector(`[data-ab="${ab === 'orig' ? 'recon' : 'orig'}"]`); other.click(); }
+});
+window.addEventListener('resize', () => { if (score) drawTimeline(); });
+(function tick() {
+  if (running && ctx && sources.length) {
+    const position = positionInLoop();
+    el('clock').textContent = position.toFixed(1) + ' / ' + SPAN.toFixed(1) + 's';
+  }
+  requestAnimationFrame(tick);
+})();
+
+/* --- the vocal track ----------------------------------------------------------------- */
+function windowDb(audio, start) {
+  const from = Math.round(start * RATE), to = Math.min(audio.length, from + Math.round(SPAN * RATE));
+  let energy = 0;
+  for (let i = from; i < to; i++) energy += audio[i] * audio[i];
+  return 10 * Math.log10(energy / Math.max(1, to - from) + 1e-12);
+}
+
+function loudestSung(audio) {
+  const block = 2 * RATE, blocks = Math.floor(audio.length / block), energy = new Float64Array(blocks);
+  for (let b = 0; b < blocks; b++) {
+    let sum = 0;
+    for (let i = b * block; i < (b + 1) * block; i++) sum += audio[i] * audio[i];
+    energy[b] = sum;
+  }
+  const span = Math.round(SPAN / 2);
+  let best = 0, bestSum = -1;
+  for (let b = 0; b + span <= blocks; b++) {
+    let sum = 0;
+    for (let k = b; k < b + span; k++) sum += energy[k];
+    if (sum > bestSum) { bestSum = sum; best = b; }
+  }
+  return Math.min(best * 2, Math.max(0, (score ? score.duration : audio.length / RATE) - SPAN));
+}
+
+async function loadVoices() {
+  const listing = await api('/voices.json');
+  voiceList = listing.available ? listing.voices : [];
+  if (!listing.available) el('vocalHint').textContent = listing.why;
+}
+
+function takeVocal(file) {
+  adoptVocal(file.name, '上传并整理中：第一次要分出主唱与和声，约 1 分钟',
+    api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file}));
+}
+
+/* Show the wait honestly (preparing a new stem takes about a minute), then take the result,
+ * unless another song has been opened meanwhile. */
+function adoptVocal(title, waiting, request) {
+  const ticket = ++vocalTicket, began = performance.now();
+  el('vocalTitle').textContent = title;
+  el('vocalDrop').classList.add('loaded');
+  const tick = () => {
+    vocalBusy = `${waiting} · ${Math.round((performance.now() - began) / 1000)} 秒`;
+    el('vocalHint').textContent = vocalBusy;
+    paintTracks();
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  return request
+    .then(state => {
+      if (ticket !== vocalTicket) return;
+      vocal = state; voiceAudio = {}; wanted = '';
+      const seconds = state.info.seconds, gap = score ? Math.abs(seconds - score.duration) : 0;
+      el('vocalHint').textContent = `${seconds.toFixed(0)} 秒 · 唱的时候 ${state.info.activeRmsDb.toFixed(1)} dBFS`
+        + (score && gap > 15 ? ` · 和 MIDI 差 ${gap.toFixed(0)} 秒，确认是同一首？` : '') + ' · 点这里换文件';
+      buildVoiceBank();
+      watchConversions();
+    })
+    .catch(error => { if (ticket === vocalTicket) el('vocalHint').textContent = error.message; })
+    .finally(() => {
+      clearInterval(timer);
+      if (ticket !== vocalTicket) return;
+      vocalBusy = ''; vocalPending = false;
+      const c = cast.vocals;
+      // With nothing chosen yet the vocal track starts as it was sung; a remembered choice is
+      // taken up now, as far as it is already converted.
+      if (vocal && (!vocalTouched || c.mode === 'orig')) chooseVoice('original', true);
+      else if (vocal && c.mode === 'swap' && c.voice && c.voice !== '@kit' && (vocal.voices[c.voice] || {}).state === 'ready') chooseVoice(c.voice, true);
+      else { paintTracks(); renderWindow(); }
+    });
+}
+
+/* Another song: the vocal of the last one must not keep singing over it. */
+function clearVocal() {
+  vocalTicket++;
+  clearInterval(pollTimer);
+  vocal = null; voiceAudio = {}; wanted = ''; vocalBusy = '';
+  el('voicePanel').hidden = true;
+  el('vocalDrop').classList.remove('loaded');
+  el('vocalTitle').textContent = '把同一首歌的 vocals.wav 拖到这里';
+  el('vocalHint').textContent = 'XLD 分离出的人声分轨，和 merged.mid 同一个起点 · 只在本机处理';
+  el('voiceBank').innerHTML = '';
+  paintTasks();
+}
+
+function buildVoiceTags() {
+  const present = ['歌手', '角色', '乐器', '抽象', '录音', '合成', '待听评'].filter(tag => voiceList.some(v => (v.tags || []).includes(tag)));
+  el('voiceTags').innerHTML = '';
+  for (const tag of ['', ...present]) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.textContent = tag || '全部';
+    button.setAttribute('aria-pressed', String(tag === voiceTag));
+    button.addEventListener('click', () => { voiceTag = tag; buildVoiceBank(); });
+    el('voiceTags').appendChild(button);
+  }
+}
+
+function buildVoiceBank() {
+  buildVoiceTags();
+  const groups = [];
+  const extra = routesOf('vocals').length ? [{id: '@kit', name: '乐器演主旋律', desc: '用音色把转谱出来的旋律弹出来', group: '参照'}] : [];
+  // Narrowed to one kind, the groups go: what is asked for is that kind, wherever it was filed.
+  const shown = voiceTag ? voiceList.filter(v => (v.tags || []).includes(voiceTag)).map(v => Object.assign({}, v, {group: voiceTag}))
+                         : [...voiceList.slice(0, 1), ...extra, ...voiceList.slice(1)];
+  for (const voice of shown) {
+    let group = groups.find(g => g.name === voice.group);
+    if (!group) groups.push(group = {name: voice.group, items: []});
+    group.items.push(voice);
+  }
+  // The singers first: the synthetic voices are many and alike, so only the ones in use stay in view.
+  const rank = name => name === '参照' ? 0 : name.includes('RVC') ? 1 : name.includes('录音') ? 2 : 3;
+  groups.sort((a, b) => rank(a.name) - rank(b.name));
+  el('voiceBank').innerHTML = '';
+  for (const group of groups) {
+    const wrap = document.createElement('div');
+    wrap.className = 'vgroup';
+    const head = document.createElement('h3');
+    head.textContent = group.name;
+    const bank = document.createElement('div');
+    bank.className = 'vbank';
+    for (const voice of group.items) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'kit'; button.dataset.voice = voice.id;
+      const text = document.createElement('span');
+      const name = document.createElement('span'); name.className = 'id'; name.textContent = voice.name;
+      const desc = document.createElement('span'); desc.className = 'desc'; desc.textContent = voice.desc;
+      text.append(name, desc);
+      const lamp = document.createElement('span'); lamp.className = 'lamp';
+      button.append(text, lamp);
+      button.title = voice.desc;
+      button.addEventListener('click', () => chooseVoice(voice.id));
+      bank.appendChild(button);
+    }
+    wrap.append(head, bank);
+    if (!voiceTag && group.name.includes('Seed-VC')) {
+      const rest = [...bank.children].filter(b => b.dataset.voice !== FEATURED_SYNTH && !vocal.voices[b.dataset.voice]);
+      if (rest.length && rest.length < bank.children.length) {
+        const more = document.createElement('details');
+        more.className = 'more';
+        const summary = document.createElement('summary');
+        summary.textContent = `其余 ${rest.length} 个合成声音`;
+        const folded = document.createElement('div');
+        folded.className = 'vbank';
+        folded.append(...rest);
+        more.append(summary, folded);
+        wrap.appendChild(more);
+      }
+    }
+    el('voiceBank').appendChild(wrap);
+  }
+  paintVoices();
+}
+
+function paintVoices() {
+  if (!vocal) return;
+  const chosen = cast.vocals.mode === 'orig' ? 'original' : cast.vocals.mode === 'swap' ? cast.vocals.voice : '';
+  for (const button of el('voiceBank').querySelectorAll('[data-voice]')) {
+    const id = button.dataset.voice;
+    const state = id === '@kit' ? {state: 'ready'} : (vocal.voices[id] || {state: 'idle'});
+    button.className = 'kit v-' + state.state;
+    button.setAttribute('aria-pressed', String(id === chosen));
+    const desc = button.querySelector('.desc');
+    const base = id === '@kit' ? '用音色把转谱出来的旋律弹出来' : (voiceList.find(v => v.id === id) || {}).desc || '';
+    desc.textContent = state.state === 'running' ? `${state.message || '转换中'} · ${state.elapsed || 0} 秒`
+      : state.state === 'queued' ? '排队中 · 点一下取消'
+      : state.state === 'failed' ? '转换失败：' + (state.message || '')
+      : state.state === 'idle' ? base + ' · 点一下开始转（整首）' : base;
+  }
+  paintTasks();
+}
+
+function paintTasks() {
+  const busy = vocal ? Object.entries(vocal.voices).filter(([, v]) => v.state === 'running' || v.state === 'queued') : [];
+  const run = busy.find(([, v]) => v.state === 'running');
+  const queued = busy.filter(([, v]) => v.state === 'queued').length;
+  el('tasks').textContent = !busy.length ? ''
+    : (run ? `${voiceName(run[0])} · ${run[1].message || '转换中'} ${Math.round((run[1].progress || 0) * 100)}%` : '排队中')
+      + (queued ? ` · 还有 ${queued} 个排队` : '');
+}
+
+async function chooseVoice(id, quiet) {   // quiet: taken up on loading, not a choice to remember
+  if (!vocal) return;
+  if (id !== '@kit' && (vocal.voices[id] || {}).state === 'queued') {
+    // Still waiting its turn: a second click takes it back out of the queue.
+    try {
+      vocal = await api('/api/cancel', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify({id: vocal.id, voice: id})});
+    } catch (error) { el('vocalHint').textContent = error.message; }
+    if (wanted === id) wanted = '';
+    if (cast.vocals.voice === id) return chooseVoice('original');     // back to the vocal as it was sung
+    paintVoices(); paintTracks(); renderWindow(); queueSave();
+    return;
+  }
+  vocalTouched = true;
+  if (id !== '@kit' && (vocal.voices[id] || {}).state !== 'ready') {
+    wanted = id;
+    cast.vocals.mode = 'swap'; cast.vocals.voice = id;
+    try {
+      vocal = await api('/api/swap', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                      body: JSON.stringify({id: vocal.id, voice: id})});
+    } catch (error) { el('vocalHint').textContent = error.message; }
+    paintVoices(); paintTracks(); renderWindow(); watchConversions(); if (!quiet) queueSave();
+    return;
+  }
+  if (id !== '@kit' && !voiceAudio[id]) {
+    setState('载入人声…');
+    try {
+      voiceAudio[id] = decodeWav(await fetchBytes(`/vocal/${vocal.id}/${id}.wav`));
+    } catch (error) { setState(error.message, true); return; }
+  }
+  cast.vocals.mode = id === 'original' ? 'orig' : 'swap';
+  cast.vocals.voice = id;
+  // The window opens on the busiest stretch of the MIDI, which can be an instrumental
+  // break; a voice chosen there would be heard as silence.
+  if (id !== '@kit' && windowDb(voiceAudio[id], windowStart) < -40) {
+    windowStart = loudestSung(voiceAudio[id]); kitWindow = {}; stemWindows = {};
+    positionWindow();
+  }
+  paintVoices(); paintTracks(); renderWindow(); if (!quiet) queueSave();
+}
+
+function watchConversions() {
+  clearInterval(pollTimer);
+  const busy = () => Object.values(vocal.voices).some(v => v.state === 'queued' || v.state === 'running');
+  paintTasks();
+  if (!busy()) return;
+  pollTimer = setInterval(async () => {
+    try {
+      vocal = await api('/api/vocal?id=' + vocal.id);
+    } catch (error) { clearInterval(pollTimer); return; }
+    paintVoices(); paintTracks();
+    if (wanted && (vocal.voices[wanted] || {}).state === 'ready') { const id = wanted; wanted = ''; chooseVoice(id); }
+    if (!busy()) { clearInterval(pollTimer); refreshLibrary(); }
+  }, 1500);
+}
+
+/* One drawer at a time over the right side; the main page underneath never grows. */
+function openDrawer(id) {
+  for (const drawer of document.querySelectorAll('.drawer')) drawer.hidden = drawer.id !== id;
+}
+function closeDrawers() { openDrawer(''); }
+for (const button of document.querySelectorAll('.closeDrawer')) button.addEventListener('click', closeDrawers);
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawers(); });
+for (const [button, drawer] of [['openHelp', 'helpPanel'], ['openVitals', 'vitalsPanel'], ['openExport', 'exportPanel'], ['openFull', 'fullPanel']]) {
+  el(button).addEventListener('click', () => { if (el(drawer).hidden) openDrawer(drawer); else closeDrawers(); });
+}
+el('vocalDrop').addEventListener('click', () => el('vocalFile').click());
+el('vocalDrop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('vocalFile').click(); } });
+el('vocalFile').addEventListener('change', e => { if (e.target.files[0]) takeVocal(e.target.files[0]); });
+for (const name of ['dragenter', 'dragover']) {
+  el('vocalDrop').addEventListener(name, e => { e.preventDefault(); el('vocalDrop').classList.add('over'); });
+}
+for (const name of ['dragleave', 'drop']) {
+  el('vocalDrop').addEventListener(name, e => { e.preventDefault(); el('vocalDrop').classList.remove('over'); });
+}
+el('vocalDrop').addEventListener('drop', e => { if (e.dataTransfer.files[0]) takeVocal(e.dataTransfer.files[0]); });
+
+/* --- library ---------------------------------------------------------------------------- */
+async function loadLibrary() {
+  let listing;
+  try {
+    listing = await api('/api/library');
+  } catch (error) { return; }
+  songs = listing.songs;
+  const missing = listing.places.filter(place => !place.found).map(place => place.path);
+  el('libNote').textContent = `${songs.length} 首 · ${songs.filter(s => s.vocal).length} 首有人声`
+    + (listing.skipped ? ` · ${listing.skipped} 个目录读不了` : '') + (missing.length ? ` · 没找到 ${missing.join('、')}` : '');
+  el('library').hidden = false;
+  if (!el('drop').classList.contains('loaded')) el('dropTitle').textContent = '或者把 merged.mid 拖到这里';
+  paintSongs();
+}
+function refreshLibrary() {
+  if (el('library').hidden) return;
+  api('/api/library').then(listing => { songs = listing.songs; paintSongs(); }).catch(() => {});
+}
+function paintSongs() {
+  const words = el('libFilter').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  el('songs').innerHTML = '';
+  for (const item of songs) {
+    const hay = `${item.title} ${item.artist} ${item.album}`.toLowerCase();
+    if (!words.every(word => hay.includes(word))) continue;
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'song'; button.dataset.key = item.key;
+    button.setAttribute('aria-pressed', String(item.key === songKey));
+    const label = document.createElement('span');
+    const title = document.createElement('span'); title.className = 't'; title.textContent = item.title;
+    const by = document.createElement('span'); by.className = 'by';
+    by.textContent = [item.artist, item.album].filter(Boolean).join(' · ') + (item.where === 'XLD 曲库' ? '' : ` · ${item.where}`);
+    label.append(title, by);
+    const tag = document.createElement('span');
+    tag.className = 'tag ' + (item.plan ? 'ok' : item.vocal ? 'narrow' : 'plain');
+    tag.textContent = item.plan ? '有方案' : !item.vocal ? '没有人声' : item.voices.length ? `已转 ${item.voices.length} 个声音` : `${(item.stems || []).length} 条分轨`;
+    button.append(label, tag);
+    button.addEventListener('click', () => openSong(item));
+    el('songs').appendChild(button);
+  }
+  if (!el('songs').children.length) {
+    const none = document.createElement('div');
+    none.className = 'none';
+    none.textContent = songs.length ? '没有符合的歌' : 'XLD 里还没有合并过 MIDI 的歌：先在 XLD 里转谱并合并，或直接把 merged.mid 拖到下面';
+    el('songs').appendChild(none);
+  }
+}
+
+async function openSong(item) {
+  clearTimeout(saveTimer);
+  try { localStorage.setItem('studio.lastSong', item.key); } catch (error) { /* a window that keeps nothing */ }
+  song = item; songKey = item.key; ab = 'recon'; levelNotes = null;
+  paintSongs(); clearVocal(); resetCast();
+  vocalPending = !!item.vocal;
+  el('dropTitle').textContent = item.title;
+  el('dropHint').textContent = '载入中…';
+  let bytes;
+  try {
+    bytes = await fetchBytes(`/library/${item.key}.mid`);
+  } catch (error) { el('dropHint').textContent = error.message; return; }
+  if (songKey !== item.key) return;
+  // What was chosen for this song last time comes back before anything sounds.
+  const saved = await api('/api/plan?song=' + item.key).catch(() => ({plan: null}));
+  if (songKey !== item.key) return;
+  if (saved.plan) takePlan(saved.plan);
+  await new Promise(done => takeFile(new File([bytes], safeName(item.title) + '.mid'), done));
+  if (songKey !== item.key || !item.vocal) return;
+  await adoptVocal(item.title + ' · 人声', item.prepared ? '载入人声' : '整理人声中：第一次要分出主唱与和声，约 1 分钟',
+    api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({song: item.key})}));
+  if (songKey === item.key) refreshLibrary();
+}
+
+/* A file dragged in is not a library song: no stems to keep, nothing remembered. */
+function takeDropped(file) {
+  song = null; songKey = ''; ab = 'recon'; vocalPending = false; levelNotes = null;
+  paintSongs(); clearVocal(); resetCast();
+  takeFile(file);
+}
+el('libFilter').addEventListener('input', paintSongs);
+el('drop').addEventListener('click', () => el('file').click());
+el('drop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('file').click(); } });
+el('file').addEventListener('change', e => { if (e.target.files[0]) takeDropped(e.target.files[0]); });
+for (const name of ['dragenter', 'dragover']) {
+  el('drop').addEventListener(name, e => { e.preventDefault(); el('drop').classList.add('over'); });
+}
+for (const name of ['dragleave', 'drop']) {
+  el('drop').addEventListener(name, e => { e.preventDefault(); el('drop').classList.remove('over'); });
+}
+el('drop').addEventListener('drop', e => { if (e.dataTransfer.files[0]) takeDropped(e.dataTransfer.files[0]); });
+
+/* --- plans: what each track was given, kept per song and by name ------------------------- */
+function currentPlan() {
+  const tracks = {};
+  for (const track of TRACKS) {
+    const c = cast[track.id];
+    tracks[track.id] = {mode: c.mode, kit: c.kit, db: c.db, solo: c.solo};
+    for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
+  }
+  return {preset, tracks, voice: cast.vocals.voice};
+}
+/* A plan is a file: it may have been edited by hand or written by an older studio. Whatever
+ * in it does not make sense is dropped, and the track keeps what it had. */
+function takePlan(plan) {
+  if (!plan || typeof plan !== 'object') return;
+  if (typeof plan.preset === 'string' && (kitsIndex || {})[plan.preset]) preset = plan.preset;
+  for (const track of TRACKS) {
+    const saved = plan.tracks && typeof plan.tracks === 'object' ? plan.tracks[track.id] : null;
+    if (!saved || typeof saved !== 'object') continue;
+    const c = cast[track.id], db = Number(saved.db);
+    if (['orig', 'swap', 'mute'].includes(saved.mode)) c.mode = saved.mode;
+    c.kit = typeof saved.kit === 'string' && (kitsIndex || {})[saved.kit] ? saved.kit : null;
+    c.db = Number.isFinite(db) ? Math.max(-18, Math.min(6, Math.round(db))) : 0;
+    c.solo = saved.solo === true;
+    for (const key of FX_KEYS) {
+      const value = Math.round(Number(saved[key]));
+      c[key] = Number.isFinite(value) ? Math.max(FX_LIMITS[key][0], Math.min(FX_LIMITS[key][1], value)) : 0;
+    }
+    if (track.id === 'vocals') vocalTouched = true;
+  }
+  cast.vocals.voice = typeof plan.voice === 'string' ? plan.voice : '';
+}
+function queueSave() {
+  if (!song) return;
+  clearTimeout(saveTimer);
+  const key = song.key;
+  saveTimer = setTimeout(() => {
+    api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({song: key, plan: currentPlan()})}).catch(() => {});
+  }, 800);
+}
+async function loadPlans() {
+  try {
+    const listing = await api('/api/plans');
+    el('planList').innerHTML = '<option value="">套用方案…</option>' + listing.plans.map(name => `<option>${name}</option>`).join('');
+  } catch (error) { /* an older server: no plans */ }
+}
+el('savePlan').addEventListener('click', async () => {
+  const name = (window.prompt('给这份方案起个名字（以后可以套用到别的歌上）', preset) || '').trim();
+  if (!name) return;
+  try {
+    await api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, plan: currentPlan()})});
+    setState(`方案「${name}」存好了`);
+    loadPlans();
+  } catch (error) { setState(error.message, true); }
+});
+el('planList').addEventListener('change', async () => {
+  const name = el('planList').value;
+  el('planList').value = '';
+  if (!name || !score) return;
+  try {
+    const saved = await api('/api/plan?name=' + encodeURIComponent(name));
+    if (!saved.plan) return;
+    takePlan(saved.plan);
+    const voice = cast.vocals.voice;
+    if (vocal && cast.vocals.mode !== 'mute' && voice && voice !== '@kit') { await chooseVoice(cast.vocals.mode === 'orig' ? 'original' : voice); }
+    else { paintTracks(); if (vocal) paintVoices(); renderWindow(); }
+    queueSave();
+    setState(`套用了方案「${name}」`);
+  } catch (error) { setState(error.message, true); }
+});
+
+/* --- server ------------------------------------------------------------------------------ */
+const OFFLINE = '连不上本地服务：工作台可能已经退出了。重新双击仓库根目录的 音色工作台.cmd。';
+
+async function api(path, options) {
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch (error) {
+    markOffline();
+    throw new Error(OFFLINE);
+  }
+  const data = await response.json().catch(() => ({error: `服务端返回了 ${response.status}`}));
+  if (!response.ok || data.error) throw new Error(data.error || `服务端返回了 ${response.status}`);
+  return data;
+}
+
+/* `api()` for a binary body: the same "the server is gone" message when the network fails. */
+async function fetchBytes(path) {
+  let response;
+  try {
+    response = await fetch(path);
+  } catch (error) {
+    markOffline();
+    throw new Error(OFFLINE);
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `服务端返回了 ${response.status}`);
+  }
+  return response.arrayBuffer();
+}
+
+function markOffline() {
+  setState(OFFLINE, true);
+  el('exportState').textContent = '服务没在跑';
+}
+// Coming back to a tab that has been sitting open is exactly when the server is gone.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || exporting) return;
+  fetch('/api/start').catch(() => markOffline());
+});
+
+/* --- export -------------------------------------------------------------------------------- */
+
+/* What the server needs to rebuild the song as it stands: the export and the listen-through send the same. */
+function rebuildRequest(extra) {
+  let binary = '';
+  for (const byte of midiBytes) binary += String.fromCharCode(byte);
+  const c = cast.vocals, voice = c.mode === 'orig' ? 'original' : c.mode === 'swap' ? c.voice : '';
+  const sung = vocal && voice && voice !== '@kit' && (vocal.voices[voice] || {}).state === 'ready';
+  return Object.assign({midi: btoa(binary), name: midiName, plan: currentPlan(), song: song ? song.key : null,
+                        vocal: sung ? {id: vocal.id, voice, offsetDb: 0} : null}, extra);
+}
+
+/* --- the whole rebuild, to listen to ------------------------------------------------------------ */
+let fullBusy = false, fullPlan = '';
+function forgetFull() {
+  el('fullAudio').pause(); el('fullAudio').removeAttribute('src'); el('fullAudio').hidden = true;
+  el('fullLog').innerHTML = ''; el('fullState').textContent = ''; el('fullFill').style.width = '0%';
+  fullPlan = '';
+}
+function fullStale() {
+  if (!fullPlan || fullBusy) return;
+  el('fullState').textContent = fullPlan === JSON.stringify(currentPlan()) ? '这是现在这份方案' : '方案改过了，重新渲染才是现在的样子';
+}
+async function renderFull() {
+  if (fullBusy || exporting || !midiBytes) return;
+  fullBusy = true;
+  el('fullBtn').disabled = true;
+  el('fullLog').innerHTML = '';
+  el('fullState').textContent = '提交中…';
+  const plan = JSON.stringify(currentPlan());
+  try {
+    const start = await api('/api/export', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                            body: JSON.stringify(rebuildRequest({listen: true}))});
+    while (true) {
+      await new Promise(r => setTimeout(r, 400));
+      const job = await api('/api/job?id=' + start.jobId);
+      el('fullFill').style.width = ((job.progress || 0) * 100).toFixed(0) + '%';
+      el('fullState').textContent = job.message || '渲染中…';
+      if (!job.done) continue;
+      if (job.error) throw new Error(job.error);
+      const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
+      const told = job.rebuild.tracks.filter(t => t.sounding)
+        .map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原唱' : voiceName(t.by)}`);
+      el('fullLog').innerHTML = `<div class="flag done">${told.join(' · ')}</div>` + (job.vocalNote ? `<div class="flag">${job.vocalNote}</div>` : '');
+      fullPlan = plan;
+      const audio = el('fullAudio');
+      audio.src = job.listen; audio.hidden = false;
+      if (running) await toggle();                    // the loop gives way to the whole song
+      audio.play().catch(() => {});
+      break;
+    }
+  } catch (error) {
+    el('fullLog').innerHTML = `<div class="flag">${error.message}</div>`;
+    el('fullState').textContent = '没渲染出来';
+  } finally {
+    fullBusy = false;
+    el('fullBtn').disabled = false;
+    fullStale();
+  }
+}
+el('fullBtn').addEventListener('click', renderFull);
+el('openFull').addEventListener('click', fullStale);
+el('fullAudio').addEventListener('play', () => { if (running) toggle(); });
+
+async function doExport() {
+  if (exporting || fullBusy || !midiBytes) return;
+  exporting = true;
+  el('exportBtn').disabled = true;
+  el('exportLog').innerHTML = '';
+  el('exportState').textContent = '提交中…';
+  try {
+    const start = await api('/api/export', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(rebuildRequest({outDir: el('outDir').value.trim(), stems: el('stems').checked})),
+    });
+    while (true) {
+      await new Promise(r => setTimeout(r, 400));
+      const job = await api('/api/job?id=' + start.jobId);
+      el('exportFill').style.width = ((job.progress || 0) * 100).toFixed(0) + '%';
+      el('exportState').textContent = job.message || '渲染中…';
+      if (job.done) { showExportResult(job); break; }
+    }
+  } catch (error) {
+    el('exportState').textContent = '导出失败';
+    el('exportLog').innerHTML = `<div class="flag">${error.message}</div>`;
+  } finally {
+    exporting = false;
+    el('exportBtn').disabled = false;
+  }
+}
+
+function showExportResult(job) {
+  if (job.error) { el('exportState').textContent = '导出失败：' + job.error; return; }
+  const lines = [], done = job.rebuild || {files: [], tracks: []};
+  const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
+  lines.push(`<div class="flag done">写到 <code>${job.outDir}</code> —— ${done.files.length} 个文件，`
+    + `${(done.seconds || 0).toFixed(0)} 秒。</div>`);
+  const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原唱' : voiceName(t.by)}`);
+  if (told.length) lines.push(`<div class="flag done">${told.join(' · ')}</div>`);
+  const silent = done.tracks.filter(t => !t.sounding).map(t => zh(t.track));
+  if (silent.length) lines.push(`<div class="flag">没出声的轨：${silent.join('、')}</div>`);
+  const hollow = done.tracks.filter(t => t.emptyStem).map(t => zh(t.track));
+  if (hollow.length) lines.push(`<div class="flag">留了原声但分轨是空的：${hollow.join('、')}</div>`);
+  if (job.vocalNote) lines.push(`<div class="flag">${job.vocalNote}</div>`);
+  el('exportLog').innerHTML = lines.join('');
+  el('exportState').textContent = '完成';
+  el('outDir').value = job.outDir || el('outDir').value;
+}
+el('exportBtn').addEventListener('click', doExport);
+el('revealBtn').addEventListener('click', async () => {
+  try {
+    await api('/api/reveal', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify({path: el('outDir').value.trim()})});
+    el('exportState').textContent = '';
+  } catch (error) {
+    el('exportState').textContent = error.message;
+  }
+});
+
+// Whatever slips through still reaches the status line instead of vanishing into a console nobody has open.
+window.addEventListener('error', event => setState('页面出错了：' + (event.message || '未知错误'), true));
+window.addEventListener('unhandledrejection', event => {
+  setState('页面出错了：' + ((event.reason && event.reason.message) || event.reason || '未知错误'), true);
+});
+
+/* The server stays up while a page says it is there, and is told when this one closes. The same
+ * call notices a MIDI dropped on the launcher while the studio was already open. */
+let openedStamp = 0;
+const PAGE = Math.random().toString(36).slice(2, 12);     // this window's name, so the server can tell windows apart
+fetch('/api/start?page=' + PAGE).catch(() => {});
+setInterval(async () => {
+  try {
+    const start = await (await fetch('/api/start?page=' + PAGE)).json();
+    if ((start.openedStamp || 0) > openedStamp && start.opened) {
+      openedStamp = start.openedStamp;
+      const bytes = await (await fetch('/opened.mid')).arrayBuffer();
+      takeDropped(new File([bytes], start.opened.split(/[\\/]/).pop()));
+    }
+  } catch (error) { /* a server that is gone is reported when the window is looked at again */ }
+}, 4000);
+window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?page=' + PAGE); } catch (error) { /* it will time out instead */ } });
+
+buildTracks();
+(async function boot() {
+  try {
+    const start = await api('/api/start');
+    openedStamp = start.openedStamp || 0;
+    el('outDir').value = start.defaultOut || '';
+    const library = loadVoices().catch(error => { el('vocalHint').textContent = error.message; }).then(loadLibrary);
+    loadPlans();
+    await loadIndex();
+    await library;
+    // Back where it was left: the song that was open last time, unless one was handed in.
+    let last = '';
+    try { last = localStorage.getItem('studio.lastSong') || ''; } catch (error) { /* nothing kept */ }
+    const again = songs.find(item => item.key === last);
+    if (again && !start.opened && !score) openSong(again);
+    if (start.opened) {
+      // A MIDI dropped onto the launcher icon arrives here, already on disk.
+      const bytes = await (await fetch('/opened.mid')).arrayBuffer();
+      takeDropped(new File([bytes], start.opened.split(/[\\/]/).pop()));
+    }
+  } catch (error) {
+    setState(error.message, true);
+  }
+})();
+</script>

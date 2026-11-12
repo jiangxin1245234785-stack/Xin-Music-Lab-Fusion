@@ -1,0 +1,154 @@
+{
+  "name": "管弦 · 弓弦与铜管",
+  "_note": "由 tools/make_kits.py orchestra 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "bowed": {
+      "file": "samples/bowed.wav",
+      "rootHz": 220.0,
+      "_label": "弓弦 · 持续带揉弦"
+    },
+    "bowed_bright": {
+      "file": "samples/bowed_bright.wav",
+      "rootHz": 220.0,
+      "_label": "弓弦 · 明亮"
+    },
+    "contrabass": {
+      "file": "samples/contrabass.wav",
+      "rootHz": 55.0,
+      "_label": "低音提琴 · 弓奏"
+    },
+    "brass": {
+      "file": "samples/brass.wav",
+      "rootHz": 220.0,
+      "_label": "铜管 · 渐强带咬口"
+    },
+    "harp": {
+      "file": "samples/harp.wav",
+      "rootHz": 220.0,
+      "_label": "竖琴"
+    },
+    "pizz": {
+      "file": "samples/pizz.wav",
+      "rootHz": 220.0,
+      "_label": "拨奏弦乐"
+    },
+    "timpani": {
+      "file": "samples/timpani.wav",
+      "rootHz": 88.0,
+      "_label": "定音鼓"
+    },
+    "timpani_hi": {
+      "file": "samples/timpani_hi.wav",
+      "rootHz": 124.0,
+      "_label": "定音鼓 · 高"
+    },
+    "snare_orch": {
+      "file": "samples/snare_orch.wav",
+      "rootHz": 1000.0,
+      "_label": "乐队小鼓"
+    },
+    "suspended": {
+      "file": "samples/suspended.wav",
+      "rootHz": 4200.0,
+      "_label": "吊镲 · 渐强"
+    },
+    "triangle": {
+      "file": "samples/triangle.wav",
+      "rootHz": 2637.0,
+      "_label": "三角铁"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "contrabass",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.04
+    },
+    "guitar": {
+      "sample": "pizz",
+      "gain": 0.55,
+      "pan": 0.28,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "brass",
+      "gain": 0.42,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.03
+    },
+    "piano": {
+      "sample": "harp",
+      "gain": 0.6,
+      "pan": -0.18,
+      "follow": "sample",
+      "maxDur": 4.5
+    },
+    "strings": {
+      "sample": "bowed",
+      "transpose": 12,
+      "gain": 0.34,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.06
+    },
+    "vocals": {
+      "sample": "brass",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.03
+    },
+    "drums/kick": {
+      "sample": "timpani",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/snare": {
+      "sample": "snare_orch",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6
+    },
+    "drums/hihat": {
+      "sample": "triangle",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.1,
+      "gain": 1.3,
+      "pan": 0.22
+    },
+    "drums/openhat": {
+      "sample": "triangle",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.45,
+      "gain": 1.1,
+      "pan": 0.22
+    },
+    "drums/tom": {
+      "sample": "timpani_hi",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/crash": {
+      "sample": "suspended",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.85,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "triangle",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.3,
+      "gain": 1.0,
+      "pan": 0.42
+    }
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "name": "电风琴 / 管风琴",
+  "_note": "由 tools/make_kits.py organ 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "drawbar_full": {
+      "file": "samples/drawbar_full.wav",
+      "rootHz": 220.0,
+      "_label": "全拉杆 · 最厚"
+    },
+    "drawbar_mellow": {
+      "file": "samples/drawbar_mellow.wav",
+      "rootHz": 220.0,
+      "_label": "柔和拉杆"
+    },
+    "drawbar_bright": {
+      "file": "samples/drawbar_bright.wav",
+      "rootHz": 220.0,
+      "_label": "明亮拉杆 · 主音"
+    },
+    "pipe": {
+      "file": "samples/pipe.wav",
+      "rootHz": 220.0,
+      "_label": "闭管风琴 · 纯奇次"
+    },
+    "pedal": {
+      "file": "samples/pedal.wav",
+      "rootHz": 55.0,
+      "_label": "脚键盘贝斯"
+    },
+    "kick_soft": {
+      "file": "samples/kick_soft.wav",
+      "rootHz": 62.0,
+      "_label": "软底鼓"
+    },
+    "brush_snare": {
+      "file": "samples/brush_snare.wav",
+      "rootHz": 1000.0,
+      "_label": "刷扫军鼓"
+    },
+    "brush_hat": {
+      "file": "samples/brush_hat.wav",
+      "rootHz": 8000.0,
+      "_label": "闭镲"
+    },
+    "brush_open": {
+      "file": "samples/brush_open.wav",
+      "rootHz": 8000.0,
+      "_label": "开镲"
+    },
+    "jazz_tom": {
+      "file": "samples/jazz_tom.wav",
+      "rootHz": 150.0,
+      "_label": "嗵鼓"
+    },
+    "jazz_ride": {
+      "file": "samples/jazz_ride.wav",
+      "rootHz": 1180.0,
+      "_label": "叮叮镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "pedal",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "guitar": {
+      "sample": "drawbar_mellow",
+      "gain": 0.45,
+      "pan": 0.3,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "drawbar_bright",
+      "gain": 0.4,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "piano": {
+      "sample": "drawbar_full",
+      "gain": 0.5,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "strings": {
+      "sample": "pipe",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.04
+    },
+    "vocals": {
+      "sample": "drawbar_bright",
+      "gain": 0.85,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "drums/kick": {
+      "sample": "kick_soft",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.25
+    },
+    "drums/snare": {
+      "sample": "brush_snare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.7
+    },
+    "drums/hihat": {
+      "sample": "brush_hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.2,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "brush_open",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "jazz_tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/crash": {
+      "sample": "jazz_ride",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.85,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "jazz_ride",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.3,
+      "gain": 1.1,
+      "pan": 0.42
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "name": "Hoover · 90 年代 Rave",
+  "_note": "由 tools/make_kits.py hoover 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "ravebass": {
+      "file": "samples/ravebass.wav",
+      "rootHz": 110.0,
+      "_label": "脉宽贝斯"
+    },
+    "hooverstab": {
+      "file": "samples/hooverstab.wav",
+      "rootHz": 220.0,
+      "_label": "Hoover 和弦"
+    },
+    "ravepiano": {
+      "file": "samples/ravepiano.wav",
+      "rootHz": 220.0,
+      "_label": "Rave 钢琴"
+    },
+    "hooverpad": {
+      "file": "samples/hooverpad.wav",
+      "rootHz": 220.0,
+      "_label": "Hoover 垫"
+    },
+    "hooverlead": {
+      "file": "samples/hooverlead.wav",
+      "rootHz": 220.0,
+      "_label": "Hoover 主音 · 上滑"
+    },
+    "kick909": {
+      "file": "samples/kick909.wav",
+      "rootHz": 50.0,
+      "_label": "909 底鼓 · 过载"
+    },
+    "clap909": {
+      "file": "samples/clap909.wav",
+      "rootHz": 1200.0,
+      "_label": "909 拍手"
+    },
+    "hat909": {
+      "file": "samples/hat909.wav",
+      "rootHz": 8500.0,
+      "_label": "闭镲"
+    },
+    "open909": {
+      "file": "samples/open909.wav",
+      "rootHz": 8500.0,
+      "_label": "开镲"
+    },
+    "tom909": {
+      "file": "samples/tom909.wav",
+      "rootHz": 120.0,
+      "_label": "嗵鼓"
+    },
+    "crash909": {
+      "file": "samples/crash909.wav",
+      "rootHz": 6000.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "ravebass",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "ravepiano",
+      "gain": 0.94,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "hooverstab",
+      "gain": 1.06,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "hooverpad",
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "hooverlead",
+      "gain": 0.85,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "kick909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "clap909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "open909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "open909",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1,
+      "pan": 0.42,
+      "maxDur": 0.16
+    }
+  }
+}

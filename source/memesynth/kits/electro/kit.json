@@ -1,0 +1,152 @@
+{
+  "name": "Electro · 声码器",
+  "_note": "由 tools/make_kits.py electro 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "squarebass": {
+      "file": "samples/squarebass.wav",
+      "rootHz": 110.0,
+      "_label": "方波贝斯"
+    },
+    "nasal": {
+      "file": "samples/nasal.wav",
+      "rootHz": 220.0,
+      "_label": "鼻音方波"
+    },
+    "zap": {
+      "file": "samples/zap.wav",
+      "rootHz": 220.0,
+      "_label": "激光拨奏"
+    },
+    "robotchoir": {
+      "file": "samples/robotchoir.wav",
+      "rootHz": 220.0,
+      "_label": "声码器合唱"
+    },
+    "robot": {
+      "file": "samples/robot.wav",
+      "rootHz": 220.0,
+      "_label": "声码器主音 · 每秒 11 个“音节”"
+    },
+    "kick808": {
+      "file": "samples/kick808.wav",
+      "rootHz": 52.0,
+      "_label": "808 底鼓"
+    },
+    "snare808": {
+      "file": "samples/snare808.wav",
+      "rootHz": 180.0,
+      "_label": "808 军鼓"
+    },
+    "hat808": {
+      "file": "samples/hat808.wav",
+      "rootHz": 7000.0,
+      "_label": "808 闭镲"
+    },
+    "open808": {
+      "file": "samples/open808.wav",
+      "rootHz": 7000.0,
+      "_label": "808 开镲"
+    },
+    "tom808": {
+      "file": "samples/tom808.wav",
+      "rootHz": 105.0,
+      "_label": "808 嗵鼓"
+    },
+    "crash808": {
+      "file": "samples/crash808.wav",
+      "rootHz": 5000.0,
+      "_label": "808 吊镲"
+    },
+    "cowbell": {
+      "file": "samples/cowbell.wav",
+      "rootHz": 540.0,
+      "_label": "808 牛铃"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "squarebass",
+      "gain": 1.5,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "zap",
+      "gain": 0.61,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "nasal",
+      "gain": 0.55,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "robotchoir",
+      "gain": 0.32,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "robot",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "kick808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.78,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "snare808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.85,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.98,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "open808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.72,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.72,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.46,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "cowbell",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.52,
+      "pan": 0.42
+    }
+  }
+}

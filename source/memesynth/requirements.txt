@@ -1,0 +1,4 @@
+# memesynth v1 — 全部纯 wheel，无 librosa、无 numba、无 scipy（SPEC §4）。
+numpy==1.26.4
+soundfile==0.14.0
+pretty_midi==0.2.11.post0

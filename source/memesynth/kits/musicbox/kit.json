@@ -1,0 +1,145 @@
+{
+  "name": "音乐盒 / 钟琴",
+  "_note": "由 tools/make_kits.py musicbox 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "tine": {
+      "file": "samples/tine.wav",
+      "rootHz": 440.0,
+      "_label": "音乐盒梳齿"
+    },
+    "tine_long": {
+      "file": "samples/tine_long.wav",
+      "rootHz": 440.0,
+      "_label": "音乐盒 · 长衰减主音"
+    },
+    "celesta": {
+      "file": "samples/celesta.wav",
+      "rootHz": 440.0,
+      "_label": "钟琴 / celesta"
+    },
+    "glass": {
+      "file": "samples/glass.wav",
+      "rootHz": 440.0,
+      "_label": "玻璃泛音 · 持续"
+    },
+    "soft_bass": {
+      "file": "samples/soft_bass.wav",
+      "rootHz": 110.0,
+      "_label": "柔和正弦贝斯"
+    },
+    "mallet": {
+      "file": "samples/mallet.wav",
+      "rootHz": 70.0,
+      "_label": "软槌低音"
+    },
+    "brush_snare": {
+      "file": "samples/brush_snare.wav",
+      "rootHz": 1000.0,
+      "_label": "刷扫军鼓"
+    },
+    "shaker": {
+      "file": "samples/shaker.wav",
+      "rootHz": 8000.0,
+      "_label": "沙锤"
+    },
+    "shaker_open": {
+      "file": "samples/shaker_open.wav",
+      "rootHz": 8000.0,
+      "_label": "沙锤 · 长"
+    },
+    "ding": {
+      "file": "samples/ding.wav",
+      "rootHz": 2093.0,
+      "_label": "三角铁"
+    },
+    "woodblock": {
+      "file": "samples/woodblock.wav",
+      "rootHz": 900.0,
+      "_label": "木鱼"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "soft_bass",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "guitar": {
+      "sample": "tine",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "piano": {
+      "sample": "celesta",
+      "gain": 0.62,
+      "pan": -0.18,
+      "follow": "sample",
+      "maxDur": 4.5
+    },
+    "strings": {
+      "sample": "glass",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.02
+    },
+    "vocals": {
+      "sample": "tine_long",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "sample",
+      "maxDur": 2.8
+    },
+    "drums/kick": {
+      "sample": "mallet",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/snare": {
+      "sample": "brush_snare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5
+    },
+    "drums/hihat": {
+      "sample": "shaker",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.0,
+      "pan": 0.22
+    },
+    "drums/openhat": {
+      "sample": "shaker_open",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.4,
+      "pan": 0.22
+    },
+    "drums/tom": {
+      "sample": "woodblock",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/crash": {
+      "sample": "ding",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.35
+    },
+    "drums/ride": {
+      "sample": "ding",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.25,
+      "gain": 0.9,
+      "pan": 0.4
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "yunxia",
+  "label": "云夏 · 少年感男声，最高的男声",
+  "engine": "edge-tts",
+  "voice": "zh-CN-YunxiaNeural",
+  "rate": "+0%",
+  "script": "月亮升起来的时候，河水慢慢往南边流去。远处有人在唱歌，声音很轻，像是从很久以前传过来的一样。",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 10.46,
+    "rmsDb": -18.9,
+    "voicedShare": 0.639,
+    "medianHz": 309.2
+  }
+}

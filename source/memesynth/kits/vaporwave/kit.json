@@ -1,0 +1,148 @@
+{
+  "name": "Vaporwave · 商场回声",
+  "_note": "由 tools/make_kits.py vaporwave 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "rubberbass": {
+      "file": "samples/rubberbass.wav",
+      "rootHz": 110.0,
+      "_label": "FM 橡皮贝斯"
+    },
+    "bellpad": {
+      "file": "samples/bellpad.wav",
+      "rootHz": 220.0,
+      "_label": "玻璃钟 + 垫"
+    },
+    "chorusguitar": {
+      "file": "samples/chorusguitar.wav",
+      "rootHz": 220.0,
+      "_label": "合唱吉他"
+    },
+    "mallpad": {
+      "file": "samples/mallpad.wav",
+      "rootHz": 220.0,
+      "_label": "商场垫"
+    },
+    "sax": {
+      "file": "samples/sax.wav",
+      "rootHz": 220.0,
+      "_label": "萨克斯式主音"
+    },
+    "kick": {
+      "file": "samples/kick.wav",
+      "rootHz": 50.0,
+      "_label": "闷底鼓"
+    },
+    "gatedsnare": {
+      "file": "samples/gatedsnare.wav",
+      "rootHz": 170.0,
+      "_label": "门限混响军鼓 · 放慢"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 6000.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 6000.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 90.0,
+      "_label": "电子嗵鼓 · 放慢"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 4000.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "rubberbass",
+      "gain": 1.44,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "guitar": {
+      "sample": "chorusguitar",
+      "gain": 1.4,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "piano": {
+      "sample": "bellpad",
+      "gain": 0.97,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.03
+    },
+    "strings": {
+      "sample": "mallpad",
+      "gain": 0.32,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.08
+    },
+    "vocals": {
+      "sample": "sax",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.03
+    },
+    "drums/kick": {
+      "sample": "kick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.78,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "gatedsnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.78,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.84,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.65,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.71,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.45,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.58,
+      "pan": 0.42,
+      "maxDur": 0.18
+    }
+  }
+}

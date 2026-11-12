@@ -1,0 +1,101 @@
+/* The studio's look, kept apart from its layout so another tool (XLD, when it is rebuilt) can
+   take the same sheet: the tokens first, then the few controls that carry the style.
+
+   Dark only, on purpose: one look to keep right. Dense rows, a lamp per track, one colour per
+   track. Amber is the interface's own colour ("selected", "playing") and no track may use it. */
+:root:root:root {
+  color-scheme: dark;
+  --bg: #1a1d21; --panel: #22262b; --panel-lit: #2b3036; --edge: #363c44;
+  --fg: #dddbd5; --dim: #8f959d; --faint: #636a73;
+  --signal: #f0a830; --signal-soft: rgba(240, 168, 48, .16);
+  --live: #5fd3a6; --warn: #e8705a;
+  --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 2px 10px rgba(0, 0, 0, .35);
+
+  /* One colour per track, from the Okabe–Ito set (made to stay apart under red-green colour
+     blindness), lightened for a dark ground. Bass is the darkest and coolest, the piano a step
+     lighter in the same family, the vocal the hue farthest from the rest; "other" is what is
+     left over and stays neutral. */
+  --t-drums: #e8663a;
+  --t-bass: #4d7fd0;
+  --t-guitar: #2fb89a;
+  --t-piano: #7cc4f2;
+  --t-vocals: #d78ab5;
+  --t-other: #9aa1a9;
+}
+
+/* --- the rack: one dense row per track ------------------------------------------------------ */
+.trk, .trkHead { grid-template-columns: 14px 4px 58px 86px minmax(0, 1fr) 92px 28px 28px minmax(110px, 1.15fr); gap: 9px; padding: 5px 12px; }
+.trkHead { padding-bottom: 3px; }
+.trk { min-height: 38px; }
+.trk .tn { font-size: .86rem; }
+.trk .bar { align-self: stretch; margin-block: 3px; border-radius: 2px; background: var(--tc); }
+.trk[data-muted="true"] .bar, .trk[data-muted="true"] .tn, .trk[data-muted="true"] .who { opacity: .4; }
+/* Sliders are drawn here rather than left to the browser, so every track's looks the same. */
+.trk input[type=range], .fxRow input[type=range] { -webkit-appearance: none; appearance: none; height: 18px; margin: 0; background: none; cursor: pointer; }
+.trk input[type=range]::-webkit-slider-runnable-track, .fxRow input[type=range]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--tc) var(--fill, 50%), var(--edge) var(--fill, 50%)); }
+.trk input[type=range]::-webkit-slider-thumb, .fxRow input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; border: none; background: var(--tc); }
+.trk input[type=range]:focus-visible, .fxRow input[type=range]:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
+.trk input[type=range]:disabled, .fxRow input[type=range]:disabled { opacity: .45; cursor: not-allowed; }
+.led { width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 1px solid var(--edge); background: var(--panel-lit); cursor: pointer; }
+.led[aria-pressed="true"] { background: var(--tc); border-color: var(--tc); box-shadow: 0 0 6px var(--tc); }
+.led:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.steps { display: grid; grid-template-columns: repeat(48, 1fr); gap: 1px; height: 16px; }
+.steps span { background: var(--panel-lit); border-radius: 1px; }
+.steps span.on { background: var(--tc); }
+.trk[data-muted="true"] .steps span.on { background: var(--faint); }
+.kicon { display: inline-flex; width: 18px; height: 18px; color: var(--tc); flex: none; }
+.kicon svg, .pmark svg, .pitem svg { width: 100%; height: 100%; }
+
+/* --- presets: a row of kinds, each opening its own short list ---------------------------------- */
+#presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.pcat { position: relative; }
+.pcatBtn { position: relative; overflow: hidden; min-width: 88px; height: 44px; padding: 5px 26px 5px 10px; text-align: left; font: inherit;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 7px; color: var(--dim); cursor: pointer; }
+.pcatBtn b { display: block; font-size: .74rem; font-weight: 600; letter-spacing: .04em; }
+.pcatBtn small { display: block; font-family: var(--mono); font-size: .72rem; color: var(--faint); }
+.pcatBtn .pmark { position: absolute; right: -6px; bottom: -10px; width: 46px; height: 46px; opacity: .12; }
+.pcatBtn:hover { background: var(--panel-lit); }
+.pcatBtn:focus-visible, .pitem:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.pcat.on .pcatBtn { border-color: var(--signal); background: var(--signal-soft); color: var(--signal); }
+.pcat.on .pcatBtn small { color: var(--signal); }
+.pcat.on .pcatBtn .pmark { opacity: .4; }
+.pmenu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 7; min-width: 250px; padding: 4px; display: grid; gap: 2px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); }
+.pmenu[hidden] { display: none; }
+.pitem { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 9px; align-items: center; padding: 6px 8px; text-align: left; font: inherit;
+  background: none; border: 1px solid transparent; border-radius: 6px; color: var(--fg); cursor: pointer; }
+.pitem > span:first-child { width: 22px; height: 22px; color: var(--dim); }
+.pitem b { display: block; font-family: var(--mono); font-size: .8rem; font-weight: 600; }
+.pitem small { display: block; font-size: .7rem; color: var(--dim); }
+.pitem:hover { background: var(--panel-lit); }
+.pitem[aria-pressed="true"] { border-color: var(--signal); background: var(--signal-soft); }
+.pitem[aria-pressed="true"] > span:first-child, .pitem[aria-pressed="true"] b { color: var(--signal); }
+
+/* One line per row: the kit picker gives way to the hint beside it instead of pushing it under. */
+.trk .who { flex-wrap: nowrap; }
+.trk .who select { min-width: 0; flex: 1 1 0; max-width: 260px; }
+.trk .who .tag { flex: none; min-width: 46px; text-align: center; }
+.tag.ghost { visibility: hidden; }
+
+/* --- a track's adjustments: the button on its row and the panel it opens ------------------------- */
+.fx { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0; font: inherit; font-size: .72rem; border-radius: 6px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--edge); color: var(--dim); }
+.fx:hover { color: var(--fg); background: var(--panel-lit); }
+.fx[aria-pressed="true"] { color: var(--tc); border-color: var(--tc); }
+.fx:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+#fxPop { position: fixed; z-index: 9; width: 300px; padding: 10px 12px; display: grid; gap: 7px;
+  background: var(--panel); border: 1px solid var(--edge); border-left: 3px solid var(--tc); border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5); }
+#fxPop[hidden] { display: none; }
+#fxPop b { font-size: .8rem; }
+.fxRow { display: grid; grid-template-columns: 34px 28px minmax(0, 1fr) 28px 30px; gap: 6px; align-items: center; font-size: .76rem; }
+.fxRow small { color: var(--faint); font-size: .66rem; text-align: center; }
+.fxRow output { font-family: var(--mono); font-size: .72rem; color: var(--dim); text-align: right; }
+.fxRow input { min-width: 0; }
+.fx svg { width: 16px; height: 16px; }
+.fxRow.off { opacity: .4; }
+.fxNote { margin: 0; font-size: .68rem; color: var(--faint); }
+#fxReset { justify-self: end; font-size: .74rem; padding: 3px 9px; }
+#cmp button { font-family: var(--mono); font-size: .76rem; }

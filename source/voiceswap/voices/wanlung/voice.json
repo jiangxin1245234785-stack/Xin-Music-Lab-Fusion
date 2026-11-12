@@ -1,0 +1,17 @@
+{
+  "name": "wanlung",
+  "label": "雲龍 · 粤语男声",
+  "engine": "edge-tts",
+  "voice": "zh-HK-WanLungNeural",
+  "rate": "+0%",
+  "script": "月亮升起来的时候，河水慢慢往南边流去。远处有人在唱歌，声音很轻，像是从很久以前传过来的一样。",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 11.02,
+    "rmsDb": -16.8,
+    "voicedShare": 0.699,
+    "medianHz": 113.5
+  }
+}

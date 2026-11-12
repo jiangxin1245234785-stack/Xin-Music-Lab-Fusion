@@ -1,0 +1,491 @@
+<title>整首换声台</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column, the same panel language as 人声替换台. The voices as a switch bank,
+   the octave repairs as jump cards with a verdict each, one free note, the transport
+   docked at the foot. Dark-first. */
+:root {
+  --bg: #13161a; --panel: #1b1f25; --panel-lit: #232931; --edge: #2d343d;
+  --fg: #e8e6e1; --dim: #8b9099; --faint: #5c636d;
+  --signal: #f0a830; --signal-soft: rgba(240,168,48,.14);
+  --live: #5fd3a6; --live-soft: rgba(95,211,166,.14);
+  --warn: #e8705a; --warn-soft: rgba(232,112,90,.15);
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(0,0,0,.35);
+  color-scheme: dark;
+  --ui: "Archivo", system-ui, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 22px 0; max-width: 820px; margin-inline: auto;
+}
+h1 { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.sub { color: var(--dim); font-size: .84rem; margin: 6px 0 0; }
+.store { font-family: var(--mono); font-size: .74rem; color: var(--faint); margin: 8px 0 0; }
+.store.bad { color: var(--warn); }
+h2 { font-size: .72rem; font-weight: 600; margin: 26px 0 8px; letter-spacing: .09em; color: var(--dim); }
+.hint { color: var(--dim); font-size: .8rem; margin: -2px 0 10px; }
+
+.rows { display: grid; gap: 6px; }
+.row {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 11px; align-items: center;
+  width: 100%; text-align: left; cursor: pointer; padding: 10px 12px; font: inherit; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 9px;
+}
+.row:not(.on):hover { background: var(--panel-lit); }
+.row.on { border-color: var(--signal); background: var(--signal-soft); }
+.row:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.lamp { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--faint); }
+.row.ready .lamp { background: var(--edge); }
+.row.on .lamp { background: var(--live); border-color: var(--live); box-shadow: 0 0 7px var(--live); }
+.row.failed .lamp { background: transparent; border-color: var(--warn); }
+.who { min-width: 0; }
+.name { font-weight: 600; font-size: .95rem; }
+.desc { color: var(--dim); font-size: .8rem; margin-left: 7px; }
+.row.on .desc { color: var(--fg); }
+.chip { font-family: var(--mono); font-size: .68rem; color: var(--faint); white-space: nowrap;
+  border: 1px solid var(--edge); border-radius: 5px; padding: 1px 6px; }
+
+.spots { display: grid; gap: 6px; }
+.spot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; padding: 9px 12px; }
+.spot.here { border-color: var(--signal); }
+.jump { min-width: 0; text-align: left; font: inherit; color: var(--fg); background: transparent;
+  border: 0; padding: 0; cursor: pointer; }
+.jump .when { font-weight: 600; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.jump .when::before { content: "▶"; font-size: .68rem; color: var(--signal); margin-right: 7px; }
+.jump:hover .when { color: var(--signal); }
+.jump:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 4px; }
+.jump .what { font-family: var(--mono); font-size: .72rem; color: var(--faint); margin-left: 8px; }
+.verdict { display: flex; gap: 5px; }
+.tool {
+  font: 600 .78rem var(--ui); padding: 6px 10px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--dim);
+}
+.tool:hover:not(:disabled) { color: var(--fg); border-color: var(--faint); }
+.tool:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.tool:disabled { opacity: .4; cursor: not-allowed; }
+.tool[data-v="ok"][aria-pressed="true"] { color: var(--live); border-color: var(--live); background: var(--live-soft); }
+.tool[data-v="wrong"][aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+
+textarea {
+  width: 100%; min-height: 64px; resize: vertical; font-family: var(--ui); font-size: .86rem;
+  padding: 9px 11px; border-radius: 9px; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); line-height: 1.5;
+}
+textarea:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+textarea:disabled { opacity: .5; }
+.saved { font-family: var(--mono); font-size: .71rem; color: var(--faint); margin-top: 5px; min-height: 1.1em; }
+.saved.on { color: var(--live); }
+.foot { color: var(--faint); font-size: .76rem; margin: 22px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--edge); display: grid; gap: 6px; }
+.foot kbd { font-family: var(--mono); font-size: .7rem; background: var(--panel-lit);
+  border: 1px solid var(--edge); border-radius: 4px; padding: 0 5px; color: var(--dim); }
+
+.dock {
+  position: sticky; bottom: 0; margin-top: 14px; padding-top: 14px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--bg) 80%, transparent);
+}
+.transport { display: flex; align-items: center; gap: 14px; background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); }
+#play {
+  flex: none; width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); cursor: pointer; display: grid; place-items: center;
+}
+#play:hover { border-color: var(--signal); color: var(--signal); }
+#play:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+#play .glyph { display: block; width: 0; height: 0; }
+#play.paused .glyph { border-left: 13px solid currentColor; border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent; margin-left: 4px; }
+#play.playing .glyph { width: 13px; height: 15px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+.meter { flex: 1 1 auto; min-width: 0; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.now { font-weight: 600; font-size: .95rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now span { color: var(--signal); }
+.clock { font-family: var(--mono); font-size: .74rem; color: var(--faint); font-variant-numeric: tabular-nums; flex: none; }
+.track { position: relative; height: 22px; cursor: pointer; touch-action: none; margin-top: 2px; }
+.track::before { content: ""; position: absolute; inset: 9px 0 auto; height: 4px; border-radius: 2px; background: var(--edge); }
+.fill { position: absolute; left: 0; top: 9px; height: 4px; border-radius: 2px; background: var(--signal); width: 0; }
+.tick { position: absolute; top: 5px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px;
+  background: var(--faint); pointer-events: none; }
+.track:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
+.engine { font-family: var(--mono); font-size: .72rem; color: var(--dim); min-height: 1.2em; }
+.engine.bad { color: var(--warn); }
+
+@media (max-width: 460px) {
+  .spot { grid-template-columns: 1fr; }
+  .transport { gap: 11px; padding: 9px 11px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <h1 id="title">整首换声台</h1>
+  <p class="sub" id="sub"></p>
+  <p class="store" id="store">正在连接存储…</p>
+</header>
+
+<main>
+  <h2 id="voices-h">声音</h2>
+  <div class="rows" id="voices" role="group" aria-labelledby="voices-h"></div>
+
+  <section id="spotsSection" aria-labelledby="spots-h" hidden>
+    <h2 id="spots-h">八度修过的地方</h2>
+    <p class="hint" id="spotsHint"></p>
+    <div class="spots" id="spots"></div>
+  </section>
+
+  <h2 id="note-h">整体感受</h2>
+  <textarea id="overall" aria-labelledby="note-h" disabled
+    placeholder="伴奏和人声贴不贴、哪一段最假、哪个声音整首听下来最好……（可空）"></textarea>
+  <div class="saved" id="overallSaved"></div>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<div class="dock">
+  <div class="transport">
+    <button id="play" class="paused" type="button" aria-label="播放"><span class="glyph"></span></button>
+    <div class="meter">
+      <div class="meter-top">
+        <div class="now">正在听 <span id="nowName">原唱</span></div>
+        <div class="clock" id="clock">0:00 / 0:00</div>
+      </div>
+      <div class="track" id="track" role="slider" tabindex="0" aria-label="播放位置"
+           aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><div class="fill" id="fill"></div></div>
+      <div class="engine" id="engine"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const M = /*@MANIFEST@*/null;
+const $ = id => document.getElementById(id);
+if (!M) {
+  $('sub').textContent = '这是模板，还没有清单——用 remix.py 生成页面。';
+  throw new Error('fullsong.html opened without a manifest');
+}
+
+const SONG = M.seconds;
+const LIST = M.tracks;
+const BY = Object.fromEntries(LIST.map(t => [t.id, t]));
+const spotKey = s => 's' + Math.round(s.start * 100);
+const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const LEAD_IN = 1.5;
+
+$('title').textContent = M.title + ' · 整首换声';
+document.title = M.title + '整首换声';
+$('sub').textContent = [`${LIST.length - 1} 个声音`, `整首 ${clock(SONG)}`,
+  '伴奏是原曲分出来的其余分轨，换掉的人声按原唱的响度和左右位置放回去。点哪个就从同一处接着放。']
+  .join(' · ');
+$('track').setAttribute('aria-valuemax', SONG.toFixed(1));
+
+/* --- players ----------------------------------------------------------------
+   One media element per version, each playing its mp3 from memory: four whole songs as
+   decoded buffers would be several hundred MB, too much for a phone, while the compressed
+   files are 8.5 MB each. They are fetched whole into blobs rather than streamed, because
+   seeking a streamed file needs the server to answer range requests, and switching is a
+   seek: the new element moves to the old one's position and starts, then the old stops.
+   Fetched one at a time, the original first, so the page can play as early as possible. */
+const players = {};
+let current = 'original', playing = false;
+for (const t of LIST) {
+  const el = new Audio();
+  el.preload = 'auto';
+  el.addEventListener('canplay', () => paintRows());
+  el.addEventListener('error', () => { if (el.src) fail(t, '解不开'); });
+  el.addEventListener('ended', () => { if (t.id === current) setPlaying(false); });
+  players[t.id] = el;
+}
+
+function fail(t, why) { t.failed = true; paintRows(); setEngine(`${t.name} ${why}，其余照常`, true); }
+
+(async function load() {
+  for (const [index, t] of LIST.entries()) {
+    setEngine(`正在载入 ${t.name}（${index + 1} / ${LIST.length}）…`);
+    try {
+      const response = await fetch('audio/' + t.file);
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      players[t.id].src = URL.createObjectURL(await response.blob());
+    } catch (error) {
+      fail(t, '载不进来（' + error.message + '）');
+    }
+  }
+  if (!LIST.some(t => t.failed)) setEngine('');
+})();
+
+function setEngine(text, bad) { $('engine').textContent = text; $('engine').classList.toggle('bad', !!bad); }
+function now() { return players[current].currentTime || 0; }
+const loaded = id => players[id].readyState >= 1;
+
+async function startCurrent() {
+  if (!loaded(current)) { setEngine(`${BY[current].name} 还在载入，稍等一下`); return; }
+  try { await players[current].play(); setPlaying(true); }
+  catch (error) { setPlaying(false); setEngine('放不出来：' + error.message, true); }
+}
+
+function setPlaying(on) {
+  playing = on;
+  $('play').className = on ? 'playing' : 'paused';
+  $('play').setAttribute('aria-label', on ? '暂停' : '播放');
+}
+
+function select(id) {
+  if (id === current || BY[id].failed) return;
+  if (!loaded(id)) { setEngine(`${BY[id].name} 还在载入，稍等一下`); return; }
+  const at = now(), was = playing, old = players[current];
+  current = id;
+  players[id].currentTime = at;
+  if (was) startCurrent().then(() => old.pause()); else old.pause();
+  $('nowName').textContent = BY[id].name;
+  paintRows();
+}
+
+function seek(seconds) {
+  if (!loaded(current)) return;
+  players[current].currentTime = Math.max(0, Math.min(SONG - 0.05, seconds));
+  paint();
+}
+
+function playFrom(seconds) { seek(seconds); if (!playing) startCurrent(); }
+
+$('play').addEventListener('click', () => {
+  if (playing) { players[current].pause(); setPlaying(false); } else startCurrent();
+});
+
+/* --- voices ----------------------------------------------------------------- */
+const rows = {};
+for (const t of LIST) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'row';
+  row.innerHTML = '<span class="lamp"></span><span class="who"><span class="name"></span>'
+    + '<span class="desc"></span></span><span class="chip"></span>';
+  row.querySelector('.name').textContent = t.name;
+  row.querySelector('.desc').textContent = t.desc;
+  row.querySelector('.chip').textContent = t.engine;
+  row.addEventListener('click', () => select(t.id));
+  $('voices').appendChild(rows[t.id] = row);
+}
+
+function paintRows() {
+  for (const t of LIST) {
+    const row = rows[t.id];
+    row.classList.toggle('on', t.id === current);
+    row.classList.toggle('ready', players[t.id].readyState >= 3);
+    row.classList.toggle('failed', !!t.failed);
+    row.setAttribute('aria-pressed', String(t.id === current));
+  }
+}
+
+/* --- spots ------------------------------------------------------------------ */
+const spotVerdicts = {}, spotCards = {};
+if (M.spots.length) {
+  $('spotsSection').hidden = false;
+  $('spotsHint').textContent = `这 ${M.spots.length} 处原唱底下有一条低八度和声，转换取音高时被拽低了一个八度，`
+    + '已经抬回原八度。点一下从前 1.5 秒开始放，可以换着声音听；不对的标出来。'
+    + (M.glitches ? `另有 ${M.glitches} 处只有几帧的毛刺也抬了，听不出来，不列。` : '');
+  for (const s of M.spots) {
+    const key = spotKey(s);
+    const card = document.createElement('div');
+    card.className = 'spot';
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.className = 'jump';
+    jump.innerHTML = '<span class="when"></span><span class="what"></span>';
+    const tenths = Math.round(s.start * 10);         // 251.1 % 1 * 10 floors to 0
+    jump.querySelector('.when').textContent = `${clock(Math.floor(tenths / 10))}.${tenths % 10}`;
+    jump.querySelector('.what').textContent = `${s.from} → ${s.to} · ${(s.end - s.start).toFixed(2)} 秒`;
+    jump.setAttribute('aria-label', `从 ${s.start.toFixed(1)} 秒前 1.5 秒开始放`);
+    jump.addEventListener('click', () => playFrom(s.start - LEAD_IN));
+    const verdict = document.createElement('div');
+    verdict.className = 'verdict';
+    for (const [v, text] of [['ok', '对了'], ['wrong', '不对']]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tool';
+      b.dataset.v = v;
+      b.textContent = text;
+      b.disabled = true;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => setSpot(key, v));
+      verdict.appendChild(b);
+    }
+    card.append(jump, verdict);
+    $('spots').appendChild(spotCards[key] = card);
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    tick.style.left = (100 * s.start / SONG) + '%';
+    $('track').appendChild(tick);
+  }
+}
+
+function paintSpots() {
+  const at = now();
+  for (const s of M.spots) {
+    const card = spotCards[spotKey(s)];
+    card.classList.toggle('here', at >= s.start - LEAD_IN && at <= s.end + 0.5);
+    for (const b of card.querySelectorAll('.tool')) {
+      b.setAttribute('aria-pressed', String(spotVerdicts[spotKey(s)] === b.dataset.v));
+    }
+  }
+}
+
+/* --- transport -------------------------------------------------------------- */
+function paint() {
+  const at = now();
+  $('fill').style.width = (100 * at / SONG) + '%';
+  $('clock').textContent = `${clock(at)} / ${clock(SONG)}`;
+  $('track').setAttribute('aria-valuenow', at.toFixed(1));
+  paintSpots();
+}
+
+function seekFromPointer(event) {
+  const box = $('track').getBoundingClientRect();
+  seek(SONG * Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)));
+}
+$('track').addEventListener('pointerdown', event => {
+  $('track').setPointerCapture(event.pointerId);
+  seekFromPointer(event);
+});
+$('track').addEventListener('pointermove', event => {
+  if ($('track').hasPointerCapture(event.pointerId)) seekFromPointer(event);
+});
+
+document.addEventListener('keydown', event => {
+  if (event.target.tagName === 'TEXTAREA' || event.metaKey || event.ctrlKey || event.altKey) return;
+  const order = LIST.map(t => t.id), i = order.indexOf(current);
+  if (event.key === ' ') { event.preventDefault(); $('play').click(); }
+  else if (event.key === 'ArrowDown') { event.preventDefault(); select(order[(i + 1) % order.length]); }
+  else if (event.key === 'ArrowUp') { event.preventDefault(); select(order[(i - 1 + order.length) % order.length]); }
+  else if (event.key === 'ArrowRight') { event.preventDefault(); seek(now() + 5); }
+  else if (event.key === 'ArrowLeft') { event.preventDefault(); seek(now() - 5); }
+  else if (event.key === '0' || event.key === '`') { event.preventDefault(); select('original'); }
+});
+
+(function tick() { paint(); requestAnimationFrame(tick); })();
+
+$('foot').innerHTML = '<div><kbd>空格</kbd> 播放/暂停 · <kbd>↑</kbd><kbd>↓</kbd> 换声音 · '
+  + '<kbd>←</kbd><kbd>→</kbd> 前后 5 秒 · <kbd>0</kbd> 回原唱</div>';
+const made = document.createElement('div');
+made.textContent = `生成于 ${M.generated} · 所有版本混音方式相同，只差人声`;
+$('foot').appendChild(made);
+
+/* --- verdicts --------------------------------------------------------------- */
+let db = null, writable = false;
+const use = name => (window.claude && typeof window.claude.use === 'function')
+  ? window.claude.use(name) : Promise.resolve(null);
+
+function setStore(text, bad) { $('store').textContent = text; $('store').classList.toggle('bad', !!bad); }
+function setInputs(enabled) {
+  document.querySelectorAll('.tool[data-v]').forEach(b => { b.disabled = !enabled; });
+  $('overall').disabled = !enabled;
+}
+function refreshStore() {
+  if (!db || !writable) return;
+  const ok = M.spots.filter(s => spotVerdicts[spotKey(s)] === 'ok').length;
+  const wrong = M.spots.filter(s => spotVerdicts[spotKey(s)] === 'wrong').length;
+  setStore((M.spots.length ? `已判 ${ok + wrong} / ${M.spots.length} 处（对 ${ok} · 不对 ${wrong}）· ` : '') + '自动保存');
+}
+
+// One write at a time per document, in click order; the last click is what stays.
+const chains = {};
+function persist(path, body) {
+  if (!db || !writable) return;
+  chains[path] = (chains[path] || Promise.resolve()).then(async () => {
+    try {
+      if (body) await db.doc(path).set(body);
+      else await db.doc(path).delete();
+    } catch (error) {
+      if (error && error.code === 'invalid_argument') {
+        writable = false;
+        setInputs(false);
+        setStore('这个视图不能写入，判断没保存——用拥有者身份打开这页。', true);
+      } else {
+        setStore('没保存上（' + (error && error.code || error) + '），再点一次试试。', true);
+      }
+    }
+  });
+}
+
+function setSpot(key, verdict) {
+  spotVerdicts[key] = spotVerdicts[key] === verdict ? '' : verdict;   // clicking again clears a mis-tap
+  paintSpots();
+  refreshStore();
+  persist('spots/' + key, spotVerdicts[key] ? {verdict: spotVerdicts[key], at: new Date().toISOString()} : null);
+}
+
+let noteTimer = null;
+$('overall').addEventListener('input', () => {
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => {          // one write per pause in typing
+    noteTimer = null;
+    const note = $('overall').value.trim();
+    persist('notes/overall', note ? {note, at: new Date().toISOString()} : null);
+    $('overallSaved').textContent = note ? '已记下 ' + new Date().toLocaleTimeString() : '';
+    $('overallSaved').className = note ? 'saved on' : 'saved';
+  }, 700);
+});
+
+function onDbError(error) {
+  writable = false;
+  setInputs(false);
+  setStore('存储出错（' + (error && error.code) + '），还能听，但判断记不下了。', true);
+}
+
+(async function connect() {
+  db = await use('db');
+  if (!db) { setStore('这里存不了判断。照常听就行，结论直接在对话里告诉我。', true); return; }
+  const user = await use('user');
+  const may = user ? await user.can('data.write') : null;
+  if (may === false) { setStore('你可以听，但只有拥有者能记判断。'); return; }
+  writable = true;
+  setInputs(true);
+  refreshStore();
+  db.collection('spots').onSnapshot(snapshot => {
+    const seen = new Set();
+    for (const doc of snapshot.docs) {
+      seen.add(doc.id);
+      spotVerdicts[doc.id] = (doc.data() || {}).verdict || '';
+    }
+    for (const key of Object.keys(spotVerdicts)) if (!seen.has(key)) spotVerdicts[key] = '';
+    paintSpots();
+    refreshStore();
+  }, onDbError);
+  db.doc('notes/overall').onSnapshot(doc => {
+    const body = doc.exists ? doc.data() : null;
+    if (document.activeElement !== $('overall') && !noteTimer) $('overall').value = (body && body.note) || '';
+    if (body && body.at) {
+      $('overallSaved').textContent = '已记下 ' + new Date(body.at).toLocaleString();
+      $('overallSaved').className = 'saved on';
+    }
+  }, onDbError);
+})();
+
+paintRows();
+</script>

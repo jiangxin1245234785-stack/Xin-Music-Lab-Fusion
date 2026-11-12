@@ -1,0 +1,147 @@
+{
+  "name": "甘美兰 · 青铜打击",
+  "_note": "由 tools/make_kits.py gamelan 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "saron": {
+      "file": "samples/saron.wav",
+      "rootHz": 220.0,
+      "_label": "沙戎 · 金属键"
+    },
+    "saron_lead": {
+      "file": "samples/saron_lead.wav",
+      "rootHz": 220.0,
+      "_label": "沙戎 · 主音"
+    },
+    "gender": {
+      "file": "samples/gender.wav",
+      "rootHz": 220.0,
+      "_label": "甘德 · 柔长"
+    },
+    "bonang": {
+      "file": "samples/bonang.wav",
+      "rootHz": 220.0,
+      "_label": "波南 · 罐锣"
+    },
+    "gong_low": {
+      "file": "samples/gong_low.wav",
+      "rootHz": 55.0,
+      "_label": "大锣"
+    },
+    "kendang_lo": {
+      "file": "samples/kendang_lo.wav",
+      "rootHz": 78.0,
+      "_label": "手鼓 · 低"
+    },
+    "kendang_hi": {
+      "file": "samples/kendang_hi.wav",
+      "rootHz": 190.0,
+      "_label": "手鼓 · 高"
+    },
+    "kendang_slap": {
+      "file": "samples/kendang_slap.wav",
+      "rootHz": 320.0,
+      "_label": "手鼓 · 拍击"
+    },
+    "kecer": {
+      "file": "samples/kecer.wav",
+      "rootHz": 3100.0,
+      "_label": "小钹"
+    },
+    "kecer_long": {
+      "file": "samples/kecer_long.wav",
+      "rootHz": 3100.0,
+      "_label": "小钹 · 长"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "gong_low",
+      "gain": 1.0,
+      "follow": "sample",
+      "maxDur": 3.0
+    },
+    "guitar": {
+      "sample": "saron",
+      "gain": 0.52,
+      "pan": 0.3,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "bonang",
+      "gain": 0.46,
+      "pan": -0.3,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "piano": {
+      "sample": "gender",
+      "gain": 0.6,
+      "pan": -0.18,
+      "follow": "sample",
+      "maxDur": 4.5
+    },
+    "strings": {
+      "sample": "bonang",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.16,
+      "follow": "sample",
+      "maxDur": 3.5
+    },
+    "vocals": {
+      "sample": "saron_lead",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "sample",
+      "maxDur": 2.8
+    },
+    "drums/kick": {
+      "sample": "kendang_lo",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/snare": {
+      "sample": "kendang_hi",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5
+    },
+    "drums/hihat": {
+      "sample": "kendang_slap",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.8,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "kecer",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "kendang_hi",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/crash": {
+      "sample": "kecer_long",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "kecer",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.2,
+      "gain": 1.1,
+      "pan": 0.42
+    }
+  }
+}

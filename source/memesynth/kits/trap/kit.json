@@ -1,0 +1,152 @@
+{
+  "name": "Trap · 808",
+  "_note": "由 tools/make_kits.py trap 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "sub808": {
+      "file": "samples/sub808.wav",
+      "rootHz": 55.0,
+      "_label": "808 低音 · 过载正弦"
+    },
+    "darkkeys": {
+      "file": "samples/darkkeys.wav",
+      "rootHz": 220.0,
+      "_label": "暗色钟琴"
+    },
+    "pluck": {
+      "file": "samples/pluck.wav",
+      "rootHz": 220.0,
+      "_label": "三角波拨奏"
+    },
+    "darkpad": {
+      "file": "samples/darkpad.wav",
+      "rootHz": 220.0,
+      "_label": "暗垫"
+    },
+    "whistle": {
+      "file": "samples/whistle.wav",
+      "rootHz": 220.0,
+      "_label": "哨音主音"
+    },
+    "kick808": {
+      "file": "samples/kick808.wav",
+      "rootHz": 50.0,
+      "_label": "808 底鼓"
+    },
+    "snare808": {
+      "file": "samples/snare808.wav",
+      "rootHz": 180.0,
+      "_label": "808 军鼓 + 拍手"
+    },
+    "hat808": {
+      "file": "samples/hat808.wav",
+      "rootHz": 7000.0,
+      "_label": "金属闭镲"
+    },
+    "openhat808": {
+      "file": "samples/openhat808.wav",
+      "rootHz": 7000.0,
+      "_label": "金属开镲"
+    },
+    "tom808": {
+      "file": "samples/tom808.wav",
+      "rootHz": 100.0,
+      "_label": "808 嗵鼓"
+    },
+    "crash808": {
+      "file": "samples/crash808.wav",
+      "rootHz": 5000.0,
+      "_label": "808 吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "sub808",
+      "gain": 1.1,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "guitar": {
+      "sample": "pluck",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "whistle",
+      "gain": 0.4,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "darkkeys",
+      "gain": 0.85,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "darkpad",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "whistle",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "drums/kick": {
+      "sample": "kick808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0
+    },
+    "drums/snare": {
+      "sample": "snare808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/hihat": {
+      "sample": "hat808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.4,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0
+    },
+    "drums/crash": {
+      "sample": "crash808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat808",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.16,
+      "gain": 0.9,
+      "pan": 0.42
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "name": "Techno · Rumble",
+  "_note": "由 tools/make_kits.py techno 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "sub": {
+      "file": "samples/sub.wav",
+      "rootHz": 110.0,
+      "_label": "短低音"
+    },
+    "dubchord": {
+      "file": "samples/dubchord.wav",
+      "rootHz": 220.0,
+      "_label": "Dub 和弦 · 带回声"
+    },
+    "metal": {
+      "file": "samples/metal.wav",
+      "rootHz": 220.0,
+      "_label": "FM 金属拨奏"
+    },
+    "drone": {
+      "file": "samples/drone.wav",
+      "rootHz": 220.0,
+      "_label": "持续低鸣"
+    },
+    "bleep": {
+      "file": "samples/bleep.wav",
+      "rootHz": 220.0,
+      "_label": "Bleep · 带回声"
+    },
+    "rumblekick": {
+      "file": "samples/rumblekick.wav",
+      "rootHz": 48.0,
+      "_label": "底鼓 + 低频余震"
+    },
+    "clap": {
+      "file": "samples/clap.wav",
+      "rootHz": 1100.0,
+      "_label": "拍手"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 8500.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 8500.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 95.0,
+      "_label": "低嗵鼓"
+    },
+    "ride": {
+      "file": "samples/ride.wav",
+      "rootHz": 6000.0,
+      "_label": "金属叮镲"
+    },
+    "rim": {
+      "file": "samples/rim.wav",
+      "rootHz": 1700.0,
+      "_label": "鼓边"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 6000.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "sub",
+      "gain": 1.78,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "metal",
+      "gain": 0.45,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "dubchord",
+      "gain": 1.6,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.02
+    },
+    "strings": {
+      "sample": "drone",
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.06
+    },
+    "vocals": {
+      "sample": "bleep",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "rumblekick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "clap",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "ride",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": 0.42
+    }
+  }
+}

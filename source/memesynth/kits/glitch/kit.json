@@ -1,0 +1,156 @@
+{
+  "name": "故障 · Glitch",
+  "_note": "由 tools/make_kits.py glitch 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "bitbass": {
+      "file": "samples/bitbass.wav",
+      "rootHz": 110.0,
+      "_label": "3 位贝斯"
+    },
+    "datakeys": {
+      "file": "samples/datakeys.wav",
+      "rootHz": 220.0,
+      "_label": "跳变 FM · 4 位"
+    },
+    "stutter": {
+      "file": "samples/stutter.wav",
+      "rootHz": 220.0,
+      "_label": "卡带拨奏 · 每秒重触发 18 次"
+    },
+    "shpad": {
+      "file": "samples/shpad.wav",
+      "rootHz": 220.0,
+      "_label": "采样保持滤波垫"
+    },
+    "pwlead": {
+      "file": "samples/pwlead.wav",
+      "rootHz": 220.0,
+      "_label": "脉宽乱跳主音"
+    },
+    "zapkick": {
+      "file": "samples/zapkick.wav",
+      "rootHz": 45.0,
+      "_label": "下扫底鼓"
+    },
+    "stuttersnare": {
+      "file": "samples/stuttersnare.wav",
+      "rootHz": 1000.0,
+      "_label": "三连重触发噪声"
+    },
+    "tick": {
+      "file": "samples/tick.wav",
+      "rootHz": 6000.0,
+      "_label": "1 位嘀嗒"
+    },
+    "buzz": {
+      "file": "samples/buzz.wav",
+      "rootHz": 3100.0,
+      "_label": "环形调制噪声"
+    },
+    "zap": {
+      "file": "samples/zap.wav",
+      "rootHz": 90.0,
+      "_label": "下扫嗵鼓"
+    },
+    "bitcrash": {
+      "file": "samples/bitcrash.wav",
+      "rootHz": 3000.0,
+      "_label": "降采样噪声"
+    },
+    "ping": {
+      "file": "samples/ping.wav",
+      "rootHz": 2093.0,
+      "_label": "金属短音"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "bitbass",
+      "gain": 1.4,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "guitar": {
+      "sample": "stutter",
+      "gain": 1.0,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "pwlead",
+      "gain": 0.38,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "piano": {
+      "sample": "datakeys",
+      "gain": 0.55,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "strings": {
+      "sample": "shpad",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.04
+    },
+    "vocals": {
+      "sample": "pwlead",
+      "gain": 0.8,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "drums/kick": {
+      "sample": "zapkick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/snare": {
+      "sample": "stuttersnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/hihat": {
+      "sample": "tick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "buzz",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "zap",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/crash": {
+      "sample": "bitcrash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.7,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "ping",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": 0.42
+    }
+  }
+}

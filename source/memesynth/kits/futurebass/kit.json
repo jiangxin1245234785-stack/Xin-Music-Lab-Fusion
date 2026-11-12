@@ -1,0 +1,153 @@
+{
+  "name": "Future Bass · 侧链和弦",
+  "_note": "由 tools/make_kits.py futurebass 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "pumpbass": {
+      "file": "samples/pumpbass.wav",
+      "rootHz": 110.0,
+      "_label": "低音 · 带侧链起伏"
+    },
+    "pumpchords": {
+      "file": "samples/pumpchords.wav",
+      "rootHz": 220.0,
+      "_label": "七锯齿和弦 · 每秒 4 次起伏"
+    },
+    "blip": {
+      "file": "samples/blip.wav",
+      "rootHz": 220.0,
+      "_label": "下滑拨奏"
+    },
+    "movingpad": {
+      "file": "samples/movingpad.wav",
+      "rootHz": 220.0,
+      "_label": "滤波摆动垫"
+    },
+    "chop": {
+      "file": "samples/chop.wav",
+      "rootHz": 220.0,
+      "_label": "人声切片主音 · 上滑"
+    },
+    "kick": {
+      "file": "samples/kick.wav",
+      "rootHz": 50.0,
+      "_label": "底鼓"
+    },
+    "snare": {
+      "file": "samples/snare.wav",
+      "rootHz": 210.0,
+      "_label": "军鼓 + 拍手"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 8500.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 8500.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 120.0,
+      "_label": "嗵鼓"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 6000.0,
+      "_label": "吊镲"
+    },
+    "snap": {
+      "file": "samples/snap.wav",
+      "rootHz": 2400.0,
+      "_label": "响指"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "pumpbass",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "guitar": {
+      "sample": "blip",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "pumpchords",
+      "gain": 0.6,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "movingpad",
+      "gain": 0.28,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05,
+      "transpose": 12
+    },
+    "vocals": {
+      "sample": "chop",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.015
+    },
+    "drums/kick": {
+      "sample": "kick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "snare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "snap",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": 0.42
+    }
+  }
+}

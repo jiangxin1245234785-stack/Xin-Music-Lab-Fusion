@@ -1,0 +1,149 @@
+{
+  "name": "Hardstyle · 失真底鼓",
+  "_note": "由 tools/make_kits.py hardstyle 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "reversebass": {
+      "file": "samples/reversebass.wav",
+      "rootHz": 110.0,
+      "_label": "反向贝斯 · 失真正弦"
+    },
+    "hardstab": {
+      "file": "samples/hardstab.wav",
+      "rootHz": 220.0,
+      "_label": "削波脉冲和弦"
+    },
+    "hardpluck": {
+      "file": "samples/hardpluck.wav",
+      "rootHz": 220.0,
+      "_label": "失真拨奏"
+    },
+    "euphoric": {
+      "file": "samples/euphoric.wav",
+      "rootHz": 220.0,
+      "_label": "宽锯齿垫"
+    },
+    "screech": {
+      "file": "samples/screech.wav",
+      "rootHz": 220.0,
+      "_label": "尖叫主音"
+    },
+    "hardkick": {
+      "file": "samples/hardkick.wav",
+      "rootHz": 55.0,
+      "_label": "失真底鼓 · 带音高的尾巴"
+    },
+    "clap": {
+      "file": "samples/clap.wav",
+      "rootHz": 1400.0,
+      "_label": "拍手"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 8500.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 8500.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 110.0,
+      "_label": "下扫嗵鼓"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 6000.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "reversebass",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "guitar": {
+      "sample": "hardpluck",
+      "gain": 0.45,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "hardstab",
+      "gain": 0.55,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "euphoric",
+      "gain": 0.45,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05,
+      "transpose": 12
+    },
+    "vocals": {
+      "sample": "screech",
+      "gain": 0.8,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "hardkick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.51,
+      "pan": 0.0
+    },
+    "drums/snare": {
+      "sample": "clap",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.56,
+      "pan": 0.0
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.68,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.56,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.47,
+      "pan": 0.0
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.34,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.47,
+      "pan": 0.42,
+      "maxDur": 0.16
+    }
+  }
+}

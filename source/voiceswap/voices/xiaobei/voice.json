@@ -1,0 +1,17 @@
+{
+  "name": "xiaobei",
+  "label": "晓北 · 辽宁女声，方言音色",
+  "engine": "edge-tts",
+  "voice": "zh-CN-liaoning-XiaobeiNeural",
+  "rate": "+0%",
+  "script": "月亮升起来的时候，河水慢慢往南边流去。远处有人在唱歌，声音很轻，像是从很久以前传过来的一样。",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 11.21,
+    "rmsDb": -18.4,
+    "voicedShare": 0.714,
+    "medianHz": 254.1
+  }
+}

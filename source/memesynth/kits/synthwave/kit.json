@@ -1,0 +1,152 @@
+{
+  "name": "合成器浪潮 · 80 年代",
+  "_note": "由 tools/make_kits.py synthwave 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "junobass": {
+      "file": "samples/junobass.wav",
+      "rootHz": 110.0,
+      "_label": "Juno 式贝斯 · 滤波器快关"
+    },
+    "brass": {
+      "file": "samples/brass.wav",
+      "rootHz": 220.0,
+      "_label": "复音铜管 · 三锯齿"
+    },
+    "arp": {
+      "file": "samples/arp.wav",
+      "rootHz": 220.0,
+      "_label": "琶音拨奏"
+    },
+    "pad": {
+      "file": "samples/pad.wav",
+      "rootHz": 220.0,
+      "_label": "宽垫"
+    },
+    "lead": {
+      "file": "samples/lead.wav",
+      "rootHz": 220.0,
+      "_label": "锯齿主音 · 晚颤音"
+    },
+    "kick": {
+      "file": "samples/kick.wav",
+      "rootHz": 52.0,
+      "_label": "底鼓"
+    },
+    "gatedsnare": {
+      "file": "samples/gatedsnare.wav",
+      "rootHz": 185.0,
+      "_label": "门限混响军鼓"
+    },
+    "hat": {
+      "file": "samples/hat.wav",
+      "rootHz": 8000.0,
+      "_label": "闭镲"
+    },
+    "openhat": {
+      "file": "samples/openhat.wav",
+      "rootHz": 8000.0,
+      "_label": "开镲"
+    },
+    "tom": {
+      "file": "samples/tom.wav",
+      "rootHz": 110.0,
+      "_label": "电子嗵鼓"
+    },
+    "crash": {
+      "file": "samples/crash.wav",
+      "rootHz": 4800.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "junobass",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "arp",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "lead",
+      "gain": 0.42,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "brass",
+      "gain": 0.75,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.012
+    },
+    "strings": {
+      "sample": "pad",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "lead",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "kick",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0
+    },
+    "drums/snare": {
+      "sample": "gatedsnare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.1
+    },
+    "drums/hihat": {
+      "sample": "hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/crash": {
+      "sample": "crash",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.16,
+      "gain": 1.3,
+      "pan": 0.42
+    }
+  }
+}

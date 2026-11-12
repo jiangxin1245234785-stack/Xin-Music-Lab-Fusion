@@ -1,0 +1,159 @@
+{
+  "name": "拨弦物理建模",
+  "_note": "由 tools/make_kits.py pluck 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "nylon": {
+      "file": "samples/nylon.wav",
+      "rootHz": 220.0,
+      "_label": "尼龙弦 · 软"
+    },
+    "steel": {
+      "file": "samples/steel.wav",
+      "rootHz": 220.0,
+      "_label": "钢弦 · 带拨片噪声"
+    },
+    "harp": {
+      "file": "samples/harp.wav",
+      "rootHz": 220.0,
+      "_label": "竖琴 · 长余音"
+    },
+    "koto": {
+      "file": "samples/koto.wav",
+      "rootHz": 220.0,
+      "_label": "筝 · 带余振"
+    },
+    "upright": {
+      "file": "samples/upright.wav",
+      "rootHz": 55.0,
+      "_label": "低音提琴 · 拨奏"
+    },
+    "body": {
+      "file": "samples/body.wav",
+      "rootHz": 82.0,
+      "_label": "琴箱敲击"
+    },
+    "brush_snare": {
+      "file": "samples/brush_snare.wav",
+      "rootHz": 1000.0,
+      "_label": "刷扫军鼓"
+    },
+    "brush_hat": {
+      "file": "samples/brush_hat.wav",
+      "rootHz": 8000.0,
+      "_label": "闭镲"
+    },
+    "brush_open": {
+      "file": "samples/brush_open.wav",
+      "rootHz": 8000.0,
+      "_label": "开镲"
+    },
+    "woodblock": {
+      "file": "samples/woodblock.wav",
+      "rootHz": 760.0,
+      "_label": "木块"
+    },
+    "shimmer": {
+      "file": "samples/shimmer.wav",
+      "rootHz": 5200.0,
+      "_label": "弦噪吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "upright",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "guitar": {
+      "sample": "nylon",
+      "gain": 0.6,
+      "pan": 0.25,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "steel",
+      "gain": 0.55,
+      "pan": -0.3,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "guitar/acoustic guitar": {
+      "sample": "nylon",
+      "gain": 0.6,
+      "pan": 0.25,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "piano": {
+      "sample": "harp",
+      "gain": 0.6,
+      "pan": -0.2,
+      "follow": "sample",
+      "maxDur": 3.8
+    },
+    "strings": {
+      "sample": "koto",
+      "transpose": 12,
+      "gain": 0.34,
+      "pan": 0.18,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "vocals": {
+      "sample": "steel",
+      "gain": 1.0,
+      "pan": 0.0,
+      "follow": "sample",
+      "maxDur": 2.4
+    },
+    "drums/kick": {
+      "sample": "body",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.35
+    },
+    "drums/snare": {
+      "sample": "brush_snare",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.7
+    },
+    "drums/hihat": {
+      "sample": "brush_hat",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.2,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "brush_open",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.5,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "woodblock",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.2
+    },
+    "drums/crash": {
+      "sample": "shimmer",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.8,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "shimmer",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.18,
+      "gain": 1.2,
+      "pan": 0.42
+    }
+  }
+}

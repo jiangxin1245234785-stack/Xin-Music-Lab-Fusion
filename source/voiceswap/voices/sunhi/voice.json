@@ -1,0 +1,17 @@
+{
+  "name": "sunhi",
+  "label": "선히 · 韩语女声",
+  "engine": "edge-tts",
+  "voice": "ko-KR-SunHiNeural",
+  "rate": "+0%",
+  "script": "달이 떠오를 무렵, 강물은 천천히 남쪽으로 흘러갑니다. 멀리서 누군가 노래하는 소리가 아주 조용히 들려옵니다.",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 9.55,
+    "rmsDb": -14.2,
+    "voicedShare": 0.728,
+    "medianHz": 230.3
+  }
+}

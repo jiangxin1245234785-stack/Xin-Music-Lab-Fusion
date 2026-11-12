@@ -1,0 +1,17 @@
+{
+  "name": "connor",
+  "label": "Connor · 爱尔兰男声",
+  "engine": "edge-tts",
+  "voice": "en-IE-ConnorNeural",
+  "rate": "+0%",
+  "script": "When the moon comes up, the river drifts slowly away to the south. Somewhere far off a voice is singing, so quietly it seems to come from a long time ago.",
+  "reference": "reference.wav",
+  "sampleRate": 44100,
+  "_note": "由 make_voices.py 生成，可随时重跑覆盖。measured 是生成时实测，不必再量。",
+  "measured": {
+    "seconds": 10.3,
+    "rmsDb": -16.8,
+    "voicedShare": 0.637,
+    "medianHz": 154.6
+  }
+}

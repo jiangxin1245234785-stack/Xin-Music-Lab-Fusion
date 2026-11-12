@@ -1,0 +1,152 @@
+{
+  "name": "FM 电钢 + 合成器垫",
+  "_note": "由 tools/make_kits.py fmkeys 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "rhodes": {
+      "file": "samples/rhodes.wav",
+      "rootHz": 220.0,
+      "_label": "FM 电钢 · DX 式"
+    },
+    "fmbass": {
+      "file": "samples/fmbass.wav",
+      "rootHz": 110.0,
+      "_label": "FM 贝斯"
+    },
+    "pad": {
+      "file": "samples/pad.wav",
+      "rootHz": 220.0,
+      "_label": "失谐锯齿垫 · 慢起音"
+    },
+    "fmpluck": {
+      "file": "samples/fmpluck.wav",
+      "rootHz": 220.0,
+      "_label": "FM 拨奏"
+    },
+    "lead": {
+      "file": "samples/lead.wav",
+      "rootHz": 220.0,
+      "_label": "FM 主音"
+    },
+    "kick_lin": {
+      "file": "samples/kick_lin.wav",
+      "rootHz": 58.0,
+      "_label": "线性鼓机底鼓"
+    },
+    "snare_lin": {
+      "file": "samples/snare_lin.wav",
+      "rootHz": 196.0,
+      "_label": "线性鼓机军鼓"
+    },
+    "hat_lin": {
+      "file": "samples/hat_lin.wav",
+      "rootHz": 8000.0,
+      "_label": "闭镲"
+    },
+    "openhat_lin": {
+      "file": "samples/openhat_lin.wav",
+      "rootHz": 8000.0,
+      "_label": "开镲"
+    },
+    "tom_lin": {
+      "file": "samples/tom_lin.wav",
+      "rootHz": 165.0,
+      "_label": "嗵鼓"
+    },
+    "crash_lin": {
+      "file": "samples/crash_lin.wav",
+      "rootHz": 5400.0,
+      "_label": "吊镲"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "fmbass",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar": {
+      "sample": "fmpluck",
+      "gain": 0.5,
+      "pan": 0.28,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "lead",
+      "gain": 0.42,
+      "pan": -0.3,
+      "follow": "note",
+      "fade": 0.008
+    },
+    "piano": {
+      "sample": "rhodes",
+      "gain": 0.68,
+      "pan": -0.15,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "strings": {
+      "sample": "pad",
+      "transpose": 12,
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note",
+      "fade": 0.05
+    },
+    "vocals": {
+      "sample": "lead",
+      "gain": 0.95,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.01
+    },
+    "drums/kick": {
+      "sample": "kick_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/snare": {
+      "sample": "snare_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6
+    },
+    "drums/hihat": {
+      "sample": "hat_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.3,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "openhat_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.6,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/crash": {
+      "sample": "crash_lin",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 0.9,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "openhat_lin",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.16,
+      "gain": 1.4,
+      "pan": 0.42
+    }
+  }
+}

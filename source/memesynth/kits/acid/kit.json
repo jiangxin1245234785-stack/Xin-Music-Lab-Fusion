@@ -1,0 +1,137 @@
+{
+  "name": "Acid 808/303",
+  "_note": "由 tools/make_kits.py acid 生成，可随时重跑覆盖。rootHz 是生成时的已知值，不必再测。",
+  "samples": {
+    "kick808": {
+      "file": "samples/kick808.wav",
+      "rootHz": 55.0,
+      "_label": "808 底鼓"
+    },
+    "snare808": {
+      "file": "samples/snare808.wav",
+      "rootHz": 182.0,
+      "_label": "808 军鼓"
+    },
+    "clap808": {
+      "file": "samples/clap808.wav",
+      "rootHz": 1000.0,
+      "_label": "808 拍手"
+    },
+    "hat_closed": {
+      "file": "samples/hat_closed.wav",
+      "rootHz": 8000.0,
+      "_label": "808 闭镲"
+    },
+    "hat_open": {
+      "file": "samples/hat_open.wav",
+      "rootHz": 8000.0,
+      "_label": "808 开镲"
+    },
+    "tom808": {
+      "file": "samples/tom808.wav",
+      "rootHz": 190.0,
+      "_label": "808 嗵鼓"
+    },
+    "cymbal808": {
+      "file": "samples/cymbal808.wav",
+      "rootHz": 6000.0,
+      "_label": "808 吊镲"
+    },
+    "bass303": {
+      "file": "samples/bass303.wav",
+      "rootHz": 55.0,
+      "_label": "303 酸性贝斯"
+    },
+    "stab": {
+      "file": "samples/stab.wav",
+      "rootHz": 110.0,
+      "_label": "合成器和弦刺"
+    }
+  },
+  "voices": {
+    "bass": {
+      "sample": "bass303",
+      "gain": 1.0,
+      "follow": "note",
+      "fade": 0.004
+    },
+    "guitar": {
+      "sample": "stab",
+      "gain": 0.35,
+      "pan": 0.3,
+      "follow": "note"
+    },
+    "guitar/distorted electric guitar": {
+      "sample": "stab",
+      "gain": 0.5,
+      "pan": -0.35,
+      "follow": "note"
+    },
+    "piano": {
+      "sample": "stab",
+      "gain": 0.55,
+      "pan": -0.2,
+      "follow": "note"
+    },
+    "strings": {
+      "sample": "stab",
+      "gain": 0.3,
+      "pan": 0.15,
+      "follow": "note"
+    },
+    "vocals": {
+      "sample": "stab",
+      "gain": 0.9,
+      "pan": 0.0,
+      "follow": "note",
+      "fade": 0.006
+    },
+    "drums/kick": {
+      "sample": "kick808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.3
+    },
+    "drums/snare": {
+      "sample": "clap808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.2
+    },
+    "drums/hihat": {
+      "sample": "hat_closed",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 2.6,
+      "pan": 0.2
+    },
+    "drums/openhat": {
+      "sample": "hat_open",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.8,
+      "pan": 0.2
+    },
+    "drums/tom": {
+      "sample": "tom808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.4
+    },
+    "drums/crash": {
+      "sample": "cymbal808",
+      "pitched": false,
+      "follow": "sample",
+      "gain": 1.0,
+      "pan": -0.4
+    },
+    "drums/ride": {
+      "sample": "hat_open",
+      "pitched": false,
+      "follow": "sample",
+      "maxDur": 0.15,
+      "gain": 1.6,
+      "pan": 0.45
+    }
+  }
+}
