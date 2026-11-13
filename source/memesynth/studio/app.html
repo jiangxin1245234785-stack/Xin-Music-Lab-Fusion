@@ -8,14 +8,14 @@
 
 <div id="top">
   <div class="brand"><h1>XLR</h1><span>音色工作台</span></div>
-  <div class="songHead"><strong id="songTitle"></strong><span id="songFacts"></span></div>
+  <div class="songHead"><button type="button" class="plain" id="openLibrary" aria-expanded="true" title="曲库：换一首"><span class="ic"></span>曲库</button><strong id="songTitle" role="button" tabindex="0" title="换一首"></strong><span id="songFacts"></span></div>
   <div class="topTools"><span id="tasks"></span>
     <button type="button" class="plain" id="openHelp">说明</button>
     <button type="button" class="plain" id="openExport" disabled>导出</button></div>
 </div>
 
 <div id="app">
-  <aside id="side">
+  <aside id="side" class="drawer left" aria-label="曲库">
     <section id="library" hidden style="margin-top:0">
       <div class="head"><h2>曲库</h2><span class="note" id="libNote"></span></div>
       <div class="card">
@@ -32,7 +32,6 @@
 
   <main id="main" hidden>
     <div id="bar">
-      <div id="presets" role="group" aria-label="预设"></div>
       <div class="tools">
         <span class="grp">
           <button type="button" class="plain dice" id="roll" title="随手配一份方案：预设、每条轨原声或换、音色、八度、力度、长短、疏密、声音、抽吸（D）"><span class="ic"></span>掷骰子</button>
@@ -53,10 +52,7 @@
       <div class="trkHead"><span></span><span></span><span>轨道</span><span>谁来演</span><span>用什么</span><span>音量</span><span></span><span></span><span>这 12 秒</span></div>
       <div id="tracks"></div>
     </div>
-
-
-
-
+    <div id="presets" role="group" aria-label="预设"></div>
   </main>
     <section id="voicePanel" class="drawer" hidden>
       <div class="head"><h2>声音</h2><button type="button" class="link closeDrawer">关闭</button></div>
@@ -112,7 +108,7 @@
       <p>「原曲 / 重构」在原来的歌和你的重构之间切（要从曲库打开的歌）。「听整首」把整首渲染出来，和导出同一条路。</p>
       <h3>换</h3>
       <p>每条轨三选一：原声（分离出的分轨）、换（音色演转谱出来的音符）、静音（左边的灯）。</p>
-      <p>预设给整首配一套音色；一条轨在「用什么」里可以另选音色。人声在「声音」里选谁来唱（点人声的「换」或它的声音按钮）；第一次要整首转换（合成声音约九分钟，RVC 一分多钟），转过的会记住。</p>
+      <p>机架下面的预设墙按分类排着全部预设，点一格就给整首换上那一套（亮着的是现在这套，掷骰子掷到的那格会闪一下）；一条轨在「用什么」里可以另选音色。人声在「声音」里选谁来唱（点人声的「换」或它的声音按钮）；第一次要整首转换（合成声音约九分钟，RVC 一分多钟），转过的会记住。</p>
       <p>留原声的轨对齐到预设演这条轨的音量，混着听不失衡。</p>
       <h3>调</h3>
       <p>每条轨右边的「调」：八度、力度、长短、前后、松紧、疏密改音符，只对「换」的轨有效；明暗、回声、混响改声音。人声的声音默认跟随预设。</p>
@@ -550,16 +546,19 @@ function takeFile(file, done) {
       el('vitalsSum').textContent = flags ? String(flags) : '';
       el('openVitals').title = flags ? `转谱有 ${flags} 条提示` : '';
       el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false;
+      if (!el('side').hidden) closeDrawers();                // a song is open: the library steps aside
       forgetFull();
       windowStart = bestWindow();
       kitWindow = {}; stemWindows = {};
       drawTimeline();
       paintRolls();
       paintTracks();
+      fitWall();
       renderWindow();
     } catch (error) {
       setState(`读不了这个文件（${error.message}），换一个 merged.mid 再试`, true);
       el('dropHint').textContent = `读不了这个文件（${error.message}）`;
+      if (!score) openDrawer('side');
     }
     if (done) done();
   };
@@ -1162,6 +1161,7 @@ const ICONS = {
   star: '<path d="M12 3l2.700 5.800 6.300.800-4.600 4.300 1.200 6.200L12 17l-5.600 3.100 1.200-6.200L3 9.600l6.300-.800z"/>',
   sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  shelf: '<path d="M5 4v15M9 4v15"/><path d="M13 5.5l3.5-1 3.5 13.5-3.5 1z"/><path d="M3 19.5h18"/>',
   die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
 };
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
@@ -1176,47 +1176,71 @@ function buildPresets() {
     kind.kits.push(name);
   }
   kinds.sort((a, b) => a.rank - b.rank);             // the server says which kind comes first
+  // v22: a wall, one column per kind, every kit in sight; one click changes the preset.
   el('presets').innerHTML = '';
   for (const kind of kinds) {
-    const wrap = document.createElement('div');
-    wrap.className = 'pcat'; wrap.dataset.kits = kind.kits.join(',');
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'pcatBtn'; button.setAttribute('aria-haspopup', 'true');
-    button.innerHTML = `<b>${kind.label}</b><small></small><span class="pmark"></span>`;
-    const menu = document.createElement('div');
-    menu.className = 'pmenu'; menu.hidden = true;
+    const column = document.createElement('div');
+    column.className = 'pcol'; column.dataset.kind = kind.label;
+    const head = document.createElement('div');
+    head.className = 'pcolHead';
+    head.innerHTML = `<span class="pic">${icon(kitsIndex[kind.kits[0]].icon)}</span><b></b><small>${kind.kits.length}</small>`;
+    head.querySelector('b').textContent = kind.label;
+    column.appendChild(head);
     for (const name of kind.kits) {
-      const item = document.createElement('button');
-      item.type = 'button'; item.className = 'pitem'; item.dataset.kit = name;
-      item.innerHTML = `<span>${icon(kitsIndex[name].icon)}</span><span><b>${name}</b><small>${kitsIndex[name].blurb || ''}</small></span>`;
-      item.addEventListener('click', () => { menu.hidden = true; selectPreset(name); });
-      menu.appendChild(item);
+      const cell = document.createElement('button');
+      cell.type = 'button'; cell.className = 'pcell'; cell.dataset.kit = name;
+      cell.title = kitsIndex[name].blurb || '';
+      cell.setAttribute('aria-pressed', 'false');
+      cell.innerHTML = `<span class="pic">${icon(kitsIndex[name].icon)}</span><b></b><span class="pab"></span>`;
+      cell.querySelector('b').textContent = name;
+      cell.addEventListener('click', () => selectPreset(name));
+      cell.addEventListener('animationend', () => cell.classList.remove('flash'));
+      column.appendChild(cell);
     }
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      const open = menu.hidden;
-      for (const other of el('presets').querySelectorAll('.pmenu')) other.hidden = true;
-      menu.hidden = !open;
-      // A list that would run off the right edge of the window hangs from the button's right side instead.
-      const box = button.getBoundingClientRect(), wide = menu.offsetWidth || 250;
-      const flip = box.left + wide > document.documentElement.clientWidth && box.right - wide >= 0;
-      menu.style.left = flip ? 'auto' : '0'; menu.style.right = flip ? '0' : 'auto';
-    });
-    wrap.append(button, menu);
-    el('presets').appendChild(wrap);
+    el('presets').appendChild(column);
   }
   paintPresets();
+  fitWall();
 }
-document.addEventListener('click', () => { for (const menu of el('presets').querySelectorAll('.pmenu')) menu.hidden = true; });
 
+/* The current kit lit; the two being compared marked A and B (only while the compare row shows). */
 function paintPresets() {
-  for (const wrap of el('presets').querySelectorAll('.pcat')) {
-    const kits = wrap.dataset.kits.split(','), on = kits.includes(preset);
-    wrap.classList.toggle('on', on);
-    wrap.querySelector('small').textContent = on ? preset : `${kits.length} 套`;
-    wrap.querySelector('.pmark').innerHTML = icon(kitsIndex[on ? preset : kits[0]].icon);
-    for (const item of wrap.querySelectorAll('.pitem')) item.setAttribute('aria-pressed', String(item.dataset.kit === preset));
+  const comparing = pair.length === 2 && pair.includes(preset) && pair.every(name => (kitsIndex || {})[name]);
+  for (const cell of el('presets').querySelectorAll('.pcell')) {
+    cell.setAttribute('aria-pressed', String(cell.dataset.kit === preset));
+    const index = comparing ? pair.indexOf(cell.dataset.kit) : -1;
+    cell.querySelector('.pab').textContent = index < 0 ? '' : 'AB'[index];
   }
+}
+/* The dice's pick blinks once (about 0.6 s); a kit picked by hand, by key or by going back does not. */
+function flashPreset(name) {
+  const cell = el('presets').querySelector(`.pcell[data-kit="${CSS.escape(name)}"]`);
+  if (!cell) return;
+  cell.classList.remove('flash');
+  void cell.offsetWidth;                                     // restart the animation when the same kit comes up twice
+  cell.classList.add('flash');
+}
+
+/* The page stays one screen: the wall takes what is left under the rack. Squeeze the cells first
+ * (34 px down to 24), then the rack's rows (44 px down to 36); the wall never grows past 34 px cells. */
+const WALL_CELL = [24, 34], RACK_ROW = [36, 44];
+let wallTight = false;
+function fitWall() {
+  const main = el('main');
+  if (main.hidden || !el('presets').children.length) return;
+  const rows = Math.max(1, ...[...el('presets').children].map(column => column.querySelectorAll('.pcell').length));
+  const root = document.documentElement.style;
+  const over = () => main.scrollHeight - main.clientHeight;
+  let cell = WALL_CELL[1], row = RACK_ROW[1];
+  root.setProperty('--cell', cell + 'px'); root.setProperty('--row', row + 'px');
+  if (over() > 0) { cell = Math.max(WALL_CELL[0], cell - Math.ceil(over() / rows)); root.setProperty('--cell', cell + 'px'); }
+  if (over() > 0) { row = Math.max(RACK_ROW[0], row - Math.ceil(over() / TRACKS.length)); root.setProperty('--row', row + 'px'); }
+  wallTight = over() > 0;
+  if (wallTight) console.warn(`预设墙放不下：还差 ${over()} px`);
+}
+if (window.ResizeObserver) {
+  const watch = new ResizeObserver(() => fitWall());
+  watch.observe(el('main')); watch.observe(el('bar'));
 }
 
 function setMode(id, mode) {
@@ -1512,7 +1536,7 @@ document.addEventListener('keydown', event => {
   else if ((event.key === 'z' || event.key === 'Z') && !event.ctrlKey && !event.metaKey && !event.altKey) rollBack();
   else if (event.key === 'a' || event.key === 'A') { const other = el('ab').querySelector(`[data-ab="${ab === 'orig' ? 'recon' : 'orig'}"]`); other.click(); }
 });
-window.addEventListener('resize', () => { if (score) drawTimeline(); });
+window.addEventListener('resize', () => { if (score) { drawTimeline(); fitWall(); } });
 (function tick() {
   if (running && ctx && sources.length) {
     const position = positionInLoop();
@@ -1758,11 +1782,23 @@ function watchConversions() {
   }, 1500);
 }
 
-/* One drawer at a time over the right side; the main page underneath never grows. */
+/* One drawer at a time over the page (the library on the left, the rest on the right); the main
+ * page underneath never grows, and opening or closing one never touches what is playing.
+ * With no song open the library stays out: there is nothing else to look at. */
 function openDrawer(id) {
   for (const drawer of document.querySelectorAll('.drawer')) drawer.hidden = drawer.id !== id;
+  el('openLibrary').setAttribute('aria-expanded', String(id === 'side'));
 }
-function closeDrawers() { openDrawer(''); }
+function closeDrawers() { openDrawer(score ? '' : 'side'); }
+function toggleLibrary() { if (el('side').hidden) openDrawer('side'); else closeDrawers(); }
+el('openLibrary').addEventListener('click', toggleLibrary);
+el('songTitle').addEventListener('click', toggleLibrary);
+el('songTitle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLibrary(); } });
+document.addEventListener('click', event => {                // a click outside the library puts it away
+  if (el('side').hidden || !score) return;
+  if (event.target.closest('#side, #openLibrary, #songTitle')) return;
+  closeDrawers();
+});
 for (const button of document.querySelectorAll('.closeDrawer')) button.addEventListener('click', closeDrawers);
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawers(); });
 for (const [button, drawer] of [['openHelp', 'helpPanel'], ['openVitals', 'vitalsPanel'], ['openExport', 'exportPanel'], ['openFull', 'fullPanel']]) {
@@ -1816,7 +1852,7 @@ function paintSongs() {
     tag.textContent = item.plan ? '有方案' : !item.vocal ? '无人声' : item.voices.length ? `声音 ${item.voices.length}` : `分轨 ${(item.stems || []).length}`;
     tag.title = item.plan ? '这首存过方案，打开就是上次的样子' : !item.vocal ? '这首没有分离出人声' : item.voices.length ? `已经转换好 ${item.voices.length} 个声音` : `分离出 ${(item.stems || []).length} 条分轨`;
     button.append(label, tag);
-    button.addEventListener('click', () => openSong(item));
+    button.addEventListener('click', () => { if (score) closeDrawers(); openSong(item); });
     el('songs').appendChild(button);
   }
   if (!el('songs').children.length) {
@@ -2034,7 +2070,10 @@ async function roll() {
   previousPreset = before.preset;
   paintRolls();
   sayRoll('掷骰子 · ' + planSummary(next), '掷骰子 · ' + next.preset);
-  try { await applyPlan(next); } catch (error) { setState(error.message, true); }
+  let applied;
+  try { applied = applyPlan(next); } catch (error) { setState(error.message, true); }
+  paintPresets(); flashPreset(next.preset);                    // the plan is taken at once; the sound may follow later
+  try { await applied; } catch (error) { setState(error.message, true); }
 }
 async function rollBack() {
   if (!rolls.length || !score) return;
@@ -2046,11 +2085,13 @@ async function rollBack() {
 /* The whole line goes in the bar's row; the deck's narrow status line gets the short form after the render. */
 function sayRoll(line, short) {
   el('rollNote').textContent = line; el('rollNote').title = line;
+  fitWall();                                                 // the line takes a row of the bar
   noteAfterRender = short;
 }
 el('roll').addEventListener('click', roll);
 el('back').addEventListener('click', rollBack);
 el('roll').querySelector('.ic').innerHTML = icon('die');
+el('openLibrary').querySelector('.ic').innerHTML = icon('shelf');
 paintRolls();
 
 /* --- server ------------------------------------------------------------------------------ */

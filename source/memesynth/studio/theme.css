@@ -114,16 +114,17 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 #top .brand { display: flex; align-items: baseline; gap: 8px; flex: none; }
 #top .brand h1 { letter-spacing: .04em; }
 #top .brand span { color: var(--dim); font-size: var(--fs-s); }
-#top .songHead { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; padding-left: 16px; border-left: 1px solid var(--edge); }
+#top .songHead { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; padding-left: 16px; border-left: 1px solid var(--edge); }
 #top .songHead strong { font-size: var(--fs); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #top .songHead span { color: var(--dim); font-family: var(--mono); font-size: var(--fs-s); white-space: nowrap; }
-#top .songHead:has(strong:empty) { border-left: 0; }
+#top .songHead #songTitle { cursor: pointer; }
+#top .songHead #songTitle:hover { color: var(--signal); }
+#top .songHead #openLibrary { flex: none; padding: 0 8px; }
 #top .topTools { display: flex; align-items: center; gap: 8px; flex: none; }
 #tasks { color: var(--dim); font-size: var(--fs-s); }
-#app { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; margin-top: 12px; align-items: start; }
-#side { position: sticky; top: 12px; }
-#side .songs { max-height: calc(100vh - 330px); min-height: 160px; }
-#side #drop { margin-top: 8px; padding: 12px; }
+/* v22: one column; the library is a drawer from the left (see "drawers") */
+#app { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 12px; align-items: start; }
+#side #drop { margin-top: 0; padding: 12px; }
 #bar { display: grid; gap: 8px; margin-bottom: 8px; }
 /* the bar's second row, by purpose: sound | groove | plans ... vitals at the far end */
 #bar .tools { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; }
@@ -133,51 +134,50 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 #bar .tools .plain { padding: 0 8px; }
 #planList { width: 88px; }
 #cmp button { max-width: 144px; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 1100px) { #app { grid-template-columns: 232px minmax(0, 1fr); } #cmp button { max-width: 96px; } }
+@media (max-width: 1100px) { #cmp button { max-width: 96px; } }
 /* the vitals count: a hint count, so it wears the hint tags' colours */
 #vitalsSum:not(:empty) { margin-left: 4px; padding: 0 4px; min-width: 18px; border-radius: 10px; background: var(--signal-soft); color: var(--signal);
   font-family: var(--mono); font-size: var(--fs-s); font-weight: 600; line-height: 18px; text-align: center; }
-#roll .ic { display: inline-flex; width: 16px; height: 16px; }
-#roll .ic svg { width: 100%; height: 100%; }
+:is(#roll, #openLibrary) .ic { display: inline-flex; width: 16px; height: 16px; }
+:is(#roll, #openLibrary) .ic svg { width: 100%; height: 100%; }
 /* what the dice came up with: one line in the bar's own row */
 #rollNote { min-width: 0; font-size: var(--fs-s); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rollNote:empty { display: none; }
 #cmp button { font-family: var(--mono); font-size: var(--fs-s); }
 #cmp[hidden] { display: none; }   /* .seg sets a display of its own, which would otherwise win over [hidden] */
 
-/* --- presets: a row of kinds, each opening its own short list ---------------------------------- */
-#presets { display: flex; gap: 4px; flex-wrap: wrap; }
-.pcat { position: relative; }
-.pcatBtn { position: relative; overflow: hidden; display: block; min-width: 88px; height: 40px; padding: 0 28px 0 12px; text-align: left; font: inherit;
-  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--r); color: var(--dim); cursor: pointer; }
-.pcatBtn b { display: block; font-size: var(--fs-s); font-weight: 600; letter-spacing: .04em; line-height: 16px; }
-.pcatBtn small { display: block; font-family: var(--mono); font-size: var(--fs-s); color: var(--faint); line-height: 16px; }
-.pcatBtn .pmark { position: absolute; right: -6px; bottom: -10px; width: 46px; height: 46px; opacity: .12; }   /* the translucent mark */
-.pcatBtn:hover { background: var(--panel-lit); }
-.pcat.on .pcatBtn { border-color: var(--signal); background: var(--signal-soft); color: var(--signal); }
-.pcat.on .pcatBtn small { color: var(--signal); }
-.pcat.on .pcatBtn .pmark { opacity: .4; }
-.pmenu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 7; min-width: 252px; padding: 4px; display: grid; gap: 2px;
-  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--r); box-shadow: 0 10px 28px rgba(0, 0, 0, .45); }
-.pmenu[hidden] { display: none; }
-.pitem { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px 8px; min-height: 40px; text-align: left; font: inherit;
-  background: none; border: 1px solid transparent; border-radius: 6px; color: var(--fg); cursor: pointer; }
-.pitem > span:first-child { width: 18px; height: 18px; color: var(--dim); }
-.pitem b { display: block; font-family: var(--mono); font-size: var(--fs); font-weight: 600; }
-.pitem small { display: block; font-size: var(--fs-s); color: var(--dim); }
-.pitem:hover { background: var(--panel-lit); }
-.pitem:focus-visible { outline-offset: -2px; }
-.pitem[aria-pressed="true"] { border-color: var(--signal); background: var(--signal-soft); }
-.pitem[aria-pressed="true"] > span:first-child, .pitem[aria-pressed="true"] b { color: var(--signal); }
+/* --- presets (v22): a wall under the rack, one column per kind, every kit in sight ------------------- */
+/* --cell (24…34 px) and --row (36…44 px) are set by fitWall() so the page stays one screen. */
+#presets { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 8px; align-items: start; }
+.pcol { display: grid; gap: 4px; min-width: 0; }
+.pcolHead { display: flex; align-items: center; gap: 4px; min-width: 0; height: 16px; font-size: var(--fs-s); line-height: 16px; color: var(--dim); }
+.pcolHead b { font-weight: 600; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pcolHead small { font-family: var(--mono); font-size: var(--fs-s); color: var(--faint); }
+.pic { display: inline-flex; width: 16px; height: 16px; flex: none; color: var(--dim); }
+.pcell { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; height: var(--cell, 34px); padding: 0 8px; text-align: left; font: inherit;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--r); color: var(--fg); cursor: pointer; }
+.pcell b { min-width: 0; font-family: var(--mono); font-size: var(--fs); font-weight: 600; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcell:hover { background: var(--panel-lit); }
+.pcell:focus-visible { outline-offset: -2px; }
+.pcell[aria-pressed="true"] { border-color: var(--signal); background: var(--signal-soft); }
+.pcell[aria-pressed="true"] .pic, .pcell[aria-pressed="true"] b { color: var(--signal); }
+/* A / B of the compare pair: the hint tags' colours */
+.pab { position: absolute; top: 2px; right: 2px; padding: 0 4px; border-radius: 10px; background: var(--signal-soft); color: var(--signal);
+  font-family: var(--mono); font-size: var(--fs-s); font-weight: 600; line-height: 14px; }
+.pab:empty { display: none; }
+/* the dice's pick blinks once */
+.pcell.flash { animation: pflash .6s ease-in-out 1; }
+@keyframes pflash { 0%, 100% { box-shadow: inset 0 0 0 0 transparent; } 40% { box-shadow: inset 0 0 0 2px var(--signal); background: var(--signal-soft); } }
 .kicon { display: inline-flex; width: 16px; height: 16px; color: var(--tc); flex: none; }
-.kicon svg, .pmark svg, .pitem svg { width: 100%; height: 100%; }
+.kicon svg, .pic svg { width: 100%; height: 100%; }
 
 /* --- the rack: one row per track --------------------------------------------------------------- */
 #tracks { display: grid; }
-.trk, .trkHead { display: grid; grid-template-columns: 12px 4px 58px 86px minmax(0, 1fr) 92px 30px 30px minmax(110px, 1.15fr);
+/* v22: the rack has the full width; "这 12 秒" takes what is left over */
+.trk, .trkHead { display: grid; grid-template-columns: 12px 4px 58px 86px minmax(0, 240px) 92px 30px 30px minmax(110px, 1fr);
   gap: 8px; align-items: center; padding: 4px 12px; }
 .trkHead { font-size: var(--fs-s); letter-spacing: .09em; color: var(--faint); padding-block: 4px; line-height: 16px; }
-.trk { min-height: 44px; border-top: 1px solid var(--edge); }
+.trk { min-height: var(--row, 44px); padding-block: 0; border-top: 1px solid var(--edge); }
 .trk > * { min-height: 0; }
 .trk .tn { font-weight: 600; font-size: var(--fs); line-height: 16px; }
 .trk .tn small { display: block; font-weight: 400; font-family: var(--mono); font-size: var(--fs-s); color: var(--faint); }
@@ -238,6 +238,15 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
   margin: 0; padding: 16px; background: var(--bg); border: 1px solid var(--edge); border-radius: 10px;
   box-shadow: -10px 0 28px rgba(0, 0, 0, .22); }
 .drawer[hidden] { display: none; }
+/* v22: the library, the same drawer from the left; the drop box at its foot */
+.drawer.left { left: 0; right: auto; width: 320px; display: flex; flex-direction: column; gap: 8px; overflow: hidden;
+  box-shadow: 10px 0 28px rgba(0, 0, 0, .22); }
+.drawer.left[hidden] { display: none; }
+@media (max-width: 400px) { .drawer.left { width: 100%; } }
+@media (prefers-reduced-motion: no-preference) {
+  .drawer.left:not([hidden]) { animation: slideFromLeft .16s ease-out; }
+  @keyframes slideFromLeft { from { transform: translateX(-16px); opacity: 0; } }
+}
 .vgroup h3 { font-size: var(--fs-s); font-weight: 600; letter-spacing: .09em; color: var(--faint); margin: 0 0 4px; }
 .pad { padding: 12px; display: grid; gap: 12px; }
 .field { display: grid; gap: 4px; }
@@ -338,10 +347,10 @@ tbody tr:last-child td { border-bottom: none; }
   body { height: 100%; margin-block: 0; display: flex; flex-direction: column; overflow: hidden; padding-block: 12px 0; }
   #top { flex: none; align-items: center; }
   #app { flex: 1 1 auto; min-height: 0; margin-top: 8px; position: relative; align-items: stretch; }
-  #side { position: static; display: flex; flex-direction: column; min-height: 0; }
   #side #library { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   #side #library .card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   #side .songs { flex: 1 1 auto; min-height: 0; max-height: none; }
+  #side #libFilter { flex: none; }
   #side #drop { flex: none; padding: 8px 12px; }
   #main { min-height: 0; overflow-y: auto; padding-bottom: 8px; }
   #deck { position: static; flex: none; margin-top: 8px; }

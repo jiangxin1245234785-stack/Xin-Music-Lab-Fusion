@@ -448,6 +448,39 @@ v2：再拖同一首的 `vocals.wav`，在「人声」里选原唱 / 18 个合�
     - **三步的实测**：每步都在 1280×720 和 1024×700 下一屏、无横向溢出（A / B 显示和不显示都量了），调和抽吸的面板都在窗口内；每步主要控件各点一次（说明、转谱情况、导出、听整首、预设分类、调、抽吸、S、灯、原曲 / 重构、掷骰子、上一份、A / B、人声的换 / 原声、播放），0 个报错，方案前后相同；id 一个没少（新增 `songTitle`、`songFacts`、`keyKits`）；`test_studio.py` 28 项、`test_memesynth.py` 25 项每步都通过；七里香 hoover 同第 37 项的设置，页面对「听整首」去掉头 3 秒 **−68.2 dB**（和第 37 项相同），「听整首」19.8 s 渲染完。截图在共享笔记目录的 `xlr-screens/`。
     - **没验证**：真机双击 `音色工作台.cmd` 打开的窗口（只在预览里量）；760 px 以下的窄布局只改了颜色和尺寸，没量。
 
+41. **v22：曲库抽屉、预设墙（2026-11-13，等用户看比例）。** 规格是 SPEC.md 的 v22 节。只改了 `app.html` 和 `theme.css`，没有新 Python，没碰出声的代码。
+    - `app.html`：`#side` 加了 `class="drawer left"`，走现有的 `openDrawer`（多设一下 `#openLibrary` 的 `aria-expanded`）；`closeDrawers` 改成没有歌时回到曲库（`openDrawer(score ? '' : 'side')`）；
+      新增 `toggleLibrary`、顶栏 `#openLibrary`（图标 `ICONS.shelf`）、点 `#songTitle` 开合、点外面收起的监听（没有歌时不收）；点歌单里的歌先收起；`takeFile` 成功时收起、失败且没有歌时打开。
+      `#presets` 挪到机架下面：`buildPresets` 改成造墙（`.pcol` / `.pcolHead` / `.pcell`，`data-kit`、`aria-pressed`、`title` = blurb），`paintPresets` 只改 `aria-pressed` 和 A / B 角标（`.pab`，条件和 `paintCompare` 一样）；
+      新增 `flashPreset`（只在 `roll` 里调）、`fitWall`（先压 `--cell` 再压 `--row`，放不下时 `wallTight` 为真并在控制台警告）。`fitWall` 在 `takeFile`、窗口改变大小、`sayRoll` 时调，另外挂了 `ResizeObserver`（`#main`、`#bar`）。
+      删掉：`.pcat` / `.pcatBtn` / `.pmenu` / `.pitem` 的生成代码和点外面收起菜单的监听。说明「换」一节第二句改成对着墙说。
+    - `theme.css`：`#app` 单栏；删 `#side` 的 sticky / 高度规则和 ≤1100 px 的曲库宽度；`.drawer.left`（左边、320 px、阴影朝右，≤400 px 占满）；「presets (v22)」一块（`#presets` `.pcol` `.pcolHead` `.pic` `.pcell` `.pab` `.flash` / `@keyframes pflash`）替换原来的分类按钮和下拉样式；
+      `.trk` 用 `min-height: var(--row, 44px)`、上下内边距 0；轨道表列宽「用什么」`minmax(0, 240px)`、「这 12 秒」`minmax(110px, 1fr)`；顶栏 `.songHead` 改成垂直居中、`#songTitle` 指针样式。没有加或改任何颜色值（逐个比对过两份文件的颜色字面量，新增 0）。
+    - **和设计不一样 / 设计没说的**：
+      1. 点曲库里当前这首：抽屉收起，但曲库原有的行为是重新载入这首（会从头放、重渲染）。曲库行为按要求没改，所以「包括点当前这首」收起时播放会重来。要不要改成点当前这首只收起，等规划方定。
+      2. 曲库抽屉没有右边抽屉那样的「关闭」链接（设计没提，收起方式已有四种）。
+      3. 顺手修了一处：抽屉里筛选框在 flex 列里被压到 16 px 高（原来左栏在同样的 flex 布局里也可能这样，没回头查），加了 `#side #libFilter { flex: none; }`，现在 36 px。
+      4. 预览面板在后台时 `ResizeObserver` 不触发，所以另外在上面三处直接调 `fitWall`。
+    - **实测**（8790，plans-dev，七里香）：
+      - 换一套不同分类的预设：旧版 2 下（分类按钮 → 下拉里一项），新版 1 下。
+      - 30 格逐个点：30/30（`preset` 变成那套、渲染完成、`aria-pressed` 正好一个、0 个报错），每格从点到渲染好 ≤ 335 ms。
+      - id：改前 69 个、改后 70 个；少了 0 个，新增 `openLibrary`。
+      - 一屏（`scrollHeight == innerHeight`、无横向溢出、`#main` 不溢出、工具栏不溢出、墙上名字 0 个被截）：
+        | 尺寸 | 状态 | 格子 | 机架行高 | 墙下到 `#main` 底 |
+        |---|---|---|---|---|
+        | 1280×720 | 无 A/B 无那行字 | 27 | 44 | 11 px |
+        | 1280×720 | 有 A/B 有那行字 | 24 | 43 | 9 px |
+        | 1024×700 | 无 A/B 无那行字 | 24 | 44 | 9 px |
+        | 1024×700 | 有 A/B 有那行字 | 24 | 39 | 13 px |
+        | 1920×1080 | 无 A/B 无那行字 | 34（封顶） | 44 | 329 px |
+        「墙下」含 `#main` 自己的 8 px 底内边距。抽屉开着时四种状态都没有滚动条，抽屉自己也不溢出。每行控件中线差 0 px（行高 39 时也是）。
+      - 抽屉：播放中开合 10 次：`AudioContext` 时间一直往前（+3.1 s），播放位置 1.36 → 4.46 s，渲染次数 +0，`startedAt` 和音源对象没换（没从头放）。Esc、点外面、选歌、再点「曲库」各收起一次；
+        右边抽屉和曲库互斥两个方向都对。刷新后不选歌：抽屉开着，Esc、点外面都不收，开着说明再按 Esc 回到曲库；点歌后抽屉收起。
+      - 掷骰子 20 次：每次闪的格子 == 新的 `preset`（20/20），A / B 角标 == `pair`（20/20）；「上一份」退 3 次闪 0 次；数字键 3 和手动点也不闪。
+      - `test_studio.py` 28 项、`test_memesynth.py` 25 项通过。截图在共享笔记目录 `xlr-screens/5-1280.jpg`、`5-1024.jpg`、`5-drawer.jpg`。
+      5. 曲库抽屉出现时有 0.16 秒从左边滑进来的动画（`slideFromLeft`，系统要求减少动效时没有）；右边的抽屉照旧没有动画。
+    - **没验证**：闪烁和滑入动画本身（预览面板在后台，CSS 动画不跑，只验证了 `.flash` 加在了对的格子上）；用户没看过比例；真机双击打开的窗口；760 px 以下。
+
 ## 文件地图
 
 ```
@@ -458,7 +491,7 @@ source/memesynth/studio/
   HANDOFF.md                本文件
   cli.py                    memesynth.cmd 背后的分发器；帮助文本在 USAGE 常量里
   server.py                 stdlib http.server，只绑 127.0.0.1；静态 + /api/export + /api/job + /api/reveal
-  app.html                  页面：拖放、体检表、时间线、八套切换、声部独奏、导出面板
+  app.html                  页面：顶栏、机架（每轨一行）、预设墙、底部播放条和编曲地图；曲库和其余面板都是抽屉（v22）
   theme.css                 样子和排列（v21 起是唯一的样式表；颜色是 XLR 自己的，和 84e0aeb 相同）
   engine.js                 memesynth score/render 两层的 JS 移植（仅试听）
   batch.py                  纯逻辑：export() 渲染多套、inspect() 打体检表，带 progress 回调；也能单独当 CLI 用
