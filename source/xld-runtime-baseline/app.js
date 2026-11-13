@@ -1038,7 +1038,7 @@ function renderComparison() {
 }
 
 function updatePlaybackIndicators() {
-  const sameTrack = state.currentTrack?.id && state.currentTrack.id === state.selectedTrack?.id;
+  const sameTrack = Boolean(state.currentTrack?.id && state.currentTrack.id === state.selectedTrack?.id);
   const current = sameTrack ? Number(dom.audioElement.currentTime) || 0 : 0;
   const duration = sameTrack && Number.isFinite(dom.audioElement.duration) ? dom.audioElement.duration : 0;
   const percent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;

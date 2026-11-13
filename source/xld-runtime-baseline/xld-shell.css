@@ -1,0 +1,273 @@
+/* Direction A · the same look as XML: one accent, thin lines, nothing filled. */
+html body.workspace-app {
+  --x-bg: #0d1016; --x-side: #0b0e13; --x-ground: #0d1016; --x-dock: #10141c;
+  --x-panel: #121722; --x-panel-solid: #121722; --x-field: #0d1016;
+  --x-line: rgba(255,255,255,.09); --x-line-2: rgba(255,255,255,.14); --x-hover-line: rgba(114,232,206,.55);
+  --x-text: #e8ecf5; --x-dim: #a3acbf;
+  --x-accent: #72e8ce; --x-accent-soft: rgba(114,232,206,.14); --x-accent-text: #d6fff5; --x-accent-ink: #06231d;
+  --x-action: #72e8ce; --x-action-bg: #72e8ce; --x-action-bg-hover: #8ff0db; --x-action-ink: #06231d;
+  --x-card: transparent; --x-card-border: 1px solid rgba(255,255,255,.09);
+  --x-lanes: transparent; --x-lane-head: #0d1016;
+  --x-btn: transparent; --x-btn-line: rgba(255,255,255,.14);
+}
+
+/* XLD in the language of the new XML shell. Loaded after style.css, workspace.css and
+   workbench.css; it changes how things look and nothing about where the scripts find them.
+   A direction file (a.css / b.css / c.css) sets the --x-* tokens first.
+   Sizes are written for the "100 %" text setting and follow the A− / A+ control through --u. */
+html body.workspace-app {
+  --u: calc(var(--font-scale) / 1.2);
+  --x-fs-s: calc(12px * var(--u));
+  --x-fs: calc(13px * var(--u));
+  --x-fs-l: calc(15px * var(--u));
+  --x-fs-xl: calc(17px * var(--u));
+  --x-h: calc(30px * var(--u));
+  --x-r: 8px;
+  /* the old names keep working for every rule that is not restated below */
+  --bg: var(--x-bg); --panel: var(--x-panel); --panel-strong: var(--x-panel); --line: var(--x-line);
+  --muted: var(--x-dim); --text: var(--x-text); --mint: var(--x-accent); --violet: var(--x-action);
+  --dock-height: max(76px, calc(62px * var(--u)));
+  color-scheme: dark; color: var(--x-text); background: var(--x-bg);
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; font-size: var(--x-fs);
+}
+html body.workspace-app .noise { display: none; }
+html body.workspace-app :is(button, input, select, textarea) { font-family: inherit; letter-spacing: 0; }
+html body.workspace-app ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); }
+
+/* --- one look for every ordinary button ------------------------------------------------ */
+html body.workspace-app :is(.quiet-button, .secondary-button, .icon-text-button, .danger-button, .primary-button,
+  .workbench-actions button, .workbench-panel-head button, .timeline-tools button, .font-controls button,
+  .locale-control button, .tl-track-menu summary) {
+  min-height: var(--x-h); height: auto; min-width: 0; padding: calc(4px * var(--u)) calc(11px * var(--u));
+  border: 1px solid var(--x-line-2); border-radius: var(--x-r); background: transparent; color: var(--x-text);
+  font-size: var(--x-fs); font-weight: 400; line-height: 1.3; box-shadow: none; transform: none;
+  transition: background .2s, border-color .2s, color .2s; cursor: pointer;
+}
+html body.workspace-app :is(.quiet-button, .secondary-button, .icon-text-button, .workbench-actions button,
+  .workbench-panel-head button, .timeline-tools button, .font-controls button, .locale-control button):hover:not(:disabled) {
+  border-color: var(--x-hover-line); background: rgba(255,255,255,.05); color: var(--x-text);
+}
+html body.workspace-app :is(button[aria-pressed="true"], button.active):not(.engine-card, .play-button, [data-library-level]) {
+  border-color: var(--x-accent); background: var(--x-accent-soft); color: var(--x-accent-text);
+}
+html body.workspace-app button:disabled { opacity: .42; cursor: default; }
+html body.workspace-app .primary-button { border-color: transparent; background: var(--x-action-bg); color: var(--x-action-ink); font-weight: 600; }
+html body.workspace-app .primary-button:hover:not(:disabled) { background: var(--x-action-bg-hover); }
+html body.workspace-app .danger-button { color: #ff9cab; border-color: rgba(255,120,140,.35); }
+html body.workspace-app .danger-button:hover:not(:disabled) { background: rgba(255,99,126,.1); }
+html body.workspace-app .batch-button { color: var(--x-text); border-color: var(--x-line-2); }
+html body.workspace-app :is(button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--x-accent); outline-offset: 2px; }
+
+/* --- fields ------------------------------------------------------------------------------ */
+html body.workspace-app :is(select, input[type="text"], input[type="number"], input[type="search"]):not(.search-box > input) {
+  min-height: var(--x-h); padding: 0 calc(9px * var(--u)); border: 1px solid var(--x-line-2); border-radius: var(--x-r);
+  background: var(--x-field); color: var(--x-text); font-size: var(--x-fs);
+}
+html body.workspace-app input[type="range"] { accent-color: var(--x-accent); }
+html body.workspace-app input[type="checkbox"] { accent-color: var(--x-accent); }
+html body.workspace-app :is(.eyebrow, .brand-copy span) { color: var(--x-dim); font-size: var(--x-fs-s); font-weight: 400; letter-spacing: .04em; }
+html body.workspace-app :is(.derived-hint, .analysis-note, .segment-status, .timeline-summary, .timeline-readout, #timelineHint, #timelineSummary, #timelineReference, #derivedStatus, .derived-force, .tag-empty) { color: var(--x-dim); font-size: var(--x-fs-s); line-height: 1.6; }
+html body.workspace-app summary { color: var(--x-dim); font-size: var(--x-fs-s); cursor: pointer; }
+
+/* --- top bar ----------------------------------------------------------------------------- */
+html body.workspace-app .topbar { height: 56px; padding: 0 18px; gap: 12px; background: var(--x-ground); border-bottom: 1px solid var(--x-line); backdrop-filter: none; }
+html body.workspace-app .brand-mark { width: 30px; height: 22px; border-radius: 5px; background: var(--x-accent); color: var(--x-accent-ink); font-size: 10.5px; font-weight: 800; letter-spacing: 0; box-shadow: none; }
+html body.workspace-app .brand-copy strong { font-size: var(--x-fs-l); font-weight: 600; letter-spacing: .01em; }
+html body.workspace-app .brand-copy .beta-tag { padding: 0 6px; border: 1px solid var(--x-line-2); background: none; color: var(--x-dim); font-size: 10px; font-weight: 400; letter-spacing: .06em; vertical-align: 1px; }
+html body.workspace-app :is(.locale-control, .font-controls) { gap: 4px; padding: 0; border: 0; background: none; color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .locale-control > span { display: none; }
+html body.workspace-app .font-controls span { min-width: 44px; color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; }
+html body.workspace-app .topbar .library-status { gap: 8px; color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .status-dot { box-shadow: none; background: var(--x-accent); }
+html body.workspace-app .workspace-settings > summary { min-height: var(--x-h); display: flex; align-items: center; padding: 0 calc(11px * var(--u)); border: 1px solid var(--x-line-2); border-radius: var(--x-r); color: var(--x-text); font-size: var(--x-fs); list-style: none; }
+html body.workspace-app .workspace-settings[open] > summary { border-color: var(--x-accent); background: var(--x-accent-soft); color: var(--x-accent-text); }
+html body.workspace-app .storage-strip { border: 1px solid var(--x-line); border-radius: 10px; background: var(--x-panel-solid); box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+html body.workspace-app .storage-strip span { color: var(--x-dim); font-size: var(--x-fs-s); letter-spacing: 0; text-transform: none; }
+html body.workspace-app .storage-strip strong { color: var(--x-text); font: inherit; font-size: var(--x-fs-s); }
+
+/* --- library ----------------------------------------------------------------------------- */
+html body.workspace-app .workspace-library { background: var(--x-side); border-right: 1px solid var(--x-line); }
+html body.workspace-app .workspace-library-heading { padding: 16px 16px 12px; }
+html body.workspace-app .workspace-library-heading > span { font-size: var(--x-fs-xl); font-weight: 700; }
+html body.workspace-app .workspace-library-heading small { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .workspace-library-nav { margin: 0 16px 12px; padding: 3px; border: 1px solid var(--x-line-2); border-radius: var(--x-r); gap: 3px; }
+html body.workspace-app .workspace-library-nav button { min-height: calc(26px * var(--u)); padding: 0; border: 0; border-radius: 6px; color: var(--x-dim); font-size: var(--x-fs); }
+html body.workspace-app .workspace-library-nav button[aria-pressed="true"] { background: var(--x-accent-soft); color: var(--x-accent-text); }
+html body.workspace-app .search-box { height: calc(33px * var(--u)); border: 1px solid var(--x-line-2); border-radius: var(--x-r); background: var(--x-field); }
+html body.workspace-app .search-box input { font-size: var(--x-fs); }
+html body.workspace-app .album-card { border-radius: var(--x-r); transform: none; }
+html body.workspace-app .album-card.active { border-color: var(--x-accent); background: var(--x-accent-soft); }
+html body.workspace-app .album-card strong { font-size: var(--x-fs); font-weight: 600; }
+html body.workspace-app .album-card span { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .album-hero { border-bottom: 1px solid var(--x-line); }
+html body.workspace-app .album-info h1 { font-size: var(--x-fs-l); font-weight: 600; }
+html body.workspace-app .album-info p { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .hero-actions { gap: 6px; }
+html body.workspace-app .hero-actions button { min-height: var(--x-h); padding: calc(4px * var(--u)) calc(10px * var(--u)); font-size: var(--x-fs); }
+html body.workspace-app #batchAlbumButton { border-style: solid; color: var(--x-text); }
+html body.workspace-app .track-section .section-title { color: var(--x-dim); font-size: var(--x-fs-s); letter-spacing: 0; }
+html body.workspace-app .track-row { min-height: calc(44px * var(--u)); margin: 1px 0; padding: 6px 7px; border: 0; border-radius: var(--x-r); gap: 2px 8px; }
+html body.workspace-app .track-row:hover { background: rgba(255,255,255,.04); }
+html body.workspace-app .track-row.selected { background: var(--x-accent-soft); border: 0; }
+html body.workspace-app .track-row.playing .track-copy strong { color: var(--x-accent-text); }
+html body.workspace-app .track-copy strong { font-size: var(--x-fs); font-weight: 500; }
+html body.workspace-app :is(.track-number, .track-duration) { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; }
+html body.workspace-app :is(.track-analysis-badge, .track-analysis-empty) { padding: 0 5px; border-radius: 4px; font: inherit; font-size: calc(11px * var(--u)); letter-spacing: 0; }
+html body.workspace-app .track-analysis-empty { padding: 0; color: var(--x-dim); opacity: .7; }
+html body.workspace-app .track-analysis-badge.complete, html body.workspace-app .track-analysis-badge.harmony-summary-badge { color: var(--x-accent-text); background: var(--x-accent-soft); border: 0; }
+
+/* --- the song line and the three workbench buttons --------------------------------------- */
+html body.workspace-app .workspace-shell { background: var(--x-bg); }
+html body.workspace-app .workspace-topline { padding: 8px 16px; border-bottom: 1px solid var(--x-line); }
+html body.workspace-app .analysis-target { min-height: 0; padding: 0; background: none; border: 0; }
+html body.workspace-app .workspace-cover { width: 40px; height: 40px; border-radius: 6px; background: var(--x-field); color: var(--x-dim); }
+html body.workspace-app .analysis-target strong { font-size: var(--x-fs-xl); font-weight: 600; }
+html body.workspace-app .analysis-target small { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .analysis-target .eyebrow { display: none; }
+
+/* --- timeline: the frame only; lanes, notes and colours are drawn by the script ---------- */
+html body.workspace-app .timeline-card { border: 0; border-radius: 0; background: none; }
+html body.workspace-app .timeline-head h2 { font-size: var(--x-fs-xl); font-weight: 700; }
+html body.workspace-app :is(.timeline-zoom, .timeline-audition) { gap: 6px; }
+html body.workspace-app :is(.timeline-zoom, .timeline-audition, .timeline-selection, .midi-edit-actions, .timeline-editor) :is(button, select, input) { min-height: var(--x-h); font-size: var(--x-fs); }
+html body.workspace-app .timeline-strip span, html body.workspace-app .timeline-audition > span { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .timeline-lanes { border: 1px solid var(--x-line); border-radius: 10px; background: var(--x-lanes); }
+html body.workspace-app .tl-scale span { color: var(--x-dim); font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; }
+html body.workspace-app .tl-row-head { background: var(--x-lane-head); }
+html body.workspace-app .tl-row-head strong { font-size: var(--x-fs); font-weight: 600; }
+html body.workspace-app .tl-row-head span { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .tl-seg { font-size: var(--x-fs-s); }
+html body.workspace-app .tl-row-toggle:hover strong, html body.workspace-app .tl-row-toggle:focus-visible strong { color: var(--x-accent-text); }
+html body.workspace-app .tl-ms.quiet-button { min-height: calc(26px * var(--u)); padding: 0 calc(8px * var(--u)); font-size: var(--x-fs-s); }
+html body.workspace-app .tl-row-head select { min-height: calc(26px * var(--u)); font-size: var(--x-fs-s); }
+html body.workspace-app .tl-pitch-scroll { background: var(--x-lane-head); }
+html body.workspace-app :is(.timeline-editor, .timeline-selection, .midi-edit-bar) { border: 1px solid var(--x-line); border-radius: 10px; background: var(--x-card); }
+html body.workspace-app .timeline-editor-kind { color: var(--x-accent-text); }
+html body.workspace-app .timeline-selection strong { color: var(--x-accent-text); }
+
+/* --- tool panel -------------------------------------------------------------------------- */
+html body.workspace-app #workbenchPanel { background: var(--x-panel-solid); border-left: 1px solid var(--x-line); }
+html body.workspace-app .workbench-panel-head { padding: 10px 14px; border-bottom: 0; }
+html body.workspace-app .workbench-panel-head strong { font-size: var(--x-fs-xl); font-weight: 700; }
+html body.workspace-app #workbenchPanel .workspace-tabs { padding: 0 14px; gap: 0; border-bottom: 1px solid var(--x-line); }
+html body.workspace-app #workbenchPanel .workspace-tabs button { min-height: calc(34px * var(--u)); padding: 0 4px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--x-dim); font-size: var(--x-fs); }
+html body.workspace-app #workbenchPanel .workspace-tabs button[aria-selected="true"] { color: var(--x-accent-text); border-bottom-color: var(--x-accent); background: none; }
+html body.workspace-app #workbenchPanelBody { padding: 14px; }
+html body.workspace-app #workbenchPanelBody h2 { font-size: var(--x-fs-xl); }
+html body.workspace-app :is(#workbenchResultsHub, #workspaceProperties) :is(h3, summary) { color: var(--x-dim); font-size: var(--x-fs-s); font-weight: 400; letter-spacing: .04em; }
+
+/* cards: one treatment for every box in the panel */
+html body.workspace-app :is(.derived-block, .base-stems-card, .refinement-panel, .refinement-result-card, .midi-single-card, .midi-batch-card,
+  .midi-merge-card, .comparison-card, .segment-panel, .manual-tag-panel, .harmony-policy, .workspace-model-options, .workspace-result,
+  .task-card, .result-actions, .workspace-details, .compact-annotations, .midi-source-strip) {
+  border: var(--x-card-border); border-radius: 10px; background: var(--x-card); box-shadow: none;
+}
+html body.workspace-app .derived-block { border: 0; background: none; padding: 0; }
+html body.workspace-app .refinement-panel { margin-top: 0; }
+html body.workspace-app :is(.derived-head, .derived-block-head, .comparison-header strong, .segment-head strong, .manual-tag-heading strong, .workspace-result-top strong, .task-topline strong) { font-size: var(--x-fs-l); font-weight: 600; }
+html body.workspace-app .derived-block-head small { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .derived-card button:not(.engine-card), html body.workspace-app .derived-choice select { min-height: var(--x-h); font-size: var(--x-fs); }
+html body.workspace-app :is(.refinement-options, .refinement-range, .tag-editor, .segment-inputs, .midi-edit-actions, .timeline-editor) label,
+html body.workspace-app :is(.tag-note-field, .compact-field label) { color: var(--x-dim); font-size: var(--x-fs-s); letter-spacing: 0; }
+html body.workspace-app .engine-card { border: 1px solid var(--x-line-2); border-radius: var(--x-r); background: transparent; }
+html body.workspace-app .engine-card.available:hover { border-color: var(--x-hover-line); }
+html body.workspace-app .engine-card.selected { border-color: var(--x-accent); background: var(--x-accent-soft); }
+html body.workspace-app .selected .engine-radio::after { background: var(--x-accent); }
+html body.workspace-app .engine-copy strong, html body.workspace-app .midi-engine-list .engine-copy strong { font-size: var(--x-fs); font-weight: 600; }
+html body.workspace-app .engine-copy span, html body.workspace-app .midi-engine-list .engine-copy span { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .engine-badge, html body.workspace-app .midi-engine-list .engine-badge { padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--x-dim); font-size: calc(11px * var(--u)); }
+html body.workspace-app .available .engine-badge { color: var(--x-accent-text); background: var(--x-accent-soft); }
+html body.workspace-app .engine-card.cached .engine-badge { color: var(--x-dim); background: rgba(255,255,255,.06); }
+html body.workspace-app .workspace-model-options > summary { color: var(--x-text); font-size: var(--x-fs); }
+html body.workspace-app .workspace-result:not(:disabled):hover { border-color: var(--x-hover-line); background: rgba(255,255,255,.04); }
+html body.workspace-app .workspace-result-top > span { font-size: var(--x-fs-s); }
+html body.workspace-app :is(.workspace-result-detail, .workspace-result-action) { font-size: var(--x-fs-s); }
+html body.workspace-app .workspace-result-action { color: var(--x-accent-text); }
+html body.workspace-app .segment-head strong { color: var(--x-text); }
+html body.workspace-app .comparison-header { border-bottom: 1px solid var(--x-line); }
+html body.workspace-app .timeline-tools > span, html body.workspace-app .timeline-tools b { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .timeline-scale span { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; }
+html body.workspace-app .comparison-row-header strong { font-size: var(--x-fs); }
+html body.workspace-app .comparison-row-header :is(span, small) { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .comparison-track .segment-block { font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .current-segment-detail { border-top: 1px solid var(--x-line); background: none; color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .analysis-log { border: 1px solid var(--x-line); border-radius: var(--x-r); background: var(--x-field); color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .analysis-state { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .task-topline span { color: var(--x-dim); font-size: var(--x-fs-s); letter-spacing: .04em; }
+html body.workspace-app .task-topline b { font: 600 calc(22px * var(--u))/1 inherit; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+html body.workspace-app .task-progress { height: 4px; }
+html body.workspace-app .task-progress i { background: var(--x-accent); box-shadow: none; }
+html body.workspace-app :is(.task-meta, .task-time) { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); }
+html body.workspace-app .workspace-export { border-top: 1px solid var(--x-line); }
+
+/* --- player ------------------------------------------------------------------------------ */
+html body.workspace-app .player-dock { background: var(--x-dock); border-top: 1px solid var(--x-line); backdrop-filter: none; padding: 6px 18px; }
+html body.workspace-app .mini-cover { width: 44px; height: 44px; border-radius: 6px; background: var(--x-field); }
+html body.workspace-app .mini-cover span { color: var(--x-dim); }
+html body.workspace-app .now-copy strong { font-size: var(--x-fs); font-weight: 600; }
+html body.workspace-app .now-copy span { margin-top: 1px; color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .now-copy small { color: var(--x-dim); font-size: calc(11px * var(--u)); line-height: 1.25; }
+html body.workspace-app .transport-buttons button { color: var(--x-text); }
+html body.workspace-app .transport-buttons button.active { color: var(--x-accent); background: none; border: 0; }
+html body.workspace-app .transport-buttons .play-button { width: 38px; height: 38px; background: var(--x-text); color: #0d1016; box-shadow: none; }
+html body.workspace-app .transport-buttons .play-button:hover { background: #fff; transform: none; }
+html body.workspace-app .progress-row { color: var(--x-dim); font: inherit; font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; grid-template-columns: 48px 1fr 48px; }
+html body.workspace-app .player-tools { color: var(--x-dim); font-size: var(--x-fs-s); white-space: nowrap; }
+html body.workspace-app #playButton::after { color: var(--x-dim); font-size: calc(11px * var(--u)); }
+
+/* --- dialogs ----------------------------------------------------------------------------- */
+html body.workspace-app .storage-dialog { padding: 20px; border: 1px solid var(--x-line-2); border-radius: 12px; background: var(--x-panel-solid); box-shadow: 0 30px 80px rgba(0,0,0,.55); }
+html body.workspace-app .storage-heading h2 { font-size: calc(20px * var(--u)); font-weight: 700; }
+html body.workspace-app .storage-heading p { margin: 6px 0 0; color: var(--x-dim); font-size: var(--x-fs); }
+html body.workspace-app .storage-path { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .storage-row { padding: 10px 12px; border: var(--x-card-border); border-radius: var(--x-r); background: var(--x-card); }
+html body.workspace-app .storage-row strong { font-size: var(--x-fs); font-weight: 600; }
+html body.workspace-app .storage-row small { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .storage-footer { bottom: -20px; background: var(--x-panel-solid); border-top: 1px solid var(--x-line); }
+html body.workspace-app #storageStatus, html body.workspace-app #resultSweepStatus { color: var(--x-accent-text); font-size: var(--x-fs-s); }
+
+/* --- corrections after the first look ---------------------------------------------------- */
+html body.workspace-app :is(.quiet-button, .secondary-button, .icon-text-button, .workbench-actions button, .workbench-panel-head button,
+  .timeline-tools button, .font-controls button, .locale-control button, .tl-track-menu summary) { background: var(--x-btn); border-color: var(--x-btn-line); }
+html body.workspace-app button.primary-button { border-color: transparent; background: var(--x-action-bg); color: var(--x-action-ink); font-weight: 600; }
+html body.workspace-app button.primary-button:hover:not(:disabled) { background: var(--x-action-bg-hover); }
+html body.workspace-app button.danger-button { color: #ff9cab; border-color: rgba(255,120,140,.35); background: transparent; }
+html body.workspace-app .tl-row-head select { padding: 0 calc(4px * var(--u)); }
+html body.workspace-app .track-copy strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+html body.workspace-app { --dock-height: max(84px, calc(70px * var(--u))); }
+html body.workspace-app .now-copy > * { margin: 0; line-height: 1.3; }
+html body.workspace-app #playbackSource, html body.workspace-app #playbackSource * { color: var(--x-dim); }
+html body.workspace-app #workspacePlaybackState { color: var(--x-accent-text); }
+html body.workspace-app .transport { gap: 4px; }
+
+html body.workspace-app #resultTools button { min-height: var(--x-h); border: 1px solid var(--x-btn-line); border-radius: var(--x-r); background: var(--x-btn); color: var(--x-text); font-size: var(--x-fs); }
+html body.workspace-app .search-box > input { border: 0; background: transparent; min-height: 0; }
+html body.workspace-app .tl-row-head select { min-width: calc(64px * var(--u)); }
+
+/* --- second pass ------------------------------------------------------------------------- */
+html body.workspace-app .tl-row-head select { min-width: calc(72px * var(--u)); padding: 0 calc(6px * var(--u)); }
+html body.workspace-app .tl-draft { background: rgba(114,232,206,.28); border-color: var(--x-accent); }
+html body.workspace-app .tl-seg { color: #0d1016; }
+/* the leftover violet from the old palette */
+html body.workspace-app #midiEditToggle[aria-pressed="true"] { border-color: var(--x-accent); background: var(--x-accent-soft); color: var(--x-accent-text); }
+html body.workspace-app .tl-drop-before { box-shadow: inset 0 2px var(--x-accent); }
+html body.workspace-app .tl-drop-after { box-shadow: inset 0 -2px var(--x-accent); }
+html body.workspace-app .workspace-notice { background: rgba(255,255,255,.04); color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .midi-merge-card { border-top: var(--x-card-border); }
+/* in the side panel the split card and the refinement card stack; side by side only when the panel is expanded */
+html body.workspace-app .workbench-body:not(.panel-expanded) #workbenchPanelBody .derived-wav-block { grid-template-columns: minmax(0, 1fr); }
+html body.workspace-app .workbench-body:not(.panel-expanded) #workbenchPanelBody .refinement-panel #refinementModels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* chord blocks in the comparison panel are narrower than their own border: drawn edge to edge, the
+   stacked white borders turned the whole strip white */
+html body.workspace-app .comparison-row.harmony-row .segment-block { min-width: 1px; padding: 0; border: 0; }
+html body.workspace-app .comparison-row.harmony-row .comparison-track { background: rgba(255,255,255,.035); }
+html body.workspace-app .comparison-track .segment-block.current { outline: 2px solid var(--x-text); }
+html body.workspace-app #workspaceLocate { font-size: var(--x-fs); }
+html body.workspace-app .timeline-tools button { white-space: nowrap; }
+html body.workspace-app .storage-strip { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+html body.workspace-app .tag-editor button { height: auto; white-space: normal; }
+/* The timeline's two status lines share one row: a focused part gets that height back. Every other block of the
+   card still takes a full row of its own. */
+html body.workspace-app .timeline-card { flex-flow: row wrap; align-content: flex-start; column-gap: 14px; }
+html body.workspace-app .timeline-card > * { flex: 0 0 100%; min-width: 0; }
+html body.workspace-app .timeline-card > :is(#timelineSummary, #timelineReference) { flex: 0 1 auto; }

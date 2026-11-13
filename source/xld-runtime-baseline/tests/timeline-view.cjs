@@ -142,6 +142,7 @@ const drawn = [], labels = [];
 const ctx = {
   setTransform() {}, clearRect() {}, fillRect(...args) { drawn.push(args); },
   fillText(text, x, y) { labels.push({ text, x, y }); },
+  measureText(text) { return { width: String(text).length * 6 }; },
   set fillStyle(v) {}, get fillStyle() { return ''; }, set globalAlpha(v) {}, get globalAlpha() { return 1; },
   set font(v) {}, get font() { return ''; }, set textBaseline(v) {}, get textBaseline() { return ''; }
 };
@@ -255,12 +256,14 @@ const controls = sandbox.window.XldTimelineControls.create({
   assert.equal(host.querySelectorAll('.tl-notes').length, 1, 'focus shows one note lane');
   assert.equal(host.querySelectorAll('.tl-row').length, 4, 'segment lanes stay visible while focused');
   assert(labels.some(label => /^C-?\d$/.test(label.text)), 'focused melodic lane labels octaves: ' + JSON.stringify(labels.slice(0, 4)));
-  assert(new Set(labels.map(label => label.x)).size > 1, 'pitch labels repeat along the lane so zooming does not hide them');
+  assert.equal(new Set(labels.map(label => label.x)).size, 1, 'pitch labels sit in one column at the left edge of the visible lane, so panning and zooming never hide them');
+  assert(controls.zoom() > 1, 'focusing a part from the whole-song view zooms in to where its notes are readable: ' + controls.zoom());
   assert.equal(nodes.get('timelineFocusExit').hidden, false, 'exit control offered while focused');
   labels.length = 0;
   controls.setFocus('drums');
   assert(labels.some(label => label.text === 'kick') && labels.some(label => label.text === 'ride'), 'focused drum lane labels GM keys: ' + JSON.stringify(labels.map(l => l.text)));
   controls.setFocus(null);
+  assert.equal(controls.zoom(), 1, 'leaving the part undoes the zoom focusing chose, also after switching parts');
   assert.equal(host.querySelectorAll('.tl-notes').length, 2, 'leaving focus restores every lane');
   assert.equal(nodes.get('timelineFocusExit').hidden, true, 'exit control hidden when not focused');
   // A focused stem that is no longer in the payload must not blank the view.
@@ -610,17 +613,19 @@ const controls = sandbox.window.XldTimelineControls.create({
     const fixture={stem:'piano',engine:'test',runId:'viewport-a',duration:1000,noteCount:5,editable:true,notes:viewportNotes};
     host._clientWidth=250;host.scrollLeft=0;
     bridge.readMidiNotes=async()=>({ok:true,lanes:[fixture]});
-    await controls.refresh();controls.setFocus('piano');controls.setStripMode('off');controls.setNoteSelecting(true);
+    // Focusing zooms in by itself; this block is about painting a narrow viewport of the whole-song lane.
+    await controls.refresh();controls.setFocus('piano');nodes.get('noteTimelineZoomLabel').dispatch('click');controls.setStripMode('off');controls.setNoteSelecting(true);
     const base=host.querySelector('.tl-notes'),overlay=host.querySelector('.tl-note-selection');
     assert(base&&overlay&&base!==overlay,'independent selection surface');
     assert.equal(base.width,500,'device pixels follow viewport, not the 1000px lane');
     const beforeWidths=base.widthWrites,beforeHeights=base.heightWrites;
     base.paints.length=0;host.scrollLeft=500;host.dispatch('scroll');
     const has=(x,w)=>base.paints.some(r=>Math.abs(r[0]-x)<1e-8&&Math.abs(r[2]-w)<1e-8);
-    assert(has(20,710),'sustain entering from the left is retained');
+    // a focused part leaves a one-pixel gap after every note wider than 3 px
+    assert(has(20,709),'sustain entering from the left is retained');
     assert(has(499.9,1.5),'minimum-width note crossing the left edge is retained');
-    assert(has(520,20),'ordinary note in the viewport is drawn');
-    assert(!has(0,1.5)&&!has(800,20),'notes outside viewport never issue paint calls');
+    assert(has(520,19),'ordinary note in the viewport is drawn');
+    assert(!has(0,1.5)&&!has(800,19),'notes outside viewport never issue paint calls');
     assert.equal(base.style.left,'500px');
     assert.deepEqual(base.transforms.at(-1).map(n=>n||0),[2,0,0,2,-1000,0],'same song coordinates, translated into viewport buffer');
     assert.equal(base.widthWrites,beforeWidths,'scroll does not reallocate width');
@@ -659,8 +664,8 @@ const controls = sandbox.window.XldTimelineControls.create({
     bridge.readMidiNotes=async()=>({ok:true,lanes:[replacement]});
     await controls.refresh();base.paints.length=0;
     while(frames.length)frames.shift()();
-    assert(has(650,5),'fresh notes invalidate cached geometry');
-    assert(!has(520,20),'previous note geometry is gone');
+    assert(has(650,4),'fresh notes invalidate cached geometry');
+    assert(!has(520,19),'previous note geometry is gone');
     host.scrollLeft=700;host.dispatch('scroll');
     state.selectedTrack=null;await controls.refresh();
     const oldClears=base.clears;
@@ -678,7 +683,7 @@ const controls = sandbox.window.XldTimelineControls.create({
     const wide=[[0,1,0,90,0,0],[990,991,127,90,0,1],[500,500.02,60,90,0,2],[520,530,61,90,0,3]];
     const fixture={stem:'piano',runId:'pitch-a',engine:'test',duration:1000,noteCount:wide.length,editable:true,notes:wide};
     bridge.readMidiNotes=async()=>({ok:true,lanes:[fixture]});
-    await controls.refresh();controls.setFocus('piano');controls.setNoteSelecting(true);
+    await controls.refresh();controls.setFocus('piano');nodes.get('noteTimelineZoomLabel').dispatch('click');controls.setNoteSelecting(true);
     const body=host.querySelectorAll('.tl-notes-row')[0].querySelector('.tl-row-body');
     let bar=host.querySelector('.tl-pitch-scroll');
     assert.equal(bar.scrollTop,908,'first focus centres a wide pitch range');

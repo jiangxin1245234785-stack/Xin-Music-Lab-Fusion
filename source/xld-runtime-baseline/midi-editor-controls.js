@@ -258,14 +258,17 @@ function create({bridge,timeline,rt,onEdited,onSaved,onPreview}){
   });
   render();
  }
- function attach(body,l,{point,rect,layout,total,cancelGesture}){
+ function attach(body,l,{point,rect,layout:geometry,total,cancelGesture}){
   let gesture=null,ghosts=[];
+  // The timeline passes a getter: a focused lane's semitone height follows the window, so read it at gesture time.
+  const now=()=>typeof geometry==='function'?geometry():geometry;
+  const row=()=>now().row||18;
   const hit=p=>l.notes.map(n=>({n,r:rect(n)})).reverse().find(({r})=>p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height);
   const cancel=()=>{
    if(gesture)try{body.releasePointerCapture(gesture.id);}catch(_){}
    gesture=null;cancelGesture(null);for(const node of ghosts)node.remove();ghosts=[];
   };
-  const pitchAt=p=>layout.kind==='keys'?layout.keys[Math.max(0,Math.min(layout.keys.length-1,Math.floor(p.y/18)))]:Math.max(0,Math.min(127,layout.high-Math.floor(p.y/18)));
+  const pitchAt=p=>{const layout=now();return layout.kind==='keys'?layout.keys[Math.max(0,Math.min(layout.keys.length-1,Math.floor(p.y/row())))]:Math.max(0,Math.min(127,layout.high-Math.floor(p.y/row())));};
   body.addEventListener('pointerdown',e=>{
    if(!active()||timeline.focus()!==l.laneId||e.button!==0||e.shiftKey||e.ctrlKey||e.metaKey)return;
    if(busy){e.preventDefault();return;}
@@ -286,7 +289,7 @@ function create({bridge,timeline,rt,onEdited,onSaved,onPreview}){
     const node=document.createElement('i');node.className='tl-edit-ghost';node.note=n;body.append(node);ghosts.push(node);
    }
    for(const node of ghosts){
-    const r=rect(node.note),mode=gesture.mode,shift=mode==='move'?Math.round(dy/18)*18:0;
+    const r=rect(node.note),mode=gesture.mode,shift=mode==='move'?Math.round(dy/row())*row():0;
     Object.assign(node.style,{left:(r.x+(mode==='end'?0:dx))+'px',top:(r.y+shift-(point(e).y-(e.clientY-body.getBoundingClientRect().top)))+'px',
      width:Math.max(1,r.width+(mode==='start'?-dx:mode==='end'?dx:0))+'px',height:r.height+'px'});
    }
@@ -296,7 +299,7 @@ function create({bridge,timeline,rt,onEdited,onSaved,onPreview}){
    const g=gesture,p=point(e),dt=(p.x-g.p.x)/body.getBoundingClientRect().width*total;
    cancel();
    if(!g.moved)return;
-   const dp=layout.kind==='keys'?pitchAt(p)-pitchAt(g.p):-Math.round((p.y-g.p.y)/18);
+   const dp=now().kind==='keys'?pitchAt(p)-pitchAt(g.p):-Math.round((p.y-g.p.y)/row());
    change(m=>m.transform(g.keys,g.mode==='move'?{time:dt,pitch:dp}:g.mode==='start'?{start:dt}:{end:dt}),g.keys);
   });
   body.addEventListener('pointercancel',cancel);

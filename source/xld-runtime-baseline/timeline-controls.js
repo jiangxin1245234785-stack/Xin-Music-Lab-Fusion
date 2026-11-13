@@ -11,10 +11,13 @@
 // the lanes cannot drift apart. No quantisation, no grid, no editing — annotation stays in the section lab for now.
 (function () {
   'use strict';
-  const STEM_COLORS = { bass: '#63b3e0', piano: '#cf82d6', guitar: '#e9b45f', drums: '#65c795', strings: '#a78be6' };
+  const STEM_COLORS = { bass: '#a78bfa', piano: '#b9c6ff', guitar: '#5fd0c5', drums: '#d5d9df', strings: '#8bd48f', vocals: '#ff8f7d', other: '#9aa0b4' };
   const GM_DRUM_KEYS = { 35: 'kick', 36: 'kick', 38: 'snare', 40: 'snare', 42: 'hihat', 44: 'hihat', 46: 'hihat', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 49: 'crash', 51: 'ride', 57: 'crash', 59: 'ride' };
   const MAX_CANVAS = 16384;   // Chromium's per-dimension canvas limit; the device pixel ratio is capped against it.
-  const PITCH_ROW_HEIGHT = 18;
+  const PITCH_ROW_HEIGHT = 18;   // the tallest a focused semitone row gets; the focused lane shrinks rows to fit
+  const FOCUS_MIN_ROW = 6;       // below this a part scrolls vertically instead of shrinking further
+  const FOCUS_NOTE_PX = 6;       // a focused part opens zoomed until its typical note is this wide ...
+  const FOCUS_SCREEN = [15, 45]; // ... while one screen still holds this many seconds of the song
   const MAX_ZOOM = 128;
   const MIN_SEMITONES = 8;    // keep a sparse lane (bass, drums) from drawing absurdly thick note bars
   const BLACK_KEYS = new Set([1, 3, 6, 8, 10]);
@@ -170,6 +173,9 @@
     let mixCatalog = null, mixSelection = null, mixError = null;
     let trackId = null, lanes = [], zoom = 1, sequence = 0, loading = false, seeking = false, focusStem = null;
     let annotating = false, draft = null, rangeSelecting = false, gestureEpoch = 0;
+    // The focused lane's semitone height (set by fitFocus), and the zoom focusing chose by itself, so leaving the
+    // lane can undo it when nobody has zoomed since.
+    let focusRow = PITCH_ROW_HEIGHT, autoZoom = null;
     // When the audition is sounding a part, it owns the clock: WebAudio has no `timeupdate`, and the <audio>
     // element it would come from is paused (or loaded with a different track entirely). R6 swaps the same seam.
     let timeSource = null, midiEditor = null;
@@ -346,7 +352,7 @@
     function laneLayout(lane, detailed) {
       if (lane.stem === 'drums' && detailed) {
         const keys = [...new Set(lane.notes.map(note => note[2]))].sort((a, b) => b - a);
-        return { kind: 'keys', keys, rowOf: new Map(keys.map((pitch, index) => [pitch, index])), span: Math.max(1, keys.length) };
+        return { kind: 'keys', keys, rowOf: new Map(keys.map((pitch, index) => [pitch, index])), span: Math.max(1, keys.length), row: focusRow };
       }
       const pitches = lane.notes.map(note => note[2]);
       if (!pitches.length) return {kind:'pitch',low:48,high:72,span:25};
@@ -356,7 +362,7 @@
         const missing=Math.max(0,13-(high-low+1));
         low=Math.max(0,low-Math.floor(missing/2));high=Math.min(127,Math.max(high,low+12));
         low=Math.max(0,Math.min(low,high-12));
-        return {kind:'pitch',low,high,span:high-low+1};
+        return {kind:'pitch',low,high,span:high-low+1,row:focusRow};
       }
       if (high - low < MIN_SEMITONES) {
         const pad = (MIN_SEMITONES - (high - low)) / 2;
@@ -370,7 +376,7 @@
     const noteKey = note => Number.isInteger(note[4]) && Number.isInteger(note[5]) && note[4] >= 0 && note[5] >= 0
       ? note[4] + ':' + note[5] : null;
     function noteRect(note, layout, total, width, height, detailed) {
-      const rowHeight = detailed ? PITCH_ROW_HEIGHT : height / layout.span;
+      const rowHeight = detailed ? (layout.row || PITCH_ROW_HEIGHT) : height / layout.span;
       const row = layout.kind === 'keys' ? (layout.rowOf.get(note[2]) ?? 0) : layout.high - note[2];
       return { x: note[0] / total * width, y: row * rowHeight,
         width: Math.max(1.5, (note[1] - note[0]) / total * width),
@@ -446,7 +452,8 @@
         active = null; start = null; marquee?.remove(); marquee = null;
         if (cancelNoteGesture === cancel) cancelNoteGesture = null;
       };
-      midiEditor?.attach(body,lane,{point,total,layout:laneLayout(lane,true),
+      // A getter, not a snapshot: the focused row height follows the window, and the editor must map pixels the same way.
+      midiEditor?.attach(body,lane,{point,total,layout:()=>laneLayout(lane,true),
         rect:n=>{const r=body.getBoundingClientRect();return noteRect(n,laneLayout(lane,true),total,r.width,r.height,true);},
         cancelGesture:cancel=>{cancelNoteGesture=cancel;}
       });
@@ -552,7 +559,7 @@
       }
     }
 
-    const pitchExtent = surface => (surface.layout?.span || 1)*PITCH_ROW_HEIGHT+12;
+    const pitchExtent = surface => surface.lane?.wavOnly ? 0 : (surface.layout?.span || 1)*(surface.layout?.row || PITCH_ROW_HEIGHT)+12;
     function setPitchTop(surface,value) {
       const max=Math.max(0,pitchExtent(surface)-surface.body.clientHeight);
       const next=Math.max(0,Math.min(max,Number(value)||0));
@@ -572,10 +579,13 @@
       surface.body.append(bar);
       surface.body.addEventListener('wheel',event=>{
         if(event.ctrlKey || event.metaKey)return;
-        const scale=event.deltaMode===1?PITCH_ROW_HEIGHT:event.deltaMode===2?surface.body.clientHeight:1;
+        const scale=event.deltaMode===1?(surface.layout?.row||PITCH_ROW_HEIGHT):event.deltaMode===2?surface.body.clientHeight:1;
         const dx=(event.deltaX||0)*scale,dy=(event.deltaY||0)*scale;
+        const across=event.shiftKey || Math.abs(dx)>Math.abs(dy);
+        // A part that fits has nothing to scroll vertically: let the wheel move the page instead of swallowing it.
+        if(!across && pitchExtent(surface)<=surface.body.clientHeight)return;
         event.preventDefault();
-        if(event.shiftKey || Math.abs(dx)>Math.abs(dy)){
+        if(across){
           const host=$('timelineLanes');if(host)host.scrollLeft+=event.shiftKey?(dy||dx):dx;
           queuePaint();
         } else setPitchTop(surface,(surface.pitchTop||0)+dy);
@@ -602,7 +612,10 @@
         surface.pitchSpace.style.height=pitchExtent(surface)+'px';
         if(bar.scrollTop!==surface.pitchTop)bar.scrollTop=surface.pitchTop;
       }
-      const view={width,height,visibleWidth,offset,dpr,pitchTop:surface.pitchTop,total:surface.total,spans:surface.spans};
+      // Pitch names sit at the left edge of what is visible, just right of the sticky lane heads, so they never pan away.
+      const heads=surface.detailed?body.previousElementSibling?.getBoundingClientRect():null;
+      const labelX=Math.max(offset,heads?Math.round(heads.right-laneRect.left):0)+6;
+      const view={width,height,visibleWidth,offset,dpr,pitchTop:surface.pitchTop,total:surface.total,spans:surface.spans,labelX};
       const changed=!surface.last || Object.keys(view).some(key=>view[key]!==surface.last[key]);
       if(changed){
         surface.visible=viewportNotes(surface,view);
@@ -617,18 +630,41 @@
       requestAnimationFrame(()=>{
         paintQueued=false;
         for(const surface of surfaces.values())paintSurface(surface);
+        pinLabels();
       });
     }
 
+    // Zoomed in, a section or chord that began off screen would show no name at all. The block straddling the
+    // left edge of the visible lanes indents its label to that edge, so every visible block says what it is.
+    let pinnedLabels=[];
+    function pinLabels() {
+      for(const block of pinnedLabels)block.style.textIndent='';
+      pinnedLabels=[];
+      const host=$('timelineLanes'),total=duration();
+      if(!host || zoom===1 || !(total>0))return;
+      const head=host.querySelector('.tl-row-head');
+      const edge=head?head.getBoundingClientRect().right:host.getBoundingClientRect().left;
+      const rows=[...host.querySelectorAll('.tl-row-body')].filter(body=>body.querySelector('.tl-seg')).map(body=>({body,rect:body.getBoundingClientRect()}));
+      for(const {body,rect} of rows){
+        if(!(rect.width>0))continue;
+        const at=(edge-rect.left)/rect.width*total;
+        for(const block of body.children){
+          if(!block.classList?.contains?.('tl-seg') || !(block.segmentStart<at && block.segmentEnd>at))continue;
+          block.style.textIndent=Math.round(edge-(rect.left+block.segmentStart/total*rect.width)+2)+'px';
+          pinnedLabels.push(block);
+        }
+      }
+    }
+
     function drawLane(surface, view) {
-      const {lane,detailed,spans:roles,layout} = surface, {width,height,offset,visibleWidth,pitchTop} = view;
+      const {lane,detailed,layout} = surface, {width,height,offset,visibleWidth,pitchTop} = view;
       const ctx = contextFor(surface.canvas,view);
       if (!ctx) return;
       if(lane.wavOnly&&lane.sourceAudio?.waveform){
-        const points=lane.sourceAudio.waveform,step=width/points.length;ctx.fillStyle='#83c9b8';
+        const points=lane.sourceAudio.waveform,step=width/points.length;ctx.fillStyle=STEM_COLORS[lane.stem]||'#9aa0b4';
         for(let i=0;i<points.length;i++){const x=i*step;if(x+step<offset||x>offset+visibleWidth)continue;const h=Math.max(1,points[i]*(height-12));ctx.fillRect(x,(height-h)/2,Math.max(1,step-1),h);}return;
       }
-      const rowHeight = detailed?PITCH_ROW_HEIGHT:height/layout.span;
+      const rowHeight = detailed?(layout.row||PITCH_ROW_HEIGHT):height/layout.span;
       const firstRow=Math.max(0,Math.floor(pitchTop/rowHeight)),lastRow=Math.min(layout.span,Math.ceil((pitchTop+height)/rowHeight));
       if (detailed && layout.kind === 'pitch') {
         ctx.fillStyle = 'rgba(255,255,255,.05)';
@@ -639,48 +675,58 @@
         ctx.fillStyle = 'rgba(255,255,255,.04)';
         for (let i = firstRow-(firstRow%2); i < lastRow; i += 2) ctx.fillRect(offset, (i * rowHeight), visibleWidth, rowHeight);
       }
-      if (detailed) drawGuides(ctx, layout, width, height, rowHeight, offset, visibleWidth, pitchTop);
-      const color = STEM_COLORS[lane.stem] || '#9aa0b4';
-      // Focused lanes colour each note by how that span is being played, so the strip below and the notes agree.
-      let cursor = 0;
-      for (const {note,rect} of surface.visible) {
-        const [start, end, pitch, velocity] = note;
-        const { x, y, width:w, height:h } = rect;
-        ctx.globalAlpha = 0.4 + 0.6 * Math.min(1, Math.max(0, velocity / 127));
-        let paint = color;
-        if (roles) {
-          while (cursor < roles.length - 1 && roles[cursor].end <= start) cursor += 1;
-          const span = roles[cursor];
-          const kind = span && (span.relation ?? span.role);
-          const palette = span && (span.relation ? HARMONY_COLORS : ROLE_COLORS);
-          if (span && start >= span.start && start < span.end && palette[kind] && kind !== 'rest') paint = palette[kind];
+      if (detailed) drawOctaves(ctx, layout, rowHeight, offset, visibleWidth, pitchTop, height);
+      if (detailed && surface.marks?.length) {
+        // Section boundaries carried down through the roll: the one time reference the analysis has for sure.
+        ctx.fillStyle = 'rgba(255,255,255,.16)';
+        for (const seconds of surface.marks) {
+          const x = Math.round(seconds / surface.total * width);
+          if (x >= offset && x <= offset + visibleWidth) ctx.fillRect(x, pitchTop, 1, height);
         }
-        ctx.fillStyle = paint;
-        ctx.fillRect(x, y, w, h);
+      }
+      const color = STEM_COLORS[lane.stem] || '#9aa0b4';
+      // Notes keep the part's own colour; how a span is played (or how it sits on the chord) is the strip's to say,
+      // right below. Loudness still shades them, but a focused part never fades below readable.
+      const floor = detailed ? 0.55 : 0.4;
+      ctx.fillStyle = color;
+      for (const {note,rect} of surface.visible) {
+        const velocity = note[3];
+        const { x, y, width:w, height:h } = rect;
+        ctx.globalAlpha = floor + (1 - floor) * Math.min(1, Math.max(0, velocity / 127));
+        // A one-pixel gap keeps repeated notes of one pitch from welding into a single bar.
+        ctx.fillRect(x, y, detailed && w > 3 ? w - 1 : w, h);
       }
       ctx.globalAlpha = 1;
+      if (detailed) drawPitchNames(ctx, layout, rowHeight, pitchTop, height, view.labelX);
     }
 
-    // Labels keep their song-space positions while only those touching the viewport are painted, so pan and
-    // zoom never make the pitch guide jump to a different beat.
-    function drawGuides(ctx, layout, width, height, rowHeight, offset, visibleWidth, pitchTop) {
-      const step = Math.max(320, Math.min(720, width / 4));
-      const stops = [];
-      const first = Math.max(0,Math.floor((offset-100-6)/step));
-      for (let x = 6+first*step; x < Math.min(width,offset+visibleWidth); x += step) stops.push(x);
-      ctx.font = `${Math.round(Math.min(11, Math.max(8, rowHeight)))}px ui-sans-serif, system-ui, sans-serif`;
+    // A line under every C, drawn beneath the notes.
+    function drawOctaves(ctx, layout, rowHeight, offset, visibleWidth, pitchTop, height) {
+      if (layout.kind !== 'pitch') return;
+      ctx.fillStyle = 'rgba(255,255,255,.14)';
+      for (let pitch = Math.ceil(layout.low / 12) * 12; pitch <= layout.high; pitch += 12) {
+        const y = (layout.high - pitch) * rowHeight + rowHeight;
+        if (y >= pitchTop && y <= pitchTop + height) ctx.fillRect(offset, y, visibleWidth, 1);
+      }
+    }
+
+    // Pitch names (every C, or every drum key) on a dark tab at the left edge of the visible part of the lane, so
+    // they stay in view while the song pans under them and stay legible over the notes.
+    function drawPitchNames(ctx, layout, rowHeight, pitchTop, height, x) {
+      ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
       ctx.textBaseline = 'middle';
-      const label = (text, y) => { if(y+rowHeight<pitchTop||y-rowHeight>pitchTop+height)return; ctx.fillStyle = 'rgba(255,255,255,.42)'; for (const x of stops) ctx.fillText(text, x, y); };
+      const label = (text, y) => {
+        if (y < pitchTop - 8 || y > pitchTop + height + 8) return;
+        const w = Math.ceil(ctx.measureText(text).width) + 8;
+        ctx.fillStyle = 'rgba(13,16,22,.82)'; ctx.fillRect(x - 4, Math.round(y - 8), w, 16);
+        ctx.fillStyle = 'rgba(232,236,245,.86)'; ctx.fillText(text, x, y);
+      };
       if (layout.kind === 'keys') {
         layout.keys.forEach((pitch, index) => label(GM_DRUM_KEYS[pitch] || String(pitch), index * rowHeight + rowHeight / 2));
         return;
       }
-      for (let pitch = Math.ceil(layout.low / 12) * 12; pitch <= layout.high; pitch += 12) {
-        const y = (layout.high - pitch) * rowHeight;
-        ctx.fillStyle = 'rgba(255,255,255,.14)';
-        ctx.fillRect(offset, y + rowHeight, visibleWidth, 1);
-        label(`C${Math.round(pitch / 12) - 1}`, y + rowHeight / 2);
-      }
+      for (let pitch = Math.ceil(layout.low / 12) * 12; pitch <= layout.high; pitch += 12)
+        label(`C${Math.round(pitch / 12) - 1}`, (layout.high - pitch) * rowHeight + rowHeight / 2);
     }
 
     // The share of the track each way of playing accounts for — the one number that says what this part mostly does.
@@ -749,6 +795,62 @@
       if (!Number.isFinite(auditioned) && !playing()) return false;
       scrollTo(Number.isFinite(auditioned) ? auditioned : Number(audio.currentTime) || 0);
       return true;
+    }
+
+    // --- the focused lane ------------------------------------------------------------------------
+    // Section starts of the top section row, drawn down through a focused part as its time reference.
+    function sectionMarks(rows) {
+      const row = rows.find(r => r.kind === 'section');
+      return row ? row.result.segments.map(s => Number(s.start) || 0).filter(t => t > 0).sort((a, b) => a - b) : [];
+    }
+
+    // A focused lane fills the window down to the player instead of a fixed share of it, and its rows shrink until
+    // the whole range of the part fits: reading one part means seeing all of it at once, with the strip below it.
+    function fitFocus() {
+      const surface = focusStem ? surfaces.get(focusStem) : null, body = surface?.body;
+      if (!body?.isConnected || !surface.detailed) return;
+      const host = $('timelineLanes'), card = $('workspaceTimeline');
+      let scroller = host?.parentElement;
+      while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+      if (!scroller || !card || !(scroller.clientHeight > 0)) return;
+      const s = scroller.getBoundingClientRect(), b = body.getBoundingClientRect(), h = host.getBoundingClientRect();
+      const pad = element => parseFloat(getComputedStyle(element).paddingBottom) || 0;
+      // The one-line readout under the lanes stays in view too; the annotation form, which comes and goes while
+      // drawing, does not count, so drawing never resizes the rows under the pointer.
+      const readout = $('timelineReadout'), below = readout && !readout.hidden && readout.getClientRects().length ? readout.getBoundingClientRect().height + 10 : 0;
+      // Measured against the scroller's unscrolled content, so the fit does not change with where the page is.
+      const room = scroller.clientHeight - (b.top - s.top + scroller.scrollTop) - (h.bottom - b.bottom) - below - pad(card) - pad(scroller) - 6;
+      const avail = Math.max(240, Math.floor(room));
+      const span = surface.lane.wavOnly ? 0 : laneLayout(surface.lane, true).span;
+      const row = span ? Math.max(FOCUS_MIN_ROW, Math.min(PITCH_ROW_HEIGHT, Math.floor((avail - 12) / span))) : PITCH_ROW_HEIGHT;
+      body.style.height = Math.max(180, span ? Math.min(avail, span * row + 12) : Math.min(avail, 240)) + 'px';
+      if (row !== focusRow) {
+        if (surface.pitchTop) surface.pitchTop = Math.round(surface.pitchTop * row / focusRow);
+        focusRow = row;
+        surface.indexedLane = null;   // re-index with the new geometry on the next paint
+      }
+    }
+
+    // How far focusing zooms in by itself: until the part's typical note is FOCUS_NOTE_PX wide, but never so far that
+    // a screen holds less than FOCUS_SCREEN[0] seconds, nor so little that it holds more than FOCUS_SCREEN[1].
+    function focusZoom(lane) {
+      const total = duration(), v = viewport();
+      if (!lane?.notes?.length || lane.wavOnly || !(total > FOCUS_SCREEN[1]) || !v) return 1;
+      const lengths = lane.notes.map(note => note[1] - note[0]).sort((a, b) => a - b);
+      const typical = Math.max(0.02, lengths[Math.floor(lengths.length / 2)]);
+      const pow = value => 2 ** value;
+      const wanted = pow(Math.ceil(Math.log2(FOCUS_NOTE_PX / (typical * v.lane.width / total))));
+      const least = pow(Math.ceil(Math.log2(total / FOCUS_SCREEN[1]))), most = pow(Math.floor(Math.log2(total / FOCUS_SCREEN[0])));
+      return Math.max(1, Math.min(MAX_ZOOM, Math.max(least, Math.min(most, wanted))));
+    }
+
+    // Puts a time at the left edge of what is visible (just right of the sticky lane heads).
+    function showFrom(seconds) {
+      const v = viewport();
+      if (!v) return;
+      const head = v.host.querySelector('.tl-row-head');
+      v.host.scrollLeft += v.xOf(seconds) - (head ? head.getBoundingClientRect().right + 8 : v.view.left);
+      queuePaint();
     }
 
     function attachPan(element, { always = false } = {}) {
@@ -931,11 +1033,15 @@
         }
         Object.assign(surface,{body,lane,total,detailed,spans:detailed?spans:null,overlayDirty:true});
         body.append(surface.canvas,surface.overlay);
-        if(detailed){
+        if(detailed && !lane.wavOnly){
           const layout=laneLayout(lane,true);
-          body.style.setProperty('--tl-pitch-height',Math.max(180,layout.span*PITCH_ROW_HEIGHT+12)+'px');
+          body.style.setProperty('--tl-pitch-height',Math.max(180,layout.span*layout.row+12)+'px');
           attachPitchScroll(surface);
         } else { surface.scroller=null; surface.pitchSpace=null; }
+        if(detailed){
+          const marks=sectionMarks(rows),key=marks.join(',');
+          if(surface.marksKey!==key){surface.marks=marks;surface.marksKey=key;surface.last=null;}
+        }
         if (spans) {
           const strip = document.createElement('div');
           strip.className = 'tl-roles';
@@ -967,6 +1073,7 @@
       for(const [key,elements] of layout.ordered([...rootNodes],pair=>pair[0]))for(const element of elements)canvas.append(element);
       host.append(canvas);
       host.scrollLeft = oldScroll;
+      fitFocus();
       queuePaint();
       renderEditor();
       updatePlayhead();
@@ -1188,6 +1295,8 @@
       const nextTrack = selected?.id || null;
       if (trackId !== nextTrack) {
         mixCatalog=null;mixSelection=null;mixError=null;lanes = []; focusStem = null; noteSelecting = false; rangeSelecting = false; gestureEpoch += 1;
+        if (autoZoom && zoom === autoZoom) zoom = 1;   // the zoom a focus chose leaves with it
+        autoZoom = null;
         onLanesChanged?.(null);
       }
       if(trackId!==nextTrack){trackId=nextTrack;loadLayout();}
@@ -1237,11 +1346,25 @@
 
     function setFocus(stem) {
       if (focusStem === stem) return;
+      const entering = !focusStem && Boolean(stem);
       cancelNoteGesture?.(); selectionKeys.clear(); noteSelecting = false;
+      // Opening a part from the whole-song view zooms in to where its notes can be read; leaving it undoes that,
+      // unless the zoom was changed in between. A zoom someone chose before focusing is left alone.
+      const next = entering && zoom === 1 ? focusZoom(lookup(stem)) : 1;
+      if (!stem) {
+        if (autoZoom && zoom === autoZoom) zoom = 1;
+        autoZoom = null;
+      }
       focusStem = stem;
       rangeSelecting = false; gestureEpoch += 1;
       onLanesChanged?.(focusStem);
+      if (next > 1) { zoom = autoZoom = next; }
       render();
+      if (next > 1) {
+        const at = timeSource?.() ?? (playing() ? Number(audio.currentTime) || 0 : null);
+        const first = lookup(stem)?.notes?.[0]?.[0] ?? 0;
+        requestAnimationFrame(() => Number.isFinite(at) ? scrollTo(at) : showFrom(Math.max(0, first - 1)));
+      }
     }
 
     function setZoom(next) {
@@ -1312,12 +1435,14 @@
   function segmentColor(kind, engineId, label) {
     if (kind === 'harmony') {
       const root = String(label || 'N').match(/^([A-G](?:#|b)?)/)?.[1] || 'N';
-      return { C: '#e76f8f', 'C#': '#ef8a6f', D: '#e9b45f', Eb: '#c6ca62', 'D#': '#c6ca62', E: '#8dcc70', F: '#65c795', 'F#': '#5fc7c0', G: '#63b3e0', Ab: '#7f9fe8', 'G#': '#7f9fe8', A: '#a78be6', Bb: '#cf82d6', 'A#': '#cf82d6', B: '#e57bb0', N: '#4a4f60' }[root] || '#4a4f60';
+      return { C: '#e76f8f', 'C#': '#ef8a6f', Db: '#ef8a6f', D: '#e9b45f', Eb: '#c6ca62', 'D#': '#c6ca62', E: '#8dcc70', F: '#65c795', 'F#': '#56c5bf', Gb: '#56c5bf', G: '#5aa9df', Ab: '#7c8fe0', 'G#': '#7c8fe0', A: '#9a79df', Bb: '#be72cf', 'A#': '#be72cf', B: '#dc73b0', N: '#555b69' }[root] || '#555b69';
     }
-    if (kind === 'manual') return '#bfb1ff';
+    if (kind === 'manual') return '#72e8ce';
+    const named = { intro: '#5cc9b3', verse: '#6ba0dc', chorus: '#df72aa', 'pre-chorus': '#c98fd0', bridge: '#a97fd2', inst: '#ddbd62', solo: '#df896f', break: '#8f9bb3', outro: '#79b877', silence: '#5b6172', start: '#5b6172', end: '#5b6172' }[String(label || '').trim().toLowerCase()];
+    if (named) return named;
     let hash = 0;
     for (const char of `${engineId}:${label}`) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-    return ['#5b8def', '#57b894', '#d98a4a', '#b06fd1', '#d46a7e', '#4aa3c7'][Math.abs(hash) % 6];
+    return ['#8f7cff', '#5cc9b3', '#df72aa', '#ddbd62', '#6ba0dc', '#a97fd2', '#df896f', '#79b877', '#c1a0ff'][Math.abs(hash) % 9];
   }
 
   const percent = value => value === null || value === undefined ? '—' : Math.round(value * 100);
