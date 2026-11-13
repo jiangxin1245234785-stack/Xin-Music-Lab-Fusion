@@ -519,6 +519,87 @@ def test_rebuild_layer_adds_the_moved_notes_in_a_second_kit():
         assert 'layer' not in next(r for r in done['tracks'] if r['track'] == 'bass')
 
 
+def test_pack_lists_the_right_files():
+    """SPEC v25: a sounding track gets a wav, a swapped track with notes a MIDI, a sounding layer its own MIDI;
+    a muted track and a kept stem get no MIDI; nothing is written beside the folder."""
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        song = library.read_song(make_song(scratch), 'test')
+        plan = {'preset': 'pluck', 'tracks': {'drums': {'mode': 'swap'}, 'bass': {'mode': 'swap', 'layer': {'kit': 'acid', 'oct': -1, 'db': -6}},
+                                              'piano': {'mode': 'mute'}, 'guitar': {'mode': 'swap'}, 'vocals': {'mode': 'orig'}}}
+        out = scratch / 'out'
+        _, done = batch.rebuild(song['midi'], plan, out, server.KITS_DIR, stems=song['stems'], pack=True)
+        folder = Path(done['folder'])
+        assert folder.parent == out and folder.name == 'merged.pluck.工程包', folder
+        names = sorted(Path(p).name for p in done['files'])
+        assert names == sorted(['00 混音.wav', '01 鼓 drums.wav', '02 贝斯 bass.wav', '01 鼓 drums.mid', '02 贝斯 bass.mid',
+                                '02 贝斯 bass.叠层.mid', '方案.json', '说明.txt']), names
+        assert sorted(p.name for p in out.iterdir()) == [folder.name], 'a pack writes nothing beside its folder'
+        assert sorted(p.name for p in folder.iterdir()) == names
+        text = (folder / '说明.txt').read_bytes()
+        assert text.startswith(b'\xef\xbb\xbf') and '120 BPM' in text.decode('utf-8-sig') and '钢琴：静音' in text.decode('utf-8-sig')
+        saved = json.loads((folder / '方案.json').read_text(encoding='utf-8'))
+        assert saved['preset'] == 'pluck' and saved['tracks']['bass']['layer']['kit'] == 'acid' and 'written' in saved
+        again = batch.rebuild(song['midi'], plan, out, server.KITS_DIR, stems=song['stems'], pack=True)[1]
+        assert Path(again['folder']).name == 'merged.pluck-2.工程包'
+
+
+def test_pack_midi_cannot_hold_overlapping_notes_of_one_pitch():
+    import pretty_midi
+    from memesynth.score import Note
+    notes = [Note(0.0, 1.0, 60, 90, 'guitar/a', False), Note(0.5, 1.0, 60, 80, 'guitar/b', False),   # overlaps: cut at 0.5
+             Note(2.0, 0.2, 60, 70, 'guitar/a', False), Note(2.0, 0.6, 60, 60, 'guitar/b', False),   # same start: one, the longer
+             Note(0.25, 0.5, 64, 100, 'guitar/a', False), Note(1.0, 0.1, 200, 100, 'guitar/a', False)]  # another pitch; out of range
+    midi, counts = batch.pack_midi(notes, 'guitar - pluck', False)
+    assert counts == {'skipped': 1, 'shortened': 1, 'merged': 1}, counts
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / 'a.mid'
+        midi.write(str(path))
+        back = sorted((n.start, n.end, n.pitch) for n in pretty_midi.PrettyMIDI(str(path)).instruments[0].notes)
+    assert back == [(0.0, 0.5, 60), (0.25, 0.75, 64), (0.5, 1.5, 60), (2.0, 2.6, 60)], back
+
+
+def test_pack_wavs_line_up_and_the_midi_is_the_shaped_notes():
+    import pretty_midi
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        song = library.read_song(make_song(scratch), 'test')
+        plan = {'preset': 'pluck', 'pump': {'depth': 50, 'release': 150},
+                'tracks': {'drums': {'mode': 'swap', 'thin': 30}, 'piano': {'mode': 'orig'},
+                           'bass': {'mode': 'swap', 'gate': -40, 'late': -15, 'loose': 40, 'thin': 50, 'room': 30,
+                                    'layer': {'kit': 'acid', 'oct': 1, 'db': -3}}}}
+        _, done = batch.rebuild(song['midi'], plan, scratch / 'out', server.KITS_DIR, stems=song['stems'], pack=True)
+        folder = Path(done['folder'])
+        mix, rate = sf.read(str(folder / '00 混音.wav'), dtype='float64')
+        total, lengths = np.zeros_like(mix), set()
+        for path in folder.glob('0[1-6] *.wav'):
+            audio, _ = sf.read(str(path), dtype='float64')
+            lengths.add(len(audio))
+            total += audio
+        assert rate == 48000 and lengths == {len(mix)}, (lengths, len(mix))
+        error = 10 * np.log10(np.mean((total - mix) ** 2) / np.mean(mix ** 2))
+        assert error < -100, error                      # 24-bit files: the sum is off only by rounding
+        score = batch.read_score(song['midi'])
+        tracks, _, _ = batch.plan_tracks(plan, sorted(p.parent.name for p in server.KITS_DIR.glob('*/kit.json')))
+        played = batch.shaped_notes(score, tracks)
+        for name, drums in (('bass', False), ('drums', True)):
+            mine = [n for n in played.notes if batch.track_of(n.route) == name]
+            midi = pretty_midi.PrettyMIDI(str(next(folder.glob(f'0? * {name}.mid'))))
+            assert midi.resolution == 480 and [round(t) for t in midi.get_tempo_changes()[1]] == [120]
+            (part,) = midi.instruments
+            assert part.is_drum == drums and len(part.notes) == len(mine)
+            got = sorted(part.notes, key=lambda n: (n.start, n.pitch))
+            want = sorted(mine, key=lambda n: (n.start, n.pitch))
+            for a, b in zip(got, want):
+                assert abs(a.start - b.start) <= 0.53e-3 and a.pitch == b.pitch and a.velocity == b.velocity
+                assert abs((a.end - a.start) - (0.1 if drums else b.duration)) <= 0.53e-3
+        layer = pretty_midi.PrettyMIDI(str(folder / '02 贝斯 bass.叠层.mid')).instruments[0]
+        main = pretty_midi.PrettyMIDI(str(folder / '02 贝斯 bass.mid')).instruments[0]
+        assert [n.pitch for n in layer.notes] == [n.pitch + 12 for n in main.notes]
+        assert layer.name == 'bass - layer acid' and main.name == 'bass - pluck', (layer.name, main.name)
+        assert not list(folder.glob('04 *.mid')), 'a kept stem has no MIDI'
+
+
 def test_rebuild_carries_octave_dynamics_and_effects():
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)

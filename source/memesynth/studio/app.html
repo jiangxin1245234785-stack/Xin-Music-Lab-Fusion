@@ -71,6 +71,7 @@
       <div class="card pad">
         <label class="field"><span>输出目录</span><input type="text" id="outDir" spellcheck="false"></label>
         <label class="check"><input type="checkbox" id="stems"> 另存每条发声的轨</label>
+        <label class="check" title="每条轨一个 wav 和一个 MIDI，加整首混音、方案和说明，放进一个文件夹"><input type="checkbox" id="pack"> 工程包</label>
         <div class="row">
           <button type="button" id="exportBtn" class="primary">导出</button>
           <button type="button" id="revealBtn">打开目录</button>
@@ -1990,7 +1991,11 @@ function paintSongs() {
     tag.textContent = item.plan ? '有方案' : !item.vocal ? '无人声' : item.voices.length ? `声音 ${item.voices.length}` : `分轨 ${(item.stems || []).length}`;
     tag.title = item.plan ? '这首存过方案，打开就是上次的样子' : !item.vocal ? '这首没有分离出人声' : item.voices.length ? `已经转换好 ${item.voices.length} 个声音` : `分离出 ${(item.stems || []).length} 条分轨`;
     button.append(label, tag);
-    button.addEventListener('click', () => { if (score) closeDrawers(); openSong(item); });
+    button.addEventListener('click', () => {
+      if (score && item.key === songKey) return closeDrawers();   // the song already open: nothing to load again
+      if (score) closeDrawers();
+      openSong(item);
+    });
     el('songs').appendChild(button);
   }
   if (!el('songs').children.length) {
@@ -2447,7 +2452,8 @@ async function doExport() {
   try {
     const start = await api('/api/export', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(rebuildRequest({outDir: el('outDir').value.trim(), stems: el('stems').checked})),
+      body: JSON.stringify(rebuildRequest({outDir: el('outDir').value.trim(), stems: el('stems').checked || el('pack').checked,
+                                           pack: el('pack').checked})),
     });
     while (true) {
       await new Promise(r => setTimeout(r, 400));
@@ -2469,7 +2475,10 @@ function showExportResult(job) {
   if (job.error) { el('exportState').textContent = `没导出来（${job.error}）`; return; }
   const lines = [], done = job.rebuild || {files: [], tracks: []};
   const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
-  lines.push(`<div class="flag done">导出好了 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${job.outDir}</code></div>`);
+  lines.push(done.folder
+    ? `<div class="flag done">导出好了 · 工程包 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${done.folder}</code></div>`
+    : `<div class="flag done">导出好了 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${job.outDir}</code></div>`);
+  revealPath = done.folder || '';                            // 「打开目录」 opens the pack itself
   const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原声' : voiceName(t.by)}`);
   if (told.length) lines.push(`<div class="flag done">${told.join(' · ')}</div>`);
   const silent = done.tracks.filter(t => !t.sounding).map(t => zh(t.track));
@@ -2482,10 +2491,17 @@ function showExportResult(job) {
   el('outDir').value = job.outDir || el('outDir').value;
 }
 el('exportBtn').addEventListener('click', doExport);
+/* SPEC v25: the pack holds the track files, so ticking it ticks 「另存每条发声的轨」 and holds it there. */
+let revealPath = '', stemsBefore = false;
+el('pack').addEventListener('change', () => {
+  if (el('pack').checked) { stemsBefore = el('stems').checked; el('stems').checked = true; el('stems').disabled = true; }
+  else { el('stems').checked = stemsBefore; el('stems').disabled = false; }
+});
+el('outDir').addEventListener('input', () => { revealPath = ''; });
 el('revealBtn').addEventListener('click', async () => {
   try {
     await api('/api/reveal', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                              body: JSON.stringify({path: el('outDir').value.trim()})});
+                              body: JSON.stringify({path: revealPath || el('outDir').value.trim()})});
     el('exportState').textContent = '';
   } catch (error) {
     el('exportState').textContent = error.message;

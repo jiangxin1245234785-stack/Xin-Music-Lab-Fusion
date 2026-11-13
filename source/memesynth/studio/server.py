@@ -230,7 +230,7 @@ def plan_path(kind, key):
     return PLANS / kind / f'{safe}.json'
 
 
-def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, vocal_choice, stems, listen=False):
+def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, vocal_choice, stems, listen=False, pack=False):
     """The rebuild as a job, the same way `run_job` runs the per-kit export.
 
     With `listen` it is rendered into the cache for the page to play, replacing the last one."""
@@ -254,7 +254,8 @@ def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, voca
         vocal, vocal_note = load_vocal(vocal_choice)
         score, written = rebuild(midi_path, plan, out_dir, KITS_DIR, stems=stems, vocal=vocal,
                                  voice=(vocal_choice or {}).get('voice', ''), write_tracks=write_tracks,
-                                 progress=progress, listen_path=(Path(out_dir) / f'{job_id}.wav') if listen else None)
+                                 progress=progress, listen_path=(Path(out_dir) / f'{job_id}.wav') if listen else None,
+                                 pack=pack and not listen)
         with JOBS_LOCK:
             JOBS[job_id].update(done=True, progress=1.0, message='完成', vocalNote=vocal_note, rebuild=written,
                                 listen=f'/listen/{job_id}.wav' if listen else '',
@@ -650,7 +651,8 @@ class Handler(BaseHTTPRequestHandler):
                     out_dir.mkdir(parents=True, exist_ok=True)
                 threading.Thread(target=run_rebuild, daemon=True, args=(
                     job_id, midi_bytes, payload.get('name') or 'input.mid', payload['plan'], out_dir,
-                    bool(payload.get('stems')) and not listen, payload.get('vocal'), stems, listen)).start()
+                    bool(payload.get('stems')) and not listen, payload.get('vocal'), stems, listen,
+                    bool(payload.get('pack')) and not listen)).start()
                 return self.send_json({'jobId': job_id})
             threading.Thread(target=run_job, daemon=True, args=(
                 job_id, midi_bytes, payload.get('name') or 'input.mid', kits, out_dir,

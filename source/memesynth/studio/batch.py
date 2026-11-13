@@ -328,6 +328,164 @@ def layer_notes(played, name, octave):
     return dataclasses.replace(played, notes=tuple(notes)), dropped
 
 
+# --- the project pack (SPEC v25): what any DAW can take, no DAW's own project format ---------------------
+PACK_ORDER = ('drums', 'bass', 'guitar', 'piano', 'other', 'vocals')
+PACK_ZH = {'drums': '鼓', 'bass': '贝斯', 'guitar': '吉他', 'piano': '钢琴', 'other': '其他', 'vocals': '人声'}
+PACK_KEYS = (('oct', '八度'), ('vel', '力度'), ('gate', '长短'), ('late', '前后'), ('loose', '松紧'), ('thin', '疏密'),
+             ('tone', '明暗'), ('echo', '回声'), ('room', '混响'))
+PACK_TICKS = 960                                   # ticks per second: 480 a beat at a fixed 120 BPM, like merged.mid
+PACK_DRUM_SECONDS = 0.1                            # drum notes carry no length in the score
+
+
+def pack_midi(notes, name, drums):
+    """One instrument of `notes` (studio Notes, seconds) as a standard MIDI file: 120 BPM, 4/4, 480 ticks a beat.
+    Starts and lengths are each rounded to the nearest tick (≤ half a tick off); drums go on channel 10 at 0.1 s.
+    Notes outside 0–127 cannot be written and are left out. One MIDI track cannot hold two notes of the same
+    pitch sounding at once (the note-offs pair up with either note-on), so where they overlap the earlier note
+    ends where the later one starts, and two that start on the same tick become one (the longer).
+    Returns (PrettyMIDI, {'skipped', 'shortened', 'merged'}).
+    The track name is plain ASCII ('bass - hoover'): a MIDI text event has no character set, and a DAW that
+    guesses wrong shows anything else as garbage."""
+    import pretty_midi
+    midi = pretty_midi.PrettyMIDI(resolution=480, initial_tempo=120.0)
+    midi.time_signature_changes.append(pretty_midi.TimeSignature(4, 4, 0.0))
+    part = pretty_midi.Instrument(program=0, is_drum=drums, name=name.encode('ascii', 'replace').decode('ascii'))
+    counts = {'skipped': 0, 'shortened': 0, 'merged': 0}
+    by_pitch = {}
+    for note in notes:
+        if not 0 <= note.pitch <= 127:
+            counts['skipped'] += 1
+            continue
+        start = int(round(note.start * PACK_TICKS))
+        length = max(1, int(round((PACK_DRUM_SECONDS if drums else note.duration) * PACK_TICKS)))
+        by_pitch.setdefault(int(note.pitch), []).append([start, start + length, max(1, min(127, int(note.velocity)))])
+    for pitch, rows in by_pitch.items():
+        rows.sort(key=lambda row: (row[0], -row[1]))
+        kept = []
+        for row in rows:
+            if kept and row[0] == kept[-1][0]:
+                kept[-1][1] = max(kept[-1][1], row[1])
+                counts['merged'] += 1
+                continue
+            if kept and row[0] < kept[-1][1]:
+                kept[-1][1] = row[0]
+                counts['shortened'] += 1
+            kept.append(row)
+        for start, end, velocity in kept:
+            part.notes.append(pretty_midi.Note(velocity=velocity, pitch=pitch, start=start / PACK_TICKS, end=end / PACK_TICKS))
+    part.notes.sort(key=lambda n: (n.start, n.pitch))
+    midi.instruments.append(part)
+    return midi, counts
+
+
+def write_pack(folder, title, preset, tracks, applied, pump, layers, mix, factor, played, stacked, sung, voice, record):
+    """The project pack's files in `folder` (already unique): the mix, one wav per sounding track padded to the mix's
+    length, one MIDI per swapped track that has notes (and one per sounding layer), the plan and a note to read.
+    Returns (files, per-MIDI counts)."""
+    import datetime
+    import json
+
+    import numpy as np
+
+    folder.mkdir(parents=True)
+    frames = len(mix)
+    files, midis = [], {}
+    path = folder / '00 混音.wav'
+    soundfile.write(str(path), mix * factor, SAMPLE_RATE, subtype='PCM_24')
+    files.append(str(path))
+    lines_files = ['  00 混音.wav — 整首混音（和普通导出的混音同一份）']
+    for index, name in enumerate(PACK_ORDER, 1):
+        if name not in layers:
+            continue
+        tag = f'{index:02d} {PACK_ZH[name]} {name}'
+        audio = np.zeros((frames, 2), dtype=np.float32)
+        audio[:len(layers[name])] = layers[name]
+        path = folder / f'{tag}.wav'
+        soundfile.write(str(path), audio * factor, SAMPLE_RATE, subtype='PCM_24')
+        files.append(str(path))
+        lines_files.append(f'  {tag}.wav — {PACK_ZH[name]}这条轨的全部声音（含叠层、抽吸、明暗 / 回声 / 混响、音量）')
+    for index, name in enumerate(PACK_ORDER, 1):
+        choice = tracks[name]
+        if name not in layers or choice['mode'] != 'swap' or (name == 'vocals' and sung):
+            continue
+        tag, kit = f'{index:02d} {PACK_ZH[name]} {name}', choice['kit'] or preset
+        mine = [note for note in played.notes if track_of(note.route) == name]
+        if mine:
+            midi, counts = pack_midi(mine, f'{name} - {kit}', name == 'drums')
+            path = folder / f'{tag}.mid'
+            midi.write(str(path))
+            files.append(str(path))
+            midis[path.name] = {'notes': len(midi.instruments[0].notes), **counts}
+            lines_files.append(f'  {tag}.mid — {PACK_ZH[name]}调整之后的音符（干的，{kit}）')
+        extra = stacked.get(name)
+        if extra and extra['audio'] is not None:
+            part, _ = layer_notes(played, name, extra['layer']['oct'])
+            midi, counts = pack_midi(part.notes, f'{name} - layer {extra["layer"]["kit"]}', name == 'drums')
+            path = folder / f'{tag}.叠层.mid'
+            midi.write(str(path))
+            files.append(str(path))
+            midis[path.name] = {'notes': len(midi.instruments[0].notes), **counts}
+            lines_files.append(f'  {tag}.叠层.mid — {PACK_ZH[name]}叠层的音符（已移八度，{extra["layer"]["kit"]}）')
+    path = folder / '方案.json'
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding='utf-8')
+    files.append(str(path))
+    lines_files += ['  方案.json — 用了什么（和普通导出写的方案一样）', '  说明.txt — 这个文件']
+
+    rows = []
+    for name in PACK_ORDER:
+        choice, sound = tracks[name], applied[name]
+        if choice['mode'] == 'mute':
+            rows.append(f'  {PACK_ZH[name]}：静音')
+            continue
+        if name == 'vocals' and sung:
+            said = ['原声' if (voice or 'original') == 'original' else f'换 · 声音 {voice}']
+        elif choice['mode'] == 'orig':
+            said = ['原声']
+        else:
+            said = ['换', choice['kit'] or preset]
+        extra = stacked.get(name)
+        if extra:
+            octave = {1: ' 高八度', -1: ' 低八度'}.get(extra['layer']['oct'], '')
+            said.append(f'叠层 {extra["layer"]["kit"]}{octave} {extra["layer"]["db"]} dB'.replace('-', '−'))
+        numbers = ' '.join(f'{zh} {sound[key]}' for key, zh in PACK_KEYS if sound.get(key))
+        if numbers:
+            said.append(numbers.replace('-', '−'))
+        said.append(f'音量 {float(choice.get("db") or 0.0):g} dB'.replace('-', '−'))
+        if name not in layers:
+            said.append('没出声')
+        rows.append(f'  {PACK_ZH[name]}：' + ' · '.join(said))
+    if pump['depth']:
+        rows.append(f'  抽吸：深度 {pump["depth"]}，恢复 {pump["release"]} 毫秒')
+    fixed = [f'{file}：{c["shortened"]} 个截短' + (f'、{c["merged"]} 个并掉' if c['merged'] else '') + (f'、{c["skipped"]} 个超出音域没写' if c['skipped'] else '')
+             for file, c in midis.items() if c['shortened'] or c['merged'] or c['skipped']]
+    text = '\n'.join([
+        f'XLR 工程包 · {title}',
+        f'预设：{preset}',
+        f'导出时间：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}',
+        '',
+        '文件夹里有：',
+        *lines_files,
+        '',
+        '每条轨：',
+        *rows,
+        '',
+        '怎么拖进编曲软件：',
+        '  所有 wav 都从 0 秒开始、一样长（48 kHz、24 位），都拖到工程最开头就对齐；把它们加在一起就是混音。',
+        '  MIDI 按固定 120 BPM、4/4 写（每拍 480 tick，时间取到最近的 tick，差不到 0.6 毫秒）：先把工程速度设成 120，再拖进来，音符才和 wav 对得上。',
+        '  这和 XLD 转谱出来的 merged.mid 是同一个约定：小节线是假的，不代表这首歌真实的拍子。',
+        '  MIDI 是干的音符：疏密、八度、力度、长短、前后、松紧都已经算进去；明暗、回声、混响、抽吸、音量只在 wav 里。',
+        '  鼓的 MIDI 在第 10 通道，每个音一律 0.1 秒；别的 MIDI 的乐器号都是 0，用什么音色看轨道名。',
+        '  MIDI 里的轨道名是英文（如 bass - hoover、bass - layer wobble），避免编曲软件显示乱码；文件名照旧中英都有。',
+        *(['  同一个音高的两个音叠在一起时，MIDI 的一条轨放不下（关音会对不上），所以前一个音截到后一个音开始，同一刻开始的两个合成一个：',
+            *[f'    {line}' for line in fixed]] if fixed else []),
+        '',
+    ])
+    path = folder / '说明.txt'
+    path.write_text(text, encoding='utf-8-sig')
+    files.append(str(path))
+    return files, midis
+
+
 def plan_tracks(plan, known):
     """A plan, cleaned: (tracks, preset, pump). `known` is the kit names. Used by `rebuild` and `/api/shapecheck`."""
     if not known:
@@ -368,7 +526,7 @@ def shaped_notes(score, tracks):
 
 
 def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice='', write_tracks=False,
-            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None):
+            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None, pack=False):
     """Write one rebuild of a song: every track kept, replaced or silent, as `plan` says (SPEC v5).
 
     `plan` is `{'preset': kit, 'tracks': {track: {'mode': 'orig' | 'swap' | 'mute', 'kit': kit or None,
@@ -497,6 +655,16 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         say(1.0, '完成')
         return score, {'files': [str(listen_path)], 'tracks': report, 'kits': notes, 'factor': factor,
                        'seconds': frames / SAMPLE_RATE}
+    if pack:
+        # SPEC v25: everything goes into one new folder; nothing is written beside it.
+        folder = unique(out_dir / f'{midi_path.stem}.{preset}.工程包')
+        record = {'preset': preset, 'tracks': tracks, 'voice': voice if sung else '',
+                  **({'pump': pump} if pump['depth'] else {}), 'written': report}
+        files, midis = write_pack(folder, midi_path.stem, preset, tracks, applied, pump, layers, mix, factor, played,
+                                  stacked, sung, voice, record)
+        say(1.0, '完成')
+        return score, {'files': files, 'folder': str(folder), 'midi': midis, 'tracks': report, 'kits': notes,
+                       'factor': factor, 'seconds': frames / SAMPLE_RATE}
     files = []
     mix_path = unique(out_dir / f'{midi_path.stem}.重构.wav')
     soundfile.write(str(mix_path), mix * factor, SAMPLE_RATE, subtype='PCM_24')
