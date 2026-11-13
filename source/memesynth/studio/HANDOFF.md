@@ -601,6 +601,40 @@ v2：再拖同一首的 `vocals.wav`，在「人声」里选原唱 / 18 个合�
     - **截图**：`xlr-screens/9-sample.jpg`（1280×720，贝斯用采样、鼓换了底鼓，贝斯的采样浮层开着）。
     - **没验证**：好不好听；真录音的采样（只用了合成的）；双声道采样的页面平均只在单元测试里间接验过（服务端存储 2 声道），页面上用的都是单声道；真机拖文件（预览里是脚本派发的 `DragEvent`，真拖时光标样子没看）。
 
+46. **v27：人声第二档（2026-11-13，等验收）。** 规格是 SPEC.md 的 v27 节。`engine.js`、`memesynth/` 核心没动；没有处理的方案走原来的路。
+    - 新文件 `vocalfx.py`：`NAMES` / `VERSION` / `CRUSH` / `TAPE`、`octave`、`tape`、`crush`、`pitch_track`（pyin）、`vocoder`、`apply`（处理 → RMS 调回 → 超 0 dBFS 整体压，返回 `limitDb`）。
+    - `effects.py`：`VOCAL_TREAT`、`TREATMENTS`、`clean_treat`、`vocal_treat`。`vocals.py`：`TREAT_STATE` / `TREAT_WORK` / `TREAT_LOCKS`、`treat_path`、`treated`、`treat_status`、`request_treat`、`treat_worker`（单线程）；`busy()` 也算处理中的。
+    - `batch.py`：`plan_tracks` 收人声的 `treat`（跟随时不写）；`rebuild(..., treat_vocal=None)`：唱的人声在用上的处理不是 `none` 时换成处理过的；报告人声一行 `treat`；`write_pack` 说明里「处理 声码器」。
+    - `server.py`：`kits.json` 的 `vocalTreat`；`/api/start` 的 `treatments`；`/vocal/…wav?treat=`；`GET` / `POST /api/treat`（`treat_answer`）；`load_vocal(choice, treat, say)`；`run_rebuild` 传 `treat_vocal`。
+    - `app.html`：`treatNames` / `TREATS` / `treatAudio` / `treatBusy` / `treatFailed`、`presetTreat` / `treatOf` / `sungVoice` / `treatNow`、`vocalSource`、`ensureTreat`；`renderWindowNow` 人声那支和状态栏末尾；`paintFx` 的「处理」一行（`#fxTreat`，`.treatRow`）；
+      「调」按钮的亮和提示；`selectPreset` 时重画人声面板；`currentPlan` / `takePlan`；`rollPlan` 清掉 / 钉住；`diceContext` 的 `presetTreat`；`whoPlayed` 写处理名。样式没加（「处理」一行用现有的 `.layerRow`）。
+    - `tests/test_studio.py`：新增 7 项（八度、降位数、走带、声码器、RMS 和确定性、表和方案规则、缓存 + 导出 + 工程包），46 项。
+    - **和设计不一样 / 要知道的**：
+      1. **依赖**：任务书说 librosa / scipy「基础环境里都有」，确实装着（scipy 1.15.3、librosa 0.11.0、numba 0.67.0），但 SPEC v1 §6、v2 §6 写过「工作台不 import librosa / scipy」。照任务书用了，只在 `vocalfx` 里、用到时才 import，服务启动不受影响；SPEC v27 第 9 条写明改了这条红线。
+      2. 处理过的文件是 24 位（原来的人声是 16 位），页面 `decodeWav` 和导出 `soundfile` 读出来是同一组数。
+      3. 走带的延迟线以 0 为中心（读得到一点「将来」），所以不会让人声整体比伴奏晚几毫秒；设计没说中心。
+      4. 声码器里无声段 f0 沿用上一个有声帧的值（锯齿不在人声回来时跳），无声和有声之间 5 ms 渐变；带通是二阶（`butter(1, [lo, hi])`）、包络低通二阶 50 Hz。
+      5. 「复位」除了明暗 / 回声 / 混响也把处理设回跟随；设计没提。
+      6. 降位数的取值数是对整首（含 RMS 调回的缩放）数的；量化本身是对 ±1 满刻度做的，安静的人声在 6 位下会只剩很少几个电平——这就是降位数的声音，没做归一化。
+      7. 一处自己的 bug 已修：`np.arange` 在 Windows 上默认 32 位整数，`下标 × 11025` 在 4 分钟后溢出，降位数整首输出全是 0；改成浮点下标后正常。
+    - **实测**（8790，plans-dev，七里香原唱 303.7 s；人声缓存 `3cfc5a44a6395098`）：
+      - 速度（第一次算，单独跑 `vocalfx.apply`）：声码器 77.3 s、升八度 12.2、降八度加失真 1.9、走带 · 轻 0.6、走带 · 重 0.6、降位数 11k / 8k / 6k 0.4–0.5 s。没有超过 90 s 的。
+        页面里从选 electro 到处理好的人声换上 81.4 s（含读写文件和取回）；换过的声音 freddie 的声码器在页面里 95.7 s（含载入声音和方案）；hyperpop 第一次 34.9 s（含整首「听整首」）。
+        降八度比升八度快很多（1.9 对 12.2 s），量过结果是对的（单元测试基频 ×½），没再查为什么。
+      - 每种处理整首 RMS 差 ≤ 0.001 dB，峰值都没超（`limitDb` 0），20 秒片段两次逐采样相同。
+      - 没处理时不变：第 37 项方案（hoover，处理是「不处理」）六层窗口 6/6 和改前（630d2eb 之后量的）逐采样相同；「听整首」逐字节相同（sha256 032f3b35…），页面对整首 −76.6 dB。
+      - 试听与导出（窗口 120–132 s，去掉头 3 秒）：electro（声码器）整首 **−76.0 dB**、只放人声 **−73.8 dB**；hyperpop（升八度）整首 **−77.5 dB**、只放人声 **−75.0 dB**。
+      - 页面：播放中选 electro：状态栏「…· 原声音量校准中 · 人声处理中（第一次要等一会儿）」，好了以后「渲染好了 · 重构 6 条轨 · 31 ms」，播放位置 10.60 → 10.81 s（`AudioContext` 走了 0.21 s，没从头放）；「调」按钮亮，提示「跟随预设 electro：明暗 +15，回声 10 · 处理：声码器」。
+        手动选「降位数 · 8k」：生效、方案 `treat: crush_8k`、自动存进 plans-dev，刷新后还在（下拉显示「降位数 · 8k」）；选回「跟随预设」：方案里没有 `treat`、用上的是预设的。0 个脚本错误（控制台里只有服务被中断那段时间的心跳连不上）。
+        骰子 2000 次（种子 20261113）：没锁时 `treat` 2000/2000 被清掉；锁住且跟随时 2000/2000 钉成掷之前那套的处理名；锁住且有自己的处理 200/200 不变；相近 2000 次 0 次改人声的 `treat`。
+      - 换过的声音：freddie（缓存里已有，没发起换声）+ electro：处理好、页面出声、「听整首」记录「人声：Freddie Mercury · 声码器」，导出报告人声一行 `treat: vocoder`。
+      - 一屏：人声「调」面板 1280×720 在 467,8–767,483，1024×700 在 337,8–637,483（有没有 A/B 那行都是），都在窗口内，页面没有滚动条。
+      - `test_studio.py` 46 项、`test_memesynth.py` 23 过 2 跳过。
+      - 人声缓存：原有 158 个文件（路径、大小、修改时间）全部没变；新加 5 个，都在 `3cfc5a44a6395098/treat/`：
+        `original.vocoder.v1.48k.wav`、`original.octave_up.v1.48k.wav`、`original.crush_8k.v1.48k.wav`、`freddie.vocoder.v1.48k.wav`、`freddie.crush_8k.v1.48k.wav`（各 43.7 MB）。
+    - **截图**：`xlr-screens/10-vocal.jpg`（1280×720，人声「调」面板开着，「处理」显示「跟随预设 · 声码器」）。
+    - **没验证**：**好不好听**——规划方和执行方都没听过，九种处理只用数字验了；声码器在真人声上的可懂度、走带的幅度是否太轻 / 太重；`tape_*` / `crush_*` / `octave_down` 在真歌上的页面对导出没单独量（只量了 electro 和 hyperpop）；算失败时的那句话只看了代码，没造过失败。
+
 ## 文件地图
 
 ```
@@ -620,6 +654,8 @@ source/memesynth/studio/
   vocals.py                 v2：声音目录、人声缓存、转换队列（单线程）、/vocal/ 取文件；v3：store_file / known / ready_voices
   library.py                v3：扫 XLD 分析目录列出能开的歌（只读）；v5：每首歌的六条分轨
   samples.py                v26：用户自己的采样：存放 / 拒收、测基频（measured_root）、算增益、洗方案、写临时 kit.json
+  vocalfx.py                v27：人声第二档的九种处理（声码器、升降八度、走带、降位数），整首算，librosa / scipy 只在这里、用到才载入
+work/memesynth-cache/voices/<sha16>/treat/   v27：处理过的人声 <声音>.<处理名>.v1.48k.wav（可再生的缓存；只加不改）
 work/memesynth-cache/samples/<sha16>/   v26：拖进来的采样，sample.wav（48 kHz 32 位浮点）+ info.json；测试实例用 samples-dev/
 work/memesynth-cache/plans/   v5：方案。songs/<曲库编号>.json 是每首歌上次的选择，named/<名字>.json 是起了名的
   tests/                    与 Python 的对账脚本

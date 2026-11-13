@@ -68,6 +68,31 @@ VOCAL_PRESETS = {name: {'tone': tone, 'echo': echo, 'room': room} for name, (ton
 }.items()}
 SOUND_KEYS = ('tone', 'echo', 'room')
 
+#: The vocal's second tier (SPEC v27): which treatment (`vocalfx.NAMES`) each preset gives a sung vocal.
+#: The page reads it from `kits.json` (`vocalTreat`), so this is the only copy. vaporwave is tape, not a lower
+#: pitch: only whole octaves stay in the band's key, and the octave down is phonk's.
+VOCAL_TREAT = {
+    'acid': 'none', 'fmkeys': 'none', 'synthwave': 'none', 'italo': 'none', 'electro': 'vocoder', 'vaporwave': 'tape_deep',
+    'supersaw': 'none', 'house': 'none', 'techno': 'none', 'garage': 'none', 'futurebass': 'none', 'psytrance': 'none',
+    'trap': 'none', 'reese': 'none', 'wobble': 'none', 'phonk': 'octave_down', 'hoover': 'none', 'hardstyle': 'none',
+    'hyperpop': 'octave_up', 'lofi': 'tape_light', 'ambient': 'none', 'glitch': 'crush_6k', 'chiptune': 'crush_11k',
+    'c64': 'crush_8k', 'megadrive': 'none', 'pluck': 'none', 'organ': 'none', 'orchestra': 'none', 'musicbox': 'none',
+    'gamelan': 'none',
+}
+TREATMENTS = ('none', 'vocoder', 'octave_up', 'octave_down', 'tape_light', 'tape_deep', 'crush_11k', 'crush_8k', 'crush_6k')
+
+
+def clean_treat(value):
+    """A plan's vocal `treat`: one of TREATMENTS, or None for 'follow the preset' (missing, "follow", anything else)."""
+    return value if isinstance(value, str) and value in TREATMENTS else None
+
+
+def vocal_treat(choice, preset):
+    """The treatment a sung vocal really gets: its own `treat`, or while that follows, the preset's.
+    Independent of `follow` (tone / echo / room)."""
+    own = clean_treat((choice or {}).get('treat'))
+    return own if own is not None else VOCAL_TREAT.get(preset, 'none')
+
 
 def vocal_preset(preset):
     """The tone / echo / room a preset gives the vocal."""

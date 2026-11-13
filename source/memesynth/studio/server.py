@@ -116,6 +116,7 @@ def kit_index():
                         for sample, entry in kit['samples'].items()},
             'voices': kit['voices'],
             'vocal': effects.vocal_preset(name),             # what this preset does to the vocal (SPEC v15)
+            'vocalTreat': effects.VOCAL_TREAT.get(name, 'none'),   # and its second tier (SPEC v27)
             # how loud this kit plays each track, dB vs fmkeys (tools/kit_levels.py): the page corrects borrowed levels with it
             'loudness': loudness.get(name, {}),
         }
@@ -253,7 +254,15 @@ def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, voca
                 JOBS[job_id].update(progress=float(fraction), message=message)
 
         vocal, vocal_note = load_vocal(vocal_choice)
-        score, written = rebuild(midi_path, plan, out_dir, KITS_DIR, stems=stems, vocal=vocal,
+
+        def treat_vocal(name, say):
+            # SPEC v27: the same cached file the page plays, made now if it is not there yet
+            treated, why = load_vocal(vocal_choice, name, say)
+            if treated is None:
+                raise RuntimeError(why)
+            return treated
+
+        score, written = rebuild(midi_path, plan, out_dir, KITS_DIR, stems=stems, vocal=vocal, treat_vocal=treat_vocal,
                                  voice=(vocal_choice or {}).get('voice', ''), write_tracks=write_tracks,
                                  progress=progress, listen_path=(Path(out_dir) / f'{job_id}.wav') if listen else None,
                                  pack=pack and not listen, samples_dir=SAMPLES)
@@ -276,13 +285,15 @@ def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, voca
             pass
 
 
-def load_vocal(choice):
-    """The chosen vocal at its final level, or (None, why not) — SPEC v2 §4–5."""
+def load_vocal(choice, treat='none', say=None):
+    """The chosen vocal at its final level, or (None, why not) — SPEC v2 §4–5. With `treat` (SPEC v27), the cached
+    treated file, made first if it is not there; a treated file keeps the RMS of the voice, so the level is the same."""
     if not choice or not choice.get('voice'):
         return None, ''
     import soundfile
     try:
-        path = vocals.vocal_audio(choice.get('id', ''), choice['voice'])
+        path = (vocals.vocal_audio(choice.get('id', ''), choice['voice']) if treat == 'none'
+                else vocals.treated(choice.get('id', ''), choice['voice'], treat, say))
         level = vocals.status(choice['id'])['info']['activeRmsDb']
     except (FileNotFoundError, ValueError, OSError) as error:
         return None, f'人声没加上：{error}'
@@ -472,7 +483,8 @@ class Handler(BaseHTTPRequestHandler):
             soundfile.write(out, effects.apply(fx_probe(), chosen), effects.RATE, format='WAV', subtype='FLOAT')
             return self.send_bytes(out.getvalue(), 'audio/wav')
         if route == '/api/start':
-            return self.send_json({'defaultOut': str(DEFAULT_OUT),
+            from studio import vocalfx                          # the names only: librosa is not loaded here
+            return self.send_json({'defaultOut': str(DEFAULT_OUT), 'treatments': vocalfx.NAMES,
                                    'opened': self.server.opened_midi,
                                    'openedStamp': getattr(self.server, 'opened_stamp', 0),
                                    'repo': str(REPO)})
@@ -567,14 +579,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'error': str(error)}, 404)
         if route.startswith('/vocal/'):
             # /vocal/<16 hex>/<voice>.wav, and only ever from the cache.
+            # ?treat=<name> (SPEC v27, a whitelist): that treatment's cached file, made first if need be (this waits).
+            import urllib.parse
             parts = route.split('/')
+            treat = (urllib.parse.parse_qs(self.path.partition('?')[2]).get('treat') or ['none'])[0]
+            if treat not in effects.TREATMENTS:
+                return self.send_json({'error': '没有这种人声处理'}, 400)
             if len(parts) == 4 and parts[3].endswith('.wav'):
                 try:
-                    return self.send_file(vocals.vocal_audio(parts[2], parts[3][:-4]))
+                    return self.send_file(vocals.treated(parts[2], parts[3][:-4], treat))
                 except (ValueError, FileNotFoundError) as error:
                     return self.send_json({'error': str(error)}, 404)
             return self.send_json({'error': '拒绝'}, 403)
+        if route == '/api/treat':
+            import urllib.parse
+            query = urllib.parse.parse_qs(self.path.partition('?')[2])
+            try:
+                return self.send_json(self.treat_answer(*((query.get(k) or [''])[0] for k in ('vocal', 'voice', 'treat')), start=False))
+            except (ValueError, FileNotFoundError) as error:
+                return self.send_json({'error': str(error)}, 400)
         return self.send_json({'error': '没有这个地址'}, 404)
+
+    @staticmethod
+    def treat_answer(vocal_id, voice, treat, start):
+        """/api/treat (SPEC v27): {state: ready | working | error | missing, message?}; POST starts the work."""
+        if treat not in effects.TREATMENTS:
+            raise ValueError('没有这种人声处理')
+        vocals.vocal_audio(vocal_id, voice)                       # the voice itself has to be there
+        state = vocals.request_treat(vocal_id, voice, treat) if start else vocals.treat_status(vocal_id, voice, treat)
+        return dict(state, vocal=vocal_id, voice=voice, treat=treat)
 
     def take_sample(self, length):
         """POST /api/sample?track=<轨>&kit=<音色>: the dropped file's bytes as the body, its name URL-encoded in
@@ -720,6 +753,12 @@ class Handler(BaseHTTPRequestHandler):
                 vocals.cancel(payload.get('id', ''), payload.get('voice', ''))
                 return self.send_json(vocals.status(payload['id']))
             except (ValueError, OSError, KeyError) as error:
+                return self.send_json({'error': str(error)}, 400)
+
+        if route == '/api/treat':
+            try:
+                return self.send_json(self.treat_answer(payload.get('vocal', ''), payload.get('voice', ''), payload.get('treat', ''), start=True))
+            except (ValueError, FileNotFoundError) as error:
                 return self.send_json({'error': str(error)}, 400)
 
         if route == '/api/swap':

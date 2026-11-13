@@ -196,6 +196,7 @@ function resetCast() {
   pump = Object.assign({}, PUMP_DEFAULT);
   rolls = []; if (el('back')) { el('back').disabled = true; el('rollNote').textContent = ''; }   // another song: the dice's way back starts over
   cast.vocals.follow = true;                        // the vocal's tone, echo and room follow the preset (SPEC v15)
+  cast.vocals.treat = null;                         // and its second tier follows it too (SPEC v27; null = follow)
   vocalTouched = false;
 }
 resetCast();
@@ -1043,7 +1044,12 @@ function paintFx() {
   pop.style.setProperty('--tc', `var(--t-${id})`);
   pop.innerHTML = `<b>${track.zh} · 调</b>`
     + (id === 'vocals' ? `<label class="fxFollow"><input type="checkbox" id="fxFollow"${following ? ' checked' : ''}>`
-      + `<span>跟随预设</span><small>${following ? '明暗、回声、混响用 ' + preset + ' 的' : '用自己的'}</small></label>` : '')
+      + `<span>跟随预设</span><small>${following ? '明暗、回声、混响用 ' + preset + ' 的' : '用自己的'}</small></label>`
+      // SPEC v27: the second tier, its own switch beside 「跟随预设」 (which is tone / echo / room only)
+      + `<label class="layerRow treatRow${sungVoice() ? '' : ' off'}"><span>处理</span><select id="fxTreat" aria-label="人声处理">`
+      + `<option value="">跟随预设 · ${treatNames[presetTreat()] || presetTreat()}</option>`
+      + TREATS.map(name => `<option value="${name}">${treatNames[name] || name}</option>`).join('') + '</select></label>'
+      + (sungVoice() ? '' : '<p class="fxNote">人声处理只对唱的人声有效（原声或换过的声音）</p>') : '')
     + '<h4 class="fxHead">音符</h4>'
     + row('oct', '八度', '低', '高', 1, !played || id === 'drums')
     + row('vel', '力度', '压平', '夸张', 10, !played)
@@ -1058,6 +1064,12 @@ function paintFx() {
     + row('room', '混响', '无', '多', 5, following && 'held')
     + '<button type="button" class="plain" id="fxReset">复位</button>';
   if (id === 'vocals') {
+    const treat = el('fxTreat');
+    treat.value = c.treat || '';
+    treat.addEventListener('change', () => {
+      c.treat = treat.value || null;
+      paintTracks(); renderWindow(); queueSave();
+    });
     el('fxFollow').addEventListener('change', event => {
       // Letting go keeps what was playing: the sliders start from the preset's values.
       if (!event.target.checked) Object.assign(c, presetVocal());
@@ -1077,7 +1089,7 @@ function paintFx() {
   for (const input of pop.querySelectorAll('input[type=range]')) fillRange(input);
   el('fxReset').addEventListener('click', () => {
     for (const key of FX_KEYS) c[key] = 0;
-    if (id === 'vocals') c.follow = true;                    // back to following the preset
+    if (id === 'vocals') { c.follow = true; c.treat = null; }    // back to following the preset, the second tier too
     closeFx(); fxChanged(true);
   });
 }
@@ -1358,9 +1370,12 @@ function paintTracks() {
       e.gate && `长短 ${e.gate > 0 ? '+' : ''}${e.gate}`, e.late && `前后 ${e.late > 0 ? '+' : ''}${e.late} ms`,
       e.loose && `松紧 ${e.loose}`, e.thin && `疏密 ${e.thin}`,
       e.tone && `明暗 ${e.tone > 0 ? '+' : ''}${e.tone}`, e.echo && `回声 ${e.echo}`, e.room && `混响 ${e.room}`].filter(Boolean).join('，');
-    fx.setAttribute('aria-pressed', String(fxActive(e)));
-    fx.title = following ? following + (changed ? '：' + changed : '')
-      : fxActive(e) ? '调过 · ' + changed : '八度、力度、长短、前后、松紧、疏密、明暗、回声、混响';
+    // SPEC v27: a treatment in use also lights the vocal's button, and is said in its tip
+    const treated = isVocal && treatNow() !== 'none' ? `处理：${treatNames[treatNow()] || treatNow()}` : '';
+    fx.setAttribute('aria-pressed', String(fxActive(e) || !!treated));
+    fx.title = (following ? following + (changed ? '：' + changed : '')
+      : fxActive(e) ? '调过 · ' + changed : treated ? '' : '八度、力度、长短、前后、松紧、疏密、明暗、回声、混响')
+      + (treated ? (following || fxActive(e) ? ' · ' : '') + treated : '');
   }
   paintPresets();
   paintCompare();
@@ -1549,7 +1564,7 @@ function selectPreset(name) {
   if (!kitsIndex[name] || name === preset) return;
   if (!pair.includes(name)) pair = [preset, name];           // the one just left and the one just picked
   previousPreset = preset; preset = name;
-  if (fxTrack === 'vocals' && cast.vocals.follow) paintFx();  // the panel shows the new preset's vocal values
+  if (fxTrack === 'vocals') paintFx();                       // the panel shows the new preset's vocal values and treatment
   paintTracks(); renderWindow(); queueSave();
 }
 /* The last two presets picked, side by side: one click (or `) flips between them at the same
@@ -1586,6 +1601,53 @@ for (const button of el('ab').children) {
 /* --- rendering the window ------------------------------------------------------------- */
 function vocalLinear() {
   return vocal ? 10 ** ((VOCAL_TARGET_DB - vocal.info.activeRmsDb) / 20) : 0;
+}
+/* --- the vocal's second tier (SPEC v27): treated on the server, over the whole vocal, cached; the page plays that file -- */
+let treatNames = {none: '不处理'};                  // from /api/start (vocalfx.NAMES): name → words
+const TREATS = ['none', 'vocoder', 'octave_up', 'octave_down', 'tape_light', 'tape_deep', 'crush_11k', 'crush_8k', 'crush_6k'];
+const treatAudio = {}, treatBusy = {}, treatFailed = {};   // 'voice|treat' → samples / a promise under way / why it failed
+const presetTreat = () => ((kitsIndex || {})[preset] || {}).vocalTreat || 'none';
+const treatOf = () => cast.vocals.treat || presetTreat();
+/* The voice that is sung now, or '' when the vocal is played by a kit, silent, or not loaded. */
+function sungVoice() {
+  const c = cast.vocals, voice = c.mode === 'orig' ? 'original' : c.mode === 'swap' ? c.voice : '';
+  return vocal && voice && voice !== '@kit' && voiceAudio[voice] ? voice : '';
+}
+/* The treatment the vocal really gets now (none for a vocal that is not sung). */
+const treatNow = () => (sungVoice() ? treatOf() : 'none');
+/* The samples to play for this voice: treated when that is in; otherwise the plain voice, and the treatment is asked for. */
+function vocalSource(voice) {
+  const name = treatOf(), key = voice + '|' + name;
+  if (name === 'none') return {audio: voiceAudio[voice], waiting: false, failed: ''};
+  if (treatAudio[key]) return {audio: treatAudio[key], waiting: false, failed: ''};
+  if (treatFailed[key]) return {audio: voiceAudio[voice], waiting: false, failed: treatFailed[key]};
+  ensureTreat(voice, name);
+  return {audio: voiceAudio[voice], waiting: true, failed: ''};
+}
+/* Start the treatment on the server and look every 2 s; when it is ready, fetch it and render again from where the loop is. */
+function ensureTreat(voice, name) {
+  const key = voice + '|' + name, id = vocal.id;
+  if (treatBusy[key] || treatAudio[key]) return treatBusy[key];
+  treatBusy[key] = (async () => {
+    try {
+      let state = await api('/api/treat', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                           body: JSON.stringify({vocal: id, voice, treat: name})});
+      while (state.state === 'working') {
+        await new Promise(done => setTimeout(done, 2000));
+        state = await api(`/api/treat?vocal=${id}&voice=${encodeURIComponent(voice)}&treat=${name}`);
+      }
+      if (state.state !== 'ready') throw new Error(state.message || '没算出来');
+      const audio = decodeWav(await fetchBytes(`/vocal/${id}/${voice}.wav?treat=${name}`));
+      if (!vocal || vocal.id !== id) return;
+      treatAudio[key] = audio;
+    } catch (error) {
+      if (vocal && vocal.id === id) treatFailed[key] = error.message;
+    } finally {
+      delete treatBusy[key];
+    }
+    if (vocal && vocal.id === id && sungVoice() === voice && treatOf() === name) renderWindow();
+  })();
+  return treatBusy[key];
 }
 function vocalWindow(audio) {
   const frames = Math.round(SPAN * RATE), start = Math.round(windowStart * RATE), gain = vocalLinear();
@@ -1696,12 +1758,18 @@ async function renderWindowNow() {
   const kicks = pump.depth ? kickTimes(notes.notes) : [];
   const pumpEnv = kicks.length ? pumpEnvelope(kicks, frames, pump.depth, pump.release, Math.round(windowStart * RATE)) : null;
   const recon = [];
+  let treatSay = '';                                         // SPEC v27: the treated vocal is on its way, or failed
   for (const track of TRACKS) {
     const c = cast[track.id];
     let data = null;
     if (track.id === 'vocals') {
       const voice = c.mode === 'orig' ? 'original' : c.voice;
-      if (c.mode !== 'mute' && vocal && voice && voice !== '@kit' && voiceAudio[voice]) data = vocalWindow(voiceAudio[voice]);
+      if (c.mode !== 'mute' && vocal && voice && voice !== '@kit' && voiceAudio[voice]) {
+        const source = vocalSource(voice);
+        data = vocalWindow(source.audio);
+        treatSay = source.waiting ? '人声处理中（第一次要等一会儿）'
+          : source.failed ? `人声处理没做成（${source.failed}），先放不处理的` : '';
+      }
       else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
     } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
     else if (c.mode === 'swap') data = sampleOn(track.id) ? sampleTrack(track.id) : kitTrack(kitOf(track.id), track.id);
@@ -1735,7 +1803,8 @@ async function renderWindowNow() {
   const said = layers.length ? note || `渲染好了 · ${ab === 'orig' ? '原曲' : '重构'} ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '渲染好了 · 全部静音';
   levelProvisional = provisional ? {key: levelKey(song.key, preset), ticket, note: said, measuredAs: provisional} : null;
   const lost = lostLine();                                   // SPEC v26: a missing sample is said first, every time
-  setState((lost ? lost + ' · ' : '') + (provisional ? said + ' · 原声音量校准中' : said), !!lost);
+  setState((lost ? lost + ' · ' : '') + (provisional ? said + ' · 原声音量校准中' : said) + (treatSay ? ' · ' + treatSay : ''),
+           !!lost || /没做成/.test(treatSay));
   if (running) startPlayback(positionInLoop());
   // The real numbers may have come in while this window was being built: correct it now rather than never.
   if (provisional && levelCache[levelKey(song.key, preset)]) levelsArrived(song.key, preset);
@@ -2254,6 +2323,7 @@ function currentPlan() {
     if (c.sample) tracks[track.id].sample = Object.assign({}, c.sample);        // SPEC v26: only when there is one (kept while its file is away)
   }
   tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
+  if (cast.vocals.treat) tracks.vocals.treat = cast.vocals.treat;   // SPEC v27: only when it does not follow
   const plan = {preset, tracks, voice: cast.vocals.voice};
   if (pump.depth) plan.pump = {depth: pump.depth, release: pump.release};    // only when on: old plans stay readable
   return plan;
@@ -2286,6 +2356,7 @@ function takePlan(plan) {
       vocalTouched = true;
       // A plan from before v15 has no `follow`: it follows only if nothing of its own sound was set (effects.follows).
       c.follow = typeof saved.follow === 'boolean' ? saved.follow : !SOUND_KEYS.some(key => c[key]);
+      c.treat = TREATS.includes(saved.treat) ? saved.treat : null;   // SPEC v27: missing, "follow" or unknown = follow
     }
   }
   cast.vocals.voice = typeof plan.voice === 'string' ? plan.voice : '';
@@ -2381,6 +2452,7 @@ function rollPlan(plan, context, random) {
   const vocals = out.tracks.vocals = out.tracks.vocals || {mode: 'mute', kit: null, db: 0, solo: false};
   for (const key of ['tone', 'echo', 'room']) delete vocals[key];
   vocals.follow = true; vocals.solo = false;
+  delete vocals.treat;                                         // SPEC v27: the second tier follows the new preset too
   delete out.pump;
   if (context.kicks && !chance(0.7)) out.pump = {depth: pick([30, 50, 70]), release: pick([150, 250])};
   // SPEC v24: one in ten rolls gives one unlocked, swapped track a layer. Drawn after everything above, so
@@ -2401,6 +2473,8 @@ function rollPlan(plan, context, random) {
     entry.solo = false;
     const kitPlays = track.id !== 'vocals' || !plan.voice || plan.voice === '@kit';   // a sung vocal has no kit to follow
     if (entry.mode === 'swap' && !entry.kit && kitPlays && plan.preset) entry.kit = plan.preset;
+    // SPEC v27: a locked vocal whose second tier follows is pinned to the treatment of the preset before the roll.
+    if (track.id === 'vocals' && !TREATS.includes(entry.treat)) entry.treat = context.presetTreat || 'none';
     if (track.id === 'vocals' && entry.follow !== false) {
       entry.follow = false;
       const held = context.presetVocal || {};
@@ -2485,7 +2559,7 @@ function planSummary(plan) {
 function paintRolls() { el('back').disabled = !rolls.length || !score; el('roll').disabled = el('nudge').disabled = !score; }
 /* What the dice and 「相近」 need to know about this song; presetVocal is the showing preset's, i.e. the one before. */
 function diceContext() {
-  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}, kicks: songHasKicks(), presetVocal: presetVocal(), categories: {}};
+  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}, kicks: songHasKicks(), presetVocal: presetVocal(), presetTreat: presetTreat(), categories: {}};
   for (const track of TRACKS) { context.notes[track.id] = routesOf(track.id).length > 0; context.stems[track.id] = hasStem(track.id); }
   for (const [name, kit] of Object.entries(kitsIndex)) context.categories[name] = kit.category || '其他';
   return context;
@@ -2600,6 +2674,9 @@ function rebuildRequest(extra) {
 
 /* Who played a track, as the export's report says it: 原声, a voice, a kit, or a sample (SPEC v26). */
 function whoPlayed(row) {
+  if (row.track === 'vocals' && row.treat && row.treat !== 'none') {           // SPEC v27: the vocal's treatment
+    return whoPlayed(Object.assign({}, row, {treat: null})) + ' · ' + (treatNames[row.treat] || row.treat);
+  }
   if (row.by === 'orig' || row.by === 'original') return '原声';
   if (row.sample) return row.sample.part ? `${row.by.split(' + ')[0]} + 采样${PART_ZH[row.sample.part]} ${row.sample.name}` : `采样 ${row.sample.name}`;
   return voiceName(row.by);
@@ -2752,6 +2829,7 @@ buildTracks();
   try {
     const start = await api('/api/start');
     openedStamp = start.openedStamp || 0;
+    if (start.treatments) treatNames = start.treatments;      // SPEC v27: the words for each vocal treatment
     el('outDir').value = start.defaultOut || '';
     const library = loadVoices().catch(error => { el('vocalHint').textContent = error.message; }).then(loadLibrary);
     loadPlans();

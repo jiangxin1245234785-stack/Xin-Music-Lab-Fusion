@@ -440,6 +440,10 @@ def write_pack(folder, title, preset, tracks, applied, pump, layers, mix, factor
             continue
         if name == 'vocals' and sung:
             said = ['原声' if (voice or 'original') == 'original' else f'换 · 声音 {voice}']
+            done = next((row.get('treat') for row in record.get('written', []) if row['track'] == 'vocals'), None)
+            if done and done != 'none':
+                from studio import vocalfx
+                said.append(f'处理 {vocalfx.NAMES[done]}')               # SPEC v27
         elif choice['mode'] == 'orig':
             said = ['原声']
         elif choice.get('sample'):
@@ -504,7 +508,7 @@ def plan_tracks(plan, known, samples_dir=None, lost=None):
         if name in tracks and isinstance(choice, dict):
             tracks[name].update({k: v for k, v in choice.items()
                                  if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
-                                 or (name == 'vocals' and k == 'follow') or (name != 'vocals' and k in ('layer', 'sample'))})
+                                 or (name == 'vocals' and k in ('follow', 'treat')) or (name != 'vocals' and k in ('layer', 'sample'))})
     # A plan can come from a file someone edited or from an older studio: whatever in it does
     # not make sense falls back to the default instead of failing the whole export.
     for name, choice in tracks.items():
@@ -523,6 +527,10 @@ def plan_tracks(plan, known, samples_dir=None, lost=None):
     # The vocal's tone, echo and room come from the whole-song preset while it follows (SPEC v15);
     # the plan keeps its own numbers and the flag, the report says what was applied.
     tracks['vocals']['follow'] = effects.follows(tracks['vocals'])
+    # SPEC v27: the vocal's second tier; written only when it does not follow the preset.
+    treat = effects.clean_treat(tracks['vocals'].pop('treat', None))
+    if treat is not None:
+        tracks['vocals']['treat'] = treat
     preset = plan.get('preset') if plan.get('preset') in known else known[0]
     for name, choice in tracks.items():
         sample = samples.clean(choice.pop('sample', None), name)
@@ -561,7 +569,8 @@ def shaped_notes(score, tracks):
 
 
 def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice='', write_tracks=False,
-            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None, pack=False, samples_dir=None):
+            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None, pack=False, samples_dir=None,
+            treat_vocal=None):
     """Write one rebuild of a song: every track kept, replaced or silent, as `plan` says (SPEC v5).
 
     `plan` is `{'preset': kit, 'tracks': {track: {'mode': 'orig' | 'swap' | 'mute', 'kit': kit or None,
@@ -594,6 +603,11 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     soloed = [name for name in TRACKS if tracks[name].get('solo')]
     sounding = lambda name: tracks[name]['mode'] != 'mute' and (not soloed or name in soloed)
     sung = vocal is not None and tracks['vocals']['mode'] in ('orig', 'swap')
+    # SPEC v27: a sung vocal's second tier. `treat_vocal(name, note)` gives the treated vocal at the same level as
+    # `vocal` (the caller reads the cached file, making it first if it has to); without one the vocal stays as it is.
+    treat = effects.vocal_treat(tracks['vocals'], preset) if sung else None
+    if sung and treat != 'none' and treat_vocal is not None:
+        vocal = treat_vocal(treat, lambda text: say(0.02, text))
 
     # Every kit that plays a track, and the preset as the level reference for kept stems.
     wanted = {preset}
@@ -696,6 +710,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
                        'sounding': audio is not None and sounding(name),
                        'emptyStem': how == 'orig' and name in level_notes['empty'],
                        **({'follow': choice['follow']} if name == 'vocals' else {}),
+                       **({'treat': treat} if name == 'vocals' and treat is not None else {}),
                        **({'layer': extra['layer'], 'layerRendered': extra['rendered'], 'layerTruncated': extra['truncated'],
                            'layerDropped': extra['dropped']} if extra else {}),
                        **({'sample': choice['sample'], 'sampleRendered': sampled[name]['rendered'],

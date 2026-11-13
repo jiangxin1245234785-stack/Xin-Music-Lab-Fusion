@@ -1034,6 +1034,158 @@ def test_server_takes_a_sample_and_serves_only_numbers():
             httpd.shutdown()
 
 
+# --------------------------------------------------------------------------------- the vocal's second tier (SPEC v27)
+def f0_of(audio):
+    from studio import samples
+    return samples.measured_root(np.asarray(audio, dtype=np.float32), 48000)
+
+
+def test_vocal_octaves_move_the_pitch_and_keep_the_length():
+    from studio import vocalfx
+    source = tone(220.0, 2.0, rate=48000)
+    for name, ratio in (('octave_up', 2.0), ('octave_down', 0.5)):
+        out, _ = vocalfx.apply(source, name)
+        assert out.size == source.size, name
+        found = f0_of(out[24000:72000])
+        assert found is not None and abs(found / (220.0 * ratio) - 1) < 0.01, (name, found)
+
+
+def test_vocal_crushers_hold_and_quantise():
+    from studio import vocalfx
+    noise = np.random.default_rng(3).uniform(-0.5, 0.5, 48000).astype(np.float32)
+    for name, (rate, bits) in vocalfx.CRUSH.items():
+        out, _ = vocalfx.apply(noise, name)
+        assert out.size == noise.size and len(np.unique(out)) <= 2 ** bits, (name, len(np.unique(out)))
+        # hold lengths on a ramp at full resolution, where no two holds can come out equal and merge
+        ramp = vocalfx.crush(np.linspace(-0.9, 0.9, 48000), rate, 24)
+        runs = np.diff(np.flatnonzero(np.diff(ramp) != 0))
+        assert abs(runs.mean() / (48000 / rate) - 1) < 0.005 and set(np.unique(runs)) <= {int(48000 // rate), int(-(-48000 // rate))}, (name, runs.mean())
+
+
+def test_vocal_tape_wobbles_within_its_cents():
+    from scipy.signal import hilbert
+    from studio import vocalfx
+    source = tone(1000.0, 6.0, rate=48000).astype(np.float64)
+    for name, bound in (('tape_light', 12 + 4), ('tape_deep', 30)):
+        out = vocalfx.tape(source, vocalfx.TAPE[name])
+        assert out.size == source.size
+        phase = np.unwrap(np.angle(hilbert(out)))
+        hz = np.diff(phase) * 48000 / (2 * np.pi)
+        hz = np.convolve(hz, np.ones(480) / 480, mode='same')      # 10 ms: takes off the interpolation ripple, keeps a 6 Hz wobble
+        cents = 1200 * np.log2(hz[4800:-4800] / 1000.0)
+        assert np.abs(cents).max() <= bound * 1.03 and np.abs(cents).max() >= bound * 0.8, (name, np.abs(cents).max())
+        whole, _ = vocalfx.apply(source.astype(np.float32), name)
+        assert whole.size == source.size
+
+
+def test_vocoder_follows_the_voice_and_keeps_the_consonants():
+    from studio import vocalfx
+    rng = np.random.default_rng(9)
+    t = np.arange(48000) / 48000
+    vowel = lambda hz: (0.3 * (2 * ((t * hz) % 1) - 1) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
+    hiss = (0.05 * rng.standard_normal(24000)).astype(np.float32)
+    source = np.concatenate([vowel(150.0), vowel(220.0), hiss])
+    out, _ = vocalfx.apply(source, 'vocoder')
+    assert out.size == source.size
+    for hz, (a, b) in ((150.0, (12000, 36000)), (220.0, (60000, 84000))):
+        found = f0_of(out[a:b])
+        assert found is not None and abs(found / hz - 1) < 0.03, (hz, found)
+    assert vocalfx.rms(out[100000:]) > 10 ** (-50 / 20) * vocalfx.rms(out), 'the unvoiced part is not silent'
+
+
+def test_every_vocal_treatment_keeps_the_rms_and_repeats_exactly():
+    from studio import vocalfx
+    t = np.arange(48000 * 2) / 48000
+    source = (0.25 * np.sin(2 * np.pi * 180 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 2 * t))).astype(np.float32)
+    for name in vocalfx.NAMES:
+        one, info = vocalfx.apply(source, name)
+        two, _ = vocalfx.apply(source, name)
+        assert np.array_equal(one, two), name
+        assert abs(20 * np.log10(vocalfx.rms(one) / vocalfx.rms(source))) <= 0.1 or info['limitDb'] < 0, name
+        assert np.abs(one).max() <= vocalfx.CEILING
+    loud, info = vocalfx.apply((0.95 * np.sign(np.sin(2 * np.pi * 50 * t))).astype(np.float32), 'tape_deep')
+    assert np.abs(loud).max() <= vocalfx.CEILING + 1e-7 and info['limitDb'] <= 0
+
+
+def test_vocal_treat_table_and_plan_rule():
+    sys.path.insert(0, str(ROOT / 'tools'))
+    import kitdefs
+    assert set(effects.VOCAL_TREAT) == set(kitdefs.KITS) and len(effects.VOCAL_TREAT) == 30
+    assert set(effects.VOCAL_TREAT.values()) <= set(effects.TREATMENTS)
+    assert {k: v for k, v in effects.VOCAL_TREAT.items() if v != 'none'} == {
+        'electro': 'vocoder', 'hyperpop': 'octave_up', 'phonk': 'octave_down', 'vaporwave': 'tape_deep',
+        'lofi': 'tape_light', 'chiptune': 'crush_11k', 'c64': 'crush_8k', 'glitch': 'crush_6k'}
+    known = sorted(effects.VOCAL_TREAT)
+    for given, kept, real in ((None, None, 'vocoder'), ('follow', None, 'vocoder'), ('wah', None, 'vocoder'), (3, None, 'vocoder'),
+                              ('none', 'none', 'none'), ('crush_8k', 'crush_8k', 'crush_8k')):
+        entry = {'mode': 'orig'} if given is None else {'mode': 'orig', 'treat': given}
+        tracks, preset, _ = batch.plan_tracks({'preset': 'electro', 'tracks': {'vocals': entry, 'bass': {'treat': 'vocoder'}}}, known)
+        assert tracks['vocals'].get('treat') == kept and 'treat' not in tracks['bass'], (given, tracks['vocals'])
+        assert effects.vocal_treat(tracks['vocals'], preset) == real
+    assert effects.vocal_treat({'treat': 'octave_up', 'follow': True}, 'hoover') == 'octave_up'   # two separate switches
+
+
+def test_treated_vocal_is_cached_once_and_the_export_uses_it():
+    """vocals.treated writes the file once (two callers at the same time compute it once), `none` is the voice's
+    own file, and rebuild hands a sung vocal to `treat_vocal` only when its treatment is not `none`."""
+    from studio import vocalfx
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        kept, calls = vocals.CACHE, []
+        vocals.CACHE = scratch / 'voices'
+        original_apply = vocalfx.apply
+        try:
+            folder = vocals.CACHE / '0123456789abcdef'
+            folder.mkdir(parents=True)
+            sf.write(str(folder / 'original.48k.wav'), tone(200.0, 1.0, rate=48000), 48000, subtype='PCM_16')
+            before = sorted(p.name for p in folder.iterdir())
+            assert vocals.treated('0123456789abcdef', 'original', 'none') == folder / 'original.48k.wav'
+
+            def counted(audio, name):
+                calls.append(name)
+                time.sleep(0.2)
+                return original_apply(audio, name)
+            vocalfx.apply = counted
+            results = []
+            threads = [threading.Thread(target=lambda: results.append(vocals.treated('0123456789abcdef', 'original', 'crush_8k'))) for _ in range(3)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            assert calls == ['crush_8k'] and len(set(results)) == 1, calls
+            path = results[0]
+            assert path == folder / 'treat' / f'original.crush_8k.{vocalfx.VERSION}.48k.wav' and path.is_file()
+            assert sorted(p.name for p in folder.iterdir()) == sorted(before + ['treat']), 'only treat/ is added'
+            assert [p.name for p in (folder / 'treat').iterdir()] == [path.name], 'no temporary file is left'
+            assert sf.info(str(path)).samplerate == 48000 and sf.info(str(path)).frames == 48000
+            assert vocals.treat_status('0123456789abcdef', 'original', 'crush_8k')['state'] == 'ready'
+            assert vocals.treat_status('0123456789abcdef', 'original', 'vocoder')['state'] == 'missing'
+        finally:
+            vocals.CACHE, vocalfx.apply = kept, original_apply
+        # the export: the sung vocal goes through treat_vocal for a preset with a treatment, and not for one without
+        song = library.read_song(make_song(scratch / 'lib'), 'test')
+        sung = tone(300.0, 6.0, rate=48000)
+        asked = []
+
+        def treat_vocal(name, say):
+            asked.append(name)
+            return sung * 0.5
+        for preset, plan_treat, expect in (('electro', None, 'vocoder'), ('pluck', None, 'none'), ('pluck', 'octave_up', 'octave_up')):
+            entry = {'mode': 'orig', **({'treat': plan_treat} if plan_treat else {})}
+            plan = {'preset': preset, 'tracks': {'vocals': entry, 'drums': {'mode': 'mute'}, 'bass': {'mode': 'mute'}, 'piano': {'mode': 'mute'}}}
+            asked.clear()
+            _, done = batch.rebuild(song['midi'], plan, scratch / preset, server.KITS_DIR, stems=song['stems'], vocal=sung,
+                                    listen_path=scratch / f'{preset}.wav', treat_vocal=treat_vocal)
+            row = next(r for r in done['tracks'] if r['track'] == 'vocals')
+            assert row['treat'] == expect and asked == ([] if expect == 'none' else [expect]), (preset, row, asked)
+        # the pack says which treatment the vocal had
+        plan = {'preset': 'electro', 'tracks': {'vocals': {'mode': 'orig'}, 'drums': {'mode': 'mute'}, 'bass': {'mode': 'mute'}, 'piano': {'mode': 'mute'}}}
+        _, done = batch.rebuild(song['midi'], plan, scratch / 'pack', server.KITS_DIR, stems=song['stems'], vocal=sung, pack=True,
+                                treat_vocal=treat_vocal)
+        text = (Path(done['folder']) / '说明.txt').read_text(encoding='utf-8-sig')
+        assert '人声：原声 · 处理 声码器' in text, text
+
+
 TESTS = [value for name, value in sorted(globals().items()) if name.startswith('test_') and callable(value)]
 
 

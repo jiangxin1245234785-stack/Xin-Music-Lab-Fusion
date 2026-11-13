@@ -1,9 +1,10 @@
 """The 人声 half of the studio (SPEC v2): the voice list, the vocal cache, the conversion queue.
 
-The studio's own Python is envs/basic and must stay free of torch and librosa (SPEC §6), so
-everything heavy — folding to mono, resampling to 48 kHz, the conversions themselves — runs
-in `source/voiceswap/studio_bridge.py` under envs/highres, one subprocess at a time. This
-module only keeps track of it.
+The studio's own Python is envs/basic and stays free of torch, so everything heavy for a
+conversion — folding to mono, resampling to 48 kHz, the conversions themselves — runs in
+`source/voiceswap/studio_bridge.py` under envs/highres, one subprocess at a time. This module
+only keeps track of it. The second tier (SPEC v27, `vocalfx`) is the one exception to "no librosa
+here": it runs in this process on the CPU, loaded only when a vocal is treated.
 
 A dropped vocal is cached under `work/memesynth-cache/voices/<first 16 of its sha256>/`, so
 dropping the same stem again, or reopening the studio, finds every voice already converted.
@@ -201,9 +202,10 @@ def cancel(vocal_id, voice):
 
 
 def busy():
-    """True while any conversion is queued or running (the launcher waits for this before it exits)."""
+    """True while any conversion or treatment is queued or running (the launcher waits for this before it exits)."""
     with LOCK:
-        return any(entry.get('state') in ('queued', 'running') for entry in STATE.values())
+        return (any(entry.get('state') in ('queued', 'running') for entry in STATE.values())
+                or any(entry.get('state') == 'working' for entry in TREAT_STATE.values()))
 
 
 def worker():
@@ -233,3 +235,94 @@ def vocal_audio(vocal_id, voice):
     if not path.is_file():
         raise FileNotFoundError(f'{voice} 还没转好')
     return path
+
+
+# --- the second tier (SPEC v27): a voice's file treated, cached beside the voices in treat/ ------------------
+# Only ever adds files under <vocal>/treat/; nothing that is already in the cache is changed or removed.
+TREAT_STATE: dict = {}      # (vocal id, voice, treatment) -> {'state': 'working' | 'error', 'message', 'started'}
+TREAT_WORK: queue.Queue = queue.Queue()
+TREAT_LOCKS: dict = {}      # one lock per (vocal, voice, treatment): two callers never compute or write the same file
+
+
+def treat_path(vocal_id, voice, name):
+    from studio import vocalfx
+    if name not in vocalfx.NAMES:
+        raise ValueError(f'不认识的人声处理：{name}')
+    if not VOICE_NAME.match(voice or ''):
+        raise ValueError('声音名不对')
+    return folder_of(vocal_id) / 'treat' / f'{voice}.{name}.{vocalfx.VERSION}.48k.wav'
+
+
+def treated(vocal_id, voice, name, progress=None):
+    """The file of one voice with one treatment: made the first time (and kept), found after. `none` is the voice's
+    own file. Written under a temporary name and renamed when complete, so a half-written file never counts."""
+    import uuid
+
+    import soundfile
+    from studio import vocalfx
+    source = vocal_audio(vocal_id, voice)
+    if name == 'none':
+        return source
+    path = treat_path(vocal_id, voice, name)
+    if path.is_file():
+        return path
+    with LOCK:
+        lock = TREAT_LOCKS.setdefault((vocal_id, voice, name), threading.Lock())
+    with lock:
+        if path.is_file():                                   # made by whoever held the lock before
+            return path
+        if progress:
+            progress(f'人声处理 · {vocalfx.NAMES[name]}')
+        audio, rate = soundfile.read(str(source), dtype='float32', always_2d=True)
+        if rate != vocalfx.RATE:
+            raise ValueError(f'人声文件不是 48 kHz（{rate}）')
+        out, _ = vocalfx.apply(audio.mean(axis=1), name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        scratch = path.with_name(f'.{uuid.uuid4().hex}.tmp.wav')
+        soundfile.write(str(scratch), out, vocalfx.RATE, subtype='PCM_24', format='WAV')
+        os.replace(scratch, path)
+        return path
+
+
+def treat_status(vocal_id, voice, name):
+    """{'state': 'ready' | 'working' | 'error', 'message'} for one treatment of one voice."""
+    path = treat_path(vocal_id, voice, name)
+    if name == 'none' or path.is_file():
+        return {'state': 'ready'}
+    with LOCK:
+        entry = dict(TREAT_STATE.get((vocal_id, voice, name)) or {})
+    if entry.get('state') in ('working', 'error'):
+        entry['elapsed'] = round(time.monotonic() - entry.get('started', time.monotonic()))
+        entry.pop('started', None)
+        return entry
+    return {'state': 'missing'}
+
+
+def request_treat(vocal_id, voice, name):
+    """Start one treatment in the background (one at a time, never on the GPU) unless it is done or under way."""
+    vocal_audio(vocal_id, voice)                              # a voice that is not converted cannot be treated
+    state = treat_status(vocal_id, voice, name)
+    if state['state'] in ('ready', 'working'):
+        return state
+    with LOCK:
+        TREAT_STATE[(vocal_id, voice, name)] = {'state': 'working', 'message': '排队中', 'started': time.monotonic()}
+    TREAT_WORK.put((vocal_id, voice, name))
+    return treat_status(vocal_id, voice, name)
+
+
+def treat_worker():
+    while True:
+        key = TREAT_WORK.get()
+        with LOCK:
+            TREAT_STATE[key] = dict(TREAT_STATE.get(key) or {}, state='working', message='处理中')
+        try:
+            treated(*key)
+            with LOCK:
+                TREAT_STATE.pop(key, None)
+        except Exception as error:  # noqa: BLE001 — the page is told and plays the vocal untreated
+            with LOCK:
+                TREAT_STATE[key] = {'state': 'error', 'message': f'{type(error).__name__}: {error}'[-300:],
+                                    'started': time.monotonic()}
+
+
+threading.Thread(target=treat_worker, daemon=True).start()
