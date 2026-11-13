@@ -35,6 +35,7 @@
       <div class="tools">
         <span class="grp">
           <button type="button" class="plain dice" id="roll" title="随手配一份方案：预设、每条轨原声或换、音色、八度、力度、长短、疏密、声音、抽吸（D）"><span class="ic"></span>掷骰子</button>
+          <button type="button" class="plain" id="nudge" disabled title="差不多但不一样：没锁的轨里改一两条的一样东西（F）">相近</button>
           <button type="button" class="plain" id="back" disabled title="回到掷骰子之前的方案（Z）">上一份</button>
           <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
           <button type="button" class="plain" id="cmpSave" hidden title="现在的方案配上 A、B 两套预设，各存一份">存两份</button>
@@ -116,6 +117,7 @@
       <h3>存</h3>
       <p>曲库里的歌自动记住方案，下次打开还是这样。「存方案」起名存下，「套用方案」用到别的歌上。</p>
       <p>「掷骰子」随手配一份方案（静音的轨、人声的声音、音量不动），「上一份」退回，最多 20 步。A / B 出现时，「存两份」把现在的方案配上两套预设各存一份。</p>
+      <p>轨名旁边的锁：锁住的轨，掷骰子和「相近」都不动它。跟随预设的轨会钉在掷之前那套上（行里改写成那套的名字，人声改成那套给的明暗、回声、混响），声音不变；独奏照样取消，抽吸照样由骰子定、锁住的轨也跟着抽。「相近」只在没锁、出声的轨里改一两条，每条改一样：换成同分类的另一套音色，或把一个数挪一档；预设、抽吸、模式、音量、人声都不动。</p>
       <p>「导出」写出整首 48 kHz 24 bit，可以另存每条轨。</p>
       <h3>快捷键</h3>
       <dl class="keys">
@@ -124,6 +126,7 @@
         <dt><kbd>`</kbd></dt><dd>在 A / B 两套预设之间切</dd>
         <dt><kbd>A</kbd></dt><dd>原曲 / 重构</dd>
         <dt><kbd>D</kbd></dt><dd>掷骰子</dd>
+        <dt><kbd>F</kbd></dt><dd>相近</dd>
         <dt><kbd>Z</kbd></dt><dd>上一份</dd>
         <dt><kbd>Esc</kbd></dt><dd>关掉面板和抽屉</dd>
       </dl>
@@ -184,7 +187,7 @@ let pump = Object.assign({}, PUMP_DEFAULT);
 let pair = [];                                      // the two presets being compared, in the order they were picked
 function resetCast() {
   for (const track of TRACKS) {
-    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '',
+    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '', lock: false,
                       oct: 0, vel: 0, gate: 0, late: 0, loose: 0, thin: 0, tone: 0, echo: 0, room: 0};
   }
   pump = Object.assign({}, PUMP_DEFAULT);
@@ -833,9 +836,10 @@ function buildTracks() {
   for (const track of TRACKS) {
     const row = document.createElement('div');
     row.className = 'trk'; row.dataset.track = track.id;
+    row.addEventListener('animationend', () => row.classList.remove('flash'));
     row.style.setProperty('--tc', `var(--t-${track.id})`);
     row.innerHTML = `<button type="button" class="led" aria-label="${track.zh}出声"></button><span class="bar"></span>`
-      + `<span class="tn">${track.zh}<small></small></span>`
+      + `<span class="tn"><span class="tnName">${track.zh}<button type="button" class="lock" aria-pressed="false">${icon('lock')}</button></span><small></small></span>`
       + '<span class="seg" role="group"><button type="button" data-mode="orig">原声</button>'
       + '<button type="button" data-mode="swap">换</button></span>'
       + '<span class="who"></span>'
@@ -844,6 +848,7 @@ function buildTracks() {
       + `<button type="button" class="fx" aria-pressed="false" aria-label="${track.zh} · 调">${icon('sliders')}</button>`
       + '<span class="steps" aria-hidden="true"></span>';
     row.querySelector('.led').addEventListener('click', () => toggleMute(track.id));
+    row.querySelector('.lock').addEventListener('click', () => { cast[track.id].lock = !cast[track.id].lock; paintLock(track.id); queueSave(); });
     for (const button of row.querySelectorAll('.seg button')) {
       button.addEventListener('click', () => setMode(track.id, button.dataset.mode));
     }
@@ -995,6 +1000,13 @@ function settle() {
   }
 }
 
+/* The lock (SPEC v23): the dice and 「相近」 leave a locked track alone. */
+function paintLock(id) {
+  const button = el('tracks').querySelector(`[data-track="${id}"] .lock`), on = !!cast[id].lock;
+  button.setAttribute('aria-pressed', String(on));
+  button.title = on ? '已锁住 · 点一下解锁' : '锁住：掷骰子和相近都不动这条轨';
+  button.setAttribute('aria-label', (TRACKS.find(t => t.id === id) || {}).zh + (on ? ' · 已锁住' : ' · 锁住'));
+}
 function paintTracks() {
   if (!score) return;
   settle();
@@ -1003,6 +1015,7 @@ function paintTracks() {
     const row = el('tracks').querySelector(`[data-track="${track.id}"]`), c = cast[track.id];
     const routes = routesOf(track.id), isVocal = track.id === 'vocals';
     row.querySelector('small').textContent = routes.length ? `转谱 ${routes.length} 路` : '无转谱';
+    paintLock(track.id);
     const can = {
       orig: isVocal ? !!vocal : hasStem(track.id),
       swap: isVocal ? (!!vocal || routes.length > 0) : routes.length > 0,
@@ -1162,6 +1175,7 @@ const ICONS = {
   sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
   shelf: '<path d="M5 4v15M9 4v15"/><path d="M13 5.5l3.5-1 3.5 13.5-3.5 1z"/><path d="M3 19.5h18"/>',
+  lock: '<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
 };
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
@@ -1534,6 +1548,7 @@ document.addEventListener('keydown', event => {
   else if (event.key === '`') { const other = pair.find(name => name !== preset) || previousPreset; if (other) selectPreset(other); }
   else if ((event.key === 'd' || event.key === 'D') && !event.ctrlKey && !event.metaKey && !event.altKey) roll();
   else if ((event.key === 'z' || event.key === 'Z') && !event.ctrlKey && !event.metaKey && !event.altKey) rollBack();
+  else if ((event.key === 'f' || event.key === 'F') && !event.ctrlKey && !event.metaKey && !event.altKey) nudge();
   else if (event.key === 'a' || event.key === 'A') { const other = el('ab').querySelector(`[data-ab="${ab === 'orig' ? 'recon' : 'orig'}"]`); other.click(); }
 });
 window.addEventListener('resize', () => { if (score) { drawTimeline(); fitWall(); } });
@@ -1912,6 +1927,7 @@ function currentPlan() {
     const c = cast[track.id];
     tracks[track.id] = {mode: c.mode, kit: c.kit, db: c.db, solo: c.solo};
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
+    if (c.lock) tracks[track.id].lock = true;                                  // SPEC v23: only when locked
   }
   tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
   const plan = {preset, tracks, voice: cast.vocals.voice};
@@ -1931,6 +1947,7 @@ function takePlan(plan) {
     c.kit = typeof saved.kit === 'string' && (kitsIndex || {})[saved.kit] ? saved.kit : null;
     c.db = Number.isFinite(db) ? Math.max(-18, Math.min(6, Math.round(db))) : 0;
     c.solo = saved.solo === true;
+    c.lock = saved.lock === true;
     for (const key of FX_KEYS) {
       const value = Math.round(Number(saved[key]));
       c[key] = Number.isFinite(value) ? Math.max(FX_LIMITS[key][0], Math.min(FX_LIMITS[key][1], value)) : 0;
@@ -2030,7 +2047,67 @@ function rollPlan(plan, context, random) {
   vocals.follow = true; vocals.solo = false;
   delete out.pump;
   if (context.kicks && !chance(0.7)) out.pump = {depth: pick([30, 50, 70]), release: pick([150, 250])};
+  // SPEC v23: a locked track is put back as it was (the draws above are made all the same, so an
+  // unlocked track comes out exactly as it would without any lock). Two exceptions: solo is off,
+  // and what followed the old preset is pinned to it, so the new preset does not change its sound.
+  for (const track of TRACKS) {
+    const was = (plan && plan.tracks || {})[track.id];
+    if (!was || was.lock !== true) continue;
+    const entry = out.tracks[track.id] = JSON.parse(JSON.stringify(was));
+    entry.solo = false;
+    const kitPlays = track.id !== 'vocals' || !plan.voice || plan.voice === '@kit';   // a sung vocal has no kit to follow
+    if (entry.mode === 'swap' && !entry.kit && kitPlays && plan.preset) entry.kit = plan.preset;
+    if (track.id === 'vocals' && entry.follow !== false) {
+      entry.follow = false;
+      const held = context.presetVocal || {};
+      for (const key of ['tone', 'echo', 'room']) { if (held[key]) entry[key] = held[key]; else delete entry[key]; }
+    }
+  }
   return out;
+}
+
+/* 「相近」 (SPEC v23): the same plan, one or two unlocked, sounding tracks moved by one thing each.
+ * `context` as for rollPlan, plus `categories: {kit: kind}`. Returns {plan, changes: [{track, key, from, to}]}. */
+const NUDGE_STEP = {oct: 1, vel: 25, gate: 25, thin: 15, tone: 10, echo: 10, room: 10};
+function nudgePlan(plan, context, random) {
+  const pick = list => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
+  const out = JSON.parse(JSON.stringify(plan || {}));
+  out.tracks = out.tracks || {};
+  for (const entry of Object.values(out.tracks)) if (entry && typeof entry === 'object') entry.solo = false;
+  const sounding = id => { const e = out.tracks[id]; return e.mode === 'swap' ? !!context.notes[id] : e.mode === 'orig' && !!context.stems[id]; };
+  const pool = ROLLED.filter(id => out.tracks[id] && out.tracks[id].lock !== true && sounding(id));
+  const wanted = Math.min(pool.length, random() < 0.6 ? 1 : 2);
+  const changes = [];
+  for (let n = 0; n < wanted; n++) {
+    const id = pool.splice(Math.min(pool.length - 1, Math.floor(random() * pool.length)), 1)[0];
+    const entry = out.tracks[id], swap = entry.mode === 'swap';
+    if (swap && random() < 1 / 3) {
+      const now = entry.kit || out.preset, kind = (context.categories || {})[now];
+      const others = context.kits.filter(name => name !== now && (context.categories || {})[name] === kind);
+      if (others.length) {
+        entry.kit = pick(others);
+        changes.push({track: id, key: 'kit', from: now, to: entry.kit});
+        continue;
+      }
+    }
+    const keys = (swap ? ['oct', 'vel', 'gate', 'thin'] : []).filter(key => !(id === 'drums' && (key === 'oct' || key === 'gate')))
+      .concat(['tone', 'echo', 'room']);
+    const key = pick(keys), [low, high] = FX_LIMITS[key], step = NUDGE_STEP[key];
+    const from = entry[key] || 0, way = random() < 0.5 ? -1 : 1;
+    let to = from + way * step;
+    if (to < low || to > high) to = from - way * step;          // at the edge: the other way
+    to = Math.max(low, Math.min(high, to));
+    if (to) entry[key] = to; else delete entry[key];          // back to 0: not written, as everywhere
+    changes.push({track: id, key, from, to});
+  }
+  return {plan: out, changes};
+}
+const KEY_ZH = {oct: '八度', vel: '力度', gate: '长短', thin: '疏密', tone: '明暗', echo: '回声', room: '混响'};
+function nudgeSummary(changes) {
+  const parts = changes.map(c => (TRACKS.find(t => t.id === c.track) || {}).zh + ' '
+    + (c.key === 'kit' ? `${c.from} → ${c.to}` : `${KEY_ZH[c.key]} ${c.from} → ${c.to}`));
+  const text = '相近 · ' + parts.join(' · ');
+  return text.length > 60 ? text.slice(0, 59) + '…' : text;
 }
 
 /* One line about a plan: the preset, then only what differs from "everything follows it, nothing adjusted". */
@@ -2058,12 +2135,37 @@ function planSummary(plan) {
   return text.length > 60 ? text.slice(0, 59) + '…' : text;
 }
 
-function paintRolls() { el('back').disabled = !rolls.length || !score; el('roll').disabled = !score; }
+function paintRolls() { el('back').disabled = !rolls.length || !score; el('roll').disabled = el('nudge').disabled = !score; }
+/* What the dice and 「相近」 need to know about this song; presetVocal is the showing preset's, i.e. the one before. */
+function diceContext() {
+  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}, kicks: songHasKicks(), presetVocal: presetVocal(), categories: {}};
+  for (const track of TRACKS) { context.notes[track.id] = routesOf(track.id).length > 0; context.stems[track.id] = hasStem(track.id); }
+  for (const [name, kit] of Object.entries(kitsIndex)) context.categories[name] = kit.category || '其他';
+  return context;
+}
+async function nudge() {
+  if (!score || !kitsIndex) return;
+  const before = currentPlan();
+  const {plan: next, changes} = nudgePlan(before, diceContext(), Math.random);
+  if (!changes.length) { setState('相近 · 没有能改的轨（都锁住或静音了）'); return; }
+  rolls.push(before); if (rolls.length > 20) rolls.shift();
+  paintRolls();
+  sayRoll(nudgeSummary(changes), `相近 · ${changes.length} 处`);
+  const applied = applyPlan(next);
+  for (const id of new Set(changes.map(c => c.track))) flashRow(id);
+  try { await applied; } catch (error) { setState(error.message, true); }
+}
+function flashRow(id) {
+  const row = el('tracks').querySelector(`[data-track="${id}"]`);
+  if (!row) return;
+  row.classList.remove('flash');
+  void row.offsetWidth;
+  row.classList.add('flash');
+}
 async function roll() {
   if (!score || !kitsIndex) return;
   const before = currentPlan();
-  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}, kicks: songHasKicks()};
-  for (const track of TRACKS) { context.notes[track.id] = routesOf(track.id).length > 0; context.stems[track.id] = hasStem(track.id); }
+  const context = diceContext();
   const next = rollPlan(before, context, Math.random);
   rolls.push(before); if (rolls.length > 20) rolls.shift();
   if (!pair.includes(next.preset)) pair = [before.preset, next.preset];   // as a preset picked by hand: A / B compares the two
@@ -2090,6 +2192,7 @@ function sayRoll(line, short) {
 }
 el('roll').addEventListener('click', roll);
 el('back').addEventListener('click', rollBack);
+el('nudge').addEventListener('click', nudge);
 el('roll').querySelector('.ic').innerHTML = icon('die');
 el('openLibrary').querySelector('.ic').innerHTML = icon('shelf');
 paintRolls();
