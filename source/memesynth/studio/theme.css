@@ -343,7 +343,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* --- the deck: play, the clock, the map, the A / B of the whole song ------------------------------- */
 #deck { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--edge); z-index: 6; }
-#deckIn { max-width: 1180px; margin-inline: auto; display: grid; grid-template-columns: 44px 92px minmax(0, 1fr) auto auto; gap: 12px;
+#deckIn { max-width: 1180px; margin-inline: auto; display: grid; grid-template-columns: 44px 92px minmax(0, 1fr) auto auto auto; gap: 12px;
   align-items: center; padding: 8px max(16px, env(safe-area-inset-left, 0px)); }
 #play { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--edge);
   background: var(--panel-lit); color: var(--fg); cursor: pointer; display: grid; place-items: center; }

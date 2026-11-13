@@ -122,6 +122,7 @@
       <p>「掷骰子」随手配一份方案（静音的轨、人声的声音、音量不动），「上一份」退回，最多 20 步。A / B 出现时，「存两份」把现在的方案配上两套预设各存一份。</p>
       <p>轨名旁边的锁：锁住的轨，掷骰子和「相近」都不动它。跟随预设的轨会钉在掷之前那套上（行里改写成那套的名字，人声改成那套给的明暗、回声、混响），声音不变；独奏照样取消，抽吸照样由骰子定、锁住的轨也跟着抽。「相近」只在没锁、出声的轨里改一两条，每条改一样：换成同分类的另一套音色，或把一个数挪一档；预设、抽吸、模式、音量、人声都不动。</p>
       <p>「导出」写出整首 48 kHz 24 bit，可以另存每条轨。</p>
+      <p>底部的「存片段」把正在听的这 12 秒（带全部效果、按现在的独奏和原曲 / 重构）存成一个 wav，放进导出面板里的输出目录，拿去给别人听；之后「打开目录」打开它所在的文件夹。</p>
       <h3>快捷键</h3>
       <dl class="keys">
         <dt><kbd>空格</kbd></dt><dd>播放 / 暂停</dd>
@@ -143,6 +144,7 @@
   <div class="meta"><div class="clock" id="clock">0.0 / 12.0s</div></div>
   <div id="timeline"><canvas id="density"></canvas><div id="window"></div></div>
   <span class="seg" id="ab" role="group" aria-label="对照"><button type="button" data-ab="orig" aria-pressed="false">原曲</button><button type="button" data-ab="recon" aria-pressed="true">重构</button></span>
+  <button type="button" class="plain" id="clipBtn" disabled title="把正在听的这 12 秒（带全部效果）存成一个 wav，放进导出面板里的输出目录">存片段</button>
   <button type="button" class="plain" id="openFull" disabled>听整首</button>
   <div id="state">等一首歌</div>
 </div></div>
@@ -636,7 +638,7 @@ function takeFile(file, done) {
       const flags = el('flags').children.length;
       el('vitalsSum').textContent = flags ? String(flags) : '';
       el('openVitals').title = flags ? `转谱有 ${flags} 条提示` : '';
-      el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false;
+      el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false; el('clipBtn').disabled = false;
       if (!el('side').hidden) closeDrawers();                // a song is open: the library steps aside
       forgetFull();
       windowStart = bestWindow();
@@ -2732,6 +2734,73 @@ async function renderFull() {
   }
 }
 el('fullBtn').addEventListener('click', renderFull);
+
+/* --- a clip (SPEC v28): the 12 seconds as they are heard now, rendered once through the same chain as the loop ---- */
+/* Every layer through its gain (level, solo), fxChain and the master factor, as startPlayback wires it, in an
+ * OfflineAudioContext. Returns [left, right]. */
+async function renderClipNow() {
+  const frames = Math.round(SPAN * RATE), off = new OfflineAudioContext(2, frames, RATE);
+  const room = layers.some(layer => (fxOf(layer) || {}).room)
+    ? await off.decodeAudioData(await fetchBytes('/reverb.wav')) : null;
+  const master = off.createGain();
+  master.gain.value = masterFactor(); master.connect(off.destination);
+  for (const layer of layers) {
+    const buffer = off.createBuffer(2, layer.data.length / 2, RATE);
+    const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+    for (let i = 0; i < left.length; i++) { left[i] = layer.data[i * 2]; right[i] = layer.data[i * 2 + 1]; }
+    const source = off.createBufferSource(), gain = off.createGain();
+    source.buffer = buffer; gain.gain.value = gainOf(layer);
+    fxChain(off, source, gain, fxOf(layer), room);
+    gain.connect(master); source.start(0);
+  }
+  const done = await off.startRendering();
+  return [done.getChannelData(0), done.getChannelData(1)];
+}
+/* 10 ms in, 300 ms out, the peak brought down to −1 dBFS (never up), as 16-bit stereo wav bytes. */
+function clipWav([left, right]) {
+  const frames = left.length, fadeIn = Math.round(0.010 * RATE), fadeOut = Math.round(0.300 * RATE);
+  const shape = i => Math.min(1, i / fadeIn, (frames - i) / fadeOut);
+  let peak = 0;
+  for (let i = 0; i < frames; i++) peak = Math.max(peak, Math.abs(left[i] * shape(i)), Math.abs(right[i] * shape(i)));
+  const ceiling = 10 ** (-1 / 20), scale = peak > ceiling ? ceiling / peak : 1;
+  const out = new DataView(new ArrayBuffer(44 + frames * 4));
+  const word = (at, text) => { for (let k = 0; k < 4; k++) out.setUint8(at + k, text.charCodeAt(k)); };
+  word(0, 'RIFF'); out.setUint32(4, 36 + frames * 4, true); word(8, 'WAVE'); word(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true); out.setUint32(24, RATE, true);
+  out.setUint32(28, RATE * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true); word(36, 'data'); out.setUint32(40, frames * 4, true);
+  const pcm = x => Math.max(-32768, Math.min(32767, Math.round(x * 32767)));
+  for (let i = 0; i < frames; i++) {
+    const g = shape(i) * scale;
+    out.setInt16(44 + i * 4, pcm(left[i] * g), true); out.setInt16(46 + i * 4, pcm(right[i] * g), true);
+  }
+  return {bytes: out.buffer, scale};
+}
+let clipBusy = false;
+async function saveClip() {
+  if (clipBusy || !score || !layers.length) return;
+  clipBusy = true; el('clipBtn').disabled = true;
+  // What is heard now, said honestly: borrowed stem levels, or a vocal whose treatment is not in yet.
+  const notes = [];
+  if (levelProvisional) notes.push('（原声音量还在校准）');
+  const voice = sungVoice();
+  if (voice && treatOf() !== 'none' && !treatAudio[voice + '|' + treatOf()]) notes.push('（人声还没处理好）');
+  const at = Math.round(windowStart), title = (song && song.title) || midiName.replace(/\.midi?$/i, '');
+  const name = safeName(`${title} · ${ab === 'orig' ? '原曲' : preset} · ${Math.floor(at / 60)}m${String(at % 60).padStart(2, '0')}s`)
+    .replace(/\.{2,}/g, '.') + '.wav';                      // the server takes no path: nothing in a title may look like one
+  try {
+    setState('存片段 · 渲染中');
+    const {bytes} = clipWav(await renderClipNow());
+    const saved = await api('/api/clip', {method: 'POST', body: bytes, headers: {'Content-Type': 'audio/wav',
+      'X-File-Name': encodeURIComponent(name), 'X-Out-Dir': encodeURIComponent(el('outDir').value.trim())}});
+    revealPath = saved.path;                                 // 「打开目录」 now opens the folder this file is in
+    setState(`存了片段 · ${saved.name}${notes.join('')}`);
+  } catch (error) {
+    setState(`片段没存下（${error.message}）`, true);
+  } finally {
+    clipBusy = false; el('clipBtn').disabled = !score;
+  }
+}
+el('clipBtn').addEventListener('click', saveClip);
 el('openFull').addEventListener('click', fullStale);
 el('fullAudio').addEventListener('play', () => { if (running) toggle(); });
 

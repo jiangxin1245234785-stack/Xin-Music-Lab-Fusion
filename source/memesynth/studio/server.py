@@ -50,6 +50,7 @@ VOCAL_TARGET_DB = -20.0
 DEFAULT_OUT = REPO / 'work' / 'memesynth-out'
 PLANS = REPO / 'work' / 'memesynth-cache' / 'plans'      # named plans, and the last state of each library song
 LISTEN = REPO / 'work' / 'memesynth-cache' / 'listen'    # the whole rebuild rendered to hear in the page; one file at a time
+CLIP_MAX = 10 * 1024 * 1024                               # SPEC v28: a saved 12-second clip is ~2.3 MB
 SAMPLES = REPO / 'work' / 'memesynth-cache' / 'samples'  # SPEC v26: the user's own samples; `--samples` puts them elsewhere
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
@@ -600,6 +601,36 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'error': str(error)}, 400)
         return self.send_json({'error': '没有这个地址'}, 404)
 
+    def take_clip(self, length):
+        """POST /api/clip (SPEC v28): the page's 12 seconds as wav bytes; the name it suggests in `X-File-Name` and the
+        output folder in `X-Out-Dir` (both URL-encoded; no folder = the default). Only RIFF…WAVE, at most 10 MB, and
+        only straight into that folder: a name with a path in it is refused, not cleaned. Same name twice → `-2`."""
+        import urllib.parse
+        if length > CLIP_MAX:
+            self.close_connection = True                   # the body is not read
+            return self.send_json({'error': f'片段 {length / 1048576:.1f} MB，最大 10 MB'}, 400)
+        data = self.rfile.read(length)
+        if len(data) < 12 or data[:4] != b'RIFF' or data[8:12] != b'WAVE':
+            return self.send_json({'error': '这不是 WAV 数据，片段没存'}, 400)
+        name = urllib.parse.unquote(self.headers.get('X-File-Name') or '').strip()
+        if not name or '..' in name or '/' in name or '\\' in name:
+            return self.send_json({'error': '片段的文件名不能带路径，片段没存'}, 400)
+        name = ''.join(c for c in name if c not in ':*?"<>|' and ord(c) >= 32).strip(' .') or 'clip'
+        if not name.lower().endswith('.wav'):
+            name += '.wav'
+        out_dir = Path(urllib.parse.unquote(self.headers.get('X-Out-Dir') or '') or DEFAULT_OUT).expanduser()
+        if not out_dir.is_absolute():
+            return self.send_json({'error': '输出目录要写完整路径'}, 400)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            return self.send_json({'error': f'建不了输出目录：{error}'}, 400)
+        path = batch.unique(out_dir / name)
+        if path.resolve().parent != out_dir.resolve():
+            return self.send_json({'error': '片段的文件名不能带路径，片段没存'}, 400)
+        path.write_bytes(data)
+        return self.send_json({'ok': True, 'path': str(path), 'name': path.name, 'folder': str(out_dir.resolve())})
+
     @staticmethod
     def treat_answer(vocal_id, voice, treat, start):
         """/api/treat (SPEC v27): {state: ready | working | error | missing, message?}; POST starts the work."""
@@ -647,6 +678,8 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length') or 0)
         if route == '/api/sample':
             return self.take_sample(length)
+        if route == '/api/clip':
+            return self.take_clip(length)
         if route == '/api/vocal':
             if 'json' in (self.headers.get('Content-Type') or ''):
                 # A library song: the stem is already on this disk, so only its key travels.

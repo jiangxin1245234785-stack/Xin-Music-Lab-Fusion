@@ -1186,6 +1186,49 @@ def test_treated_vocal_is_cached_once_and_the_export_uses_it():
         assert '人声：原声 · 处理 声码器' in text, text
 
 
+def test_server_saves_a_clip_only_into_the_folder():
+    """SPEC v28: /api/clip writes RIFF…WAVE bytes ≤ 10 MB straight into the output folder; a second one with the
+    same name gets -2; anything else is refused in words and nothing is written."""
+    import urllib.parse
+    with tempfile.TemporaryDirectory() as scratch:
+        out = Path(scratch) / 'out'
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+        httpd.opened_midi, httpd.library_extra = None, []
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{httpd.server_address[1]}'
+
+        def post(body, name, folder=out):
+            request = urllib.request.Request(f'{base}/api/clip', data=body, method='POST',
+                                             headers={'X-File-Name': urllib.parse.quote(name), 'X-Out-Dir': urllib.parse.quote(str(folder))})
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return response.status, json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                return error.code, json.loads(error.read())
+        try:
+            wav = wav_bytes(np.zeros((48000, 2), dtype=np.float32), rate=48000, subtype='PCM_16')
+            status, first = post(wav, '周杰伦 - 七里香 · hoover · 2m46s.wav')
+            assert status == 200 and first['name'] == '周杰伦 - 七里香 · hoover · 2m46s.wav' and Path(first['path']).parent == out, first
+            status, second = post(wav, '周杰伦 - 七里香 · hoover · 2m46s.wav')
+            assert status == 200 and second['name'] == '周杰伦 - 七里香 · hoover · 2m46s-2.wav', second
+            assert Path(first['path']).read_bytes() == wav
+            status, odd = post(wav, 'a:b?.wav')
+            assert status == 200 and odd['name'] == 'ab.wav', odd
+            kept = server.CLIP_MAX
+            refusals = [(b'MThd' + bytes(40), 'x.wav', 'WAV'), (wav, '..\\escape.wav', '路径'), (wav, '../escape.wav', '路径'),
+                        (wav, 'sub/x.wav', '路径'), (wav, 'x.wav', '10 MB')]
+            for body, name, why in refusals:
+                server.CLIP_MAX = 1000 if why == '10 MB' else kept
+                status, answer = post(body, name)
+                assert status == 400 and why in answer['error'], (name, answer)
+            server.CLIP_MAX = kept
+            assert sorted(p.name for p in out.iterdir()) == sorted([first['name'], second['name'], 'ab.wav']), list(out.iterdir())
+            assert not (Path(scratch) / 'escape.wav').exists()
+        finally:
+            server.CLIP_MAX = kept if 'kept' in locals() else server.CLIP_MAX
+            httpd.shutdown()
+
+
 TESTS = [value for name, value in sorted(globals().items()) if name.startswith('test_') and callable(value)]
 
 
