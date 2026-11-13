@@ -2793,7 +2793,12 @@ async function saveClip() {
     const saved = await api('/api/clip', {method: 'POST', body: bytes, headers: {'Content-Type': 'audio/wav',
       'X-File-Name': encodeURIComponent(name), 'X-Out-Dir': encodeURIComponent(el('outDir').value.trim())}});
     revealPath = saved.path;                                 // 「打开目录」 now opens the folder this file is in
-    setState(`存了片段 · ${saved.name}${notes.join('')}`);
+    setState(`存了片段 · ${saved.name}${notes.join('')} · `);
+    const open = document.createElement('button');           // the export drawer's 「打开目录」 is out of sight here: a link on the line itself
+    open.type = 'button'; open.className = 'link'; open.textContent = '打开目录';
+    open.addEventListener('click', () => api('/api/reveal', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: saved.path})}).catch(error => setState(`打不开目录（${error.message}）`, true)));
+    el('state').append(open);
   } catch (error) {
     setState(`片段没存下（${error.message}）`, true);
   } finally {
