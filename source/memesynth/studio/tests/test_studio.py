@@ -793,6 +793,247 @@ def test_server_answers_in_words_and_serves_ranges():
             httpd.shutdown()
 
 
+# --------------------------------------------------------------------------------- own samples (SPEC v26)
+def saw(hz, seconds, level=0.3, rate=RATE):
+    t = np.arange(int(seconds * rate)) / rate
+    return (level * (2.0 * ((t * hz) % 1.0) - 1.0)).astype(np.float32)
+
+
+def wav_bytes(audio, rate=RATE, kind='WAV', subtype=None):
+    import io
+    out = io.BytesIO()
+    sf.write(out, audio, rate, format=kind, **({'subtype': subtype} if subtype else {}))
+    return out.getvalue()
+
+
+def test_measured_root_finds_saws_and_a_sine_and_not_noise():
+    from studio import samples
+    for hz in (55.0, 110.0, 220.0, 440.0, 880.0):
+        found = samples.measured_root(saw(hz, 1.0, rate=48000), 48000)
+        assert found is not None and abs(found / hz - 1) < 0.01, (hz, found)
+    found = samples.measured_root(tone(330.0, 1.0, rate=48000), 48000)
+    assert found is not None and abs(found / 330.0 - 1) < 0.01, found
+    noise = np.random.default_rng(5).uniform(-0.3, 0.3, 48000).astype(np.float32)
+    assert samples.measured_root(noise, 48000) is None
+    assert samples.note_of(110.0) == ('A2', 0) and samples.note_of(440.0 * 2 ** (0.12 / 12)) == ('A4', 12)
+    assert abs(samples.note_hz('C3') - 130.8128) < 1e-3 and samples.note_hz('A4') == 440.0
+
+
+def test_a_sample_is_kept_once_at_48k_and_odd_files_are_refused():
+    from studio import samples
+    with tempfile.TemporaryDirectory() as scratch:
+        folder = Path(scratch) / 'samples'
+        data = wav_bytes(saw(110.0, 1.5))                                   # 44.1 kHz mono
+        first, existed = samples.store(data, '锯齿 bass.wav', folder)
+        again, existed_again = samples.store(data, 'renamed.wav', folder)
+        assert not existed and existed_again and first['id'] == again['id'] == __import__('hashlib').sha256(data).hexdigest()[:16]
+        assert samples.known(folder) == [first['id']] and len(list(folder.iterdir())) == 1
+        audio, rate = sf.read(str(folder / first['id'] / 'sample.wav'), dtype='float32', always_2d=True)
+        assert rate == 48000 and audio.shape[1] == 1 and sf.info(str(folder / first['id'] / 'sample.wav')).subtype == 'FLOAT'
+        import io
+        source, _ = sf.read(io.BytesIO(data), dtype='float32', always_2d=True)
+        assert np.array_equal(audio[:, 0], batch.to_48k(source, RATE)[:, 0])     # the export's own resampler
+        assert first['channels'] == 1 and abs(first['rootHz'] / 110 - 1) < 0.01 and first['note'] == 'A2'
+        assert json.loads((folder / first['id'] / 'info.json').read_text(encoding='utf-8'))['name'] == '锯齿 bass.wav'
+        wide, _ = samples.store(wav_bytes(np.stack([saw(220.0, 1.0), tone(330, 1.0), tone(440, 1.0)], axis=1), rate=48000), 'three.wav', folder)
+        assert wide['channels'] == 2 and sf.info(str(folder / wide['id'] / 'sample.wav')).channels == 2
+        refused = {
+            'long': wav_bytes(saw(110.0, 21.0)),
+            'midi': b'MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0MTrk\x00\x00\x00\x04\x00\xff\x2f\x00',
+            'flac': wav_bytes(saw(110.0, 1.0), kind='FLAC'),
+            'silent': wav_bytes(np.zeros(RATE, dtype=np.float32), subtype='FLOAT'),
+            'quiet': wav_bytes(saw(110.0, 1.0, level=0.0009), subtype='FLOAT'),
+        }
+        for why, body in refused.items():
+            try:
+                samples.store(body, why + '.wav', folder)
+            except samples.SampleError as error:
+                assert str(error), why
+            else:
+                raise AssertionError(f'{why} was taken')
+        kept = samples.MAX_BYTES
+        try:
+            samples.MAX_BYTES = 1000
+            try:
+                samples.store(data, 'big.wav', folder)
+                raise AssertionError('too big was taken')
+            except samples.SampleError as error:
+                assert '50 MB' in str(error)
+        finally:
+            samples.MAX_BYTES = kept
+        assert len(samples.known(folder)) == 2, 'nothing refused was kept'
+        assert samples.path_of(folder, '../' + first['id']) is None and samples.path_of(folder, 'ABCDEF0123456789') is None
+
+
+def test_plan_tracks_cleans_a_sample_and_drops_a_missing_file():
+    known = ['acid', 'pluck']
+    with tempfile.TemporaryDirectory() as scratch:
+        folder = Path(scratch)
+        (folder / '0123456789abcdef').mkdir()
+        (folder / '0123456789abcdef' / 'sample.wav').write_bytes(wav_bytes(saw(110.0, 0.5)))
+        good, gone = '0123456789abcdef', 'fedcba9876543210'
+        plan = {'preset': 'pluck', 'tracks': {
+            'bass': {'mode': 'swap', 'sample': {'id': good, 'name': 'a.wav', 'root': 110.0, 'db': -3.5}},
+            'guitar': {'mode': 'swap', 'kit': 'acid', 'sample': {'id': gone, 'name': 'b.wav', 'root': 110.0, 'db': 0}},
+            'piano': {'mode': 'orig', 'sample': {'id': good, 'name': 'c.wav', 'root': 220, 'db': 24}},
+            'drums': {'mode': 'swap', 'sample': {'id': good, 'name': 'k.wav', 'part': 'kick', 'db': -24}},
+            'vocals': {'mode': 'swap', 'sample': {'id': good, 'name': 'v.wav', 'root': 220, 'db': 0}}}}
+        lost = {}
+        tracks, _, _ = batch.plan_tracks(plan, known, samples_dir=folder, lost=lost)
+        assert tracks['bass']['sample'] == {'id': good, 'name': 'a.wav', 'root': 110.0, 'db': -3.5}
+        assert tracks['piano']['sample']['db'] == 24 and tracks['drums']['sample']['part'] == 'kick'
+        assert 'sample' not in tracks['guitar'] and 'sample' not in tracks['vocals']
+        assert lost == {'guitar': '吉他 的采样 b.wav 找不到了，用回 acid'}, lost
+        odd = [None, 'x', {'id': good, 'name': 'a.wav', 'root': 110.0}, {'id': good, 'name': 'a.wav', 'db': 0},
+               {'id': good, 'root': 110, 'db': 0}, {'id': 'nothex', 'name': 'a', 'root': 110, 'db': 0},
+               {'id': good, 'name': 'a', 'root': 29, 'db': 0}, {'id': good, 'name': 'a', 'root': 5001, 'db': 0},
+               {'id': good, 'name': 'a', 'root': 110, 'db': 24.5}, {'id': good, 'name': 'a', 'root': 110, 'db': True},
+               {'id': good, 'name': 'a', 'root': float('nan'), 'db': 0}, {'id': good, 'name': 'a', 'root': '110', 'db': 0}]
+        for value in odd:
+            tracks, _, _ = batch.plan_tracks({'tracks': {'bass': {'sample': value}}}, known, samples_dir=folder)
+            assert 'sample' not in tracks['bass'], value
+        for part in ('tom', None, 'Kick'):
+            tracks, _, _ = batch.plan_tracks({'tracks': {'drums': {'sample': {'id': good, 'name': 'k', 'part': part, 'db': 0}}}}, known, samples_dir=folder)
+            assert 'sample' not in tracks['drums'], part
+        tracks, _, _ = batch.plan_tracks({'tracks': {'bass': {}}}, known, samples_dir=folder)
+        assert 'sample' not in tracks['bass']
+
+
+def capture_writes():
+    written, original = {}, batch.soundfile.write
+
+    def keep(path, data, *args, **kwargs):
+        written[str(path)] = np.array(data, dtype=np.float32)
+    batch.soundfile.write = keep
+    return written, lambda: setattr(batch.soundfile, 'write', original)
+
+
+def test_rebuild_with_a_sample_is_the_handwritten_kit():
+    """A pitched track's sample and a drum part's sample render exactly as a kit.json written by hand from the
+    spec; the drums' other routes stay as the base kit plays them."""
+    from memesynth.kit import load_kit
+    from memesynth.render import render
+    from studio import samples
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        midi = scratch / 'a.mid'
+        make_midi(midi)
+        folder = scratch / 'samples'
+        bass, _ = samples.store(wav_bytes(saw(110.0, 1.0)), 'bass.wav', folder)
+        kick, _ = samples.store(wav_bytes(np.stack([tone(60, 0.3, 0.8), tone(61, 0.3, 0.7)], axis=1)), 'kick.wav', folder)
+        plan = {'preset': 'pluck', 'tracks': {'piano': {'mode': 'mute'},
+                'bass': {'mode': 'swap', 'db': -2, 'gate': -40, 'sample': {'id': bass['id'], 'name': 'bass.wav', 'root': 108.0, 'db': -4.5}},
+                'drums': {'mode': 'swap', 'kit': 'acid', 'sample': {'id': kick['id'], 'name': 'kick.wav', 'part': 'kick', 'db': 3.0}}}}
+        written, restore = capture_writes()
+        try:
+            _, done = batch.rebuild(midi, plan, scratch / 'out', server.KITS_DIR, write_tracks=True, samples_dir=folder)
+            _, plain = batch.rebuild(midi, {**plan, 'tracks': {**plan['tracks'], 'drums': {'mode': 'swap', 'kit': 'acid'}}},
+                                     scratch / 'plain', server.KITS_DIR, write_tracks=True, samples_dir=folder)
+        finally:
+            restore()
+        track = lambda result, name: written[next(p for p in result['files'] if p.endswith(f'.{name}.wav'))]
+        tracks, _, _ = batch.plan_tracks(plan, sorted(p.parent.name for p in server.KITS_DIR.glob('*/kit.json')), samples_dir=folder)
+        played = batch.shaped_notes(batch.read_score(midi), tracks)
+        # by hand, from SPEC v26 §4
+        hand = {'samples': {'s': {'file': str(folder / bass['id'] / 'sample.wav'), 'rootHz': 108.0}},
+                'voices': {'bass': {'sample': 's', 'follow': 'note', 'fade': 0.01, 'pan': 0, 'gain': 10 ** (-4.5 / 20)}}}
+        (scratch / 'hand').mkdir()
+        (scratch / 'hand' / 'kit.json').write_text(json.dumps(hand), encoding='utf-8')
+        result = render(batch.sample_notes(played, 'bass'), load_kit(scratch / 'hand' / 'kit.json'))
+        expect = (sum(result.stereo_stem(r) for r in result.stems) * (10.0 ** (-2 / 20))) * done['factor']
+        got = track(done, 'bass')
+        assert got.shape == expect.shape and np.array_equal(got, expect.astype(np.float32)), np.abs(got - expect).max()
+        row = next(r for r in done['tracks'] if r['track'] == 'bass')
+        assert row['by'] == 'sample' and row['sample']['id'] == bass['id'] and row['sampleRendered'] == result.rendered > 0
+        # the drums: acid with its kick replaced, the pan kept
+        acid = json.loads((server.KITS_DIR / 'acid' / 'kit.json').read_text(encoding='utf-8'))
+        base = load_kit(server.KITS_DIR / 'acid' / 'kit.json')
+        drums = {'samples': {**{k: {**v, 'file': str(server.KITS_DIR / 'acid' / v['file'])} for k, v in acid['samples'].items()},
+                             'mine': {'file': str(folder / kick['id'] / 'sample.wav'), 'rootHz': 1.0}},
+                 'voices': {**acid['voices'], 'drums/kick': {'sample': 'mine', 'pitched': False, 'follow': 'sample', 'gain': 10 ** (3 / 20),
+                                                             'pan': base.resolve('drums/kick').pan}}}
+        (scratch / 'hand' / 'kit.json').write_text(json.dumps(drums), encoding='utf-8')
+        mine = render(batch.sample_notes(played, 'drums'), load_kit(scratch / 'hand' / 'kit.json'))
+        theirs = render(batch.sample_notes(played, 'drums'), base)
+        expect = sum(mine.stereo_stem(r) for r in mine.stems) * done['factor']
+        got = track(done, 'drums')
+        assert got.shape == expect.shape and np.array_equal(got, expect.astype(np.float32)), np.abs(got - expect).max()
+        assert set(mine.stems) == set(theirs.stems) and 'drums/kick' in mine.stems
+        for route in mine.stems:
+            same = np.array_equal(mine.stems[route], theirs.stems[route])
+            assert same == (route != 'drums/kick'), route
+        assert next(r for r in done['tracks'] if r['track'] == 'drums')['by'] == 'acid + sample kick'
+        assert done['sampleNotes'] == []
+        # a sample whose file is gone: the kit plays, and the report says so
+        (folder / bass['id']).rename(folder / 'away')
+        _, back = batch.rebuild(midi, plan, scratch / 'back', server.KITS_DIR, listen_path=scratch / 'back.wav', samples_dir=folder)
+        row = next(r for r in back['tracks'] if r['track'] == 'bass')
+        assert row['by'] == 'pluck' and row['sampleLost'] == '贝斯 的采样 bass.wav 找不到了，用回 pluck', row
+        assert back['sampleNotes'] == ['贝斯 的采样 bass.wav 找不到了，用回 pluck']
+
+
+def test_pack_names_a_sample():
+    import pretty_midi
+    from studio import samples
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        song = library.read_song(make_song(scratch), 'test')
+        folder = scratch / 'samples'
+        bass, _ = samples.store(wav_bytes(saw(110.0, 1.0)), 'bass.wav', folder)
+        plan = {'preset': 'pluck', 'tracks': {'piano': {'mode': 'mute'}, 'vocals': {'mode': 'mute'},
+                'bass': {'mode': 'swap', 'sample': {'id': bass['id'], 'name': '我的 bass.wav', 'root': 110.0, 'db': -3.2}},
+                'drums': {'mode': 'swap', 'sample': {'id': bass['id'], 'name': 'k.wav', 'part': 'kick', 'db': 0}}}}
+        _, done = batch.rebuild(song['midi'], plan, scratch / 'out', server.KITS_DIR, stems=song['stems'], pack=True, samples_dir=folder)
+        pack = Path(done['folder'])
+        assert pretty_midi.PrettyMIDI(str(pack / '02 贝斯 bass.mid')).instruments[0].name == 'bass - sample'
+        assert pretty_midi.PrettyMIDI(str(pack / '01 鼓 drums.mid')).instruments[0].name == 'drums - pluck + sample kick'
+        text = (pack / '说明.txt').read_text(encoding='utf-8-sig')
+        assert '贝斯：换 · 采样 我的 bass.wav（A2，−3.2 dB）' in text, text
+        assert '鼓：换 · 鼓 pluck，底鼓换成采样 k.wav' in text, text
+
+
+def test_server_takes_a_sample_and_serves_only_numbers():
+    from studio import samples
+    with tempfile.TemporaryDirectory() as scratch:
+        kept = server.SAMPLES
+        server.SAMPLES = Path(scratch) / 'samples'
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+        httpd.opened_midi, httpd.library_extra = None, []
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{httpd.server_address[1]}'
+
+        def post(query, body, name='锯齿.wav'):
+            request = urllib.request.Request(f'{base}/api/sample?{query}', data=body, method='POST',
+                                             headers={'X-File-Name': urllib.parse.quote(name)})
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    return response.status, json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                return error.code, json.loads(error.read())
+        import urllib.parse
+        try:
+            body = wav_bytes(saw(110.0, 1.0))
+            status, answer = post('track=bass&kit=hoover', body)
+            assert status == 200 and answer['name'] == '锯齿.wav' and answer['note'] == 'A2' and not answer['existed'], answer
+            assert -24 <= answer['db'] <= 24 and answer['samples'] == [answer['id']]
+            status, again = post('track=drums&kit=hoover', body)
+            assert status == 200 and again['existed'] and set(again['dbs']) == {'kick', 'snare', 'cymbal'}, again
+            assert fetch(f'{base}/api/samples')[2] and json.loads(fetch(f'{base}/api/samples')[2])['samples'] == [answer['id']]
+            status, headers, data = fetch(f'{base}/samples/{answer["id"]}.wav')
+            assert status == 200 and headers.get('Cache-Control') == 'no-store' and data[:4] == b'RIFF'
+            for bad in ('0123456789abcdef', '..%2finfo', answer['id'].upper(), answer['id'] + '0'):
+                assert fetch(f'{base}/samples/{bad}.wav')[0] == 404, bad
+            for query, why in (('track=vocals&kit=hoover', '人声'), ('track=bass&kit=nope', '音色'), ('track=bass&kit=..%2Fhoover', '音色')):
+                status, answer = post(query, body)
+                assert status == 400 and why in answer['error'], answer
+            status, answer = post('track=bass&kit=hoover', b'MThd\x00\x00\x00\x06', 'a.mid')
+            assert status == 400 and 'wav' in answer['error'], answer
+            assert len(samples.known(server.SAMPLES)) == 1
+        finally:
+            server.SAMPLES = kept
+            httpd.shutdown()
+
+
 TESTS = [value for name, value in sorted(globals().items()) if name.startswith('test_') and callable(value)]
 
 

@@ -226,7 +226,9 @@ function renderScore(score, kit, samples, rate, options) {
       ? pitchToHz(note.pitch, voice.transpose) / voice.rootHz
       : Math.pow(2, (voice.transpose || 0) / 12);
     const key = voice.sample + ':' + ratio.toFixed(6);
-    if (!cache.has(key)) cache.set(key, resample(sample, Number(ratio.toFixed(6))));
+    // Keyed by the rounded ratio as render.py is, but resampled at the exact one as render.py does: the rounded ratio
+    // drifts in phase over a long note, which on a bright sample cost up to −57 dB against the export (SPEC v26).
+    if (!cache.has(key)) cache.set(key, resample(sample, ratio));
     const source = cache.get(key);
     if (source.length === 0) continue;
 

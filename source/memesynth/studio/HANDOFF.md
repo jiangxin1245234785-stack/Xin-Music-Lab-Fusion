@@ -561,6 +561,46 @@ v2：再拖同一首的 `vocals.wav`，在「人声」里选原唱 / 18 个合�
       - `test_studio.py` 33 项通过；`test_memesynth.py` 23 项通过、2 项跳过（见「测试命令」）。截图 `xlr-screens/8-pack.jpg`。
     - **没验证**：真编曲软件里拖进去的样子（中文轨道名、120 BPM 对齐）；鼓叠层的 MIDI 只在测试数据上验过。
 
+45. **v26：自己的采样（2026-11-13，等验收）。** 规格是 SPEC.md 的 v26 节。碰了出声的代码：`batch.rebuild`（采样轨另外渲染）、`app.html` 的 `renderWindowNow`，以及（规划方定的）`engine.js` 重采样比例那一行（见下面第 1 条）；`memesynth/` 核心、`effects.py` 没动。
+    - 新文件 `samples.py`：`measured_root`（从 `tests/test_memesynth.py` 原样搬来）、`note_of` / `note_hz`、`mono`、`head_rms`、`store`（存放和拒收，`SampleError` 带一句话）、`known` / `path_of` / `info`、`matched_db`、`clean`、`kit_json`。
+    - `batch.py`：`plan_tracks(plan, known, samples_dir=None, lost=None)` 收 `sample` 并洗、文件不在时丢掉并在 `lost[轨]` 里记一句；`sample_notes`、`sample_label`、`sample_words`；`rebuild(..., samples_dir=None)`：有音高采样的轨不再渲染它的 kit，采样轨写临时 kit.json 只渲染这条轨的音符；报告 `sample` / `sampleRendered` / `sampleTruncated` / `sampleLost`，结果 `sampleNotes`；`write_pack` 的轨道名和说明行。
+    - `server.py`：`SAMPLES`、`--samples`（相对路径按仓库根）、`/api/samples`、`/samples/<id>.wav`、`take_sample`（`POST /api/sample`，超过 50 MB 不读正文）、`run_rebuild` 传 `samples_dir`。`.claude/launch.json` 的 `memesynth-studio-dev` 多 `--samples …/samples-dev`。
+    - `app.html`：`knownSamples` / `loadSamples`（开机和 `loadIndex` 一起，读方案之前）、`cleanSample`、`sampleLost` / `sampleOn` / `pitchedSample`、`decodeSample`（32 位浮点，按 float32 求声道平均，和 `load_sample_audio` 一样）、`ensureSample`、`sampleKitKey` / `sampleKit`；
+      `renderWindowNow` 的 `sampleTrack`（存在 `kitWindow['@sample|…']`）、有音高采样的轨不载入 / 不渲染它的 kit；行的拖放、`takeSample`、`paintSample`（借 `#fxPop`，`fxTrack = 'sample:<轨>'`）；选择框第一项；`currentPlan` / `takePlan`；`lostLine`（每次渲染先说）；`nudgePlan` 一处条件；`whoPlayed` / `escapeText`（导出和听整首的记录）；说明「换」一段。
+      `theme.css`：`.trk.over`（`inset 0 0 0 2px var(--signal)`，和闪一下同一种）、`.sampleName`、`.sampleActs`。没有新颜色值。
+    - `tests/test_studio.py`：新增 6 项（基频、存放和拒收、方案洗法、`rebuild` 对手写 kit.json 逐采样相同 + 鼓只换那一类 + 文件不在时退回、工程包命名、服务端接口），39 项。
+    - **和设计不一样 / 要知道的**：
+      1. **试听与导出在亮的采样上过不了 −60 dB，原因在 `engine.js`**（没改，按任务书停在这里报告）：`renderScore` 用取到 6 位小数的比例 `Number(ratio.toFixed(6))` 重采样，Python 用精确比例。
+         合成的 110 Hz 锯齿（原样、没滤波）当贝斯，七里香窗口 120–132 s：只放贝斯 **−52.7 dB**（带长短 / 前后 / 松紧 / 疏密 / 混响和抽吸）、不调 −57.0 dB；整首 **−54.1 dB**；只放鼓（hoover + 合成底鼓）−75.7 dB。
+         在 Python 里把比例取到 6 位再渲染同一份贝斯，和精确比例差正好 **−57.0 dB**（hoover 自己的贝斯同样的测法 −69.6 dB：素材越亮，相位漂移的代价越大）。
+         在页面里临时造一份只改这一行（`resample(sample, ratio)`，缓存键不变）的引擎副本、不动文件：整首 **−77.6 dB**、只放贝斯 **−79.5 dB**、不调 −82.1 dB。
+         **规划方定了改（2026-11-13），已改**：`engine.js` 的 `renderScore` 按精确比例重采样（缓存键仍是取到 6 位的比例，和 `render.py` 一样）。
+         - 引擎对账（`dump_reference.py` 加了 `--library`（参考 MIDI 取 `library.scan()` 列出的 merged.mid，只读）和 `--out <目录>`，`verify_engine.js` 收一个参考目录参数；参考数据写在临时目录）：
+           MIDI 解析 16 首 / 133,997 个音全对 pretty_midi，最大时间差 1.0 微秒；渲染七里香整首：hoover 信噪比改前 72.5 dB → 改后 **141.7 dB**，wobble 66.1 → **141.7 dB**；音符数（7870）和截断数（28 / 83）改前改后都和 Python 完全相同。
+         - 试听与导出（窗口 120–132 s，去掉头 3 秒）：这次的采样方案整首 **−77.6**、只放贝斯 **−79.5**、只放鼓 −75.7 dB；第 37 项的方案 **−76.6 dB**（改前 −68.2）；wobble 低八度贝斯（第 37 项的方案里贝斯换成 wobble、八度 −1）整首 −76.3、只放贝斯 **−79.5**、去掉混响 −81.1 dB（改前约 −58）。
+         - 没采样时：页面窗口因为引擎改了不再逐采样等于改前（预期）；「听整首」仍逐字节相同（第 37 项方案 sha256 032f3b35…）。
+      2. 文件不在时，页面**不把 `sample` 从方案里删掉**，只是不出声、状态栏每次渲染都先说那句话；否则一次自动保存就把它永久删了，「改回名字后又能用」做不到。导出端照设计丢掉（报告写一句）。
+      3. 鼓的增益在上传时三类各算一个（类别是在浮层里选的，上传时还不知道）。「其他」轨的主路由按 kit 里的 `strings`。
+      4. 有音高的轨的采样 kit 只含这个采样（不带基础音色的素材，基础音色在这条轨上用不到）；鼓的含基础音色全部素材。两边都只渲染这条轨的音符（和叠层一样），所以这条轨的缓冲长度可能和整套渲染时不同（只差尾部的零）。
+      5. 存放接受 WAV 和 WAVEX（后者是带扩展头的 wav，很多软件导出浮点 wav 用它）。拒收的四种都在服务端判；页面不先看扩展名。
+      6. 没有转谱的轨拒绝拖入（不上传），状态栏「<轨>没有转谱 · 采样没有音符可演」；「用这个」时轨不是「换」会切到「换」。设计没提。
+      7. `test_memesynth.py` 里原来那份 `measured_root` **没删**：那个文件在 `studio/` 外面，任务书只许动 `studio/`，所以现在有两份一样的（见「范围外」）。
+      8. 截图不是预览工具直接截的（它在 1280×720 下只给左上角 800×450），是页面自己画进 `<foreignObject>` 再转 JPEG，经 plans-dev 的方案接口落盘再解码（临时文件已删）；字体是页面同一份 Google Fonts。
+    - **实测**（8790，plans-dev，samples-dev；测试 wav 在页面里用 JS 合成（锯齿 / 正弦扫频底鼓 / 静音），单元测试里用 Python 合成，没下载任何东西）：
+      - 没采样时不变：改前存了第 37 项方案的六层窗口 sha256 和「听整首」文件；改后 6/6 逐采样相同，「听整首」逐字节相同（sha256 032f3b35…，58,790,364 字节，和第 43 项也相同）；对整首仍是 −68.2 dB。
+      - 音高：合成 220 Hz 锯齿测到 220.183 Hz（A3，+1 音分）；钢琴的采样 kit 演一个 A4，页面输出 439.80 Hz、导出 440.37 Hz（误差 0.05% / 0.08%）。
+      - 试听与导出：见上面第 1 条。
+      - 找不到时退回：`samples-dev` 里贝斯那个目录改名、刷新：贝斯「跟随预设 · hoover」、状态栏「贝斯 的采样 saw110 bass.wav 找不到了，用回 hoover · 渲染好了 · …」、0 个脚本错误；导出成功，记录里那句话，写出的方案里贝斯没有 `sample`、`written` 里 `sampleLost` 是那句话；改回名字刷新后又是「采样 · saw110 bass.wav」。
+      - 拒收：MIDI、改成 .wav 的 MIDI 都是「采样没收下 · 这不是 WAV 文件，采样只收 wav」，30 秒的「这个采样 30.0 秒，最长 20 秒；剪短再拖」，静音的「这个文件全是静音（峰值低于 −60 dBFS）」；方案不变、`samples-dev` 的数不变、页面照常播。人声行：没有描边、`dropEffect` 是 none、不上传。（控制台里的 4 条 400 就是这四次拒收。）
+      - 界面：钢琴、贝斯、鼓各拖一次 → 浮层 → 用这个 → 选择框「采样 · saw220 A3.wav」「hoover + 采样底鼓」，`title`「hoover + 采样底鼓：synth kick.wav」；方案里 `sample` 对，刷新后还在；钢琴选 pluck 后 `sample` 没了（存下的方案里也没了）。同一个文件拖第二次：`existed` 真、编号相同、目录数 3 → 3；动下拉选 C3 → root 130.8128。
+        骰子 2000 次、相近 2000 次（mulberry32 种子 20261113，贝斯和鼓有采样）：`sample` 0 次变；相近挑中贝斯 534 次、换音色 0 次（鼓挑中 593 次、换基础音色 203 次）。按钮真点一次骰子、一次相近：采样不变。
+        工程包（临时目录，做完删了）：`drums - hoover + sample kick`（1120 个音）、`bass - sample`（301）、`guitar - hoover`；说明「鼓：换 · 鼓 hoover，底鼓换成采样 synth kick.wav · 音量 0 dB」「贝斯：换 · 采样 saw110 bass.wav（A2，10.3 dB） · 音量 0 dB」。
+      - 一屏（贝斯和鼓有采样）：1280×720 无 / 有 A/B 和那行字：格子 27 / 24、行高 44 / 43；1024×700：24 / 24、44 / 39；无滚动条、`#main` 不溢出、每行控件中线差 0、「用什么」格不溢出；列宽 1280 `12 4 58 86 320 92 30 30` + 426，1024 `… 240 …` + 350
+        （1280 末列比第 43 项记的 427 少 1 px，同一页面去掉采样量也是 426，和这次改动无关）。浮层在 1024×700 下鼓行和其他行都在窗口内（161,180–461,328 / 161,331–461,504）。
+      - `test_studio.py` 39 项、`test_memesynth.py` 23 过 2 跳过。用户的 `plans`、`samples` 没写（`samples` 目录不存在），`D:\Caches` 没写。
+    - **截图**：`xlr-screens/9-sample.jpg`（1280×720，贝斯用采样、鼓换了底鼓，贝斯的采样浮层开着）。
+    - **没验证**：好不好听；真录音的采样（只用了合成的）；双声道采样的页面平均只在单元测试里间接验过（服务端存储 2 声道），页面上用的都是单声道；真机拖文件（预览里是脚本派发的 `DragEvent`，真拖时光标样子没看）。
+
 ## 文件地图
 
 ```
@@ -579,6 +619,8 @@ source/memesynth/studio/
                             v24：clean_layer / layer_notes，rebuild 给有叠层的轨另外渲染一层再相加
   vocals.py                 v2：声音目录、人声缓存、转换队列（单线程）、/vocal/ 取文件；v3：store_file / known / ready_voices
   library.py                v3：扫 XLD 分析目录列出能开的歌（只读）；v5：每首歌的六条分轨
+  samples.py                v26：用户自己的采样：存放 / 拒收、测基频（measured_root）、算增益、洗方案、写临时 kit.json
+work/memesynth-cache/samples/<sha16>/   v26：拖进来的采样，sample.wav（48 kHz 32 位浮点）+ info.json；测试实例用 samples-dev/
 work/memesynth-cache/plans/   v5：方案。songs/<曲库编号>.json 是每首歌上次的选择，named/<名字>.json 是起了名的
   tests/                    与 Python 的对账脚本
 source/voiceswap/studio_bridge.py   v2：envs/highres 里干重活的那一半（prepare / convert）
@@ -607,10 +649,12 @@ work/memesynth-cache/voices/<sha16>/   v2：每份人声一个目录，source.wa
   只在超过 −1 dBFS 时整体再压一次。
 - **人声缓存只写 `work/memesynth-cache/`**，永远不写 XLD 的分析目录（用户在同时用那个库）。
   `/vocal/` 路由只认 16 位十六进制的人声编号和 `[a-z0-9_-]` 的声音名。
+- **采样只写 `work/memesynth-cache/samples*`**（用户的是 `samples`，测试实例 `--samples` 指到 `samples-dev`），
+  `/samples/` 路由只认 16 位十六进制的编号且 `sample.wav` 在。
 
 ## 已知问题
 
-- **页面试听用的 `engine.js` 对 wobble 低八度和导出只差约 −58 dB**（第 43 项查到，原来就有）：贝斯直接用 wobble、八度 −1，页面窗口对「听整首」−58.1 dB，低于 −60 的门槛。听不出来，用户同意先不修。
+- ~~页面试听用的 `engine.js` 对 wobble 低八度和导出只差约 −58 dB~~ **已修（2026-11-13，第 45 项）**：原因是 `engine.js` 用取到 6 位小数的比例重采样；改成精确比例后，贝斯 wobble、八度 −1 只放贝斯 −79.5 dB、整首 −76.3 dB，引擎对账信噪比 141.7 dB。
 - **页面会比服务活得久。** 关掉启动器窗口后，浏览器里那一页看起来完全正常（音色早就
   载进内存了），一点导出才炸。2026-10-25 真实踩过一次，浏览器只说 `Failed to fetch`。
   现在所有 `/api/` 调用都走 `api()`，网络层失败会统一报「连不上本地服务……双击
@@ -665,10 +709,13 @@ work/memesynth-cache/voices/<sha16>/   v2：每份人声一个目录，source.wa
 # 这样的真实 XLD 导出，这台机器上现在没有了，和工作台的改动无关）
 runtime/0.5.0/envs/basic/python.exe source/memesynth/tests/test_memesynth.py
 
-# 工作台自己的 Python（重构、曲库、方案、效果器、叠层、工程包、服务端的回答），33 项，只用临时目录
+# 工作台自己的 Python（重构、曲库、方案、效果器、叠层、工程包、采样、服务端的回答），39 项，只用临时目录
 runtime/0.5.0/envs/basic/python.exe -X utf8 source/memesynth/studio/tests/test_studio.py
 
 # JS 移植与 Python 的对账（需先跑 dump_reference.py 生成参考数据）
+# artifacts/ 下没有真实导出时：参考 MIDI 取曲库（只读），参考数据写到临时目录
+runtime/0.5.0/envs/basic/python.exe -X utf8 source/memesynth/studio/tests/dump_reference.py <某首 merged.mid> source/memesynth/kits/hoover/kit.json --library --out <临时目录>
+node source/memesynth/studio/tests/verify_engine.js <临时目录>
 node verify_engine.js
 
 # 导出链路，不开界面

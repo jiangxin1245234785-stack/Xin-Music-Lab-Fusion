@@ -41,7 +41,7 @@ if sys.stderr is None or sys.stdout is None:
     sys.stdout = sys.stderr = LOG.open(mode, encoding='utf-8', buffering=1)
 
 from studio import library, vocals  # noqa: E402
-from studio import batch, effects  # noqa: E402
+from studio import batch, effects, samples  # noqa: E402
 from studio.batch import export, rebuild, stem_levels  # noqa: E402
 
 KITS_DIR = ROOT / 'kits'
@@ -50,6 +50,7 @@ VOCAL_TARGET_DB = -20.0
 DEFAULT_OUT = REPO / 'work' / 'memesynth-out'
 PLANS = REPO / 'work' / 'memesynth-cache' / 'plans'      # named plans, and the last state of each library song
 LISTEN = REPO / 'work' / 'memesynth-cache' / 'listen'    # the whole rebuild rendered to hear in the page; one file at a time
+SAMPLES = REPO / 'work' / 'memesynth-cache' / 'samples'  # SPEC v26: the user's own samples; `--samples` puts them elsewhere
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
 SONGS: dict = {}            # key → song, from the last library scan; the only paths /library/ will serve
@@ -255,7 +256,7 @@ def run_rebuild(job_id, midi_bytes, midi_name, plan, out_dir, write_tracks, voca
         score, written = rebuild(midi_path, plan, out_dir, KITS_DIR, stems=stems, vocal=vocal,
                                  voice=(vocal_choice or {}).get('voice', ''), write_tracks=write_tracks,
                                  progress=progress, listen_path=(Path(out_dir) / f'{job_id}.wav') if listen else None,
-                                 pack=pack and not listen)
+                                 pack=pack and not listen, samples_dir=SAMPLES)
         with JOBS_LOCK:
             JOBS[job_id].update(done=True, progress=1.0, message='完成', vocalNote=vocal_note, rebuild=written,
                                 listen=f'/listen/{job_id}.wav' if listen else '',
@@ -486,6 +487,14 @@ class Handler(BaseHTTPRequestHandler):
             if target.suffix == '.wav' and str(target).startswith(str(KITS_DIR.resolve())):
                 return self.send_file(target)
             return self.send_json({'error': '拒绝'}, 403)
+        if route == '/api/samples':
+            return self.send_json({'samples': samples.known(SAMPLES)})
+        if route.startswith('/samples/') and route.endswith('.wav'):
+            # Only a 16-hex number that is stored; nothing else under the folder is ever served.
+            path = samples.path_of(SAMPLES, route[len('/samples/'):-len('.wav')])
+            if path is None:
+                return self.send_json({'error': '没有这个采样'}, 404)
+            return self.send_file(path)
         if route == '/api/library':
             return self.send_json(library_listing(self.server.library_extra))
         if route.startswith('/library/') and route.endswith('.mid'):
@@ -567,9 +576,44 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'error': '拒绝'}, 403)
         return self.send_json({'error': '没有这个地址'}, 404)
 
+    def take_sample(self, length):
+        """POST /api/sample?track=<轨>&kit=<音色>: the dropped file's bytes as the body, its name URL-encoded in
+        `X-File-Name` (SPEC v26 §1). Kept once under its number; the answer carries what was measured and the gain
+        that matches it to what it replaces in that kit (for the drums one per part, the part is picked after)."""
+        import urllib.parse
+        query = urllib.parse.parse_qs(self.path.partition('?')[2])
+        track, kit_name = (query.get('track') or [''])[0], (query.get('kit') or [''])[0]
+        if length > samples.MAX_BYTES:
+            self.close_connection = True                  # the body is not read
+            return self.send_json({'error': f'文件 {length / 1048576:.0f} MB，采样最大 50 MB'}, 400)
+        data = self.rfile.read(length)
+        if track not in (*samples.PITCHED, 'drums'):
+            return self.send_json({'error': '人声这一行不接采样' if track == 'vocals' else '不认识这条轨'}, 400)
+        kit_path = KITS_DIR / kit_name / 'kit.json'
+        if not kit_name or '/' in kit_name or '\\' in kit_name or '..' in kit_name or not kit_path.is_file():
+            return self.send_json({'error': '没有这套音色'}, 400)
+        name = urllib.parse.unquote(self.headers.get('X-File-Name') or '') or 'sample.wav'
+        try:
+            record, existed = samples.store(data, name, SAMPLES)
+        except samples.SampleError as error:
+            return self.send_json({'error': str(error)}, 400)
+        import soundfile
+        from memesynth.kit import load_kit
+        heard = samples.mono(soundfile.read(str(samples.path_of(SAMPLES, record['id'])), dtype='float32', always_2d=True)[0])
+        kit = load_kit(kit_path, sample_rate=batch.SAMPLE_RATE)
+        if track == 'drums':
+            record['dbs'] = {part: samples.matched_db(heard, kit, track, part) for part in samples.PARTS}
+        else:
+            record['db'] = samples.matched_db(heard, kit, track)
+        # This drop's own name, even when the same bytes were kept before under another.
+        record.update(name=name, existed=existed, samples=samples.known(SAMPLES))
+        return self.send_json(record)
+
     def post(self):
         route = self.path.split('?', 1)[0]
         length = int(self.headers.get('Content-Length') or 0)
+        if route == '/api/sample':
+            return self.take_sample(length)
         if route == '/api/vocal':
             if 'json' in (self.headers.get('Content-Type') or ''):
                 # A library song: the stem is already on this disk, so only its key travels.
@@ -779,6 +823,13 @@ def main(argv=None):
         global PLANS
         at = argv.index('--plans')
         PLANS = Path(argv[at + 1])
+        del argv[at:at + 2]
+    if '--samples' in argv:                      # --samples <folder>: keep dropped samples somewhere else (the test instances)
+        global SAMPLES
+        at = argv.index('--samples')
+        SAMPLES = Path(argv[at + 1])
+        if not SAMPLES.is_absolute():
+            SAMPLES = REPO / SAMPLES
         del argv[at:at + 2]
     preferred = 8777                             # --port <n>: a second studio beside one that is running
     if '--port' in argv:

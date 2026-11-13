@@ -112,6 +112,7 @@
       <p>每条轨三选一：原声（分离出的分轨）、换（音色演转谱出来的音符）、静音（左边的灯）。</p>
       <p>机架下面的预设墙按分类排着全部预设，点一格就给整首换上那一套（亮着的是现在这套，掷骰子掷到的那格会闪一下）；一条轨在「用什么」里可以另选音色。人声在「声音」里选谁来唱（点人声的「换」或它的声音按钮）；第一次要整首转换（合成声音约九分钟，RVC 一分多钟），转过的会记住。</p>
       <p>留原声的轨对齐到预设演这条轨的音量，混着听不失衡。</p>
+      <p>把自己的 wav（最长 20 秒）拖到鼓、贝斯、吉他、钢琴、其他任意一行：有音高的轨整条用这个采样按谱子演（音高先自动测，可以在小面板里改）；鼓上选把底鼓、军鼓或镲换成它。音量拖进来时自动对齐到被换掉的声音，「用什么」里选别的音色就去掉采样；要改音高或类别，再拖一次同一个文件。</p>
       <h3>调</h3>
       <p>每条轨右边的「调」：八度、力度、长短、前后、松紧、疏密改音符，只对「换」的轨有效；明暗、回声、混响改声音。人声的声音默认跟随预设。</p>
       <p>「S」只听这一条；音量条是这条轨的大小。「抽吸」让每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来，转谱里没有底鼓时用不了。</p>
@@ -189,7 +190,7 @@ let pump = Object.assign({}, PUMP_DEFAULT);
 let pair = [];                                      // the two presets being compared, in the order they were picked
 function resetCast() {
   for (const track of TRACKS) {
-    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '', lock: false, layer: null,
+    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '', lock: false, layer: null, sample: null,
                       oct: 0, vel: 0, gate: 0, late: 0, loose: 0, thin: 0, tone: 0, echo: 0, room: 0};
   }
   pump = Object.assign({}, PUMP_DEFAULT);
@@ -418,6 +419,90 @@ function ensureKit(name) {
     })().catch(error => { delete kitLoads[name]; throw error; });
   }
   return kitLoads[name];
+}
+
+/* --- the user's own samples (SPEC v26): a wav dropped on a row, kept by the server under its number ------------- */
+let knownSamples = new Set();                       // the numbers the server has a file for (/api/samples)
+const sampleAudio = {}, sampleLoads = {};           // number → the sample as the kit loader hears it (mono, 48 kHz)
+const SAMPLE_PARTS = {kick: ['drums/kick'], snare: ['drums/snare'], cymbal: ['drums/hihat', 'drums/openhat', 'drums/ride', 'drums/crash']};
+const PART_ZH = {kick: '底鼓', snare: '军鼓', cymbal: '镲'};
+const PITCHED_TRACKS = ['bass', 'guitar', 'piano', 'other'];
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+async function loadSamples() {
+  try { knownSamples = new Set((await api('/api/samples')).samples || []); } catch (error) { /* an older server: none */ }
+}
+const isNumber = value => typeof value === 'number' && Number.isFinite(value);
+/* The same rule as samples.clean: a missing key, a number out of range or an unknown part drops the whole thing. */
+function cleanSample(value, id) {
+  if (!value || typeof value !== 'object' || !(PITCHED_TRACKS.includes(id) || id === 'drums')) return null;
+  if (typeof value.id !== 'string' || !/^[0-9a-f]{16}$/.test(value.id) || typeof value.name !== 'string') return null;
+  if (!isNumber(value.db) || value.db < -24 || value.db > 24) return null;
+  if (id === 'drums') return SAMPLE_PARTS[value.part] && Object.prototype.hasOwnProperty.call(SAMPLE_PARTS, value.part)
+    ? {id: value.id, name: value.name, part: value.part, db: value.db} : null;
+  if (!isNumber(value.root) || value.root < 30 || value.root > 5000) return null;
+  return {id: value.id, name: value.name, root: value.root, db: value.db};
+}
+/* A sample that is in the plan but whose file the server does not have: the track plays its kit (§3). */
+const sampleLost = id => !!cast[id].sample && !knownSamples.has(cast[id].sample.id);
+const sampleOn = id => id !== 'vocals' && !!cast[id].sample && !sampleLost(id) && cast[id].mode === 'swap';
+const pitchedSample = id => sampleOn(id) && id !== 'drums';
+const noteName = midi => NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+const noteHz = midi => 440 * Math.pow(2, (midi - 69) / 12);
+const nearestMidi = hz => Math.floor(69 + 12 * Math.log2(hz / 440) + 0.5);
+function sampleWords(id) {
+  const s = cast[id].sample;
+  return id === 'drums' ? `${kitOf(id)} + 采样${PART_ZH[s.part]}` : `采样 · ${s.name}`;
+}
+/* The stored wav (32-bit float, 48 kHz, one or two channels) averaged the way kit.load_sample_audio does: in float32. */
+function decodeSample(buffer) {
+  const view = new DataView(buffer);
+  let at = 12, channels = 1, bits = 32, data = null, length = 0;
+  while (at + 8 <= view.byteLength) {
+    const id = String.fromCharCode(view.getUint8(at), view.getUint8(at+1), view.getUint8(at+2), view.getUint8(at+3));
+    const size = view.getUint32(at + 4, true);
+    if (id === 'fmt ') { channels = view.getUint16(at + 10, true); bits = view.getUint16(at + 22, true); }
+    if (id === 'data') { data = at + 8; length = Math.min(size, view.byteLength - data); break; }
+    at += 8 + size + (size % 2);
+  }
+  if (data === null || bits !== 32) throw new Error('采样文件读不了，再拖一次');
+  const count = Math.floor(length / (4 * channels)), out = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const left = view.getFloat32(data + i * 4 * channels, true);
+    out[i] = channels > 1 ? Math.fround(left + view.getFloat32(data + i * 4 * channels + 4, true)) / 2 : left;
+  }
+  return out;
+}
+function ensureSample(sampleId) {
+  if (!sampleLoads[sampleId]) {
+    sampleLoads[sampleId] = fetchBytes(`/samples/${sampleId}.wav`).then(bytes => (sampleAudio[sampleId] = decodeSample(bytes)))
+      .catch(error => { delete sampleLoads[sampleId]; throw error; });
+  }
+  return sampleLoads[sampleId];
+}
+/* The kit a track plays with its sample, in kitAudio's shape (batch / samples.kit_json is the same kit):
+ * a pitched track: the sample alone on every route of the track; the drums: the base kit with one part replaced. */
+function sampleKitKey(id) {
+  const s = cast[id].sample;
+  return `@sample|${id}|${s.id}|${id === 'drums' ? s.part + '|' + kitOf(id) : s.root}|${s.db}`;
+}
+function sampleKit(id) {
+  const key = sampleKitKey(id), s = cast[id].sample;
+  if (kitAudio[key]) return kitAudio[key];
+  const audio = sampleAudio[s.id], gain = 10 ** (s.db / 20);
+  if (!audio) return null;
+  if (id !== 'drums') {
+    const voices = {};
+    for (const route of routesOf(id)) voices[route] = {sample: '@sample', rootHz: s.root, follow: 'note', fade: 0.01, pan: 0, gain};
+    return (kitAudio[key] = {samples: {'@sample': audio}, voices});
+  }
+  const base = kitAudio[kitOf(id)];
+  if (!base) return null;
+  const voices = Object.assign({}, base.voices);
+  for (const route of SAMPLE_PARTS[s.part]) {
+    const replaced = Engine.resolveVoice({voices: base.voices}, route);
+    voices[route] = {sample: '@sample', rootHz: 440, pitched: false, follow: 'sample', gain, pan: replaced ? Math.max(-1, Math.min(1, replaced.pan || 0)) : 0};
+  }
+  return (kitAudio[key] = {samples: Object.assign({}, base.samples, {'@sample': audio}), voices});
 }
 
 /* A number in -1..1 from a note's place n in its track, a salt and the track (SPEC v19): the same
@@ -864,6 +949,23 @@ function buildTracks() {
       cast[track.id].solo = !cast[track.id].solo; paintTracks(); updateGains(); queueSave();
     });
     row.querySelector('.fx').addEventListener('click', event => openFx(track.id, event.currentTarget));
+    // SPEC v26: a wav dropped on the row becomes this track's sample; the vocal row takes nothing.
+    const files = event => [...((event.dataTransfer || {}).types || [])].includes('Files');
+    for (const name of ['dragenter', 'dragover']) {
+      row.addEventListener(name, event => {
+        if (!files(event)) return;
+        event.preventDefault(); event.stopPropagation();
+        event.dataTransfer.dropEffect = track.id === 'vocals' ? 'none' : 'copy';
+        if (track.id !== 'vocals') row.classList.add('over');
+      });
+    }
+    row.addEventListener('dragleave', event => { if (!row.contains(event.relatedTarget)) row.classList.remove('over'); });
+    row.addEventListener('drop', event => {
+      if (!files(event)) return;
+      event.preventDefault(); event.stopPropagation();
+      row.classList.remove('over');
+      if (track.id !== 'vocals' && event.dataTransfer.files[0]) takeSample(track.id, event.dataTransfer.files[0]);
+    });
     el('tracks').appendChild(row);
   }
 }
@@ -892,7 +994,7 @@ function openFx(id, anchor) {
   const pop = el('fxPop');
   if (!pop.hidden && fxTrack === id) return closeFx();
   fxTrack = id;
-  if (id === 'pump') paintPump(); else if (id.startsWith('layer:')) paintLayer(); else paintFx();
+  if (id === 'pump') paintPump(); else if (id.startsWith('layer:')) paintLayer(); else if (id.startsWith('sample:')) paintSample(); else paintFx();
   pop.hidden = false;
   const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
   pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
@@ -1060,6 +1162,67 @@ function paintLayer() {
   });
   pop.querySelector('.layerDrop').addEventListener('click', () => { c.layer = null; closeFx(); layerChanged(); });
 }
+/* --- a dropped sample (SPEC v26): uploaded, then a small panel says what was measured and asks how to use it --- */
+let pendingSample = null;                                    // {track, answer} while the panel is open
+async function takeSample(id, file) {
+  const track = TRACKS.find(t => t.id === id);
+  if (!routesOf(id).length) { setState(`${track.zh}没有转谱 · 采样没有音符可演`, true); return; }
+  setState(`采样 · 上传 ${file.name}`);
+  let answer;
+  try {
+    answer = await api(`/api/sample?track=${id}&kit=${encodeURIComponent(kitOf(id))}`,
+                       {method: 'POST', headers: {'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name)}, body: file});
+  } catch (error) { setState(`采样没收下 · ${error.message}`, true); return; }
+  knownSamples = new Set(answer.samples || [...knownSamples, answer.id]);
+  setState(`采样 · ${answer.name}${answer.existed ? ' · 这个文件以前存过，直接用' : ''}`);
+  pendingSample = {track: id, answer};
+  closeFx();
+  openFx('sample:' + id, el('tracks').querySelector(`[data-track="${id}"] .who`));
+}
+function paintSample() {
+  const pop = el('fxPop'), id = fxTrack.slice('sample:'.length), track = TRACKS.find(t => t.id === id);
+  if (!pendingSample || pendingSample.track !== id) return closeFx();
+  const answer = pendingSample.answer, drums = id === 'drums';
+  pop.style.setProperty('--tc', `var(--t-${id})`);
+  let measured = '', options = '', chosen = 48;               // C3 when nothing was measured
+  if (!drums) {
+    if (answer.rootHz) {
+      chosen = Math.max(24, Math.min(95, nearestMidi(answer.rootHz)));
+      measured = `${answer.note} · ${answer.rootHz.toFixed(1)} Hz（${answer.cents >= 0 ? '+' : '−'}${Math.abs(answer.cents)} 音分）`;
+    } else measured = '测不出音高';
+    for (let midi = 24; midi <= 95; midi++) options += `<option value="${midi}">${noteName(midi)}</option>`;     // C1 … B6
+  }
+  pop.innerHTML = `<b>${track.zh} · 采样</b><p class="fxNote sampleName"></p>`
+    + (drums
+      ? `<div class="layerRow"><span>换掉</span><span class="seg" role="group" aria-label="${track.zh}的采样换掉哪一类">`
+        + Object.entries(PART_ZH).map(([part, zh]) => `<button type="button" data-part="${part}" aria-pressed="${part === 'kick'}">${zh}</button>`).join('') + '</span></div>'
+      : `<p class="fxNote">${measured}</p><label class="layerRow"><span>音高</span><select aria-label="${track.zh}采样的音高">${options}</select></label>`)
+    + '<div class="sampleActs"><button type="button" class="plain sampleUse">用这个</button><button type="button" class="plain sampleCancel">取消</button></div>';
+  pop.querySelector('.sampleName').textContent = answer.name;
+  pop.querySelector('.sampleName').title = answer.name;
+  let part = 'kick', touched = false;
+  const select = pop.querySelector('select');
+  if (select) { select.value = String(chosen); select.addEventListener('change', () => { touched = true; }); }
+  for (const button of pop.querySelectorAll('[data-part]')) {
+    button.addEventListener('click', () => {
+      part = button.dataset.part;
+      for (const other of pop.querySelectorAll('[data-part]')) other.setAttribute('aria-pressed', String(other === button));
+    });
+  }
+  pop.querySelector('.sampleCancel').addEventListener('click', () => { pendingSample = null; closeFx(); setState(`采样 · 没用 ${answer.name}（文件留着，再拖一次就行）`); });
+  pop.querySelector('.sampleUse').addEventListener('click', () => {
+    const c = cast[id];
+    // Not touched: the measured Hz itself; touched (or nothing measured): the note's equal-tempered Hz.
+    c.sample = drums ? {id: answer.id, name: answer.name, part, db: answer.dbs[part]}
+      : {id: answer.id, name: answer.name, root: !touched && answer.rootHz ? answer.rootHz : noteHz(Number(select.value)), db: answer.db};
+    if (c.mode !== 'swap') c.mode = 'swap';                  // a sample plays only on a swapped track
+    pendingSample = null;
+    closeFx();
+    noteAfterRender = `采样 · ${track.zh} ${drums ? PART_ZH[part] + '换成 ' : ''}${answer.name}`;
+    paintTracks(); renderWindow(); queueSave();
+  });
+}
+
 document.addEventListener('click', event => {
   if (!event.target.isConnected) return;                     // a control the panel just repainted away
   if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx, #pumpBtn, .layerBtn')) closeFx();
@@ -1130,12 +1293,21 @@ function paintTracks() {
     } else {
       const select = document.createElement('select');
       select.setAttribute('aria-label', track.zh + '用哪个音色');
-      select.innerHTML = `<option value="">跟随预设 · ${preset}</option>` + names.map(name => `<option value="${name}">${name}</option>`).join('');
-      select.value = c.kit || '';
-      select.addEventListener('change', () => { c.kit = select.value || null; paintTracks(); renderWindow(); queueSave(); });
+      // SPEC v26: the track's own sample is the first entry, chosen; picking anything else takes it off.
+      const own = c.sample && !sampleLost(track.id) ? sampleWords(track.id) : '';
+      select.innerHTML = (own ? '<option value="@sample"></option>' : '')
+        + `<option value="">跟随预设 · ${preset}</option>` + names.map(name => `<option value="${name}">${name}</option>`).join('');
+      if (own) select.options[0].textContent = own;                  // a file name is text, never markup
+      select.value = own ? '@sample' : c.kit || '';
+      select.title = own ? (track.id === 'drums' ? `${own}：${c.sample.name}` : own) : '';
+      select.addEventListener('change', () => {
+        if (select.value === '@sample') return;
+        c.sample = null; c.kit = select.value || null;
+        paintTracks(); renderWindow(); queueSave();
+      });
       const mark = document.createElement('span');
-      mark.className = 'kicon'; mark.innerHTML = icon(((kitsIndex || {})[kitOf(track.id)] || {}).icon);
-      mark.title = kitOf(track.id);
+      mark.className = 'kicon'; mark.innerHTML = icon(own && track.id !== 'drums' ? 'note' : ((kitsIndex || {})[kitOf(track.id)] || {}).icon);
+      mark.title = own && track.id !== 'drums' ? own : kitOf(track.id);
       who.appendChild(mark);
       who.appendChild(select);
       if (!isVocal) {
@@ -1435,11 +1607,18 @@ async function renderWindow() {
 async function renderWindowNow() {
   if (!score || !preset) return;
   const ticket = ++renderTicket, frames = Math.round(SPAN * RATE);
-  const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap').map(t => kitOf(t.id)))];
+  // A pitched track with its own sample does not play its kit (SPEC v26); the drums' sample sits in the base kit.
+  const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap' && !pitchedSample(t.id)).map(t => kitOf(t.id)))];
   const loading = [...new Set(playing.concat(TRACKS.filter(t => layerOn(t.id)).map(t => cast[t.id].layer.kit)))];
   if (loading.some(name => !kitAudio[name])) {
     setState(`载入音色 · ${loading.filter(name => !kitAudio[name]).join('、')}`);
     await Promise.all(loading.map(ensureKit));
+    if (ticket !== renderTicket) return;
+  }
+  const wantSamples = [...new Set(TRACKS.filter(t => sampleOn(t.id)).map(t => cast[t.id].sample.id))].filter(n => !sampleAudio[n]);
+  if (wantSamples.length) {
+    setState('载入采样');
+    await Promise.all(wantSamples.map(ensureSample));
     if (ticket !== renderTicket) return;
   }
   const started = performance.now(), notes = shapedScore();
@@ -1461,6 +1640,20 @@ async function renderWindowNow() {
     if (!(key in kitWindow)) {
       const part = layerNotes(notes, id, oct);
       const result = Engine.renderScore(part.score, {voices: kitAudio[kit].voices}, kitAudio[kit].samples, RATE,
+                                        {from: windowStart, to: windowStart + SPAN, trim: true});
+      kitWindow[key] = Object.keys(result.stems).length ? Engine.mixDown(result) : null;
+    }
+    if (!kitWindow[key]) return null;
+    const out = new Float32Array(frames * 2), data = kitWindow[key];
+    out.set(data.subarray(0, Math.min(data.length, out.length)));
+    return out;
+  };
+  // A track's own sample (SPEC v26): only this track's notes, through the kit made for it; kept with the kits' windows.
+  const sampleTrack = id => {
+    const kit = sampleKit(id), key = sampleKitKey(id);
+    if (!kit) return null;
+    if (!(key in kitWindow)) {
+      const result = Engine.renderScore(layerNotes(notes, id, 0).score, {voices: kit.voices}, kit.samples, RATE,
                                         {from: windowStart, to: windowStart + SPAN, trim: true});
       kitWindow[key] = Object.keys(result.stems).length ? Engine.mixDown(result) : null;
     }
@@ -1511,7 +1704,7 @@ async function renderWindowNow() {
       if (c.mode !== 'mute' && vocal && voice && voice !== '@kit' && voiceAudio[voice]) data = vocalWindow(voiceAudio[voice]);
       else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
     } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
-    else if (c.mode === 'swap') data = kitTrack(kitOf(track.id), track.id);
+    else if (c.mode === 'swap') data = sampleOn(track.id) ? sampleTrack(track.id) : kitTrack(kitOf(track.id), track.id);
     // The layer is added first; the pump, tone / echo / room and the level below are the track's, for both.
     if (track.id !== 'vocals' && c.mode === 'swap' && layerOn(track.id)) {
       const top = layerTrack(track.id);
@@ -1541,7 +1734,8 @@ async function renderWindowNow() {
   const note = noteAfterRender; noteAfterRender = '';        // what a roll came up with outlasts the render it caused
   const said = layers.length ? note || `渲染好了 · ${ab === 'orig' ? '原曲' : '重构'} ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '渲染好了 · 全部静音';
   levelProvisional = provisional ? {key: levelKey(song.key, preset), ticket, note: said, measuredAs: provisional} : null;
-  setState(provisional ? said + ' · 原声音量校准中' : said);
+  const lost = lostLine();                                   // SPEC v26: a missing sample is said first, every time
+  setState((lost ? lost + ' · ' : '') + (provisional ? said + ' · 原声音量校准中' : said), !!lost);
   if (running) startPlayback(positionInLoop());
   // The real numbers may have come in while this window was being built: correct it now rather than never.
   if (provisional && levelCache[levelKey(song.key, preset)]) levelsArrived(song.key, preset);
@@ -2057,6 +2251,7 @@ function currentPlan() {
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
     if (c.lock) tracks[track.id].lock = true;                                  // SPEC v23: only when locked
     if (c.layer) tracks[track.id].layer = Object.assign({}, c.layer);           // SPEC v24: only when there is one
+    if (c.sample) tracks[track.id].sample = Object.assign({}, c.sample);        // SPEC v26: only when there is one (kept while its file is away)
   }
   tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
   const plan = {preset, tracks, voice: cast.vocals.voice};
@@ -2068,6 +2263,7 @@ function currentPlan() {
 function takePlan(plan) {
   if (!plan || typeof plan !== 'object') return;
   if (typeof plan.preset === 'string' && (kitsIndex || {})[plan.preset]) preset = plan.preset;
+  const lostNow = [];
   for (const track of TRACKS) {
     const saved = plan.tracks && typeof plan.tracks === 'object' ? plan.tracks[track.id] : null;
     if (!saved || typeof saved !== 'object') continue;
@@ -2078,6 +2274,10 @@ function takePlan(plan) {
     c.solo = saved.solo === true;
     c.lock = saved.lock === true;
     c.layer = cleanLayer(saved.layer, track.id);
+    c.sample = cleanSample(saved.sample, track.id);
+    if (c.sample && !knownSamples.has(c.sample.id)) {
+      lostNow.push(`${track.zh} 的采样 ${c.sample.name} 找不到了，用回 ${c.kit || preset}`);
+    }
     for (const key of FX_KEYS) {
       const value = Math.round(Number(saved[key]));
       c[key] = Number.isFinite(value) ? Math.max(FX_LIMITS[key][0], Math.min(FX_LIMITS[key][1], value)) : 0;
@@ -2090,7 +2290,12 @@ function takePlan(plan) {
   }
   cast.vocals.voice = typeof plan.voice === 'string' ? plan.voice : '';
   pump = cleanPump(plan.pump);
+  // A sample whose file is gone stays in the plan (it plays again once the file is back) but is not heard; the
+  // status says so now, and every render says it again first for as long as the file is missing (`lostLine`).
+  if (lostNow.length) setState(lostNow.join(' · '), true);
 }
+const lostLine = () => TRACKS.filter(t => t.id !== 'vocals' && sampleLost(t.id))
+  .map(t => `${t.zh} 的采样 ${cast[t.id].sample.name} 找不到了，用回 ${kitOf(t.id)}`).join(' · ');
 function queueSave() {
   if (!song) return;
   clearTimeout(saveTimer);
@@ -2220,7 +2425,9 @@ function nudgePlan(plan, context, random) {
   for (let n = 0; n < wanted; n++) {
     const id = pool.splice(Math.min(pool.length - 1, Math.floor(random() * pool.length)), 1)[0];
     const entry = out.tracks[id], swap = entry.mode === 'swap';
-    if (swap && random() < 1 / 3) {
+    // A pitched track playing its own sample has no kit to hear (SPEC v26): it only moves a number. The draw is
+    // still made, so every other track comes out as before.
+    if (swap && random() < 1 / 3 && !(id !== 'drums' && entry.sample)) {
       const now = entry.kit || out.preset, kind = (context.categories || {})[now];
       const others = context.kits.filter(name => name !== now && (context.categories || {})[name] === kind);
       if (others.length) {
@@ -2391,6 +2598,14 @@ function rebuildRequest(extra) {
                         vocal: sung ? {id: vocal.id, voice, offsetDb: 0} : null}, extra);
 }
 
+/* Who played a track, as the export's report says it: 原声, a voice, a kit, or a sample (SPEC v26). */
+function whoPlayed(row) {
+  if (row.by === 'orig' || row.by === 'original') return '原声';
+  if (row.sample) return row.sample.part ? `${row.by.split(' + ')[0]} + 采样${PART_ZH[row.sample.part]} ${row.sample.name}` : `采样 ${row.sample.name}`;
+  return voiceName(row.by);
+}
+const escapeText = text => String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+
 /* --- the whole rebuild, to listen to ------------------------------------------------------------ */
 let fullBusy = false, fullPlan = '';
 function forgetFull() {
@@ -2420,9 +2635,9 @@ async function renderFull() {
       if (!job.done) continue;
       if (job.error) throw new Error(job.error);
       const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
-      const told = job.rebuild.tracks.filter(t => t.sounding)
-        .map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原声' : voiceName(t.by)}`);
-      el('fullLog').innerHTML = `<div class="flag done">${told.join(' · ')}</div>` + (job.vocalNote ? `<div class="flag">${job.vocalNote}</div>` : '');
+      const told = job.rebuild.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${whoPlayed(t)}`);
+      el('fullLog').innerHTML = `<div class="flag done">${escapeText(told.join(' · '))}</div>` + (job.vocalNote ? `<div class="flag">${job.vocalNote}</div>` : '')
+        + (job.rebuild.sampleNotes || []).map(text => `<div class="flag">${escapeText(text)}</div>`).join('');
       fullPlan = plan;
       const audio = el('fullAudio');
       audio.src = job.listen; audio.hidden = false;
@@ -2479,8 +2694,9 @@ function showExportResult(job) {
     ? `<div class="flag done">导出好了 · 工程包 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${done.folder}</code></div>`
     : `<div class="flag done">导出好了 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${job.outDir}</code></div>`);
   revealPath = done.folder || '';                            // 「打开目录」 opens the pack itself
-  const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原声' : voiceName(t.by)}`);
-  if (told.length) lines.push(`<div class="flag done">${told.join(' · ')}</div>`);
+  const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${whoPlayed(t)}`);
+  if (told.length) lines.push(`<div class="flag done">${escapeText(told.join(' · '))}</div>`);
+  for (const text of done.sampleNotes || []) lines.push(`<div class="flag">${escapeText(text)}</div>`);   // SPEC v26
   const silent = done.tracks.filter(t => !t.sounding).map(t => zh(t.track));
   if (silent.length) lines.push(`<div class="flag">静音的轨：${silent.join('、')}</div>`);
   const hollow = done.tracks.filter(t => t.emptyStem).map(t => zh(t.track));
@@ -2539,7 +2755,7 @@ buildTracks();
     el('outDir').value = start.defaultOut || '';
     const library = loadVoices().catch(error => { el('vocalHint').textContent = error.message; }).then(loadLibrary);
     loadPlans();
-    await loadIndex();
+    await Promise.all([loadIndex(), loadSamples()]);           // the sample numbers before any plan is read (SPEC v26)
     await library;
     // Back where it was left: the song that was open last time, unless one was handed in.
     let last = '';

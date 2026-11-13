@@ -252,6 +252,10 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 .layerRow select { min-width: 0; width: 100%; }
 .layerRow .seg { justify-self: start; }
 .layerRow.off { opacity: .4; }
+/* a dropped sample (v26): the row being dragged over is outlined like a flash; the panel's two buttons sit right */
+.trk.over { box-shadow: inset 0 0 0 2px var(--signal); }
+.sampleName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.sampleActs { display: flex; gap: 8px; justify-content: flex-end; }
 #mapTip { position: fixed; z-index: 9; padding: 4px 8px; border-radius: 5px; background: var(--panel); border: 1px solid var(--edge);
   color: var(--fg); font-size: var(--fs-s); white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .4); }
 #mapTip[hidden] { display: none; }

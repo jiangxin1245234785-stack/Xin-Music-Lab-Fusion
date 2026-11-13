@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const Engine = require('../engine.js');
 
-const scratch = __dirname;
+// `node verify_engine.js [<目录>]`: the folder dump_reference.py wrote into (default tests/, i.e. tests/ref/).
+const refDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, 'ref');
 const repo = path.resolve(__dirname, '../../../..');
 
 function readWavFloat(file) {
@@ -45,10 +46,10 @@ function readWavFloat(file) {
 }
 
 /* --- 1. parser vs pretty_midi ---------------------------------------------- */
-const reference = JSON.parse(fs.readFileSync(path.join(scratch, 'ref/notes_reference.json'), 'utf8'));
+const reference = JSON.parse(fs.readFileSync(path.join(refDir, 'notes_reference.json'), 'utf8'));
 let files = 0, notes = 0, bad = 0, worstNoteTime = 0;
 for (const [relative, expected] of Object.entries(reference)) {
-  const buffer = fs.readFileSync(path.join(repo, relative));
+  const buffer = fs.readFileSync(path.isAbsolute(relative) ? relative : path.join(repo, relative));
   const midi = Engine.parseMidi(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
   const rows = [];
   for (const track of midi.tracks) {
@@ -84,7 +85,7 @@ console.log(`parser: ${files - bad}/${files} files match pretty_midi (${notes} n
             `${(worstNoteTime * 48000).toFixed(3)} samples @48k)`);
 
 /* --- 2. renderer vs memesynth ----------------------------------------------- */
-const meta = JSON.parse(fs.readFileSync(path.join(scratch, 'ref/render_reference.json'), 'utf8'));
+const meta = JSON.parse(fs.readFileSync(path.join(refDir, 'render_reference.json'), 'utf8'));
 const kitJson = JSON.parse(fs.readFileSync(meta.kit, 'utf8'));
 const kitDir = path.dirname(meta.kit);
 const samples = {};
@@ -106,7 +107,7 @@ const stereoStems = Object.keys(result.stems).map(route => Engine.toStereo(resul
 const factor = Engine.peakFactor([mix, ...stereoStems], -1);
 for (let i = 0; i < mix.length; i++) mix[i] *= factor;
 
-const expectedWav = readWavFloat(path.join(scratch, 'ref/render_reference.wav'));
+const expectedWav = readWavFloat(path.join(refDir, 'render_reference.wav'));
 const n = Math.min(mix.length, expectedWav.audio.length);
 let worst = 0, sumSq = 0, refSq = 0;
 for (let i = 0; i < n; i++) {

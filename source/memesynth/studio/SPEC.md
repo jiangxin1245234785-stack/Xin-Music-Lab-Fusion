@@ -372,6 +372,28 @@
 7. **路径**：`batch.rebuild(..., pack=True)` 和 `run_rebuild(..., pack=True)`，走真渲染。
 8. （小修）曲库里点已经打开的这首只收起抽屉，不重新载入。
 
+## v26：自己的采样（2026-11-13，等验收）
+
+30 套预设之外，用户想用自己的声音：把一个 wav 拖到某条轨上，这条轨就用这个采样按谱子演；鼓轨上是把底鼓、军鼓或镲换成它。
+
+1. **存放**：页面把文件字节 POST 给 `/api/sample?track=<轨>&kit=<这条轨现在的音色>`（文件名 URL 编码放在 `X-File-Name`）。只收 wav（libsndfile 认得、格式 WAV 或 WAVEX），最长 20 秒、最大 50 MB，峰值低于 −60 dBFS 的不收，不收时回一句话。
+   用 `batch.to_48k` 转成 48 kHz、保留声道（多于 2 取前两个）、32 位浮点，存到 `work/memesynth-cache/samples/<原字节 sha256 前 16 位>/sample.wav` 和 `info.json`（原文件名、秒数、声道、测到的基频或 null、音名、音分）。同一个文件再拖不重复存。
+   基频用 `studio/samples.py` 的 `measured_root`（从 `tests/test_memesynth.py` 搬来的自相关）。测试实例 `server.py --samples <目录>`（8790 用 `samples-dev`）。
+2. **取用**：`/api/samples` 列已有编号；`/samples/<编号>.wav` 只认 16 位十六进制且文件在，否则 404，不缓存。
+3. **方案**：乐器轨可选 `sample`：有音高的轨 `{id, name, root(30–5000 Hz), db(−24…+24)}`，鼓 `{id, name, part: kick|snare|cymbal, db}`；人声没有。缺键、越界、坏 `part` → 整个丢掉（页面 `cleanSample` 和 `samples.clean` 同一套）。
+   文件不在：导出时丢掉、用回原来的音色，报告里那条轨写 `sampleLost`「<轨> 的采样 <name> 找不到了，用回 <音色>」；页面里**留在方案里**但不出声，状态栏每次渲染都先说这句话（文件回来、刷新后就又能用）。
+4. **怎么演**：有音高的轨整条换成采样（这条轨在这首歌里的每条路由：`follow: note`、`fade: 0.01`、`pan: 0`、`gain = 10^(db/20)`、`rootHz = root`），叠层照旧用自己的 kit；
+   鼓在实际用的鼓音色上换一类（kick → `drums/kick`，snare → `drums/snare`，cymbal → hihat / openhat / ride / crash），`pitched: false`、`follow: sample`、`gain = 10^(db/20)`、`pan` 用被换掉那条的。九个数、音量、效果、抽吸、叠层照旧。
+5. **增益**：拖进来时服务端算：采样开头 1 秒的单声道 RMS 对比这条轨当时音色里被替换的素材（有音高的轨：主路由 bass / guitar / piano / strings（「其他」）；鼓：那一类，镲用 hihat），加被替换发声原来的 gain，夹到 ±24、取到 0.1 dB。鼓的三类各算一个，选哪类用哪个。
+6. **页面**：为（轨、采样、音色）造一个和 `kitAudio` 同形的临时 kit，只渲染这条轨的音符，交给 `Engine.renderScore`。`engine.js` 只改了一行（规划方定）：重采样用精确比例，和 `render.py` 一样（以前取到 6 位小数，亮的采样上试听和导出只差 −53 dB；改后对账信噪比 141.7 dB，试听与导出 −76…−80 dB）。
+7. **导出**：`batch.rebuild(..., samples_dir=)` 为每条用到采样的轨在临时目录写 kit.json（`samples.kit_json`，`file` 是绝对路径），`load_kit` + `render` 只渲染这条轨的音符。报告多 `sample` / `sampleRendered` / `sampleTruncated`，`by` 是 `sample` 或 `<鼓音色> + sample <类>`；结果多 `sampleNotes`。
+   工程包：MIDI 轨道名 `bass - sample`、`drums - hoover + sample kick`；说明每条轨那行写「采样 <文件名>（<音名>，<db> dB）」或「鼓 hoover，底鼓换成采样 <文件名>」。
+8. **界面**：文件拖到鼓 / 贝斯 / 吉他 / 钢琴 / 其他一行，那一行琥珀色描边（和闪一下同一种）；人声行光标表示不能放、不上传。松手 → 上传 → `#fxPop` 浮层「<轨> · 采样」：
+   有音高的轨写测到的「A2 · 110.1 Hz（+1 音分）」或「测不出音高」，音名下拉 C1…B6（默认最接近的，测不出时 C3）；没动下拉用测到的 Hz，动了用那个音名的平均律 Hz。鼓是三段按钮「底鼓 / 军鼓 / 镲」（默认底鼓）。「用这个」立刻重渲染、自动保存（这条轨不是「换」就切到「换」）；「取消」不改方案。没有转谱的轨不上传，状态栏说一句。
+9. **行里**：音色选择框最上面一项是当前采样（「采样 · <文件名>」或「<鼓音色> + 采样<底鼓|军鼓|镲>」），选中；全称在 `title`；有音高的轨图标换成音符。选别的音色或「跟随预设」= 去掉采样。
+10. 拖 MIDI 的框和曲库不变；拖到行上的文件不会被当成 MIDI 或人声。说明「换」一节加一段。
+11. **骰子、相近不碰 `sample`**；相近在有音高采样的轨上不选「换音色」（签照样抽，只是不用，所以别的轨和以前一样）；锁住照旧。
+
 ## v3 backlog
 
 - 声音面板的「常用」标记（v6 做了类别筛选，没做收藏）。

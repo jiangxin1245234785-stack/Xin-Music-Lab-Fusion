@@ -411,12 +411,13 @@ def write_pack(folder, title, preset, tracks, applied, pump, layers, mix, factor
         tag, kit = f'{index:02d} {PACK_ZH[name]} {name}', choice['kit'] or preset
         mine = [note for note in played.notes if track_of(note.route) == name]
         if mine:
-            midi, counts = pack_midi(mine, f'{name} - {kit}', name == 'drums')
+            label = sample_label(choice['sample'], kit) if choice.get('sample') else kit     # SPEC v26: 'bass - sample'
+            midi, counts = pack_midi(mine, f'{name} - {label}', name == 'drums')
             path = folder / f'{tag}.mid'
             midi.write(str(path))
             files.append(str(path))
             midis[path.name] = {'notes': len(midi.instruments[0].notes), **counts}
-            lines_files.append(f'  {tag}.mid — {PACK_ZH[name]}调整之后的音符（干的，{kit}）')
+            lines_files.append(f'  {tag}.mid — {PACK_ZH[name]}调整之后的音符（干的，{sample_words(choice["sample"], kit) if choice.get("sample") else kit}）')
         extra = stacked.get(name)
         if extra and extra['audio'] is not None:
             part, _ = layer_notes(played, name, extra['layer']['oct'])
@@ -441,6 +442,8 @@ def write_pack(folder, title, preset, tracks, applied, pump, layers, mix, factor
             said = ['原声' if (voice or 'original') == 'original' else f'换 · 声音 {voice}']
         elif choice['mode'] == 'orig':
             said = ['原声']
+        elif choice.get('sample'):
+            said = ['换', sample_words(choice['sample'], choice['kit'] or preset)]
         else:
             said = ['换', choice['kit'] or preset]
         extra = stacked.get(name)
@@ -486,8 +489,13 @@ def write_pack(folder, title, preset, tracks, applied, pump, layers, mix, factor
     return files, midis
 
 
-def plan_tracks(plan, known):
-    """A plan, cleaned: (tracks, preset, pump). `known` is the kit names. Used by `rebuild` and `/api/shapecheck`."""
+def plan_tracks(plan, known, samples_dir=None, lost=None):
+    """A plan, cleaned: (tracks, preset, pump). `known` is the kit names. Used by `rebuild` and `/api/shapecheck`.
+
+    A track's own sample (SPEC v26) is checked by `samples.clean`; with `samples_dir` it is also dropped when its
+    file is not there, and `lost` (a dict) gets track -> one sentence for each such track. Without `samples_dir`
+    the files are not looked at."""
+    from studio import samples
     if not known:
         raise ValueError('音色库是空的')
     plan = plan if isinstance(plan, dict) else {}
@@ -496,7 +504,7 @@ def plan_tracks(plan, known):
         if name in tracks and isinstance(choice, dict):
             tracks[name].update({k: v for k, v in choice.items()
                                  if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
-                                 or (name == 'vocals' and k == 'follow') or (name != 'vocals' and k == 'layer')})
+                                 or (name == 'vocals' and k == 'follow') or (name != 'vocals' and k in ('layer', 'sample'))})
     # A plan can come from a file someone edited or from an older studio: whatever in it does
     # not make sense falls back to the default instead of failing the whole export.
     for name, choice in tracks.items():
@@ -516,7 +524,34 @@ def plan_tracks(plan, known):
     # the plan keeps its own numbers and the flag, the report says what was applied.
     tracks['vocals']['follow'] = effects.follows(tracks['vocals'])
     preset = plan.get('preset') if plan.get('preset') in known else known[0]
+    for name, choice in tracks.items():
+        sample = samples.clean(choice.pop('sample', None), name)
+        if sample and samples_dir is not None and samples.path_of(samples_dir, sample['id']) is None:
+            if lost is not None:
+                lost[name] = f'{PACK_ZH[name]} 的采样 {sample["name"]} 找不到了，用回 {choice["kit"] or preset}'
+            sample = None                                 # back to the kit it had (SPEC v26 §3)
+        if sample:
+            choice['sample'] = sample                     # kept whatever the mode; it only sounds on a swapped track
     return tracks, preset, effects.pump_settings(plan.get('pump'))
+
+
+def sample_notes(played, name):
+    """Only the notes of one track: what its sample kit plays."""
+    return dataclasses.replace(played, notes=tuple(note for note in played.notes if track_of(note.route) == name))
+
+
+def sample_label(sample, kit):
+    """How a track's sample is named where only ASCII will do (a MIDI track name): 'sample', 'hoover + sample kick'."""
+    return f'{kit} + sample {sample["part"]}' if 'part' in sample else 'sample'
+
+
+def sample_words(sample, kit):
+    """The same in words (说明.txt): 「采样 x.wav（A2，−3.2 dB）」 or 「鼓 hoover，底鼓换成采样 x.wav」."""
+    from studio import samples
+    if 'part' in sample:
+        return f'鼓 {kit}，{samples.PART_ZH[sample["part"]]}换成采样 {sample["name"]}'
+    note, _ = samples.note_of(sample['root'])
+    return f'采样 {sample["name"]}（{note}，{format(sample["db"], "g").replace("-", "−")} dB）'
 
 
 def shaped_notes(score, tracks):
@@ -526,7 +561,7 @@ def shaped_notes(score, tracks):
 
 
 def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice='', write_tracks=False,
-            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None, pack=False):
+            min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None, pack=False, samples_dir=None):
     """Write one rebuild of a song: every track kept, replaced or silent, as `plan` says (SPEC v5).
 
     `plan` is `{'preset': kit, 'tracks': {track: {'mode': 'orig' | 'swap' | 'mute', 'kit': kit or None,
@@ -549,7 +584,10 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     say = lambda fraction, text: progress and progress(fraction, text)
     score = read_score(midi_path, min_duration=min_duration)
     known = sorted(p.parent.name for p in Path(kits_dir).glob('*/kit.json'))
-    tracks, preset, pump = plan_tracks(plan, known)
+    lost = {}                                            # SPEC v26: a sample whose file is gone, said in words
+    # Without a samples folder no sample can be found, so each one is reported lost and the track plays its kit.
+    tracks, preset, pump = plan_tracks(plan, known, samples_dir=Path(samples_dir) if samples_dir is not None else Path(kits_dir) / '.none',
+                                       lost=lost)
     applied = {name: tracks[name] for name in TRACKS}
     applied['vocals'] = effects.vocal_settings(tracks['vocals'], preset)
     stems = stems or {}
@@ -560,8 +598,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     # Every kit that plays a track, and the preset as the level reference for kept stems.
     wanted = {preset}
     for name in TRACKS:
-        if tracks[name]['mode'] == 'swap' and not (name == 'vocals' and sung):
-            wanted.add(tracks[name]['kit'] or preset)
+        if tracks[name]['mode'] == 'swap' and not (name == 'vocals' and sung) and 'root' not in (tracks[name].get('sample') or {}):
+            wanted.add(tracks[name]['kit'] or preset)    # a pitched track with its own sample does not need its kit
     played = shaped_notes(score, tracks)
     kicks = effects.kick_times(played)                   # the pump follows the kicks as they are played (SPEC v20)
     rendered, notes = {}, {}
@@ -591,6 +629,31 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
                 audio = result.stereo_stem(route) if audio is None else audio + result.stereo_stem(route)
             done, cut = result.rendered, result.truncated
         stacked[name] = {'audio': audio, 'layer': layer, 'rendered': done, 'truncated': cut, 'dropped': dropped}
+    # A track's own sample (SPEC v26): an ordinary kit.json written for it, loaded and rendered as any kit is,
+    # over this track's shaped notes only.
+    sampled = {}
+    for name in TRACKS:
+        sample = tracks[name].get('sample')
+        if not sample or name == 'vocals' or tracks[name]['mode'] != 'swap':
+            continue
+        part = sample_notes(played, name)
+        if not part.notes:
+            continue
+        import tempfile
+        from studio import samples
+        base = tracks[name]['kit'] or preset
+        say(0.57, f'{name} · 采样 {sample["name"]}')
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / 'kit.json'
+            routes = sorted(route for route in score.routes if track_of(route) == name)
+            path.write_text(json.dumps(samples.kit_json(sample, name, routes, samples_dir, Path(kits_dir) / base),
+                                       ensure_ascii=False), encoding='utf-8')
+            result = render(part, load_kit(path, sample_rate=SAMPLE_RATE))
+        audio = None
+        for route in result.stems:
+            audio = result.stereo_stem(route) if audio is None else audio + result.stereo_stem(route)
+        sampled[name] = {'audio': audio, 'how': sample_label(sample, base), 'rendered': result.rendered,
+                         'truncated': result.truncated}
 
     layers, report = {}, []
     kept = [name for name in TRACKS if tracks[name]['mode'] == 'orig' and name != 'vocals' and name in stems]
@@ -608,6 +671,10 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
             audio, how = np.repeat(np.asarray(vocal, dtype=np.float32)[:, None], 2, axis=1), voice or 'original'
         elif choice['mode'] == 'orig' and name in originals:
             audio, how = originals[name] * factors.get(name, spare), 'orig'
+        elif name in sampled and sampled[name]['audio'] is not None:
+            audio, how = sampled[name]['audio'], sampled[name]['how']
+        elif name in sampled or (choice['mode'] == 'swap' and 'root' in (choice.get('sample') or {})):
+            audio, how = None, 'empty'                           # its sample had nothing to play
         elif choice['mode'] == 'swap' and name in rendered[choice['kit'] or preset]:
             audio, how = rendered[choice['kit'] or preset][name], choice['kit'] or preset
         elif name in stacked and stacked[name]['audio'] is not None:
@@ -631,6 +698,9 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
                        **({'follow': choice['follow']} if name == 'vocals' else {}),
                        **({'layer': extra['layer'], 'layerRendered': extra['rendered'], 'layerTruncated': extra['truncated'],
                            'layerDropped': extra['dropped']} if extra else {}),
+                       **({'sample': choice['sample'], 'sampleRendered': sampled[name]['rendered'],
+                           'sampleTruncated': sampled[name]['truncated']} if name in sampled else {}),
+                       **({'sampleLost': lost[name]} if name in lost else {}),
                        **{key: sound[key] for key in effects.DEFAULTS if sound[key]}})
         if audio is not None and sounding(name):
             if sound['tone'] or sound['echo'] or sound['room']:
@@ -654,7 +724,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         soundfile.write(str(listen_path), mix * factor, SAMPLE_RATE, subtype='PCM_16')
         say(1.0, '完成')
         return score, {'files': [str(listen_path)], 'tracks': report, 'kits': notes, 'factor': factor,
-                       'seconds': frames / SAMPLE_RATE}
+                       'seconds': frames / SAMPLE_RATE, 'sampleNotes': list(lost.values())}
     if pack:
         # SPEC v25: everything goes into one new folder; nothing is written beside it.
         folder = unique(out_dir / f'{midi_path.stem}.{preset}.工程包')
@@ -664,7 +734,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
                                   stacked, sung, voice, record)
         say(1.0, '完成')
         return score, {'files': files, 'folder': str(folder), 'midi': midis, 'tracks': report, 'kits': notes,
-                       'factor': factor, 'seconds': frames / SAMPLE_RATE}
+                       'factor': factor, 'seconds': frames / SAMPLE_RATE, 'sampleNotes': list(lost.values())}
     files = []
     mix_path = unique(out_dir / f'{midi_path.stem}.重构.wav')
     soundfile.write(str(mix_path), mix * factor, SAMPLE_RATE, subtype='PCM_24')
@@ -681,7 +751,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     files.append(str(plan_path))
     say(1.0, '完成')
     return score, {'files': files, 'tracks': report, 'kits': notes, 'factor': factor,
-                   'seconds': frames / SAMPLE_RATE}
+                   'seconds': frames / SAMPLE_RATE, 'sampleNotes': list(lost.values())}
 
 
 def inspect(midi_path, min_duration=MIN_DURATION):
