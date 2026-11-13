@@ -236,6 +236,12 @@ body { max-width: 1180px; padding-bottom: 96px; }
 #side #drop strong { font-size: .84rem; }
 #side #drop span { font-size: .72rem; }
 #bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+#roll { display: inline-flex; align-items: center; gap: 5px; }
+#roll .ic { display: inline-flex; width: 15px; height: 15px; }
+#roll .ic svg { width: 100%; height: 100%; }
+/* what the dice came up with: one line in the bar's own row (the deck's status line is two words wide) */
+#rollNote { flex: 1 0 100%; min-width: 0; font-size: .74rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rollNote:empty { display: none; }
 #bar label { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: var(--dim); }
 select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--edge);
   background: var(--panel-lit); color: var(--fg); }
@@ -337,8 +343,11 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
         <button type="button" class="plain" id="openVitals">转谱情况 <span id="vitalsSum"></span></button>
         <button type="button" class="plain" id="savePlan">存为方案</button>
         <select id="planList" aria-label="套用方案"><option value="">套用方案…</option></select>
+        <button type="button" class="plain dice" id="roll" title="随手配一整份：预设、每条轨谁来演、音色、八度、力度、效果（D）"><span class="ic"></span>掷骰子</button>
+        <button type="button" class="plain" id="back" disabled title="回到掷之前的那一份（Z）">上一份</button>
         <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
         <button type="button" class="plain" id="cmpSave" hidden title="现在这份方案，分别配上这两套预设，各存一份">存成两个方案</button>
+        <span id="rollNote"></span>
       </div>
     </div>
     <div class="card">
@@ -399,7 +408,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
       <div class="head"><h2>说明</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <p class="lede" style="margin:0 0 10px">把一首分好轨、转好谱的歌一条轨一条轨地重新演一遍：每条轨留原声、换一个来演，或者不出声。</p>
     <p class="foot" style="margin:0;border-top:none;padding-top:0">
-      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。
+      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。<kbd>D</kbd>（或「掷骰子」）随手配一整份方案：换一套预设、每条轨随机留原声或换、换音色、移八度、加效果，静音的轨和人声的声音不动；<kbd>Z</kbd>（或「上一份」）退回掷之前那一份，最多退 20 步。
       底下的长条是整首歌的编曲地图：从上到下六条是鼓、贝斯、吉他、钢琴、其他、人声，越亮那一小段这件乐器响得越满，色块越高音越高（每条按自己的音域算），鼓分底鼓、军鼓、其余三行，人声没有转谱时画的是原唱的响度；鼠标停在上面看那一刻谁在响，点一下把 12 秒的窗口挪过去。
       试听在浏览器里算，导出走真正的 memesynth。留原声的轨会对齐到「预设来演这条轨」的音量，所以只留一条轨不会打乱整体平衡。
       人声转换在后台整首跑，一次一个（保留和声：合成声音约九分钟一个，RVC 一分多钟），转过的会记住。
@@ -445,6 +454,7 @@ let voiceList = [], vocal = null, voiceAudio = {}, wanted = '', pollTimer = null
 let vocalPending = false, vocalTouched = false;     // a vocal is on its way; the vocal track was given something
 let voiceTag = '';                                  // the kind of voice the panel is narrowed to
 const cast = {};
+let rolls = [];                                     // the dice: plans before each roll, newest last, at most 20 (SPEC v17)
 /* What a track can have done to it beyond its level. The same numbers are in effects.py, which
  * does for the export what the nodes below do while the page plays. */
 const FX = {echoSeconds: 0.3, echoFeedback: 0.4, echoWet: 0.7, roomWet: 0.6};
@@ -456,6 +466,7 @@ function resetCast() {
     cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '',
                       oct: 0, vel: 0, tone: 0, echo: 0, room: 0};
   }
+  rolls = []; if (el('back')) { el('back').disabled = true; el('rollNote').textContent = ''; }   // another song: the dice's way back starts over
   cast.vocals.follow = true;                        // the vocal's tone, echo and room follow the preset (SPEC v15)
   vocalTouched = false;
 }
@@ -466,6 +477,7 @@ const voiceName = id => id === '@kit' ? '乐器演主旋律' : (voiceList.find(v
 const kitOf = id => cast[id].kit || preset;
 const routesOf = id => score ? Object.keys(score.routes).filter(route => trackOf(route) === id) : [];
 const hasStem = id => !!song && (song.stems || []).includes(id);
+let noteAfterRender = '';                           // the next finished render shows this instead of its timing (the dice)
 const setState = (text, bad) => { el('state').className = bad ? 'bad' : ''; el('state').textContent = text; };
 
 function decodeWav(buffer) {
@@ -650,6 +662,7 @@ function takeFile(file, done) {
       windowStart = bestWindow();
       kitWindow = {}; stemWindows = {};
       drawTimeline();
+      paintRolls();
       paintTracks();
       renderWindow();
     } catch (error) {
@@ -1218,6 +1231,7 @@ const ICONS = {
   star: '<path d="M12 3l2.700 5.800 6.300.800-4.600 4.300 1.200 6.200L12 17l-5.600 3.100 1.200-6.200L3 9.600l6.300-.800z"/>',
   sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
 };
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
   + `stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.note}</svg>`;
@@ -1412,7 +1426,8 @@ async function renderWindowNow() {
     layers = recon;
   }
   el('play').disabled = !layers.length;
-  setState(layers.length ? `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨');
+  const note = noteAfterRender; noteAfterRender = '';        // what a roll came up with outlasts the render it caused
+  setState(layers.length ? note || `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨');
   if (running) startPlayback(positionInLoop());
   const other = pair.find(name => name !== preset);          // the other side of a comparison, ready to flip to
   if (other) ensureKit(other).catch(() => {});
@@ -1539,6 +1554,8 @@ document.addEventListener('keydown', event => {
   if (slot >= 0 && names[slot]) selectPreset(names[slot]);
   else if (event.key === ' ') { event.preventDefault(); toggle(); }
   else if (event.key === '`') { const other = pair.find(name => name !== preset) || previousPreset; if (other) selectPreset(other); }
+  else if ((event.key === 'd' || event.key === 'D') && !event.ctrlKey && !event.metaKey && !event.altKey) roll();
+  else if ((event.key === 'z' || event.key === 'Z') && !event.ctrlKey && !event.metaKey && !event.altKey) rollBack();
   else if (event.key === 'a' || event.key === 'A') { const other = el('ab').querySelector(`[data-ab="${ab === 'orig' ? 'recon' : 'orig'}"]`); other.click(); }
 });
 window.addEventListener('resize', () => { if (score) drawTimeline(); });
@@ -1957,6 +1974,14 @@ el('savePlan').addEventListener('click', async () => {
     loadPlans();
   } catch (error) { setState(error.message, true); }
 });
+/* A plan applied as if the user had made every choice by hand: the saved-plan picker, the dice and its back button all come through here. */
+async function applyPlan(plan) {
+  takePlan(plan);
+  const voice = cast.vocals.voice;
+  if (vocal && cast.vocals.mode !== 'mute' && voice && voice !== '@kit') { await chooseVoice(cast.vocals.mode === 'orig' ? 'original' : voice); }
+  else { paintTracks(); if (vocal) paintVoices(); renderWindow(); }
+  queueSave();
+}
 el('planList').addEventListener('change', async () => {
   const name = el('planList').value;
   el('planList').value = '';
@@ -1964,14 +1989,102 @@ el('planList').addEventListener('change', async () => {
   try {
     const saved = await api('/api/plan?name=' + encodeURIComponent(name));
     if (!saved.plan) return;
-    takePlan(saved.plan);
-    const voice = cast.vocals.voice;
-    if (vocal && cast.vocals.mode !== 'mute' && voice && voice !== '@kit') { await chooseVoice(cast.vocals.mode === 'orig' ? 'original' : voice); }
-    else { paintTracks(); if (vocal) paintVoices(); renderWindow(); }
-    queueSave();
+    await applyPlan(saved.plan);
     setState(`套用了方案「${name}」`);
   } catch (error) { setState(error.message, true); }
 });
+
+/* --- the dice (SPEC v17): a whole plan nobody would have picked, one click away and one click back ---- */
+const ROLLED = ['drums', 'bass', 'guitar', 'piano', 'other'];
+
+/* A new plan from `plan`, changing nothing. `context`: {kits: [names], notes: {track: bool}, stems: {track: bool}};
+ * `random` returns 0 ≤ x < 1. Muted tracks, the vocal's mode and voice, and every track's level are left alone. */
+function rollPlan(plan, context, random) {
+  const pick = list => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
+  const chance = p => random() < p;
+  const out = JSON.parse(JSON.stringify(plan || {}));
+  out.tracks = out.tracks || {};
+  const others = context.kits.filter(name => name !== out.preset);
+  out.preset = others.length ? pick(others) : out.preset;
+  const sound = entry => {
+    for (const key of ['tone', 'echo', 'room']) delete entry[key];
+    if (!chance(0.7)) entry.tone = pick([-40, -35, -30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30, 35, 40]);
+    if (!chance(0.7)) entry.echo = pick([10, 20, 30, 40]);
+    if (!chance(0.7)) entry.room = pick([10, 20, 30, 40, 50]);
+  };
+  for (const id of ROLLED) {
+    const entry = out.tracks[id] = out.tracks[id] || {mode: 'swap', kit: null, db: 0, solo: false};
+    entry.solo = false;
+    if (entry.mode === 'mute') continue;                         // muting is a decision: the dice leaves it be
+    if (context.notes[id]) {
+      entry.mode = context.stems[id] && chance(0.25) ? 'orig' : 'swap';
+      for (const key of ['oct', 'vel']) delete entry[key];
+      entry.kit = null;
+      if (entry.mode === 'swap') {
+        if (!chance(0.6)) entry.kit = pick(context.kits.filter(name => name !== out.preset));
+        if (id !== 'drums' && !chance(0.7)) entry.oct = pick([-1, 1]);
+        const vel = pick([-50, 0, 0, 50]);
+        if (vel) entry.vel = vel;
+      }
+    }
+    sound(entry);
+  }
+  const vocals = out.tracks.vocals = out.tracks.vocals || {mode: 'mute', kit: null, db: 0, solo: false};
+  for (const key of ['tone', 'echo', 'room']) delete vocals[key];
+  vocals.follow = true; vocals.solo = false;
+  return out;
+}
+
+/* One line about a plan: the preset, then only what differs from "everything follows it, nothing adjusted". */
+function planSummary(plan) {
+  const parts = [plan.preset];
+  for (const track of TRACKS) {
+    const entry = (plan.tracks || {})[track.id];
+    if (!entry || track.id === 'vocals' || entry.mode === 'mute') continue;
+    const said = [];
+    if (entry.mode === 'orig') said.push('留原声');
+    if (entry.kit) said.push(entry.kit);
+    if (entry.oct) said.push(entry.oct > 0 ? '高八度' : '低八度');
+    if (entry.vel) said.push(entry.vel > 0 ? '力度夸张' : '力度压平');
+    if (entry.tone) said.push(entry.tone < 0 ? '偏暗' : '偏薄');
+    if (entry.echo) said.push('回声 ' + entry.echo);
+    if (entry.room) said.push('混响 ' + entry.room);
+    if (said.length) parts.push(track.zh + ' ' + said.join(' '));
+  }
+  const text = parts.join(' · ');
+  return text.length > 60 ? text.slice(0, 59) + '…' : text;
+}
+
+function paintRolls() { el('back').disabled = !rolls.length || !score; el('roll').disabled = !score; }
+async function roll() {
+  if (!score || !kitsIndex) return;
+  const before = currentPlan();
+  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}};
+  for (const track of TRACKS) { context.notes[track.id] = routesOf(track.id).length > 0; context.stems[track.id] = hasStem(track.id); }
+  const next = rollPlan(before, context, Math.random);
+  rolls.push(before); if (rolls.length > 20) rolls.shift();
+  if (!pair.includes(next.preset)) pair = [before.preset, next.preset];   // as a preset picked by hand: A / B compares the two
+  previousPreset = before.preset;
+  paintRolls();
+  sayRoll('掷出：' + planSummary(next), '掷出：' + next.preset);
+  try { await applyPlan(next); } catch (error) { setState(error.message, true); }
+}
+async function rollBack() {
+  if (!rolls.length || !score) return;
+  const plan = rolls.pop();
+  paintRolls();
+  sayRoll('回到上一份：' + planSummary(plan), '回到上一份');
+  try { await applyPlan(plan); } catch (error) { setState(error.message, true); }
+}
+/* The whole line goes in the bar's row; the deck's narrow status line gets the short form after the render. */
+function sayRoll(line, short) {
+  el('rollNote').textContent = line; el('rollNote').title = line;
+  noteAfterRender = short;
+}
+el('roll').addEventListener('click', roll);
+el('back').addEventListener('click', rollBack);
+el('roll').querySelector('.ic').innerHTML = icon('die');
+paintRolls();
 
 /* --- server ------------------------------------------------------------------------------ */
 const OFFLINE = '连不上本地服务：工作台可能已经退出了。重新双击仓库根目录的 音色工作台.cmd。';

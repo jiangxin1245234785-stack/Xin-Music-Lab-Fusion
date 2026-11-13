@@ -103,3 +103,4 @@
 .fxRow.held output { color: var(--tc); }
 #fxReset { justify-self: end; font-size: .74rem; padding: 3px 9px; }
 #cmp button { font-family: var(--mono); font-size: .76rem; }
+#cmp[hidden] { display: none; }   /* .seg sets a display of its own, which would otherwise win over [hidden] */
