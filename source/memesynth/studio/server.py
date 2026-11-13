@@ -41,7 +41,7 @@ if sys.stderr is None or sys.stdout is None:
     sys.stdout = sys.stderr = LOG.open(mode, encoding='utf-8', buffering=1)
 
 from studio import library, vocals  # noqa: E402
-from studio import effects  # noqa: E402
+from studio import batch, effects  # noqa: E402
 from studio.batch import export, rebuild, stem_levels  # noqa: E402
 
 KITS_DIR = ROOT / 'kits'
@@ -113,6 +113,7 @@ def kit_index():
                                  'rootHz': entry['rootHz'], 'label': entry.get('_label', '')}
                         for sample, entry in kit['samples'].items()},
             'voices': kit['voices'],
+            'vocal': effects.vocal_preset(name),             # what this preset does to the vocal (SPEC v15)
         }
     return index
 
@@ -147,20 +148,20 @@ def library_song(key, extra=()):
 
 
 def stem_excerpt(song, track, start, span):
-    """A stretch of one separated stem as WAV bytes, at the stem's own rate (the page resamples)."""
+    """A stretch of one separated stem as WAV bytes: 48 kHz stereo, 32-bit float.
+
+    Converted here by the export's own resampler (`batch.window_48k`), so the page plays the
+    same samples the export mixes. The page used to resample a 16-bit excerpt itself, and a
+    browser does that by straight-line interpolation: a kept drum stem came out −27 dB apart."""
     import io
 
     import soundfile
     path = song['stems'].get(track)
     if not path:
         raise KeyError('这首没有这条分轨')
-    with soundfile.SoundFile(path) as handle:
-        first = max(0, min(handle.frames, int(round(start * handle.samplerate))))
-        handle.seek(first)
-        audio = handle.read(int(round(span * handle.samplerate)), dtype='float32', always_2d=True)
-        rate = handle.samplerate
+    audio = batch.window_48k(path, max(0.0, start), max(0.0, span))
     out = io.BytesIO()
-    soundfile.write(out, audio, rate, format='WAV', subtype='PCM_16')
+    soundfile.write(out, audio, batch.SAMPLE_RATE, format='WAV', subtype='FLOAT')
     return out.getvalue()
 
 

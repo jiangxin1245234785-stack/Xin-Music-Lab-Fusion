@@ -42,6 +42,48 @@ def settings(choice):
     return out
 
 
+# --- the vocal follows the preset (SPEC v15) ---------------------------------------------------
+
+#: What each whole-song preset does to the vocal track's sound: tone, echo, room. The page
+#: reads these from `kits.json` (server.py), so this is the only copy. A kit missing here gets 0/0/0.
+VOCAL_PRESETS = {name: {'tone': tone, 'echo': echo, 'room': room} for name, (tone, echo, room) in {
+    'acid': (0, 15, 10), 'fmkeys': (0, 0, 20), 'synthwave': (0, 20, 30), 'italo': (0, 25, 20),
+    'electro': (15, 10, 0), 'vaporwave': (-35, 20, 55), 'supersaw': (0, 25, 30), 'house': (0, 10, 20),
+    'techno': (-10, 35, 15), 'garage': (0, 15, 15), 'futurebass': (0, 20, 30), 'psytrance': (0, 40, 20),
+    'trap': (-5, 10, 15), 'reese': (0, 15, 25), 'wobble': (-10, 10, 20), 'phonk': (-30, 0, 15),
+    'hoover': (0, 20, 20), 'hardstyle': (0, 15, 30), 'hyperpop': (25, 10, 10), 'lofi': (-45, 0, 15),
+    'ambient': (-15, 30, 70), 'glitch': (10, 30, 0), 'chiptune': (20, 0, 0), 'c64': (20, 10, 0),
+    'megadrive': (15, 10, 5), 'pluck': (0, 0, 15), 'organ': (0, 0, 35), 'orchestra': (0, 0, 40),
+    'musicbox': (0, 10, 30), 'gamelan': (0, 10, 35),
+}.items()}
+SOUND_KEYS = ('tone', 'echo', 'room')
+
+
+def vocal_preset(preset):
+    """The tone / echo / room a preset gives the vocal."""
+    return dict(VOCAL_PRESETS.get(preset) or {'tone': 0, 'echo': 0, 'room': 0})
+
+
+def follows(choice):
+    """Whether a vocal entry follows the preset. A plan from before v15 has no `follow`: it
+    follows only when its own tone, echo and room are all 0, so nothing set by hand changes.
+    A `follow` that is not true or false is read as missing."""
+    choice = choice or {}
+    if isinstance(choice.get('follow'), bool):
+        return choice['follow']
+    own = settings(choice)
+    return not any(own[key] for key in SOUND_KEYS)
+
+
+def vocal_settings(choice, preset):
+    """The five numbers the vocal track really uses: its own octave and dynamics, and, while it
+    follows, the whole-song preset's tone, echo and room in place of its own."""
+    out = settings(choice)
+    if follows(choice):
+        out.update(vocal_preset(preset))
+    return out
+
+
 # --- before rendering: the notes ---------------------------------------------------------------
 
 def shape(score, by_track, track_of):

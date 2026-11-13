@@ -216,9 +216,9 @@ def test_stem_excerpt_at_the_edges():
         song = library.read_song(make_song(Path(scratch)), 'x')
         import io
         middle, rate = sf.read(io.BytesIO(server.stem_excerpt(song, 'drums', 1.0, 2.0)), dtype='float32')
-        assert rate == RATE and len(middle) == 2 * RATE
+        assert rate == 48000 and len(middle) == 2 * 48000     # converted by the server, whatever the stem's rate
         tail, _ = sf.read(io.BytesIO(server.stem_excerpt(song, 'drums', 5.5, 2.0)), dtype='float32')
-        assert len(tail) == RATE // 2                         # the stem ends: what is left, not an error
+        assert len(tail) == 48000 // 2                        # the stem ends: what is left, not an error
         past, _ = sf.read(io.BytesIO(server.stem_excerpt(song, 'drums', 99.0, 2.0)), dtype='float32')
         assert len(past) == 0
         try:
@@ -227,6 +227,45 @@ def test_stem_excerpt_at_the_edges():
             pass
         else:
             raise AssertionError('a stem the song does not have must be refused')
+
+
+def test_stem_excerpt_is_the_window_of_the_whole_conversion():
+    """What the page plays for a kept stem is the export's samples: a window of `to_48k` over the whole file.
+
+    Until 2026-11-12 the page resampled a 16-bit excerpt in the browser (straight-line interpolation)
+    and a kept drum stem came out −27 dB from the export."""
+    import io
+    rng = np.random.default_rng(7)
+    with tempfile.TemporaryDirectory() as scratch:
+        for rate in (44100, 48000, 32000):
+            noise = (0.3 * rng.standard_normal((int(6.3 * rate), 2))).astype(np.float32)
+            path = Path(scratch) / f'drums-{rate}.wav'
+            sf.write(str(path), noise, rate, subtype='FLOAT')
+            whole = batch.to_48k(noise, rate)
+            song = {'stems': {'drums': str(path)}}
+            for start, span in ((0.0, 2.0), (1.0, 2.0), (2.3417, 1.5), (0.00002, 0.5), (5.9, 2.0), (7.0, 1.0)):
+                got, got_rate = sf.read(io.BytesIO(server.stem_excerpt(song, 'drums', start, span)), dtype='float32', always_2d=True)
+                a = int(round(start * 48000))
+                want = whole[a:a + int(round(span * 48000))]
+                assert got_rate == 48000 and got.shape == want.shape, (rate, start, got.shape, want.shape)
+                if len(want):
+                    worst = float(np.abs(got - want).max())
+                    assert worst <= 1e-6, (rate, start, worst)      # the same numbers, give or take float rounding
+
+
+def test_resampler_is_the_reference_polyphase_filter():
+    """The strided `to_48k` against the plain per-sample sum it replaced (same kernels, gathered taps)."""
+    rng = np.random.default_rng(11)
+    audio = (0.3 * rng.standard_normal((44100 // 3, 2))).astype(np.float32)
+    up, down, kernels = batch.resampler(44100)
+    frames = len(audio) * up // down
+    padded = np.pad(audio, ((batch.RESAMPLE_HALF, batch.RESAMPLE_HALF + 1), (0, 0)))
+    taps = np.arange(-batch.RESAMPLE_HALF + 1, batch.RESAMPLE_HALF + 1)
+    want = np.zeros((frames, 2), dtype=np.float32)
+    for n in range(frames):
+        base = (n * down) // up
+        want[n] = kernels[n % up] @ padded[base + taps + batch.RESAMPLE_HALF]
+    assert float(np.abs(batch.to_48k(audio, 44100) - want).max()) <= 1e-6
 
 
 def test_queue_cancel_and_busy():
@@ -336,6 +375,67 @@ def test_rebuild_carries_octave_dynamics_and_effects():
         assert 'oct' not in row and row['echo'] == 100
         saved = json.loads(next(scratch.glob('wet/*.json')).read_text(encoding='utf-8'))
         assert saved['tracks']['bass']['echo'] == 60 and saved['tracks']['piano']['room'] == 0
+
+
+def test_vocal_table_covers_every_kit_and_only_those():
+    import runpy
+    kits = runpy.run_path(str(ROOT / 'tools' / 'kitdefs' / '__init__.py'), run_name='kitdefs_table')['KITS']
+    assert sorted(effects.VOCAL_PRESETS) == sorted(kits), set(effects.VOCAL_PRESETS) ^ set(kits)
+    for name, values in effects.VOCAL_PRESETS.items():
+        assert sorted(values) == ['echo', 'room', 'tone'] and effects.settings(values) == dict(effects.DEFAULTS, **values), name
+    assert effects.VOCAL_PRESETS['lofi'] == {'tone': -45, 'echo': 0, 'room': 15}
+    assert effects.VOCAL_PRESETS['ambient'] == {'tone': -15, 'echo': 30, 'room': 70}
+    assert effects.vocal_preset('no-such-kit') == {'tone': 0, 'echo': 0, 'room': 0}
+    index = server.kit_index()                                                     # the page reads the same numbers
+    assert all(index[name]['vocal'] == effects.VOCAL_PRESETS[name] for name in index), 'kits.json disagrees'
+
+
+def test_vocal_settings_follow_the_preset_or_not():
+    ambient = effects.VOCAL_PRESETS['ambient']
+    own = {'oct': 1, 'vel': -20, 'tone': 40, 'echo': 5, 'room': 0}
+    # follow true: the preset's sound, its own notes
+    assert effects.vocal_settings(dict(own, follow=True), 'ambient') == dict(oct=1, vel=-20, **ambient)
+    # follow false: its own five, whatever the preset
+    assert effects.vocal_settings(dict(own, follow=False), 'ambient') == own
+    assert effects.vocal_settings({'follow': False}, 'ambient') == effects.DEFAULTS
+    # no key: follows only if its own tone, echo and room are all 0
+    assert effects.vocal_settings({'oct': -1}, 'lofi') == dict(oct=-1, vel=0, **effects.VOCAL_PRESETS['lofi'])
+    assert effects.vocal_settings(own, 'lofi') == own
+    assert effects.vocal_settings({'room': 10}, 'lofi')['room'] == 10 and effects.vocal_settings({'room': 10}, 'lofi')['tone'] == 0
+    assert effects.vocal_settings(None, 'chiptune') == dict(effects.DEFAULTS, tone=20)
+    assert effects.vocal_settings({'follow': 'yes', 'echo': 3}, 'ambient')['echo'] == 3  # a nonsense flag counts as missing
+    assert effects.vocal_settings({'follow': True}, 'no-such-kit') == effects.DEFAULTS
+
+
+def test_rebuild_applies_the_preset_to_a_sung_vocal():
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        song = library.read_song(make_song(scratch), 'test')
+        sung = np.concatenate([tone(220, 6.0, rate=48000), np.zeros(4800, np.float32)])
+        quiet = {name: {'mode': 'mute'} for name in batch.TRACKS}
+
+        def vocal(preset, extra, name):
+            plan = {'preset': preset, 'tracks': dict(quiet, vocals=dict({'mode': 'orig'}, **extra))}
+            _, done = batch.rebuild(song['midi'], plan, scratch / name, server.KITS_DIR, stems=song['stems'],
+                                    vocal=sung, voice='original')
+            row = next(r for r in done['tracks'] if r['track'] == 'vocals')
+            saved = json.loads(Path(next(p for p in done['files'] if p.endswith('.json'))).read_text(encoding='utf-8'))
+            return done['seconds'], row, saved['tracks']['vocals']
+
+        dry, row, saved = vocal('pluck', {'follow': False}, 'dry')
+        assert row['sounding'] and row['follow'] is False and not any(k in row for k in ('tone', 'echo', 'room'))
+        assert close(dry, len(sung) / 48000, 0.01), dry                             # no effect, no tail
+        assert saved['follow'] is False
+        wet, row, saved = vocal('ambient', {}, 'ambient')                         # an old plan with nothing set follows
+        assert close(wet - dry, effects.TAIL_SECONDS, 0.01), (dry, wet)
+        assert row['follow'] is True and (row['tone'], row['echo'], row['room']) == (-15, 30, 70), row
+        assert saved['follow'] is True and saved['room'] == 0                     # the plan keeps its own numbers
+        lofi, row, _ = vocal('lofi', {'follow': True, 'room': 99}, 'lofi')
+        assert close(lofi - dry, effects.TAIL_SECONDS, 0.01) and row['room'] == 15 and row['tone'] == -45, row
+        chip, row, _ = vocal('chiptune', {'follow': True}, 'chip')               # tone only: no tail
+        assert close(chip, dry, 0.01) and row['tone'] == 20 and 'echo' not in row
+        own, row, _ = vocal('ambient', {'echo': 40}, 'own')                      # an old plan with its own echo keeps it
+        assert row['follow'] is False and row['echo'] == 40 and 'room' not in row and close(own - dry, effects.TAIL_SECONDS, 0.01)
 
 
 def test_server_outlives_its_pages_only_while_there_is_work():

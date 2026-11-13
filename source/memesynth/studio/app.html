@@ -451,6 +451,7 @@ function resetCast() {
     cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '',
                       oct: 0, vel: 0, tone: 0, echo: 0, room: 0};
   }
+  cast.vocals.follow = true;                        // the vocal's tone, echo and room follow the preset (SPEC v15)
   vocalTouched = false;
 }
 resetCast();
@@ -488,28 +489,31 @@ function decodeWav(buffer) {
   return out;
 }
 
-/* A stem excerpt as the server sends it: 16-bit PCM, any rate, mono or stereo. */
+/* A stem excerpt as the server sends it: 32-bit float at 48 kHz, already converted by the export's
+ * resampler (server.stem_excerpt); 16-bit PCM at any rate is still read, mono or stereo. */
 function decodeExcerpt(buffer) {
   const view = new DataView(buffer);
-  let at = 12, channels = 1, rate = RATE, data = null, length = 0;
+  let at = 12, channels = 1, rate = RATE, bits = 16, data = null, length = 0;
   while (at + 8 <= view.byteLength) {
     const id = String.fromCharCode(view.getUint8(at), view.getUint8(at+1), view.getUint8(at+2), view.getUint8(at+3));
     const size = view.getUint32(at + 4, true);
-    if (id === 'fmt ') { channels = view.getUint16(at + 10, true); rate = view.getUint32(at + 12, true); }
+    if (id === 'fmt ') { channels = view.getUint16(at + 10, true); rate = view.getUint32(at + 12, true); bits = view.getUint16(at + 22, true); }
     if (id === 'data') { data = at + 8; length = Math.min(size, view.byteLength - data); break; }
     at += 8 + size + (size % 2);
   }
   if (data === null) throw new Error('分轨片段读不了');
-  const count = Math.floor(length / (2 * channels));
+  const bytes = bits / 8, count = Math.floor(length / (bytes * channels));
+  const read = bits === 32 ? at => view.getFloat32(at, true) : at => view.getInt16(at, true) / 32768;
   const left = new Float32Array(count), right = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    left[i] = view.getInt16(data + i * 2 * channels, true) / 32768;
-    right[i] = channels > 1 ? view.getInt16(data + i * 2 * channels + 2, true) / 32768 : left[i];
+    left[i] = read(data + i * bytes * channels);
+    right[i] = channels > 1 ? read(data + i * bytes * channels + bytes) : left[i];
   }
   return {rate, left, right};
 }
 
-/* To the page's rate, by the browser's own resampler, interleaved like the engine's buffers. */
+/* To the page's rate, interleaved like the engine's buffers. The server's excerpts are already at
+ * 48 kHz; only something else would go through the browser, which interpolates in straight lines. */
 async function toRate(wav) {
   const frames = Math.round(SPAN * RATE), out = new Float32Array(frames * 2);
   if (!wav.left.length) return out;
@@ -809,6 +813,11 @@ function buildTracks() {
 /* --- one track's adjustments: octave, dynamics, tone, echo, room ------------------------------- */
 let fxTrack = '', fxTimer = null;
 const fxActive = c => FX_KEYS.some(key => c[key]);
+const SOUND_KEYS = ['tone', 'echo', 'room'];
+/* What the preset does to the vocal; the table lives in effects.py and comes in kits.json. */
+const presetVocal = () => Object.assign({tone: 0, echo: 0, room: 0}, ((kitsIndex || {})[preset] || {}).vocal || {});
+/* The five numbers a track really uses: the vocal, while it follows, takes the preset's tone, echo and room. */
+const effective = id => id === 'vocals' && cast.vocals.follow ? Object.assign({}, cast.vocals, presetVocal()) : cast[id];
 function fillRange(input) {
   const low = Number(input.min), high = Number(input.max);
   input.style.setProperty('--fill', (100 * (Number(input.value) - low) / (high - low)).toFixed(1) + '%');
@@ -822,23 +831,45 @@ function fxChanged(notes) {
   }, 140);
 }
 function openFx(id, anchor) {
-  const pop = el('fxPop'), c = cast[id], track = TRACKS.find(t => t.id === id);
+  const pop = el('fxPop');
   if (!pop.hidden && fxTrack === id) return closeFx();
   fxTrack = id;
+  paintFx();
+  pop.hidden = false;
+  const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
+  pop.style.top = (box.bottom + 6 + height > window.innerHeight ? Math.max(8, box.top - height - 6) : box.bottom + 6) + 'px';
+}
+/* The panel's contents for `fxTrack`; painted again when the vocal starts or stops following, or the preset changes under it. */
+function paintFx() {
+  const pop = el('fxPop'), id = fxTrack, c = cast[id], track = TRACKS.find(t => t.id === id);
+  if (!c) return;
+  const shown = effective(id), following = id === 'vocals' && c.follow;
   const played = c.mode === 'swap' && !(id === 'vocals' && vocal && c.voice !== '@kit');
-  const row = (key, label, low, high, step, off) => `<label class="fxRow${off ? ' off' : ''}"><span>${label}</span><small>${low}</small>`
-    + `<input type="range" data-key="${key}" min="${FX_LIMITS[key][0]}" max="${FX_LIMITS[key][1]}" step="${step}" value="${c[key]}"${off ? ' disabled' : ''}>`
-    + `<small>${high}</small><output>${c[key]}</output></label>`;
+  // off: does nothing for this track (dimmed); held: shows the preset's value, untick 跟随预设 to move it.
+  const row = (key, label, low, high, step, off) => `<label class="fxRow${off === 'held' ? ' held' : off ? ' off' : ''}"><span>${label}</span><small>${low}</small>`
+    + `<input type="range" data-key="${key}" min="${FX_LIMITS[key][0]}" max="${FX_LIMITS[key][1]}" step="${step}" value="${shown[key]}"${off ? ' disabled' : ''}>`
+    + `<small>${high}</small><output>${shown[key]}</output></label>`;
   pop.style.setProperty('--tc', `var(--t-${id})`);
   pop.innerHTML = `<b>${track.zh} · 调整</b>`
+    + (id === 'vocals' ? `<label class="fxFollow"><input type="checkbox" id="fxFollow"${following ? ' checked' : ''}>`
+      + `<span>跟随预设</span><small>${following ? '明暗、回声、混响用 ' + preset + ' 的' : '用自己的'}</small></label>` : '')
     + row('oct', '八度', '低', '高', 1, !played || id === 'drums')
     + row('vel', '力度', '压平', '夸张', 10, !played)
     + (played ? '' : '<p class="fxNote">八度和力度改的是音符，只对换了音色的轨有效。</p>')
-    + row('tone', '明暗', '暗', '薄', 5, false)
-    + row('echo', '回声', '无', '多', 5, false)
-    + row('room', '混响', '无', '多', 5, false)
+    + row('tone', '明暗', '暗', '薄', 5, following && 'held')
+    + row('echo', '回声', '无', '多', 5, following && 'held')
+    + row('room', '混响', '无', '多', 5, following && 'held')
     + '<button type="button" class="plain" id="fxReset">复位</button>';
-  for (const input of pop.querySelectorAll('input')) {
+  if (id === 'vocals') {
+    el('fxFollow').addEventListener('change', event => {
+      // Letting go keeps what was playing: the sliders start from the preset's values.
+      if (!event.target.checked) Object.assign(c, presetVocal());
+      c.follow = event.target.checked;
+      paintFx(); fxChanged(false);
+    });
+  }
+  for (const input of pop.querySelectorAll('input[type=range]')) {
     input.addEventListener('input', () => {
       const key = input.dataset.key;
       c[key] = Number(input.value);
@@ -847,15 +878,16 @@ function openFx(id, anchor) {
       fxChanged(key === 'oct' || key === 'vel');
     });
   }
-  for (const input of pop.querySelectorAll('input')) fillRange(input);
-  el('fxReset').addEventListener('click', () => { for (const key of FX_KEYS) c[key] = 0; closeFx(); fxChanged(true); });
-  pop.hidden = false;
-  const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
-  pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
-  pop.style.top = (box.bottom + 6 + height > window.innerHeight ? Math.max(8, box.top - height - 6) : box.bottom + 6) + 'px';
+  for (const input of pop.querySelectorAll('input[type=range]')) fillRange(input);
+  el('fxReset').addEventListener('click', () => {
+    for (const key of FX_KEYS) c[key] = 0;
+    if (id === 'vocals') c.follow = true;                    // back to following the preset
+    closeFx(); fxChanged(true);
+  });
 }
 function closeFx() { el('fxPop').hidden = true; fxTrack = ''; }
 document.addEventListener('click', event => {
+  if (!event.target.isConnected) return;                     // a control the panel just repainted away
   if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx')) closeFx();
 });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeFx(); });
@@ -950,11 +982,13 @@ function paintTracks() {
     slider.disabled = c.mode === 'mute';
     fillRange(slider);
     row.querySelector('.solo').setAttribute('aria-pressed', String(!!c.solo));
-    const fx = row.querySelector('.fx');
-    fx.setAttribute('aria-pressed', String(fxActive(c)));
-    fx.title = fxActive(c) ? '这条轨调过：' + [c.oct && `八度 ${c.oct > 0 ? '+' : ''}${c.oct}`, c.vel && `力度 ${c.vel > 0 ? '+' : ''}${c.vel}`,
-      c.tone && `明暗 ${c.tone > 0 ? '+' : ''}${c.tone}`, c.echo && `回声 ${c.echo}`, c.room && `混响 ${c.room}`].filter(Boolean).join('，')
-      : '八度、力度、明暗、回声、混响';
+    const fx = row.querySelector('.fx'), e = effective(track.id);
+    const following = isVocal && c.follow ? `跟随预设 ${preset}` : '';
+    const changed = [e.oct && `八度 ${e.oct > 0 ? '+' : ''}${e.oct}`, e.vel && `力度 ${e.vel > 0 ? '+' : ''}${e.vel}`,
+      e.tone && `明暗 ${e.tone > 0 ? '+' : ''}${e.tone}`, e.echo && `回声 ${e.echo}`, e.room && `混响 ${e.room}`].filter(Boolean).join('，');
+    fx.setAttribute('aria-pressed', String(fxActive(e)));
+    fx.title = following ? following + (changed ? '：' + changed : '')
+      : fxActive(e) ? '这条轨调过：' + changed : '八度、力度、明暗、回声、混响';
   }
   paintPresets();
   paintCompare();
@@ -1113,6 +1147,7 @@ function selectPreset(name) {
   if (!kitsIndex[name] || name === preset) return;
   if (!pair.includes(name)) pair = [preset, name];           // the one just left and the one just picked
   previousPreset = preset; preset = name;
+  if (fxTrack === 'vocals' && cast.vocals.follow) paintFx();  // the panel shows the new preset's vocal values
   paintTracks(); renderWindow(); queueSave();
 }
 /* The last two presets picked, side by side: one click (or `) flips between them at the same
@@ -1261,7 +1296,7 @@ function masterFactor() {
   return peak > ceiling ? ceiling / peak : 1;
 }
 
-const fxOf = layer => layer.raw ? null : cast[layer.id];        // the original song is the reference: nothing is done to it
+const fxOf = layer => layer.raw ? null : effective(layer.id);   // the original song is the reference: nothing is done to it
 const toneHz = tone => tone < 0 ? 18000 * Math.pow(250 / 18000, -tone / 100) : 30 * Math.pow(2500 / 30, tone / 100);
 
 /* One track's tone, echo and room as Web Audio nodes between `input` and `output`. */
@@ -1722,6 +1757,7 @@ function currentPlan() {
     tracks[track.id] = {mode: c.mode, kit: c.kit, db: c.db, solo: c.solo};
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
   }
+  tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
   return {preset, tracks, voice: cast.vocals.voice};
 }
 /* A plan is a file: it may have been edited by hand or written by an older studio. Whatever
@@ -1741,7 +1777,11 @@ function takePlan(plan) {
       const value = Math.round(Number(saved[key]));
       c[key] = Number.isFinite(value) ? Math.max(FX_LIMITS[key][0], Math.min(FX_LIMITS[key][1], value)) : 0;
     }
-    if (track.id === 'vocals') vocalTouched = true;
+    if (track.id === 'vocals') {
+      vocalTouched = true;
+      // A plan from before v15 has no `follow`: it follows only if nothing of its own sound was set (effects.follows).
+      c.follow = typeof saved.follow === 'boolean' ? saved.follow : !SOUND_KEYS.some(key => c[key]);
+    }
   }
   cast.vocals.voice = typeof plan.voice === 'string' ? plan.voice : '';
 }

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import math
 import sys
 from pathlib import Path
@@ -153,9 +154,13 @@ def to_48k(audio, rate):
     """`audio` as stereo float32 at SAMPLE_RATE.
 
     A windowed-sinc polyphase resampler in numpy alone: the studio's own environment has
-    no scipy, librosa or soxr and is not getting one for this (SPEC §6)."""
+    no scipy, librosa or soxr and is not getting one for this (SPEC §6).
+
+    Output sample n sits at input position n·down/up, so every `down` input samples give
+    exactly `up` output samples: a stretch that starts on a multiple of `down` resamples to
+    the same numbers as that stretch of the whole file (`window_48k` relies on this)."""
     import numpy as np
-    from fractions import Fraction
+    from numpy.lib.stride_tricks import as_strided
 
     audio = np.asarray(audio, dtype=np.float32)
     if audio.ndim == 1:
@@ -165,26 +170,70 @@ def to_48k(audio, rate):
     audio = audio[:, :2]
     if int(rate) == SAMPLE_RATE:
         return audio
-    ratio = Fraction(SAMPLE_RATE, int(rate))              # 160 / 147 from 44.1 kHz
-    up, down = ratio.numerator, ratio.denominator
-    half, beta = 16, 8.0
-    cutoff = min(1.0, up / down)
+    up, down, kernels = resampler(int(rate))
     frames = len(audio) * up // down
     out = np.zeros((frames, 2), dtype=np.float32)
-    padded = np.pad(audio, ((half, half + 1), (0, 0)))
-    taps = np.arange(-half + 1, half + 1)
+    padded = np.ascontiguousarray(np.pad(audio, ((RESAMPLE_HALF, RESAMPLE_HALF + 1), (0, 0))))
+    row, column = padded.strides
     for phase in range(up):
-        n = np.arange(phase, frames, up)
-        if not len(n):
+        count = len(range(phase, frames, up))
+        if not count:
             continue
+        # The samples of one phase read the input `down` apart: a strided view, no gathered copy.
+        first = (phase * down) // up + 1                   # taps start at 1 - half; the padding adds half
+        view = as_strided(padded[first:], shape=(count, kernels.shape[1], 2), strides=(down * row, row, column),
+                          writeable=False)
+        out[phase::up] = np.einsum('mtc,t->mc', view, kernels[phase])
+    return out
+
+
+RESAMPLE_HALF, RESAMPLE_BETA = 16, 8.0
+
+
+@functools.lru_cache(maxsize=8)
+def resampler(rate):
+    """(up, down, one Kaiser-windowed sinc kernel per output phase) for `rate` to SAMPLE_RATE."""
+    import numpy as np
+    from fractions import Fraction
+
+    ratio = Fraction(SAMPLE_RATE, rate)                    # 160 / 147 from 44.1 kHz
+    up, down = ratio.numerator, ratio.denominator
+    cutoff = min(1.0, up / down)
+    taps = np.arange(-RESAMPLE_HALF + 1, RESAMPLE_HALF + 1)
+    kernels = np.zeros((up, taps.size), dtype=np.float32)
+    for phase in range(up):
         offset = ((phase * down) % up) / up                # the same for every sample of this phase
         x = taps - offset
-        window = np.i0(beta * np.sqrt(np.clip(1.0 - (x / half) ** 2, 0.0, 1.0))) / np.i0(beta)
+        window = np.i0(RESAMPLE_BETA * np.sqrt(np.clip(1.0 - (x / RESAMPLE_HALF) ** 2, 0.0, 1.0))) / np.i0(RESAMPLE_BETA)
         kernel = cutoff * np.sinc(cutoff * x) * window
-        kernel = (kernel / kernel.sum()).astype(np.float32)
-        base = (n * down) // up
-        out[n] = np.einsum('mtc,t->mc', padded[base[:, None] + taps[None, :] + half], kernel)
-    return out
+        kernels[phase] = (kernel / kernel.sum()).astype(np.float32)
+    return up, down, kernels
+
+
+def window_48k(path, start, span):
+    """Seconds `start` to `start + span` of a wav file at SAMPLE_RATE: the same samples as that stretch
+    of `to_48k` over the whole file, without converting the whole file.
+
+    The read starts and ends on a multiple of the resampler's block (`down` input samples) with
+    enough whole blocks to spare either side for the filter's 17-sample reach, so the filter sees what it would see in the whole file; the
+    spare is cut off after. Shorter than `span` where the file ends."""
+    a, n = int(round(start * SAMPLE_RATE)), int(round(span * SAMPLE_RATE))
+    with soundfile.SoundFile(str(path)) as handle:
+        rate, length = handle.samplerate, handle.frames
+        if rate == SAMPLE_RATE:
+            first, offset = max(0, min(length, a)), 0
+            count = max(0, min(length, a + n) - first)
+        else:
+            up, down, _ = resampler(rate)
+            spare = -(-(RESAMPLE_HALF + 1) // down) + 1        # whole blocks covering the filter's reach, and one more
+            block = max(0, a // up - spare)
+            first = block * down
+            last = min(length, (-(-(a + n) // up) + spare) * down)
+            count, offset = max(0, last - first), a - block * up
+        handle.seek(min(first, length))
+        audio = handle.read(count, dtype='float32', always_2d=True)
+    out = to_48k(audio, rate)
+    return out[offset:offset + n] if rate != SAMPLE_RATE else out
 
 
 def rms(audio):
@@ -248,7 +297,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     """Write one rebuild of a song: every track kept, replaced or silent, as `plan` says (SPEC v5).
 
     `plan` is `{'preset': kit, 'tracks': {track: {'mode': 'orig' | 'swap' | 'mute', 'kit': kit or None,
-    'db': float, 'solo': bool, and the five numbers of `effects.DEFAULTS`}}}`. `stems` maps a track to its separated wav, for the tracks kept
+    'db': float, 'solo': bool, and the five numbers of `effects.DEFAULTS`}}}`; the vocal entry may
+    also carry `follow` (`effects.vocal_settings`, SPEC v15). `stems` maps a track to its separated wav, for the tracks kept
     as they are. `vocal` is the sung vocal (mono, 48 kHz, already at its final level) when the
     vocal track sings; a vocal track that is `swap` without one is played by its kit.
 
@@ -272,7 +322,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     for name, choice in (plan.get('tracks') or {}).items():
         if name in tracks and isinstance(choice, dict):
             tracks[name].update({k: v for k, v in choice.items()
-                                 if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS})
+                                 if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
+                                 or (name == 'vocals' and k == 'follow')})
     # A plan can come from a file someone edited or from an older studio: whatever in it does
     # not make sense falls back to the default instead of failing the whole export.
     for choice in tracks.values():
@@ -285,7 +336,12 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         except (TypeError, ValueError):
             choice['db'] = 0.0
         choice.update(effects.settings(choice))
+    # The vocal's tone, echo and room come from the whole-song preset while it follows (SPEC v15);
+    # the plan keeps its own numbers and the flag, the report says what was applied.
+    tracks['vocals']['follow'] = effects.follows(tracks['vocals'])
     preset = plan.get('preset') if plan.get('preset') in known else known[0]
+    applied = {name: tracks[name] for name in TRACKS}
+    applied['vocals'] = effects.vocal_settings(tracks['vocals'], preset)
     stems = stems or {}
     soloed = [name for name in TRACKS if tracks[name].get('solo')]
     sounding = lambda name: tracks[name]['mode'] != 'mute' and (not soloed or name in soloed)
@@ -320,7 +376,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     # The same numbers the page auditions with: every stem of the song against the preset.
     factors, spare, level_notes = levels_from(rendered[preset], stems) if kept else ({}, 1.0, {'empty': [], 'capped': []})
     for name in TRACKS:
-        choice = tracks[name]
+        choice, sound = tracks[name], applied[name]
         gain = 10.0 ** (float(choice.get('db') or 0.0) / 20.0)
         if name == 'vocals' and sung:
             audio, how = np.repeat(np.asarray(vocal, dtype=np.float32)[:, None], 2, axis=1), voice or 'original'
@@ -333,11 +389,12 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         report.append({'track': name, 'mode': choice['mode'], 'by': how, 'db': float(choice.get('db') or 0.0),
                        'sounding': audio is not None and sounding(name),
                        'emptyStem': how == 'orig' and name in level_notes['empty'],
-                       **{key: choice[key] for key in effects.DEFAULTS if choice[key]}})
+                       **({'follow': choice['follow']} if name == 'vocals' else {}),
+                       **{key: sound[key] for key in effects.DEFAULTS if sound[key]}})
         if audio is not None and sounding(name):
-            if choice['tone'] or choice['echo'] or choice['room']:
+            if sound['tone'] or sound['echo'] or sound['room']:
                 say(0.82, f'{name} · 效果')
-            layers[name] = effects.apply(audio * gain, choice)
+            layers[name] = effects.apply(audio * gain, sound)
 
     frames = max((len(a) for a in layers.values()), default=0)
     if not frames:
