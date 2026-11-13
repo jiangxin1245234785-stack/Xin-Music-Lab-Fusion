@@ -92,15 +92,19 @@ window.XldStorageControls.create({bridge:window.XLD,getBusy:()=>Boolean(state.ac
 beforeClear:()=>{playbackControls?.stop();for(const player of document.querySelectorAll('audio'))player.pause();auditionControls?.stop();},onChanged:async()=>{await derivedControls.refresh();await refinementControls?.refresh();await refreshAnalysisSummary();}});
 refinementControls=window.XldRefinementControls.create({bridge:window.XLD,getSelected:()=>state.selectedTrack,getCurrent:()=>state.currentTrack,getDerived:()=>derivedControls.snapshot(),getTask:()=>state.activeTask,getBusy:()=>Boolean(state.activeTask||state.batchRunning),audio:dom.audioElement,rt,onTask:applyTask,onAudition:value=>playbackControls?.preview(value),onStop:()=>playbackControls?.releasePreview(),getPlaybackPosition:playbackPosition});
 
-const segmentColors = ['#8f7cff','#5cc9b3','#df72aa','#ddbd62','#6ba0dc','#a97fd2','#df896f','#79b877','#c1a0ff'];
+// Sections and chords in the sound studio's quiet register - dark, low-chroma tints under light labels - so the
+// bright colours stay with the tracks and amber with the selection. Chosen in OKLCH: every tint is at least 0.13
+// (OKLab) from a track colour and 0.3 from the amber, and its label keeps a contrast of 4.4 or more.
+// timeline-controls.js segmentColor() carries the same tables.
+const segmentColors = ['#804949','#78512a','#5d5e29','#356748','#12676b','#345f82','#5a5382','#754a6c'];
 const engineShortNames = { msaf: 'SC', 'msaf-sf': 'SF', 'msaf-foote': 'FT', 'msaf-cnmf': 'CN', songformer: 'AI' };
 // SongFormer emits functional labels; give the common ones a stable semantic
 // colour. MSAF's abstract A/B/C labels won't match these keys and keep using
 // the hashed palette below.
 const functionLabelColors = {
-  intro: '#5cc9b3', verse: '#6ba0dc', chorus: '#df72aa', 'pre-chorus': '#c98fd0',
-  bridge: '#a97fd2', inst: '#ddbd62', solo: '#df896f', break: '#8f9bb3',
-  outro: '#79b877', silence: '#5b6172', start: '#5b6172', end: '#5b6172'
+  intro: '#30684c', verse: '#2b5679', chorus: '#904c6e', 'pre-chorus': '#645c88',
+  bridge: '#5b3d65', inst: '#605d34', solo: '#7f4c3a', break: '#404952',
+  outro: '#1c5038', silence: '#383838', start: '#383838', end: '#383838'
 };
 const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
 const AI_ENGINE_IDS = ['songformer'];
@@ -111,10 +115,22 @@ const PRIMARY_HARMONY_ENGINE = 'chord-chordmini';
 const SECTION_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS];
 const KNOWN_ENGINE_IDS = [...SECTION_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
 Object.assign(engineShortNames, { 'chord-cqt': 'CQ', 'chord-cens': 'CE', 'chord-hybrid': 'HX', 'chord-btc': 'BTC', 'chord-chordmini': 'CM', 'chord-consonance': 'ACE' });
+// The root keeps its place on a wheel (a repeating progression repeats in colour); minor-type chords a step darker.
 const chordRootColors = {
-  C: '#e76f8f', 'C#': '#ef8a6f', D: '#e9b45f', Eb: '#c6ca62', E: '#8dcc70', F: '#65c795',
-  'F#': '#56c5bf', G: '#5aa9df', Ab: '#7c8fe0', A: '#9a79df', Bb: '#be72cf', B: '#dc73b0', N: '#555b69'
+  C: '#815154', 'C#': '#805441', D: '#765b35', Eb: '#666335', E: '#506943', F: '#3a6c57',
+  'F#': '#2c6c6c', G: '#33687c', Ab: '#476285', A: '#5c5b84', Bb: '#6e557a', B: '#7b5169', N: '#353535'
 };
+const chordMinorColors = {
+  C: '#673c40', 'C#': '#66402e', D: '#5d4523', Eb: '#4f4c23', E: '#3c5230', F: '#275542',
+  'F#': '#185454', G: '#205163', Ab: '#344c6b', A: '#47466a', Bb: '#574061', B: '#623d52'
+};
+const CHORD_ROOT_ALIASES = { Db: 'C#', 'D#': 'Eb', Gb: 'F#', 'G#': 'Ab', 'A#': 'Bb', Cb: 'B', Fb: 'E', 'E#': 'F', 'B#': 'C' };
+function chordColor(label) {
+  const text = String(label || 'N'), found = text.match(/^([A-G](?:#|b)?)/)?.[1];
+  if (!found) return chordRootColors.N;
+  const root = CHORD_ROOT_ALIASES[found] || found, quality = text.slice(found.length);
+  return (/^(m(?!aj)|min|dim|°|ø|-)/.test(quality) ? chordMinorColors : chordRootColors)[root] || chordRootColors.N;
+}
 const UI_SCALES = [.94, 1, 1.06, 1.12];
 const FONT_BASE_SCALE = 1.2; // 默认字号基线 +20%（A−/A+ 仍在此基线上相对缩放）
 const AI_MIN_RANGE_SECONDS = 15;
@@ -860,10 +876,7 @@ function updateResultActions() {
 }
 
 function hashColor(engineId, label) {
-  if (isHarmonyEngineId(engineId)) {
-    const root = String(label || 'N').match(/^([A-G](?:#|b)?)/)?.[1] || 'N';
-    return chordRootColors[root] || chordRootColors.N;
-  }
+  if (isHarmonyEngineId(engineId)) return chordColor(label);
   const key = String(label ?? '').trim().toLowerCase();
   if (functionLabelColors[key]) return functionLabelColors[key];
   let hash = 0;
@@ -973,7 +986,7 @@ function renderComparison() {
       if (segment.id) block.dataset.segmentId = segment.id;
       block.style.left = `${Math.max(0, start / duration) * 100}%`;
       block.style.width = `${Math.max(.25, ((end - start) / duration) * 100)}%`;
-      block.style.background = `${hashColor(engineId, segment.label)}d8`;
+      block.style.background = hashColor(engineId, segment.label);
       const confidence = Number(segment.confidence);
       if (harmonyResult && Number.isFinite(confidence) && confidence < .48) block.classList.add('low-confidence');
       block.title = rt('runtime.comparison.segmentTitle', {

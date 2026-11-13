@@ -11,7 +11,9 @@
 // the lanes cannot drift apart. No quantisation, no grid, no editing — annotation stays in the section lab for now.
 (function () {
   'use strict';
-  const STEM_COLORS = { bass: '#a78bfa', piano: '#b9c6ff', guitar: '#5fd0c5', drums: '#d5d9df', strings: '#8bd48f', vocals: '#ff8f7d', other: '#9aa0b4' };
+  // The sound studio's track colours (memesynth/studio/theme.css, from the Okabe-Ito set made for red-green colour
+  // blindness). The studio has no strings; they take the set's yellow, toned for the dark ground. Amber is never a track.
+  const STEM_COLORS = { bass: '#4d7fd0', piano: '#7cc4f2', guitar: '#2fb89a', drums: '#e8663a', strings: '#d9cd6a', vocals: '#d78ab5', other: '#9aa1a9' };
   const GM_DRUM_KEYS = { 35: 'kick', 36: 'kick', 38: 'snare', 40: 'snare', 42: 'hihat', 44: 'hihat', 46: 'hihat', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 49: 'crash', 51: 'ride', 57: 'crash', 59: 'ride' };
   const MAX_CANVAS = 16384;   // Chromium's per-dimension canvas limit; the device pixel ratio is capped against it.
   const PITCH_ROW_HEIGHT = 18;   // the tallest a focused semitone row gets; the focused lane shrinks rows to fit
@@ -990,7 +992,7 @@
           block.annotationId = row.kind === 'manual' ? (segment.id || null) : null;
           block.style.left = `${Math.max(0, start / total) * 100}%`;
           block.style.width = `${Math.max(.2, ((end - start) / total) * 100)}%`;
-          block.style.background = `${segmentColor(row.kind, result.engine?.id, segment.label)}d0`;
+          block.style.background = segmentColor(row.kind, result.engine?.id, segment.label);
           block.textContent = String(segment.label ?? '?');
           block.title = `${segment.label} · ${clock(start)}–${clock(end)}`;
           body.append(block);
@@ -1432,17 +1434,24 @@
       setTimeSource: source => { timeSource = typeof source === 'function' ? source : null; } };
   }
 
+  // The same tables as app.js's comparison panel: sections and chords as dark, low-chroma tints under light labels,
+  // so they stay a reference under the bright track colours. Chord roots sit on a wheel; minor-type chords a step darker.
   function segmentColor(kind, engineId, label) {
     if (kind === 'harmony') {
-      const root = String(label || 'N').match(/^([A-G](?:#|b)?)/)?.[1] || 'N';
-      return { C: '#e76f8f', 'C#': '#ef8a6f', Db: '#ef8a6f', D: '#e9b45f', Eb: '#c6ca62', 'D#': '#c6ca62', E: '#8dcc70', F: '#65c795', 'F#': '#56c5bf', Gb: '#56c5bf', G: '#5aa9df', Ab: '#7c8fe0', 'G#': '#7c8fe0', A: '#9a79df', Bb: '#be72cf', 'A#': '#be72cf', B: '#dc73b0', N: '#555b69' }[root] || '#555b69';
+      const text = String(label || 'N'), found = text.match(/^([A-G](?:#|b)?)/)?.[1];
+      if (!found) return '#353535';
+      const root = { Db: 'C#', 'D#': 'Eb', Gb: 'F#', 'G#': 'Ab', 'A#': 'Bb', Cb: 'B', Fb: 'E', 'E#': 'F', 'B#': 'C' }[found] || found;
+      const minor = /^(m(?!aj)|min|dim|°|ø|-)/.test(text.slice(found.length));
+      return (minor
+        ? { C: '#673c40', 'C#': '#66402e', D: '#5d4523', Eb: '#4f4c23', E: '#3c5230', F: '#275542', 'F#': '#185454', G: '#205163', Ab: '#344c6b', A: '#47466a', Bb: '#574061', B: '#623d52' }
+        : { C: '#815154', 'C#': '#805441', D: '#765b35', Eb: '#666335', E: '#506943', F: '#3a6c57', 'F#': '#2c6c6c', G: '#33687c', Ab: '#476285', A: '#5c5b84', Bb: '#6e557a', B: '#7b5169' })[root] || '#353535';
     }
-    if (kind === 'manual') return '#72e8ce';
-    const named = { intro: '#5cc9b3', verse: '#6ba0dc', chorus: '#df72aa', 'pre-chorus': '#c98fd0', bridge: '#a97fd2', inst: '#ddbd62', solo: '#df896f', break: '#8f9bb3', outro: '#79b877', silence: '#5b6172', start: '#5b6172', end: '#5b6172' }[String(label || '').trim().toLowerCase()];
+    if (kind === 'manual') return '#e6e2d8';   // your own marks: paper, the one light block in the lane
+    const named = { intro: '#30684c', verse: '#2b5679', chorus: '#904c6e', 'pre-chorus': '#645c88', bridge: '#5b3d65', inst: '#605d34', solo: '#7f4c3a', break: '#404952', outro: '#1c5038', silence: '#383838', start: '#383838', end: '#383838' }[String(label || '').trim().toLowerCase()];
     if (named) return named;
     let hash = 0;
     for (const char of `${engineId}:${label}`) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-    return ['#8f7cff', '#5cc9b3', '#df72aa', '#ddbd62', '#6ba0dc', '#a97fd2', '#df896f', '#79b877', '#c1a0ff'][Math.abs(hash) % 9];
+    return ['#804949', '#78512a', '#5d5e29', '#356748', '#12676b', '#345f82', '#5a5382', '#754a6c'][Math.abs(hash) % 8];
   }
 
   const percent = value => value === null || value === undefined ? '—' : Math.round(value * 100);
