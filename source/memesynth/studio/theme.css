@@ -176,6 +176,10 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 /* v22: the rack has the full width; "这 12 秒" takes what is left over */
 .trk, .trkHead { display: grid; grid-template-columns: 12px 4px 58px 86px minmax(0, 240px) 92px 30px 30px minmax(110px, 1fr);
   gap: 8px; align-items: center; padding: 4px 12px; }
+/* v24: 「用什么」 up to 320 px on a wide window, so a kit select next to the layer and hint tags stays readable */
+@media (min-width: 1200px) {
+  .trk, .trkHead { grid-template-columns: 12px 4px 58px 86px minmax(0, 320px) 92px 30px 30px minmax(110px, 1fr); }
+}
 .trkHead { font-size: var(--fs-s); letter-spacing: .09em; color: var(--faint); padding-block: 4px; line-height: 16px; }
 .trk { min-height: var(--row, 44px); padding-block: 0; border-top: 1px solid var(--edge); }
 .trk > * { min-height: 0; }
@@ -195,6 +199,15 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 .who select { min-width: 0; flex: 1 1 0; max-width: 260px; }
 .who .plain { max-width: 100%; }
 .who .tag { flex: none; min-width: 48px; text-align: center; }
+/* v24: 「+」 after the kit, or the layer's name in the hint tags' colours */
+.layerBtn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 16px; padding: 0;
+  background: none; border: none; color: var(--faint); cursor: pointer; font: inherit; }
+.layerBtn svg { width: 100%; height: 100%; }
+.layerBtn:hover { color: var(--dim); }
+.layerBtn.on { width: auto; height: 20px; padding: 0 8px 0 4px; gap: 4px; border-radius: 10px; background: var(--signal-soft); color: var(--signal);
+  font-size: var(--fs-s); font-weight: 600; line-height: 20px; white-space: nowrap; }
+.layerBtn.on .kicon { color: var(--signal); width: 14px; height: 14px; }
+.who select { text-overflow: ellipsis; }
 /* Sliders are drawn here rather than left to the browser, so every track's looks the same. */
 .trk input[type=range], .fxRow input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 0; background: none; cursor: pointer; }
 .trk input[type=range]::-webkit-slider-runnable-track, .fxRow input[type=range]::-webkit-slider-runnable-track {
@@ -234,7 +247,11 @@ button.link { background: none; border: none; padding: 0; color: var(--signal); 
 .fxFollow { display: flex; align-items: center; gap: 8px; font-size: var(--fs); cursor: pointer; }
 .fxFollow input { accent-color: var(--tc); margin: 0; }
 .fxFollow small { color: var(--faint); font-size: var(--fs-s); margin-left: auto; }
-#fxReset { justify-self: end; }
+#fxReset, .layerDrop { justify-self: end; }
+.layerRow { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px; align-items: center; font-size: var(--fs); }
+.layerRow select { min-width: 0; width: 100%; }
+.layerRow .seg { justify-self: start; }
+.layerRow.off { opacity: .4; }
 #mapTip { position: fixed; z-index: 9; padding: 4px 8px; border-radius: 5px; background: var(--panel); border: 1px solid var(--edge);
   color: var(--fg); font-size: var(--fs-s); white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .4); }
 #mapTip[hidden] { display: none; }

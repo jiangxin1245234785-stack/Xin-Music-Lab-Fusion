@@ -485,8 +485,8 @@ v2：再拖同一首的 `vocals.wav`，在「人声」里选原唱 / 18 个合�
     - `app.html`：`cast[id].lock`（`resetCast` 里为假）；`currentPlan` 只在为真时写 `lock: true`，`takePlan` 只认 `=== true`；行里 `.tnName` 里一个 `.lock` 按钮（`ICONS.lock`），`paintLock`（`paintTracks` 里调）；
       `rollPlan` 末尾把锁住的条目放回原样再钉住（抽签次数和顺序不变）；`diceContext`（`roll` 和 `nudge` 共用，带 `presetVocal` 和 `categories`）；`nudgePlan` / `NUDGE_STEP` / `KEY_ZH` / `nudgeSummary` / `nudge` / `flashRow`；`#nudge` 按钮、键 F、`paintRolls` 管它的灰；说明「存」一节加一段、快捷键加 F。
     - `theme.css`：`.trk .tnName`、`.trk .lock`（淡字 / 悬停次要字 / 锁住琥珀）；`.pcell.flash` 扩成 `.pcell.flash, .trk.flash`。没有新颜色值。
-    - **钉住仍然会改变锁住那条轨声音的情况**（按任务书要求报告，没做）：
-      1. **留原声的轨**：它的音量按「这首歌、这套预设演这条轨的音量」对齐（`levels.factors`），骰子换了预设，锁住的原声轨跟着变响或变轻。七里香、吉他留原声锁住，14 次掷：不开抽吸时 −5.4…+4.7 dB（有一次正好 0）；钉住无从下手——要钉就得在方案里记下它的音量来源，方案格式多一个键。
+    - **钉住仍然会改变锁住那条轨声音的情况**（按任务书要求报告，没做；用户接受，2026-11-13）：
+      1. **留原声的轨**：它的音量按「这首歌、这套预设演这条轨的音量」对齐（`levels.factors`），骰子换了预设，锁住的原声轨跟着变响或变轻。七里香、吉他留原声锁住，14 次掷：不开抽吸时 −5.4…+4.7 dB（有一次正好 0）；钉住无从下手——要钉就得在方案里记下它的音量来源，方案格式多一个键。用户接受这个代价（2026-11-13）。
       2. **抽吸**：设计里已知；实测锁住的贝斯在开了抽吸的那几次和掷前相差 −15…−22 dB（残差），不开抽吸时逐采样相同。
       3. **整体音量**：试听的主音量按整份方案的峰值算（`masterFactor`），导出按 `peak_factor`；别的轨变了，锁住的轨实际听到的响度也跟着挪。这一条对任何「只改一部分」的功能都成立。
     - **和设计不一样的**：
@@ -506,6 +506,38 @@ v2：再拖同一首的 `vocals.wav`，在「人声」里选原唱 / 18 个合�
       - `test_studio.py` 28 项、`test_memesynth.py` 25 项通过。截图 `xlr-screens/6-lock.jpg`。
     - **没验证**：行的闪烁动画本身（预览面板在后台，动画不跑，只验证了 `.flash` 加在了对的行上）；「相近」好不好用、一档的大小合不合适；用户没用过。
 
+43. **v24：叠层（2026-11-13，等验收）。** 规格是 SPEC.md 的 v24 节。碰了出声的代码：`batch.py`（叠层的渲染和相加）、`app.html` 的 `renderWindowNow`；`engine.js`、`effects.py` 没动，所以不用重跑引擎对账。
+    - `batch.py`：`LAYER_DEFAULT` / `LAYER_LIMITS`、`clean_layer(value, name, known)`、`layer_notes(played, name, octave)`（返回 (score, 丢掉的数)）；`plan_tracks` 收 `layer` 并洗（人声丢掉；模式不是「换」也留着）；
+      `rebuild` 在按 kit 渲染之后给每条有叠层、是「换」、有转谱的轨另外渲染一次叠层音符，乘增益加到主层上（长度取两者较长），再走原来的音量 / 抽吸 / `effects.apply`；主 kit 没有这条轨的路由时只出叠层；报告多 `layer` / `layerRendered` / `layerTruncated` / `layerDropped`。
+    - `server.py`：`/api/shapecheck` 多返回 `layers`（每条叠层的音符和丢掉的数），测试用。
+    - `app.html`：`cast[id].layer`；`currentPlan` 有才写、`takePlan` 用 `cleanLayer`；`layerOn`、`layerNotes`、`defaultLayer`、`openLayer`、`paintLayer`（借 `#fxPop`，`fxTrack = 'layer:<轨>'`）、`layerChanged`；行里 `.layerBtn`（`ICONS.layer`）；
+      `renderWindowNow`：叠层用到的 kit 和主层的一起 `ensureKit`，叠层窗口存在 `kitWindow['@layer|kit|oct|轨']`（和别的窗口一起清），在抽吸之前加到这条轨的数据上；`rollPlan` 末尾加叠层的那一签；`planSummary` 写「叠 x」；说明「调」一节加一段。
+    - `theme.css`：`.layerBtn`（淡字 / 悬停次要字 / `.on` 用提示标签的琥珀淡底 + 琥珀字，最宽 88 px 省略号）、`.who select` 省略号、`.layerRow`、`.layerDrop`。没有新颜色值。
+    - `tests/test_studio.py`：新增 2 项（`test_plan_tracks_cleans_a_layer`、`test_rebuild_layer_adds_the_moved_notes_in_a_second_kit`），30 项。
+    - **和设计不一样 / 要知道的**：
+      1. 取整：设计说「整数」没说怎么取，Python 的 `round` 是四舍六入五成双、JS 的 `Math.round` 是半数往上，两边会不一样；两边都用「半数往上」（`floor(x + 0.5)`）。「不是数」只认真正的数（`true`、`"3"` 都算不是数）。
+      2. 叠层面板的音色下拉按分类分组（照设计第 9 条），但行里的音色选择框本来就不分组；设计说「和行里的同样写法」，两者对不上，按「分组」做了。
+      3. 验收时发现：有叠层标签的行，音色选择框被挤到 56–64 px，「跟随预设 · orchestra」只看得见「跟…」。规划方定的改法（已做）：标签只留叠层音色的图标 +「叠」（42 px），名字 / 八度 / 音量进 `title`（「叠层 wobble · 低八度 · −9 dB · 点一下调」）；
+         窗口 ≥ 1200 px 时「用什么」最宽 320 px（`theme.css` 里 `.trk, .trkHead` 后面的 `@media (min-width: 1200px)`），更窄时照旧 240 px。
+         实测（带叠层又带「提示」的贝斯、吉他两行）：1280×720 选择框 183 px，完整显示「跟随预设 · orchestra」要 154 px（同字体、只放这一项的选择框的自然宽度；文字本身 116 px），完整可见；1024×700 选择框 103 px（≥ 100，文字用省略号）。
+         一屏照旧（四种状态 `scrollHeight == innerHeight`、无横向溢出、「用什么」格不溢出、中线差 0）；列宽 1280：`… 320 92 30 30` + 427 px，1024：`… 240 …` + 351 px；行高 1280 44 / 43、1024 44 / 40（有 A/B 和那行字时比上次的 39 高 1 px，`fitWall` 算出来的，仍在 36–44 之内）。
+      4. 试听和导出：贝斯单独放时 −63.6 dB，比不带叠层的 −67.2 dB 差 3.6 dB。拆开看是 `engine.js` 移植对 wobble 低八度本来就只有 −58 dB 左右（贝斯直接用 wobble、八度 −1、不叠层：−58.1 dB，不开混响 −58.7 dB），和叠层的代码无关；叠层只占了 −6 dB 所以总数还在门槛内。见「范围外」。
+    - **实测**（8790，plans-dev，七里香）：
+      - 没叠层时不变：改之前先存了第 37 项那份方案的页面窗口（六层的 Float32 数据，存在浏览器的 IndexedDB）和「听整首」文件；改之后同一份方案：六层窗口逐采样相同（6/6 identical），「听整首」文件逐字节相同（sha256 032f3b35…，58,790,364 字节），页面对整首仍是 −68.2 dB。
+        （把窗口过一遍 Web Audio 的 OfflineAudioContext 再比，最大差 2.4e-7 / 3.0e-7；同一份数据连跑两次离线渲染本身就差 2.4e-7，是 Web Audio 的抖动，不是改动带来的。）
+      - 叠层音符页面对 Python（`/api/shapecheck` 的 `layers`）：贝斯叠 wobble −1（带长短 50、前后 20、松紧 60、疏密 30）238 个、吉他叠 hoover +1（长短 −40、疏密 50、前后 −15、松紧 40）2873 个、钢琴叠 organ +1 423 个、鼓叠 trap（疏密 30，写了 +1 被洗成 0）885 个：音数相同，起点最大差 5.7e-14 s、长度 1.1e-13 s，音高 / 力度 / 路由 0 个不同。
+        越界：钢琴八度 +2 再叠 +1，页面和 Python 都是 421 个、丢 2 个。
+      - 试听与导出一致（hoover，鼓和其他留原声；贝斯叠 wobble −1 / −6 dB、混响 20、长短 50；吉他叠 musicbox +1 / −3 dB、回声 20、明暗 −20；抽吸 60 / 200；窗口 120–132 s，去掉头 3 秒）：整首 **−65.1 dB**，只放贝斯 **−63.6 dB**（门槛 −60）。报告：贝斯叠层渲染 301 个、截断 0、丢 0；吉他 4420、0、0。
+      - 骰子 2000 次（种子 20261113；贝斯锁住带叠层、吉他锁住、钢琴静音带叠层、鼓和其他没锁）：有叠层的掷 9.6%，每次最多一条（0 次两条）；叠层 kit 等于这条轨实际用的 0 次；oct 只出现 −1 / 0 / +1、db 只出现 −9 / −6 / −3，鼓的 oct 恒 0；锁住的两条叠层 0 次变；静音的钢琴叠层 0 次变；人声 0 次有叠层；
+        别的统计：留原声 25.2%、换音色 39.2%、明暗非 0 28.8%、抽吸 29.8%（第 42 项是 25.1–25.6%、39.8–41.2%、30.4%、29.9%）；`takePlan` → `currentPlan()` 0 次不同。相近 2000 次：叠层 0 次变，读回 0 次不同。
+      - 界面：贝斯点「+」→ `{hoover, +1, −6}`（预设 hoover），鼓点「+」→ `{hardstyle, 0, −6}`（kits.json 里 hoover 的下一套），鼓的八度三个按钮都是灰的；面板标题「贝斯 · 叠层」，音色分七组（6/6/4/3/3/3/5）；改音色、八度、音量各一次都重渲染、0 个报错；「去掉」后方案里没有 `layer`、按钮回到「+」；Esc 和点外面都关；
+        贝斯切到原声：行里是「原声分轨」、没有按钮，方案里 `layer` 还在；切回「换」标签「叠 wobble」回来；贝斯和吉他的叠层自动存进 plans-dev，刷新后还在（两个标签都在）。
+        窗口渲染时间（整窗从头渲染，各 4 次）：没叠层 82–93 ms，贝斯和吉他各一层 166–195 ms，多出来约 96 ms（每层约 48 ms）；只重算两个叠层窗口 107–129 ms，全部走缓存 22–26 ms。
+      - 一屏（有两个叠层标签，改标签之前量的；改后的数字见上面第 3 条）：1280×720 无 / 有 A/B 和那行字：格子 27 / 24、行高 44 / 43、墙下 11 / 9 px；1024×700：24 / 24、44 / 39、9 / 13 px；每行中线差 0（含「+」和标签）；「用什么」格不溢出；叠层面板在窗口内（1280：147,220–447,407）。
+      - `test_studio.py` 30 项通过；`test_memesynth.py` 23 项通过、2 项跳过——跳过的两项要 `artifacts/**/midi/merged/*/merged.mid`，这台机器上现在一个都没有了（上一项时还在；这次的改动没碰它们）。
+    - **截图**：`xlr-screens/7-layer.jpg`（1280×720 全屏，两条轨有叠层，贝斯的叠层面板开着，吉他的标签被面板挡住）和 `7-layer-detail.jpg`（改标签之后重截：1280×720 全屏，面板关着，贝斯和吉他各有一个叠层标签）。
+    - **没验证**：叠层好不好听、默认的「同一套高八度」顺不顺手；鼓叠鼓的效果；用户没用过。
+
 ## 文件地图
 
 ```
@@ -521,6 +553,7 @@ source/memesynth/studio/
   engine.js                 memesynth score/render 两层的 JS 移植（仅试听）
   batch.py                  纯逻辑：export() 渲染多套、inspect() 打体检表，带 progress 回调；也能单独当 CLI 用
                             v2：export(vocal=, voice=) 每套多写 <midi>.<kit>.<声音>.wav，with_voice() 是混法
+                            v24：clean_layer / layer_notes，rebuild 给有叠层的轨另外渲染一层再相加
   vocals.py                 v2：声音目录、人声缓存、转换队列（单线程）、/vocal/ 取文件；v3：store_file / known / ready_voices
   library.py                v3：扫 XLD 分析目录列出能开的歌（只读）；v5：每首歌的六条分轨
 work/memesynth-cache/plans/   v5：方案。songs/<曲库编号>.json 是每首歌上次的选择，named/<名字>.json 是起了名的

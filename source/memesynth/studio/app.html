@@ -114,6 +114,7 @@
       <h3>调</h3>
       <p>每条轨右边的「调」：八度、力度、长短、前后、松紧、疏密改音符，只对「换」的轨有效；明暗、回声、混响改声音。人声的声音默认跟随预设。</p>
       <p>「S」只听这一条；音量条是这条轨的大小。「抽吸」让每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来，转谱里没有底鼓时用不了。</p>
+      <p>音色后面的「+」给这条轨叠一层：同一段音符再用另一套音色演一遍，可以高或低一个八度（鼓没有），音量 −12…0 dB。两层共用这条轨的调、抽吸、明暗回声混响和音量；只在「换」的轨上出声，人声不叠。</p>
       <h3>存</h3>
       <p>曲库里的歌自动记住方案，下次打开还是这样。「存方案」起名存下，「套用方案」用到别的歌上。</p>
       <p>「掷骰子」随手配一份方案（静音的轨、人声的声音、音量不动），「上一份」退回，最多 20 步。A / B 出现时，「存两份」把现在的方案配上两套预设各存一份。</p>
@@ -187,7 +188,7 @@ let pump = Object.assign({}, PUMP_DEFAULT);
 let pair = [];                                      // the two presets being compared, in the order they were picked
 function resetCast() {
   for (const track of TRACKS) {
-    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '', lock: false,
+    cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '', lock: false, layer: null,
                       oct: 0, vel: 0, gate: 0, late: 0, loose: 0, thin: 0, tone: 0, echo: 0, room: 0};
   }
   pump = Object.assign({}, PUMP_DEFAULT);
@@ -890,7 +891,7 @@ function openFx(id, anchor) {
   const pop = el('fxPop');
   if (!pop.hidden && fxTrack === id) return closeFx();
   fxTrack = id;
-  if (id === 'pump') paintPump(); else paintFx();
+  if (id === 'pump') paintPump(); else if (id.startsWith('layer:')) paintLayer(); else paintFx();
   pop.hidden = false;
   const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
   pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
@@ -978,9 +979,89 @@ function paintFx() {
   });
 }
 function closeFx() { el('fxPop').hidden = true; fxTrack = ''; }
+
+/* --- a layer (SPEC v24): the same notes once more, in a second kit ------------------------------------ */
+const LAYER_DEFAULT = {oct: 0, db: -6}, LAYER_LIMITS = {oct: [-1, 1], db: [-12, 0]};
+/* The same rule as batch.clean_layer: an unknown kit drops it; oct and db are whole numbers in range, else the default. */
+function cleanLayer(value, id) {
+  if (id === 'vocals' || !value || typeof value !== 'object' || typeof value.kit !== 'string' || !(kitsIndex || {})[value.kit]) return null;
+  const out = {kit: value.kit};
+  for (const [key, [low, high]] of Object.entries(LAYER_LIMITS)) {
+    const number = typeof value[key] === 'number' && Number.isFinite(value[key]) ? value[key] : LAYER_DEFAULT[key];
+    out[key] = Math.max(low, Math.min(high, Math.round(number))) || 0;     // || 0: no -0 in the file
+  }
+  if (id === 'drums') out.oct = 0;
+  return out;
+}
+/* A layer sounds on a swapped instrument track that has notes. */
+const layerOn = id => id !== 'vocals' && !!cast[id].layer && cast[id].mode === 'swap' && routesOf(id).length > 0;
+/* The track's shaped notes, moved by whole octaves (drums are not), the ones outside 0–127 left out: batch.layer_notes. */
+function layerNotes(base, id, octave) {
+  const notes = [];
+  let dropped = 0;
+  for (const note of base.notes) {
+    if (trackOf(note.route) !== id) continue;
+    const pitch = note.isDrum || id === 'drums' ? note.pitch : note.pitch + 12 * octave;
+    if (pitch < 0 || pitch > 127) { dropped++; continue; }
+    notes.push(pitch === note.pitch ? note : Object.assign({}, note, {pitch}));
+  }
+  return {score: Object.assign({}, base, {notes}), dropped};
+}
+/* What 「+」 gives: the kit the track plays now an octave up; the drums the next kit in kits.json, no octave. */
+function defaultLayer(id) {
+  const now = kitOf(id), names = Object.keys(kitsIndex);
+  if (id === 'drums') return {kit: names[(names.indexOf(now) + 1) % names.length], oct: 0, db: -6};
+  return {kit: now, oct: 1, db: -6};
+}
+function openLayer(id, anchor) {
+  if (!cast[id].layer) {
+    cast[id].layer = defaultLayer(id);
+    paintTracks(); renderWindow(); queueSave();
+    anchor = el('tracks').querySelector(`[data-track="${id}"] .layerBtn`) || anchor;
+    if (!el('fxPop').hidden && fxTrack === 'layer:' + id) return paintLayer();
+  }
+  openFx('layer:' + id, anchor);
+}
+function layerChanged() { paintTracks(); renderWindow(); queueSave(); }
+function paintLayer() {
+  const pop = el('fxPop'), id = fxTrack.slice('layer:'.length), c = cast[id], track = TRACKS.find(t => t.id === id);
+  if (!c || !c.layer) return closeFx();
+  const layer = c.layer, kinds = {};
+  for (const [name, kit] of Object.entries(kitsIndex)) (kinds[kit.category || '其他'] = kinds[kit.category || '其他'] || {rank: kit.rank == null ? 99 : kit.rank, names: []}).names.push(name);
+  const groups = Object.entries(kinds).sort((a, b) => a[1].rank - b[1].rank)
+    .map(([label, kind]) => `<optgroup label="${label}">` + kind.names.map(name => `<option value="${name}">${name}</option>`).join('') + '</optgroup>').join('');
+  pop.style.setProperty('--tc', `var(--t-${id})`);
+  pop.innerHTML = `<b>${track.zh} · 叠层</b>`
+    + `<label class="layerRow"><span>音色</span><select data-key="kit" aria-label="${track.zh}叠层的音色">${groups}</select></label>`
+    + `<div class="layerRow${id === 'drums' ? ' off' : ''}"><span>八度</span><span class="seg" role="group" aria-label="${track.zh}叠层的八度">`
+    + [-1, 0, 1].map(value => `<button type="button" data-oct="${value}" aria-pressed="${layer.oct === value}"${id === 'drums' ? ' disabled' : ''}>${value > 0 ? '+1' : value < 0 ? '−1' : '0'}</button>`).join('')
+    + '</span></div>'
+    + `<label class="fxRow"><span>音量</span><small>−12</small><input type="range" data-key="db" min="-12" max="0" step="1" value="${layer.db}"><small>0</small><output>${layer.db}</output></label>`
+    + (c.mode === 'swap' ? '' : '<p class="fxNote">叠层只在「换」的时候出声；现在留着，切回「换」就回来</p>')
+    + '<button type="button" class="plain layerDrop">去掉</button>';
+  const select = pop.querySelector('select');
+  select.value = layer.kit;
+  select.addEventListener('change', () => { layer.kit = select.value; layerChanged(); });
+  for (const button of pop.querySelectorAll('[data-oct]')) {
+    button.addEventListener('click', () => {
+      layer.oct = Number(button.dataset.oct);
+      for (const other of pop.querySelectorAll('[data-oct]')) other.setAttribute('aria-pressed', String(other === button));
+      layerChanged();
+    });
+  }
+  const range = pop.querySelector('input[type=range]');
+  fillRange(range);
+  range.addEventListener('input', () => {
+    layer.db = Number(range.value);
+    range.parentElement.querySelector('output').textContent = range.value;
+    fillRange(range);
+    layerChanged();
+  });
+  pop.querySelector('.layerDrop').addEventListener('click', () => { c.layer = null; closeFx(); layerChanged(); });
+}
 document.addEventListener('click', event => {
   if (!event.target.isConnected) return;                     // a control the panel just repainted away
-  if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx, #pumpBtn')) closeFx();
+  if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx, #pumpBtn, .layerBtn')) closeFx();
 });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeFx(); });
 
@@ -1056,6 +1137,22 @@ function paintTracks() {
       mark.title = kitOf(track.id);
       who.appendChild(mark);
       who.appendChild(select);
+      if (!isVocal) {
+        const add = document.createElement('button');
+        add.type = 'button'; add.className = 'layerBtn' + (c.layer ? ' on' : '');
+        if (c.layer) {
+          // the layer kit's mark and 叠; the name, octave and level are in the tip (the kit select keeps its room)
+          add.innerHTML = `<span class="kicon">${icon(((kitsIndex || {})[c.layer.kit] || {}).icon)}</span>叠`;
+          add.title = `叠层 ${c.layer.kit}` + (c.layer.oct ? (c.layer.oct > 0 ? ' · 高八度' : ' · 低八度') : '')
+            + ` · ${String(c.layer.db).replace('-', '−')} dB · 点一下调`;
+        } else {
+          add.innerHTML = icon('layer');
+          add.title = '叠一层：同样的音符再用另一套音色演一遍';
+        }
+        add.setAttribute('aria-label', track.zh + (c.layer ? ' · 叠层 ' + c.layer.kit : ' · 叠一层'));
+        add.addEventListener('click', event => openLayer(track.id, event.currentTarget));
+        who.appendChild(add);
+      }
     }
     if (isVocal && vocalBusy) text(vocalBusy);
     if (!isVocal && c.mode === 'orig' && levelNotes && song) {
@@ -1175,6 +1272,7 @@ const ICONS = {
   sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
   shelf: '<path d="M5 4v15M9 4v15"/><path d="M13 5.5l3.5-1 3.5 13.5-3.5 1z"/><path d="M3 19.5h18"/>',
+  layer: '<path d="M12 5v14M5 12h14"/>',
   lock: '<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
 };
@@ -1337,9 +1435,10 @@ async function renderWindowNow() {
   if (!score || !preset) return;
   const ticket = ++renderTicket, frames = Math.round(SPAN * RATE);
   const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap').map(t => kitOf(t.id)))];
-  if (playing.some(name => !kitAudio[name])) {
-    setState(`载入音色 · ${playing.filter(name => !kitAudio[name]).join('、')}`);
-    await Promise.all(playing.map(ensureKit));
+  const loading = [...new Set(playing.concat(TRACKS.filter(t => layerOn(t.id)).map(t => cast[t.id].layer.kit)))];
+  if (loading.some(name => !kitAudio[name])) {
+    setState(`载入音色 · ${loading.filter(name => !kitAudio[name]).join('、')}`);
+    await Promise.all(loading.map(ensureKit));
     if (ticket !== renderTicket) return;
   }
   const started = performance.now(), notes = shapedScore();
@@ -1351,6 +1450,21 @@ async function renderWindowNow() {
     }
     if (!Object.keys(kitWindow[kit].stems).some(route => trackOf(route) === id)) return null;
     const out = new Float32Array(frames * 2), data = Engine.mixDown(kitWindow[kit], route => trackOf(route) === id);
+    out.set(data.subarray(0, Math.min(data.length, out.length)));
+    return out;
+  };
+  // A layer's window: only this track's notes, moved, in the layer's kit; kept with the kits' windows (SPEC v24).
+  const layerTrack = id => {
+    const {kit, oct} = cast[id].layer, key = `@layer|${kit}|${oct}|${id}`;
+    if (!kitAudio[kit]) return null;
+    if (!(key in kitWindow)) {
+      const part = layerNotes(notes, id, oct);
+      const result = Engine.renderScore(part.score, {voices: kitAudio[kit].voices}, kitAudio[kit].samples, RATE,
+                                        {from: windowStart, to: windowStart + SPAN, trim: true});
+      kitWindow[key] = Object.keys(result.stems).length ? Engine.mixDown(result) : null;
+    }
+    if (!kitWindow[key]) return null;
+    const out = new Float32Array(frames * 2), data = kitWindow[key];
     out.set(data.subarray(0, Math.min(data.length, out.length)));
     return out;
   };
@@ -1397,6 +1511,15 @@ async function renderWindowNow() {
       else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
     } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
     else if (c.mode === 'swap') data = kitTrack(kitOf(track.id), track.id);
+    // The layer is added first; the pump, tone / echo / room and the level below are the track's, for both.
+    if (track.id !== 'vocals' && c.mode === 'swap' && layerOn(track.id)) {
+      const top = layerTrack(track.id);
+      if (top) {
+        const gain = Math.fround(10 ** (c.layer.db / 20)), sum = data || new Float32Array(top.length);
+        for (let i = 0; i < sum.length; i++) sum[i] += top[i] * gain;
+        data = sum;
+      }
+    }
     // The pump is baked into the window (node automation would not loop with it), before tone / echo / room.
     if (data && pumpEnv && PUMPED.includes(track.id)) {
       const pumped = new Float32Array(data.length);
@@ -1928,6 +2051,7 @@ function currentPlan() {
     tracks[track.id] = {mode: c.mode, kit: c.kit, db: c.db, solo: c.solo};
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
     if (c.lock) tracks[track.id].lock = true;                                  // SPEC v23: only when locked
+    if (c.layer) tracks[track.id].layer = Object.assign({}, c.layer);           // SPEC v24: only when there is one
   }
   tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
   const plan = {preset, tracks, voice: cast.vocals.voice};
@@ -1948,6 +2072,7 @@ function takePlan(plan) {
     c.db = Number.isFinite(db) ? Math.max(-18, Math.min(6, Math.round(db))) : 0;
     c.solo = saved.solo === true;
     c.lock = saved.lock === true;
+    c.layer = cleanLayer(saved.layer, track.id);
     for (const key of FX_KEYS) {
       const value = Math.round(Number(saved[key]));
       c[key] = Number.isFinite(value) ? Math.max(FX_LIMITS[key][0], Math.min(FX_LIMITS[key][1], value)) : 0;
@@ -2041,12 +2166,21 @@ function rollPlan(plan, context, random) {
       }
     }
     sound(entry);
+    if (entry.mode === 'swap' && context.notes[id]) delete entry.layer;     // SPEC v24: rolled again, layer and all
   }
   const vocals = out.tracks.vocals = out.tracks.vocals || {mode: 'mute', kit: null, db: 0, solo: false};
   for (const key of ['tone', 'echo', 'room']) delete vocals[key];
   vocals.follow = true; vocals.solo = false;
   delete out.pump;
   if (context.kicks && !chance(0.7)) out.pump = {depth: pick([30, 50, 70]), release: pick([150, 250])};
+  // SPEC v24: one in ten rolls gives one unlocked, swapped track a layer. Drawn after everything above, so
+  // the earlier draws come out as they did before layers existed.
+  const stackable = ROLLED.filter(id => out.tracks[id].mode === 'swap' && context.notes[id] && !((plan && plan.tracks || {})[id] || {}).lock);
+  if (stackable.length && chance(0.1)) {
+    const id = pick(stackable), now = out.tracks[id].kit || out.preset;
+    const kit = pick(context.kits.filter(name => name !== now)), oct = pick([-1, 0, 1]), db = pick([-9, -6, -3]);
+    out.tracks[id].layer = {kit, oct: id === 'drums' ? 0 : oct, db};
+  }
   // SPEC v23: a locked track is put back as it was (the draws above are made all the same, so an
   // unlocked track comes out exactly as it would without any lock). Two exceptions: solo is off,
   // and what followed the old preset is pinned to it, so the new preset does not change its sound.
@@ -2129,6 +2263,7 @@ function planSummary(plan) {
     if (entry.tone) said.push(entry.tone < 0 ? '偏暗' : '偏薄');
     if (entry.echo) said.push('回声 ' + entry.echo);
     if (entry.room) said.push('混响 ' + entry.room);
+    if (entry.layer) said.push('叠 ' + entry.layer.kit + (entry.layer.oct > 0 ? ' 高八度' : entry.layer.oct < 0 ? ' 低八度' : ''));
     if (said.length) parts.push(track.zh + ' ' + said.join(' '));
   }
   const text = parts.join(' · ');

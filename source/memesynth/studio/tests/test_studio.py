@@ -442,6 +442,83 @@ def test_effects_do_what_they_say():
     assert np.allclose(wet[11:1011], effects.ROOM_WET * room[1:1001], atol=1e-6)   # after the click: the room alone
 
 
+def test_plan_tracks_cleans_a_layer():
+    known = ['acid', 'pluck', 'wobble']
+    plan = {'preset': 'pluck', 'tracks': {
+        'bass': {'mode': 'swap', 'layer': {'kit': 'wobble', 'oct': -1, 'db': -3}},
+        'guitar': {'mode': 'swap', 'layer': {'kit': 'nope', 'oct': 1}},             # unknown kit: no layer
+        'piano': {'mode': 'orig', 'layer': {'kit': 'acid', 'oct': 5, 'db': -40}},   # clamped; kept on a kept stem
+        'other': {'mode': 'swap', 'layer': {'kit': 'acid', 'oct': 'up', 'db': None}},   # not numbers: defaults
+        'drums': {'mode': 'swap', 'layer': {'kit': 'acid', 'oct': 1, 'db': 0.5}},     # drums: no octave; halves round up
+        'vocals': {'mode': 'swap', 'layer': {'kit': 'acid'}}}}                        # the vocal never has one
+    tracks, _, _ = batch.plan_tracks(plan, known)
+    assert tracks['bass']['layer'] == {'kit': 'wobble', 'oct': -1, 'db': -3}
+    assert 'layer' not in tracks['guitar'] and 'layer' not in tracks['vocals']
+    assert tracks['piano']['layer'] == {'kit': 'acid', 'oct': 1, 'db': -12}
+    assert tracks['other']['layer'] == {'kit': 'acid', 'oct': 0, 'db': -6}
+    assert tracks['drums']['layer'] == {'kit': 'acid', 'oct': 0, 'db': 0}
+    for odd in ('wobble', None, [], {'oct': 1}, {'kit': ['acid']}, {'kit': 'acid', 'oct': float('nan'), 'db': float('inf')}, {'kit': 'acid', 'oct': True}):
+        tracks, _, _ = batch.plan_tracks({'tracks': {'bass': {'layer': odd}}}, known)
+        assert tracks['bass'].get('layer') in (None, {'kit': 'acid', 'oct': 0, 'db': -6}), (odd, tracks['bass'])
+    tracks, _, _ = batch.plan_tracks({'tracks': {'bass': {}}}, known)
+    assert 'layer' not in tracks['bass']
+
+
+def test_rebuild_layer_adds_the_moved_notes_in_a_second_kit():
+    """A track with a layer == the same track without it + the layer kit playing the track's shaped notes
+    an octave down, times the layer's gain; before the pump and effects (none here). Floats, not files."""
+    import dataclasses
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        midi = scratch / 'a.mid'
+        make_midi(midi)
+        base = {'preset': 'pluck', 'tracks': {'drums': {'mode': 'mute'}, 'piano': {'mode': 'mute'},
+                                              'bass': {'mode': 'swap', 'db': -2, 'gate': -40, 'thin': 50}}}
+        layered = json.loads(json.dumps(base))
+        layered['tracks']['bass']['layer'] = {'kit': 'acid', 'oct': -1, 'db': -6}
+        written = {}
+        original_write = batch.soundfile.write
+        try:
+            def keep(path, data, *args, **kwargs):
+                written[str(path)] = np.array(data, dtype=np.float32)
+            batch.soundfile.write = keep
+            _, plain = batch.rebuild(midi, base, scratch / 'plain', server.KITS_DIR, write_tracks=True)
+            _, both = batch.rebuild(midi, layered, scratch / 'both', server.KITS_DIR, write_tracks=True)
+        finally:
+            batch.soundfile.write = original_write
+        track = lambda done: written[next(p for p in done['files'] if p.endswith('.bass.wav'))] / done['factor']
+        one, two = track(plain), track(both)
+        # the layer alone, as the export renders it
+        from memesynth.kit import load_kit
+        from memesynth.render import render
+        score = batch.read_score(midi)
+        tracks, _, _ = batch.plan_tracks(layered, sorted(p.parent.name for p in server.KITS_DIR.glob('*/kit.json')))
+        played = batch.shaped_notes(score, tracks)
+        part, dropped = batch.layer_notes(played, 'bass', -1)
+        assert dropped == 0 and len(part.notes) == sum(1 for n in played.notes if batch.track_of(n.route) == 'bass') > 0
+        assert all(n.pitch == m.pitch - 12 for n, m in zip(part.notes, [n for n in played.notes if batch.track_of(n.route) == 'bass']))
+        result = render(part, load_kit(server.KITS_DIR / 'acid' / 'kit.json', sample_rate=batch.SAMPLE_RATE))
+        alone = sum(result.stereo_stem(route) for route in result.stems) * 10 ** (-6 / 20) * 10 ** (-2 / 20)
+        expect = np.zeros((max(len(one), len(alone)), 2), dtype=np.float64)
+        expect[:len(one)] += one
+        expect[:len(alone)] += alone
+        assert len(two) == len(expect), (len(two), len(expect))
+        assert np.abs(two - expect).max() <= 1e-6, np.abs(two - expect).max()
+        row = next(r for r in both['tracks'] if r['track'] == 'bass')
+        assert row['layer'] == {'kit': 'acid', 'oct': -1, 'db': -6} and row['layerRendered'] == result.rendered and row['layerDropped'] == 0
+        assert 'layer' not in next(r for r in plain['tracks'] if r['track'] == 'bass')
+        # moved out of range: those notes are left out and counted
+        high = dataclasses.replace(played, notes=tuple(dataclasses.replace(n, pitch=120) if batch.track_of(n.route) == 'bass' else n for n in played.notes))
+        _, gone = batch.layer_notes(high, 'bass', 1)
+        assert gone == len(part.notes)
+        # a kept stem does not play its layer
+        kept = json.loads(json.dumps(layered))
+        kept['tracks']['bass']['mode'] = 'mute'
+        kept['tracks']['piano']['mode'] = 'swap'
+        _, done = batch.rebuild(midi, kept, scratch / 'kept', server.KITS_DIR, listen_path=scratch / 'kept.wav')
+        assert 'layer' not in next(r for r in done['tracks'] if r['track'] == 'bass')
+
+
 def test_rebuild_carries_octave_dynamics_and_effects():
     with tempfile.TemporaryDirectory() as scratch:
         scratch = Path(scratch)

@@ -194,7 +194,7 @@ def shape_check(midi_bytes, plan, window=None):
     with `window` ({start, frames} in samples) also the pump's envelope there."""
     import tempfile
 
-    from studio.batch import plan_tracks, read_score, shaped_notes
+    from studio.batch import TRACKS, layer_notes, plan_tracks, read_score, shaped_notes, track_of
     if not midi_bytes:
         raise ValueError('没有收到 MIDI')
     with tempfile.TemporaryDirectory() as scratch:
@@ -206,6 +206,14 @@ def shape_check(midi_bytes, plan, window=None):
     played = shaped_notes(score, tracks)
     out = {'notes': [[n.route, n.start, n.duration, n.pitch, n.velocity] for n in played.notes],
            'kicks': effects.kick_times(played), 'pump': pump, 'preset': preset}
+    # Each swapped track's layer (SPEC v24): the notes its second kit plays, and how many fell outside 0–127.
+    out['layers'] = {}
+    for name in TRACKS:
+        layer = tracks[name].get('layer')
+        if layer and tracks[name]['mode'] == 'swap' and any(track_of(n.route) == name for n in played.notes):
+            part, dropped = layer_notes(played, name, layer['oct'])
+            out['layers'][name] = {'layer': layer, 'dropped': dropped,
+                                   'notes': [[n.route, n.start, n.duration, n.pitch, n.velocity] for n in part.notes]}
     if isinstance(window, dict):
         # The pump's gain for a stretch of samples, as float64, so the page can compare its own sample by sample.
         start, frames = int(window.get('start', 0)), min(int(window.get('frames', 0)), 60 * effects.RATE)

@@ -292,6 +292,42 @@ def stem_levels(midi_path, kit_path, stems, min_duration=MIN_DURATION):
     return levels_from(by_track, stems)
 
 
+LAYER_DEFAULT = {'oct': 0, 'db': -6}
+LAYER_LIMITS = {'oct': (-1, 1), 'db': (-12, 0)}
+
+
+def clean_layer(value, name, known):
+    """A track's `layer` ({kit, oct, db}, SPEC v24) cleaned, or None. The page's `cleanLayer` is the same rule:
+    an unknown kit drops the layer; oct and db are whole numbers clamped to their range, anything that is not a
+    number takes the default; the vocal never has one and the drums have no octave."""
+    if name == 'vocals' or not isinstance(value, dict) or not isinstance(value.get('kit'), str) or value['kit'] not in known:
+        return None
+    out = {'kit': value['kit']}
+    for key, (low, high) in LAYER_LIMITS.items():
+        number = value.get(key)
+        if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
+            number = LAYER_DEFAULT[key]
+        out[key] = max(low, min(high, int(math.floor(number + 0.5))))     # rounds halves up, as Math.round
+    if name == 'drums':
+        out['oct'] = 0
+    return out
+
+
+def layer_notes(played, name, octave):
+    """The notes a track's layer plays: that track's notes as already shaped, moved by whole octaves (drums are
+    not moved). Notes that land outside 0–127 are left out. Returns (score, how many were left out)."""
+    notes, dropped = [], 0
+    for note in played.notes:
+        if track_of(note.route) != name:
+            continue
+        pitch = note.pitch if (note.is_drum or name == 'drums') else note.pitch + 12 * octave
+        if not 0 <= pitch <= 127:
+            dropped += 1
+            continue
+        notes.append(dataclasses.replace(note, pitch=pitch))
+    return dataclasses.replace(played, notes=tuple(notes)), dropped
+
+
 def plan_tracks(plan, known):
     """A plan, cleaned: (tracks, preset, pump). `known` is the kit names. Used by `rebuild` and `/api/shapecheck`."""
     if not known:
@@ -302,10 +338,13 @@ def plan_tracks(plan, known):
         if name in tracks and isinstance(choice, dict):
             tracks[name].update({k: v for k, v in choice.items()
                                  if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
-                                 or (name == 'vocals' and k == 'follow')})
+                                 or (name == 'vocals' and k == 'follow') or (name != 'vocals' and k == 'layer')})
     # A plan can come from a file someone edited or from an older studio: whatever in it does
     # not make sense falls back to the default instead of failing the whole export.
-    for choice in tracks.values():
+    for name, choice in tracks.items():
+        layer = clean_layer(choice.pop('layer', None), name, known)
+        if layer:
+            choice['layer'] = layer                      # kept whatever the mode; it only sounds on a swapped track
         if choice['mode'] not in ('orig', 'swap', 'mute'):
             choice['mode'] = 'swap'
         if choice['kit'] not in known:
@@ -377,6 +416,23 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
             by_track[name] = by_track.get(name, 0) + result.stereo_stem(route)
         rendered[kit_name] = by_track
         notes[kit_name] = {'rendered': result.rendered, 'truncated': result.truncated}
+    # A layer (SPEC v24): the track's own shaped notes, moved, played by a second kit; only these notes are rendered.
+    stacked = {}
+    for name in TRACKS:
+        layer = tracks[name].get('layer')
+        if not layer or name == 'vocals' or tracks[name]['mode'] != 'swap':
+            continue
+        if not any(track_of(note.route) == name for note in played.notes):
+            continue                                      # no transcription: nothing for either layer to play
+        part, dropped = layer_notes(played, name, layer['oct'])
+        say(0.55, f'{name} · 叠层 {layer["kit"]}')
+        audio, done, cut = None, 0, 0
+        if part.notes:
+            result = render(part, load_kit(Path(kits_dir) / layer['kit'] / 'kit.json', sample_rate=SAMPLE_RATE))
+            for route in result.stems:
+                audio = result.stereo_stem(route) if audio is None else audio + result.stereo_stem(route)
+            done, cut = result.rendered, result.truncated
+        stacked[name] = {'audio': audio, 'layer': layer, 'rendered': done, 'truncated': cut, 'dropped': dropped}
 
     layers, report = {}, []
     kept = [name for name in TRACKS if tracks[name]['mode'] == 'orig' and name != 'vocals' and name in stems]
@@ -396,12 +452,27 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
             audio, how = originals[name] * factors.get(name, spare), 'orig'
         elif choice['mode'] == 'swap' and name in rendered[choice['kit'] or preset]:
             audio, how = rendered[choice['kit'] or preset][name], choice['kit'] or preset
+        elif name in stacked and stacked[name]['audio'] is not None:
+            audio, how = None, choice['kit'] or preset          # only the layer sounds (the main kit has nothing for this track)
         else:
             audio, how = None, 'mute' if choice['mode'] == 'mute' else 'empty'
+        extra = stacked.get(name)
+        if extra and extra['audio'] is not None:
+            # Added before anything else this track goes through: the pump, tone / echo / room and the level are shared.
+            top = extra['audio'] * np.float32(10.0 ** (extra['layer']['db'] / 20.0))
+            if audio is None:
+                audio = top
+            else:
+                both = np.zeros((max(len(audio), len(top)), 2), dtype=np.float32)
+                both[:len(audio)] += audio
+                both[:len(top)] += top
+                audio = both
         report.append({'track': name, 'mode': choice['mode'], 'by': how, 'db': float(choice.get('db') or 0.0),
                        'sounding': audio is not None and sounding(name),
                        'emptyStem': how == 'orig' and name in level_notes['empty'],
                        **({'follow': choice['follow']} if name == 'vocals' else {}),
+                       **({'layer': extra['layer'], 'layerRendered': extra['rendered'], 'layerTruncated': extra['truncated'],
+                           'layerDropped': extra['dropped']} if extra else {}),
                        **{key: sound[key] for key in effects.DEFAULTS if sound[key]}})
         if audio is not None and sounding(name):
             if sound['tone'] or sound['echo'] or sound['room']:
