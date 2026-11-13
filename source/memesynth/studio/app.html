@@ -1,322 +1,15 @@
-<title>音色工作台</title>
+<title>XLR · 音色工作台</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2313161a'/%3E%3Cg fill='%23f0a830'%3E%3Crect x='12' y='26' width='7' height='12' rx='3'/%3E%3Crect x='24' y='16' width='7' height='32' rx='3'/%3E%3Crect x='36' y='22' width='7' height='20' rx='3'/%3E%3Crect x='48' y='29' width='7' height='6' rx='3'/%3E%3C/g%3E%3C/svg%3E">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
-<style>
-/* Layout: drop zone, then the transcription's own vital signs, then the listening bench.
-   Same panel language as the comparison page — these are one pair of tools. */
-:root {
-  --bg: #13161a; --panel: #1b1f25; --panel-lit: #232931; --edge: #2d343d;
-  --fg: #e8e6e1; --dim: #8b9099; --faint: #5c636d;
-  --signal: #f0a830; --signal-soft: rgba(240,168,48,.14);
-  --live: #5fd3a6; --warn: #e8705a;
-  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(0,0,0,.35);
-  color-scheme: dark;
-  --ui: "Archivo", system-ui, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
-}
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
-  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
-  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
-  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12); --live: #1f8a66; --warn: #b23c25;
-  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
-  color-scheme: light;
-} }
-:root[data-theme="light"] {
-  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
-  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
-  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12); --live: #1f8a66; --warn: #b23c25;
-  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
-  color-scheme: light;
-}
-* { box-sizing: border-box; }
-body {
-  background: var(--bg); color: var(--fg); font-family: var(--ui); line-height: 1.5;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 20px 0; max-width: 880px; margin-inline: auto;
-}
-h1 { font-size: 1.3rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
-.lede { color: var(--dim); font-size: .82rem; margin: 5px 0 0; }
-h2 { font-size: .72rem; font-weight: 600; margin: 0; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
-.card { background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; box-shadow: var(--shadow); }
-
-#drop {
-  margin-top: 16px; padding: 26px 18px; text-align: center; cursor: pointer;
-  border: 1.5px dashed var(--edge); border-radius: 10px; background: var(--panel);
-  transition: border-color .15s, background .15s;
-}
-#drop:hover, #drop.over { border-color: var(--signal); background: var(--signal-soft); }
-#drop strong { display: block; font-size: 1rem; }
-#drop span { display: block; color: var(--dim); font-size: .8rem; margin-top: 5px; }
-#drop.loaded { padding: 11px 14px; text-align: left; border-style: solid; }
-#drop.loaded strong { font-family: var(--mono); font-size: .85rem; }
-#file { display: none; }
-#steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; padding: 8px 0;
-  position: sticky; top: 0; z-index: 5; background: var(--bg); }
-.stepTab { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 9px; align-items: center; text-align: left;
-  padding: 9px 11px; background: var(--panel); border: 1px solid var(--edge); border-radius: 9px; color: var(--fg);
-  cursor: pointer; font: inherit; min-width: 0; }
-.stepTab .n { grid-row: 1 / 3; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center;
-  font-family: var(--mono); font-size: .74rem; background: var(--panel-lit); color: var(--dim); }
-.stepTab .l { font-size: .86rem; font-weight: 600; }
-.stepTab .s { font-size: .72rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stepTab:hover:not(:disabled) { background: var(--panel-lit); }
-.stepTab[aria-current="step"] { border-color: var(--signal); background: var(--signal-soft); }
-.stepTab[aria-current="step"] .n { background: var(--signal); color: #16181b; }
-.stepTab.done .n { background: rgba(95,211,166,.18); color: var(--live); }
-.stepTab:disabled { opacity: .5; cursor: not-allowed; }
-.stepTab:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-.step { margin-top: 8px; }
-.step > section:first-child, .step > #drop:first-child { margin-top: 0; }
-#stepNav { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
-#stepNav #nextStep { margin-left: auto; }
-#vitalsWrap { margin-top: 16px; }
-#vitalsWrap summary { cursor: pointer; font-size: .8rem; color: var(--dim); padding: 4px 0; }
-#vitalsWrap summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-#vitalsWrap section { margin-top: 8px; }
-@media (max-width: 560px) { #steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 640px) { #step2 .bank { grid-template-columns: 1fr 1fr; } }
-#libFilter { display: block; width: 100%; font: inherit; font-size: .84rem; padding: 9px 12px; color: var(--fg);
-  background: none; border: none; border-bottom: 1px solid var(--edge); border-radius: 10px 10px 0 0; }
-#libFilter:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
-#libFilter::placeholder { color: var(--faint); }
-.songs { display: grid; gap: 2px; max-height: 292px; overflow-y: auto; padding: 5px; }
-.song { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%;
-  text-align: left; padding: 7px 9px; background: none; border: 1px solid transparent; border-radius: 7px;
-  color: var(--fg); cursor: pointer; font: inherit; }
-.song:hover { background: var(--panel-lit); }
-.song:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; }
-.song[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); }
-.song .t { display: block; font-size: .87rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.song .by { display: block; color: var(--dim); font-size: .73rem; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.song .tag { white-space: nowrap; }
-.tag.plain { color: var(--faint); border: 1px solid var(--edge); font-weight: 500; }
-.songs .none { color: var(--faint); font-size: .8rem; padding: 10px; }
-@media (max-width: 520px) { .song { grid-template-columns: 1fr; gap: 4px; } }
-
-section { margin-top: 16px; }
-.head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-.note { color: var(--faint); font-size: .74rem; }
-
-/* --- vitals ---------------------------------------------------------------- */
-.scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: .8rem; min-width: 560px; }
-th, td { text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
-th { color: var(--dim); font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-th:first-child, td:first-child { text-align: left; }
-td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-td.name { font-family: var(--ui); max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
-tbody tr:last-child td { border-bottom: none; }
-.tag { font-family: var(--ui); font-size: .68rem; padding: 1px 6px; border-radius: 10px; font-weight: 600; }
-.tag.flat { background: rgba(232,112,90,.16); color: var(--warn); }
-.tag.narrow { background: var(--signal-soft); color: var(--signal); }
-.tag.ok { background: rgba(95,211,166,.14); color: var(--live); }
-.flags { display: grid; gap: 6px; margin-top: 10px; }
-.flag { font-size: .8rem; padding: 8px 11px; border-radius: 7px; border-left: 3px solid var(--warn); background: var(--panel-lit); }
-.flag.good { border-left-color: var(--live); }
-.flag b { font-family: var(--mono); font-weight: 500; }
-
-/* --- bench ----------------------------------------------------------------- */
-.transport { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
-#play { flex: none; width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--edge);
-  background: var(--panel-lit); color: var(--fg); cursor: pointer; display: grid; place-items: center; }
-#play:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
-#play:disabled { opacity: .4; cursor: not-allowed; }
-#play .glyph { display: block; width: 0; height: 0; }
-#play.paused .glyph { border-left: 12px solid currentColor; border-top: 8px solid transparent; border-bottom: 8px solid transparent; margin-left: 4px; }
-#play.playing .glyph { width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
-.meter { flex: 1 1 auto; min-width: 0; }
-.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.now { font-weight: 600; font-size: .92rem; }
-.now span { color: var(--signal); font-family: var(--mono); }
-.clock { font-family: var(--mono); font-size: .73rem; color: var(--faint); font-variant-numeric: tabular-nums; }
-.track { height: 5px; border-radius: 3px; background: var(--edge); margin-top: 8px; overflow: hidden; }
-.fill { height: 100%; width: 0; background: var(--signal); }
-@media (prefers-reduced-motion: no-preference) { .fill { transition: width .08s linear; } }
-#state { color: var(--dim); font-size: .78rem; font-family: var(--mono); margin-top: 6px; }
-#state.bad { color: var(--warn); }
-
-#timeline { position: relative; height: 46px; margin-top: 10px; border-radius: 7px; background: var(--panel-lit);
-  border: 1px solid var(--edge); cursor: crosshair; overflow: hidden; }
-#density { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#window { position: absolute; top: 0; bottom: 0; background: var(--signal-soft); border-left: 2px solid var(--signal); border-right: 2px solid var(--signal); pointer-events: none; }
-
-.bank { display: grid; gap: 6px; }
-.kit { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 11px; width: 100%;
-  text-align: left; cursor: pointer; background: var(--panel); color: var(--fg); font-family: var(--ui);
-  border: 1px solid var(--edge); border-left: 3px solid transparent; border-radius: 8px; padding: 9px 12px; font-size: .92rem; }
-.kit:hover:not(:disabled) { background: var(--panel-lit); }
-.kit:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-.kit[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); border-left-color: var(--signal); }
-.kit:disabled { opacity: .45; cursor: progress; }
-.num { font-family: var(--mono); font-size: .7rem; color: var(--faint); }
-.kit[aria-pressed="true"] .num { color: var(--signal); }
-.id { display: block; font-family: var(--mono); font-size: .82rem; font-weight: 500; }
-.desc { display: block; color: var(--dim); font-size: .76rem; }
-.kit[aria-pressed="true"] .desc { color: var(--fg); }
-.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--edge); }
-.kit[aria-pressed="true"] .lamp { background: var(--live); box-shadow: 0 0 7px var(--live); }
-
-.buses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.bus { cursor: pointer; background: var(--panel); color: var(--dim); border: 1px solid var(--edge);
-  border-radius: 8px; padding: 8px 5px; font-family: var(--ui); font-size: .84rem; font-weight: 500;
-  text-align: center; display: grid; gap: 2px; }
-.bus:hover:not(:disabled) { background: var(--panel-lit); }
-.bus:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-.bus[aria-pressed="true"] { background: var(--panel-lit); color: var(--fg); border-color: var(--faint); }
-.bus:disabled { opacity: .35; cursor: not-allowed; }
-.bus .n { font-family: var(--mono); font-size: .68rem; color: var(--faint); font-variant-numeric: tabular-nums; }
-
-.pad { padding: 13px 14px; display: grid; gap: 11px; }
-.field { display: grid; gap: 4px; }
-.field span { font-size: .72rem; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
-.field input { font-family: var(--mono); font-size: .82rem; padding: 8px 10px; border-radius: 7px;
-  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--fg); width: 100%; }
-.field input:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 5px; }
-.pick { display: flex; align-items: center; gap: 7px; font-size: .82rem; font-family: var(--mono);
-  padding: 6px 9px; border: 1px solid var(--edge); border-radius: 7px; background: var(--panel-lit); cursor: pointer; }
-.pick input { accent-color: var(--signal); }
-.check { display: flex; align-items: center; gap: 7px; font-size: .82rem; cursor: pointer; }
-.check input { accent-color: var(--signal); }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-button.primary, #revealBtn, #prevStep { font-family: var(--ui); font-size: .85rem; font-weight: 600; cursor: pointer;
-  padding: 8px 16px; border-radius: 7px; border: 1px solid var(--edge); background: var(--panel-lit); color: var(--fg); }
-button.primary { background: var(--signal); border-color: var(--signal); color: #16181b; }
-button.primary:disabled, #revealBtn:disabled, #prevStep:disabled { opacity: .45; cursor: not-allowed; }
-button.primary:hover:not(:disabled) { filter: brightness(1.08); }
-#revealBtn:hover:not(:disabled), #prevStep:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
-button.link { background: none; border: none; padding: 0; color: var(--signal); cursor: pointer;
-  font: inherit; text-decoration: underline; }
-.flag.done { border-left-color: var(--live); }
-.flag code { font-family: var(--mono); font-size: .74rem; word-break: break-all; }
-/* --- vocal ------------------------------------------------------------------ */
-#vocalDrop { padding: 13px 14px; cursor: pointer; border: 1.5px dashed var(--edge); }
-#vocalDrop:hover, #vocalDrop.over { border-color: var(--signal); background: var(--signal-soft); }
-#vocalDrop strong { display: block; font-size: .9rem; }
-#vocalDrop span { display: block; color: var(--dim); font-size: .78rem; margin-top: 3px; }
-#vocalDrop.loaded { border-style: solid; }
-#vocalDrop.loaded strong { font-family: var(--mono); font-size: .82rem; }
-#vocalFile { display: none; }
-.vgroup { margin-top: 10px; }
-.more { margin-top: 6px; }
-.more summary { cursor: pointer; font-size: .76rem; color: var(--dim); padding: 3px 0; }
-.more summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-.more .vbank { margin-top: 5px; }
-.vgroup h3 { font-size: .68rem; font-weight: 600; letter-spacing: .09em; color: var(--faint); margin: 0 0 5px; }
-.vbank { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px; }
-.vbank .kit { grid-template-columns: 1fr auto; padding: 7px 10px; }
-.vbank .id { font-family: var(--ui); font-weight: 600; }
-.vbank .desc { font-size: .72rem; }
-.kit.v-ready .lamp { background: var(--faint); }
-.kit.v-queued .lamp, .kit.v-running .lamp { background: var(--signal); }
-.kit.v-failed .lamp { background: var(--warn); }
-.kit.v-failed .desc { color: var(--warn); }
-@media (prefers-reduced-motion: no-preference) {
-  .kit.v-running .lamp { animation: pulse 1.1s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .3; } }
-}
-.vol { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: .82rem; }
-.vol input { flex: 1 1 auto; max-width: 260px; accent-color: var(--signal); }
-.vol output { font-family: var(--mono); font-size: .76rem; color: var(--dim); min-width: 48px; }
-.foot { color: var(--faint); font-size: .74rem; margin: 18px 0 24px; padding-top: 11px; border-top: 1px solid var(--edge); }
-.foot kbd { font-family: var(--mono); font-size: .71rem; background: var(--panel-lit); border: 1px solid var(--edge); border-radius: 4px; padding: 1px 5px; color: var(--dim); }
-@media (max-width: 460px) { .buses { grid-template-columns: repeat(2, 1fr); } .kit { gap: 8px; padding: 8px 10px; } }
-
-body { max-width: 1180px; padding-bottom: 96px; }
-#top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-#tasks { color: var(--dim); font-size: .78rem; }
-#app { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; margin-top: 14px; align-items: start; }
-#side { position: sticky; top: 12px; }
-#side .songs { max-height: calc(100vh - 330px); min-height: 160px; }
-#side #drop { margin-top: 10px; padding: 12px; }
-#side #drop strong { font-size: .84rem; }
-#side #drop span { font-size: .72rem; }
-#bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-#roll { display: inline-flex; align-items: center; gap: 5px; }
-#roll .ic { display: inline-flex; width: 15px; height: 15px; }
-#roll .ic svg { width: 100%; height: 100%; }
-#pumpBtn[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); }
-/* what the dice came up with: one line in the bar's own row (the deck's status line is two words wide) */
-#rollNote { flex: 1 0 100%; min-width: 0; font-size: .74rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#rollNote:empty { display: none; }
-#bar label { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: var(--dim); }
-select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--edge);
-  background: var(--panel-lit); color: var(--fg); }
-.plain { cursor: pointer; }
-.plain:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
-.plain:disabled { opacity: .45; cursor: not-allowed; }
-#tracks { display: grid; }
-.trk, .trkHead { display: grid; grid-template-columns: 62px 150px minmax(0, 1fr) 110px 30px; gap: 10px; align-items: center; padding: 9px 12px; }
-.trkHead { font-size: .68rem; letter-spacing: .09em; color: var(--faint); padding-bottom: 4px; }
-.trk { border-top: 1px solid var(--edge); }
-.trk .tn { font-weight: 600; font-size: .9rem; }
-.trk .tn small { display: block; font-weight: 400; font-size: .68rem; color: var(--faint); }
-.seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 7px; overflow: hidden; }
-.seg button { font: inherit; font-size: .78rem; padding: 5px 10px; background: none; border: none; color: var(--dim); cursor: pointer; }
-.seg button + button { border-left: 1px solid var(--edge); }
-.seg button[aria-pressed="true"] { background: var(--signal-soft); color: var(--signal); font-weight: 600; }
-.seg button:disabled { opacity: .35; cursor: not-allowed; }
-.seg button:focus-visible, .solo:focus-visible, .plain:focus-visible, select:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-.who { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .82rem; color: var(--dim); flex-wrap: wrap; }
-.who select, .who .plain { max-width: 100%; }
-.who .tag { white-space: nowrap; }
-.trk input[type=range] { width: 100%; accent-color: var(--signal); }
-.solo { font: inherit; font-size: .72rem; font-weight: 600; width: 28px; height: 26px; border-radius: 6px; border: 1px solid var(--edge);
-  background: none; color: var(--dim); cursor: pointer; }
-.solo[aria-pressed="true"] { background: var(--signal); border-color: var(--signal); color: #16181b; }
-#voicePanel, #exportPanel { margin-top: 14px; }
-#voiceTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-#voiceTags button { font: inherit; font-size: .74rem; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--edge);
-  background: none; color: var(--dim); cursor: pointer; }
-#voiceTags button[aria-pressed="true"] { background: var(--signal-soft); border-color: var(--signal); color: var(--signal); font-weight: 600; }
-#voiceTags button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-#deck { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--edge); z-index: 6; }
-#deckIn { max-width: 1180px; margin-inline: auto; display: grid; grid-template-columns: 46px 92px minmax(0, 1fr) auto auto; gap: 12px;
-  align-items: center; padding: 9px max(16px, env(safe-area-inset-left, 0px)); }
-#deck #play { width: 42px; height: 42px; }
-#deck #timeline { margin: 0; height: 72px; }               /* v16: the arrangement map, six lanes */
-#mapTip { position: fixed; z-index: 9; padding: 3px 8px; border-radius: 5px; background: var(--panel); border: 1px solid var(--edge);
-  color: var(--fg); font-size: .72rem; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .4); }
-#mapTip[hidden] { display: none; }
-#deck .clock { font-family: var(--mono); font-size: .74rem; color: var(--dim); }
-#deck #state { font-size: .7rem; color: var(--faint); }
-#state.bad { color: var(--warn); }
-@media (max-width: 760px) { #app { grid-template-columns: 1fr; } #side { position: static; }
-  .trk, .trkHead { grid-template-columns: 52px minmax(0, 1fr) 30px; } .trkHead span:nth-child(n+3) { display: none; }
-  .trk .who { grid-column: 1 / -1; } .trk input[type=range] { grid-column: 1 / 3; } #deckIn { grid-template-columns: 46px minmax(0, 1fr) auto; } #deck .meta { display: none; } }
-
-/* v7: the main page is one screen. The song list and the track table scroll inside their own
-   boxes if they must; whatever is opened on demand is a drawer over the right side. */
-@media (min-width: 761px) {
-  html { height: 100%; overflow: hidden; }
-  body { height: 100%; box-sizing: border-box; margin-block: 0; display: flex; flex-direction: column; overflow: hidden; padding-block: 12px 0; }
-  #top { flex: none; align-items: center; }
-  #app { flex: 1 1 auto; min-height: 0; margin-top: 10px; position: relative; align-items: stretch; }
-  #side { position: static; display: flex; flex-direction: column; min-height: 0; }
-  #side #library { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  #side #library .card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  #side .songs { flex: 1 1 auto; min-height: 0; max-height: none; }
-  #side #drop { flex: none; padding: 9px 12px; }
-  #main { min-height: 0; overflow-y: auto; padding-bottom: 8px; }
-  #deck { position: static; flex: none; margin-top: 8px; }
-  #deckIn { padding-inline: 0; }
-}
-.trk { padding-block: 7px; }
-.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 100%); z-index: 5; overflow-y: auto;
-  margin: 0; padding: 14px 16px; background: var(--bg); border: 1px solid var(--edge); border-radius: 10px;
-  box-shadow: -10px 0 28px rgba(0, 0, 0, .22); }
-.drawer[hidden] { display: none; }
-@media (max-width: 760px) { .drawer { position: static; width: auto; box-shadow: none; margin-top: 14px; } }
-</style>
 <link rel="stylesheet" href="theme.css">
 
 <div id="top">
-  <h1>音色工作台</h1>
-  <div style="display:flex;align-items:center;gap:10px"><span id="tasks"></span>
+  <div class="brand"><h1>XLR</h1><span>音色工作台</span></div>
+  <div class="songHead"><strong id="songTitle"></strong><span id="songFacts"></span></div>
+  <div class="topTools"><span id="tasks"></span>
     <button type="button" class="plain" id="openHelp">说明</button>
     <button type="button" class="plain" id="openExport" disabled>导出</button></div>
 </div>
@@ -326,31 +19,35 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
     <section id="library" hidden style="margin-top:0">
       <div class="head"><h2>曲库</h2><span class="note" id="libNote"></span></div>
       <div class="card">
-        <input type="search" id="libFilter" placeholder="筛选：歌名、艺人、专辑" aria-label="筛选曲库" spellcheck="false" autocomplete="off">
+        <input type="search" id="libFilter" placeholder="筛选歌名 / 艺人 / 专辑" aria-label="筛选曲库" spellcheck="false" autocomplete="off">
         <div class="songs" id="songs" role="group" aria-label="曲库里的歌"></div>
       </div>
     </section>
-    <div id="drop" tabindex="0" role="button" aria-label="选择或拖入 MIDI 文件">
-      <strong id="dropTitle">把 merged.mid 拖到这里</strong>
-      <span id="dropHint">也可以点一下选文件 · 文件不会离开你的电脑</span>
+    <div id="drop" tabindex="0" role="button" aria-label="选择或拖入 MIDI 文件" title="merged.mid：XLD 转谱合并后的文件；只在本机处理">
+      <strong id="dropTitle">拖入 MIDI</strong>
+      <span id="dropHint">或点这里选文件</span>
     </div>
     <input type="file" id="file" accept=".mid,.midi,audio/midi">
   </aside>
 
   <main id="main" hidden>
     <div id="bar">
-      <div id="presets" role="group" aria-label="整套预设"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="plain" id="openVitals">转谱情况 <span id="vitalsSum"></span></button>
-        <button type="button" class="plain" id="savePlan">存为方案</button>
-        <select id="planList" aria-label="套用方案"><option value="">套用方案…</option></select>
-        <button type="button" class="plain dice" id="roll" title="随手配一整份：预设、每条轨谁来演、音色、八度、力度、效果（D）"><span class="ic"></span>掷骰子</button>
-        <button type="button" class="plain" id="back" disabled title="回到掷之前的那一份（Z）">上一份</button>
-        <button type="button" class="plain" id="pumpBtn" aria-pressed="false">抽吸</button>
-        <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
-        <button type="button" class="plain" id="cmpSave" hidden title="现在这份方案，分别配上这两套预设，各存一份">存成两个方案</button>
-        <span id="rollNote"></span>
+      <div id="presets" role="group" aria-label="预设"></div>
+      <div class="tools">
+        <span class="grp">
+          <button type="button" class="plain dice" id="roll" title="随手配一份方案：预设、每条轨原声或换、音色、八度、力度、长短、疏密、声音、抽吸（D）"><span class="ic"></span>掷骰子</button>
+          <button type="button" class="plain" id="back" disabled title="回到掷骰子之前的方案（Z）">上一份</button>
+          <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
+          <button type="button" class="plain" id="cmpSave" hidden title="现在的方案配上 A、B 两套预设，各存一份">存两份</button>
+        </span>
+        <span class="grp"><button type="button" class="plain" id="pumpBtn" aria-pressed="false">抽吸</button></span>
+        <span class="grp">
+          <button type="button" class="plain" id="savePlan">存方案</button>
+          <select id="planList" aria-label="套用方案"><option value="">套用方案</option></select>
+        </span>
+        <span class="grp end"><button type="button" class="plain" id="openVitals">转谱情况<span id="vitalsSum"></span></button></span>
       </div>
+      <span id="rollNote"></span>
     </div>
     <div class="card">
       <div class="trkHead"><span></span><span></span><span>轨道</span><span>谁来演</span><span>用什么</span><span>音量</span><span></span><span></span><span>这 12 秒</span></div>
@@ -362,7 +59,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
 
   </main>
     <section id="voicePanel" class="drawer" hidden>
-      <div class="head"><h2>人声由谁来唱</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <div class="head"><h2>声音</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <div id="vocalDrop" class="card" tabindex="0" role="button" aria-label="选择或拖入人声分轨">
         <strong id="vocalTitle">把同一首歌的 vocals.wav 拖到这里</strong>
         <span id="vocalHint">XLD 分离出的人声分轨，和 merged.mid 同一个起点 · 只在本机处理</span>
@@ -372,14 +69,14 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
       <div id="voiceBank"></div>
     </section>
     <section id="exportPanel" class="drawer" hidden>
-      <div class="head"><h2>导出这份重构</h2><button type="button" class="link closeDrawer">关闭</button></div>
-      <p class="note" style="margin:0 0 8px">整首歌 · 48 kHz 立体声 24 bit · 用真正的 memesynth 渲染</p>
+      <div class="head"><h2>导出</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="note" style="margin:0 0 8px">整首 · 48 kHz 立体声 24 bit · 走 memesynth，和「听整首」同一条路</p>
       <div class="card pad">
         <label class="field"><span>输出目录</span><input type="text" id="outDir" spellcheck="false"></label>
-        <label class="check"><input type="checkbox" id="stems"> 同时写出每条出声的轨</label>
+        <label class="check"><input type="checkbox" id="stems"> 另存每条发声的轨</label>
         <div class="row">
           <button type="button" id="exportBtn" class="primary">导出</button>
-          <button type="button" id="revealBtn">打开输出目录</button>
+          <button type="button" id="revealBtn">打开目录</button>
           <span id="exportState" class="note"></span>
         </div>
         <div class="track"><div class="fill" id="exportFill"></div></div>
@@ -387,7 +84,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
       </div>
     </section>
     <section id="vitalsPanel" class="drawer" hidden>
-      <div class="head"><h2>这首转谱的情况</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <div class="head"><h2>转谱情况</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <p class="note" id="vitalsNote" style="margin:0 0 8px"></p>
         <div class="card scroll"><table>
           <thead><tr><th>轨道</th><th>音符</th><th>力度范围</th><th>档位</th><th>动态</th><th>时长中位</th><th>&lt;20ms</th></tr></thead>
@@ -396,25 +93,44 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
         <div class="flags" id="flags"></div>
           </section>
     <section id="fullPanel" class="drawer" hidden>
-      <div class="head"><h2>听整首重构</h2><button type="button" class="link closeDrawer">关闭</button></div>
-      <p class="note" style="margin:0 0 10px">把现在这份方案整首渲染出来听，和导出是同一条路，听到的就是会导出的。下面 12 秒的循环是随手试的，这里是从头到尾。</p>
+      <div class="head"><h2>听整首</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <p class="note" style="margin:0 0 12px">把现在的方案整首渲染出来听，和导出同一条路：这里听到的就是会导出的</p>
       <div class="row">
         <button type="button" id="fullBtn" class="primary">渲染整首</button>
         <span id="fullState" class="note"></span>
       </div>
-      <div class="track" style="margin-top:10px"><div class="fill" id="fullFill"></div></div>
+      <div class="track" style="margin-top:8px"><div class="fill" id="fullFill"></div></div>
       <audio id="fullAudio" controls preload="metadata" style="width:100%;margin-top:12px" hidden></audio>
       <div id="fullLog" class="flags"></div>
     </section>
-    <section id="helpPanel" class="drawer" hidden>
+    <section id="helpPanel" class="drawer help" hidden>
       <div class="head"><h2>说明</h2><button type="button" class="link closeDrawer">关闭</button></div>
-      <p class="lede" style="margin:0 0 10px">把一首分好轨、转好谱的歌一条轨一条轨地重新演一遍：每条轨留原声、换一个来演，或者不出声。</p>
-    <p class="foot" style="margin:0;border-top:none;padding-top:0">
-      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。<kbd>D</kbd>（或「掷骰子」）随手配一整份方案：换一套预设、每条轨随机留原声或换、换音色、移八度、加效果，静音的轨和人声的声音不动；<kbd>Z</kbd>（或「上一份」）退回掷之前那一份，最多退 20 步。「调」里的长短、前后、松紧、疏密改的是换了音色那条轨的音符（音长、整体早晚、人味的小误差、去掉最轻的音）；「抽吸」让每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来。
-      底下的长条是整首歌的编曲地图：从上到下六条是鼓、贝斯、吉他、钢琴、其他、人声，越亮那一小段这件乐器响得越满，色块越高音越高（每条按自己的音域算），鼓分底鼓、军鼓、其余三行，人声没有转谱时画的是原唱的响度；鼠标停在上面看那一刻谁在响，点一下把 12 秒的窗口挪过去。
-      试听在浏览器里算，导出走真正的 memesynth。留原声的轨会对齐到「预设来演这条轨」的音量，所以只留一条轨不会打乱整体平衡。
-      人声转换在后台整首跑，一次一个（保留和声：合成声音约九分钟一个，RVC 一分多钟），转过的会记住。
-    </p>
+      <p class="lede">把一首分好轨、转好谱的歌一条轨一条轨重新演一遍。</p>
+      <h3>听</h3>
+      <p>循环播放 12 秒：地图上框住的那一段。点地图把它挪过去；鼠标停在地图上，看那一刻谁在响。</p>
+      <p>地图从上到下是鼓、贝斯、吉他、钢琴、其他、人声。越亮响得越满，越高音越高（每条按自己的音域）；鼓分底鼓、军鼓、其余三行；人声没有转谱时画原声的响度。</p>
+      <p>「原曲 / 重构」在原来的歌和你的重构之间切（要从曲库打开的歌）。「听整首」把整首渲染出来，和导出同一条路。</p>
+      <h3>换</h3>
+      <p>每条轨三选一：原声（分离出的分轨）、换（音色演转谱出来的音符）、静音（左边的灯）。</p>
+      <p>预设给整首配一套音色；一条轨在「用什么」里可以另选音色。人声在「声音」里选谁来唱（点人声的「换」或它的声音按钮）；第一次要整首转换（合成声音约九分钟，RVC 一分多钟），转过的会记住。</p>
+      <p>留原声的轨对齐到预设演这条轨的音量，混着听不失衡。</p>
+      <h3>调</h3>
+      <p>每条轨右边的「调」：八度、力度、长短、前后、松紧、疏密改音符，只对「换」的轨有效；明暗、回声、混响改声音。人声的声音默认跟随预设。</p>
+      <p>「S」只听这一条；音量条是这条轨的大小。「抽吸」让每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来，转谱里没有底鼓时用不了。</p>
+      <h3>存</h3>
+      <p>曲库里的歌自动记住方案，下次打开还是这样。「存方案」起名存下，「套用方案」用到别的歌上。</p>
+      <p>「掷骰子」随手配一份方案（静音的轨、人声的声音、音量不动），「上一份」退回，最多 20 步。A / B 出现时，「存两份」把现在的方案配上两套预设各存一份。</p>
+      <p>「导出」写出整首 48 kHz 24 bit，可以另存每条轨。</p>
+      <h3>快捷键</h3>
+      <dl class="keys">
+        <dt><kbd>空格</kbd></dt><dd>播放 / 暂停</dd>
+        <dt><kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd></dt><dd>直接选这十套预设：<span id="keyKits"></span></dd>
+        <dt><kbd>`</kbd></dt><dd>在 A / B 两套预设之间切</dd>
+        <dt><kbd>A</kbd></dt><dd>原曲 / 重构</dd>
+        <dt><kbd>D</kbd></dt><dd>掷骰子</dd>
+        <dt><kbd>Z</kbd></dt><dd>上一份</dd>
+        <dt><kbd>Esc</kbd></dt><dd>关掉面板和抽屉</dd>
+      </dl>
     </section>
 </div>
 
@@ -422,10 +138,11 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
 <div id="mapTip" hidden></div>
 <div id="deck"><div id="deckIn">
   <button id="play" class="paused" disabled aria-label="播放"><span class="glyph"></span></button>
-  <div class="meta"><div class="clock" id="clock">0.0 / 12.0s</div><div id="state">等文件</div></div>
+  <div class="meta"><div class="clock" id="clock">0.0 / 12.0s</div></div>
   <div id="timeline"><canvas id="density"></canvas><div id="window"></div></div>
   <span class="seg" id="ab" role="group" aria-label="对照"><button type="button" data-ab="orig" aria-pressed="false">原曲</button><button type="button" data-ab="recon" aria-pressed="true">重构</button></span>
   <button type="button" class="plain" id="openFull" disabled>听整首</button>
+  <div id="state">等一首歌</div>
 </div></div>
 
 <script src="engine.js"></script>
@@ -499,7 +216,7 @@ function decodeWav(buffer) {
     if (id === 'data') { data = at + 8; length = size; break; }
     at += 8 + size + (size % 2);
   }
-  if (data === null || (bits !== 16 && bits !== 24)) throw new Error('素材只支持 16 / 24 位 WAV');
+  if (data === null || (bits !== 16 && bits !== 24)) throw new Error('音色素材不是 16 / 24 位 WAV，重建这套音色再试');
   const stride = (bits / 8) * channels;
   const count = Math.floor(length / stride);
   const out = new Float32Array(count);
@@ -527,7 +244,7 @@ function decodeExcerpt(buffer) {
     if (id === 'data') { data = at + 8; length = Math.min(size, view.byteLength - data); break; }
     at += 8 + size + (size % 2);
   }
-  if (data === null) throw new Error('分轨片段读不了');
+  if (data === null) throw new Error('分轨片段读不了，重新打开这首歌再试');
   const bytes = bits / 8, count = Math.floor(length / (bytes * channels));
   const read = bits === 32 ? at => view.getFloat32(at, true) : at => view.getInt16(at, true) / 32768;
   const left = new Float32Array(count), right = new Float32Array(count);
@@ -675,7 +392,8 @@ async function loadIndex() {
   kitsIndex = await (await fetch('kits.json')).json();
   preset = Object.keys(kitsIndex)[0];
   buildPresets();
-  if (!score) setState(`${Object.keys(kitsIndex).length} 套音色 · 等文件`);
+  el('keyKits').textContent = Object.keys(kitsIndex).slice(0, 10).join('、');   // the keys follow kits.json, not the rows on screen
+  if (!score) setState(`载入 ${Object.keys(kitsIndex).length} 套预设 · 等一首歌`);
 }
 
 /* A kit's samples are fetched the first time something plays it, and kept. Thirty kits are a
@@ -688,7 +406,7 @@ function ensureKit(name) {
       const kit = kitsIndex[name], samples = {}, voices = {};
       await Promise.all(Object.entries(kit.samples).map(async ([id, entry]) => {
         const response = await fetch(entry.file);
-        if (!response.ok) throw new Error(`音色 ${name} 的素材 ${id} 取不到`);
+        if (!response.ok) throw new Error(`取不到音色 ${name} 的素材 ${id}，重建这套音色再试`);
         samples[id] = decodeWav(await response.arrayBuffer());
       }));
       for (const [route, voice] of Object.entries(kit.voices)) {
@@ -823,11 +541,14 @@ function takeFile(file, done) {
       if (!score.notes.length) throw new Error('这个文件里没有音符');
       el('drop').classList.add('loaded');
       el('dropTitle').textContent = midiName;
-      el('dropHint').textContent = `${score.notes.length} 个音符 · ${score.duration.toFixed(0)} 秒 · 点这里换文件`;
+      el('dropHint').textContent = '点这里换文件';
+      el('songTitle').textContent = song ? song.title : midiName.replace(/\.midi?$/i, '');
+      el('songFacts').textContent = `${score.notes.length} 个音符 · ${Math.floor(score.duration / 60)}:${String(Math.floor(score.duration % 60)).padStart(2, '0')}`;
       showVitals(midi);
       flagsByTrack = trackFlags(midi);
       const flags = el('flags').children.length;
-      el('vitalsSum').textContent = flags ? `· ${flags} 条提示` : '';
+      el('vitalsSum').textContent = flags ? String(flags) : '';
+      el('openVitals').title = flags ? `转谱有 ${flags} 条提示` : '';
       el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false;
       forgetFull();
       windowStart = bestWindow();
@@ -837,8 +558,8 @@ function takeFile(file, done) {
       paintTracks();
       renderWindow();
     } catch (error) {
-      setState('读不了这个文件：' + error.message, true);
-      el('dropHint').textContent = '读不了这个文件：' + error.message;
+      setState(`读不了这个文件（${error.message}），换一个 merged.mid 再试`, true);
+      el('dropHint').textContent = `读不了这个文件（${error.message}）`;
     }
     if (done) done();
   };
@@ -897,23 +618,23 @@ function showVitals(midi) {
   const total = rows.reduce((sum, r) => sum + r.count, 0);
   if (flatRows.length) {
     flags.push(`<div class="flag"><b>${flatNotes}</b> 个音符（${(100 * flatNotes / total).toFixed(0)}%）在没有动态的轨上：`
-      + `<b>${flatRows.map(r => r.name).join('、')}</b>。换完音色这些声部会是平的 —— 这是 L1 没做力度的痕迹。</div>`);
+      + `<b>${flatRows.map(r => r.name).join('、')}</b>；换了以后这些声部会是平的（转谱没给力度）</div>`);
   } else {
-    flags.push('<div class="flag good">每条轨都有真实力度，没有恒定 velocity 的轨。</div>');
+    flags.push('<div class="flag good">每条轨都有真实力度，没有力度不变的轨</div>');
   }
   const narrow = rows.filter(r => r.distinct > 4 && r.spread < 6);
   if (narrow.length) {
     flags.push(`<div class="flag">这些轨有力度但幅度很窄，听上去接近平的：`
       + narrow.map(r => `<b>${r.name}</b>（${r.spread.toFixed(1)} dB）`).join('、')
-      + `。模型给了力度，只是挤在一个很小的区间里。</div>`);
+      + `；模型给了力度，只是挤在很小的区间里</div>`);
   }
   for (const [reason, count] of Object.entries(score.dropped)) {
-    flags.push(`<div class="flag">丢弃 <b>${count}</b> 个音符：${reason}。</div>`);
+    flags.push(`<div class="flag">丢弃 <b>${count}</b> 个音符：${reason}</div>`);
   }
   for (const text of score.warnings) flags.push(`<div class="flag">${text}</div>`);
   const shortTotal = rows.reduce((sum, r) => sum + r.short, 0);
   if (shortTotal > total * 0.02) {
-    flags.push(`<div class="flag">全曲 <b>${shortTotal}</b> 个音符短于 20 毫秒，渲染时会被丢掉。多半是转谱噪声。</div>`);
+    flags.push(`<div class="flag">全曲 <b>${shortTotal}</b> 个音符短于 20 毫秒，渲染时会被丢掉（多半是转谱噪声）</div>`);
   }
   el('flags').innerHTML = flags.join('');
 }
@@ -1082,7 +803,7 @@ el('timeline').addEventListener('mousemove', event => {
   const c = Math.min(arrangement.columns - 1, Math.max(0, Math.floor(x / box.width * arrangement.columns)));
   const at = (x / box.width) * arrangement.length, tip = el('mapTip');
   const names = soundingAt(c).map(id => TRACKS.find(t => t.id === id).zh);
-  tip.textContent = `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, '0')} · ${names.length ? names.join(' ') : '没人'}`;
+  tip.textContent = `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, '0')} · ${names.length ? names.join(' ') : '无人'}`;
   tip.hidden = false;
   const width = tip.offsetWidth;
   tip.style.left = Math.max(4, Math.min(window.innerWidth - width - 4, event.clientX - width / 2)) + 'px';
@@ -1121,7 +842,7 @@ function buildTracks() {
       + '<span class="who"></span>'
       + `<input type="range" class="db" min="-18" max="6" step="1" value="0" aria-label="${track.zh}音量">`
       + `<button type="button" class="solo" aria-pressed="false" aria-label="只听${track.zh}">S</button>`
-      + `<button type="button" class="fx" aria-pressed="false" aria-label="${track.zh}的八度、力度和效果">${icon('sliders')}</button>`
+      + `<button type="button" class="fx" aria-pressed="false" aria-label="${track.zh} · 调">${icon('sliders')}</button>`
       + '<span class="steps" aria-hidden="true"></span>';
     row.querySelector('.led').addEventListener('click', () => toggleMute(track.id));
     for (const button of row.querySelectorAll('.seg button')) {
@@ -1179,7 +900,7 @@ function paintPump() {
     + `<small>${high}</small><output>${pump[key]}</output></label>`;
   pop.style.setProperty('--tc', 'var(--signal)');
   pop.innerHTML = '<b>抽吸 · 跟着底鼓</b>'
-    + '<p class="fxNote">每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来；鼓和人声不动。恢复是毫秒。</p>'
+    + '<p class="fxNote">每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来；鼓和人声不动；恢复的单位是毫秒</p>'
     + row('depth', '深度', '无', '深', 5) + row('release', '恢复', '快', '慢', 10)
     + '<button type="button" class="plain" id="fxReset">复位</button>';
   for (const input of pop.querySelectorAll('input[type=range]')) {
@@ -1198,7 +919,7 @@ function paintPumpButton() {
   button.disabled = !kicks;
   button.setAttribute('aria-pressed', String(kicks && pump.depth > 0));
   button.title = !kicks ? '这首的转谱里没有底鼓，抽吸没有东西可跟'
-    : pump.depth ? `抽吸：深度 ${pump.depth}，恢复 ${pump.release} ms` : '跟着底鼓，把贝斯、吉他、钢琴、其他一下一下压下去再放回来';
+    : pump.depth ? `抽吸 · 深度 ${pump.depth}，恢复 ${pump.release} ms` : '跟着底鼓，把贝斯、吉他、钢琴、其他一下一下压下去再放回来';
 }
 el('pumpBtn').addEventListener('click', event => openFx('pump', event.currentTarget));
 /* The panel's contents for `fxTrack`; painted again when the vocal starts or stops following, or the preset changes under it. */
@@ -1212,7 +933,7 @@ function paintFx() {
     + `<input type="range" data-key="${key}" min="${FX_LIMITS[key][0]}" max="${FX_LIMITS[key][1]}" step="${step}" value="${shown[key]}"${off ? ' disabled' : ''}>`
     + `<small>${high}</small><output>${shown[key]}</output></label>`;
   pop.style.setProperty('--tc', `var(--t-${id})`);
-  pop.innerHTML = `<b>${track.zh} · 调整</b>`
+  pop.innerHTML = `<b>${track.zh} · 调</b>`
     + (id === 'vocals' ? `<label class="fxFollow"><input type="checkbox" id="fxFollow"${following ? ' checked' : ''}>`
       + `<span>跟随预设</span><small>${following ? '明暗、回声、混响用 ' + preset + ' 的' : '用自己的'}</small></label>` : '')
     + '<h4 class="fxHead">音符</h4>'
@@ -1222,7 +943,7 @@ function paintFx() {
     + row('late', '前后', '赶', '拖', 5, !played)
     + row('loose', '松紧', '准', '松', 10, !played)
     + row('thin', '疏密', '满', '疏', 10, !played)
-    + (played ? '' : '<p class="fxNote">这几样改的是音符，只对换了音色的轨有效。</p>')
+    + (played ? '' : '<p class="fxNote">这几样改音符，只对「换」的轨有效</p>')
     + '<h4 class="fxHead">声音</h4>'
     + row('tone', '明暗', '暗', '薄', 5, following && 'held')
     + row('echo', '回声', '无', '多', 5, following && 'held')
@@ -1282,14 +1003,14 @@ function paintTracks() {
   for (const track of TRACKS) {
     const row = el('tracks').querySelector(`[data-track="${track.id}"]`), c = cast[track.id];
     const routes = routesOf(track.id), isVocal = track.id === 'vocals';
-    row.querySelector('small').textContent = routes.length ? `转谱 ${routes.length} 路` : '没有转谱';
+    row.querySelector('small').textContent = routes.length ? `转谱 ${routes.length} 路` : '无转谱';
     const can = {
       orig: isVocal ? !!vocal : hasStem(track.id),
       swap: isVocal ? (!!vocal || routes.length > 0) : routes.length > 0,
       mute: true,
     };
     const why = {
-      orig: isVocal ? '先载入这首歌的人声分轨' : (song ? '这首没有这条分轨' : '从曲库打开的歌才有分出来的原声'),
+      orig: isVocal ? '先载入这首歌的人声分轨' : (song ? '这首没有这条分轨' : '从曲库打开的歌才有原声'),
       swap: isVocal ? '先载入人声分轨' : '这条轨没有转谱，换不了',
     };
     for (const button of row.querySelectorAll('.seg button')) {
@@ -1301,20 +1022,20 @@ function paintTracks() {
     const who = row.querySelector('.who');
     who.innerHTML = '';
     const text = words => { const span = document.createElement('span'); span.textContent = words; who.appendChild(span); };
-    if (c.mode === 'mute') text('这条轨不出声');
-    else if (c.mode === 'orig') text(isVocal ? '分离出来的原唱' : '分出来的原声');
+    if (c.mode === 'mute') text('静音');
+    else if (c.mode === 'orig') text('原声分轨');
     else if (isVocal && vocal && c.voice !== '@kit') {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'plain';
       const state = (vocal.voices[c.voice] || {}).state;
-      button.textContent = !c.voice ? '选一个声音'
+      button.textContent = !c.voice ? '选声音'
         : voiceName(c.voice) + (state === 'ready' ? '' : state === 'running' || state === 'queued' ? ' · 转换中'
-          : state === 'failed' ? ' · 转换失败' : !voiceList.some(v => v.id === c.voice) ? ' · 这个声音不在了' : ' · 还没转');
+          : state === 'failed' ? ' · 转换失败' : !voiceList.some(v => v.id === c.voice) ? ' · 已不在' : ' · 未转换');
       button.addEventListener('click', () => openDrawer('voicePanel'));
       who.appendChild(button);
     } else {
       const select = document.createElement('select');
-      select.setAttribute('aria-label', track.zh + '用哪套音色');
+      select.setAttribute('aria-label', track.zh + '用哪个音色');
       select.innerHTML = `<option value="">跟随预设 · ${preset}</option>` + names.map(name => `<option value="${name}">${name}</option>`).join('');
       select.value = c.kit || '';
       select.addEventListener('change', () => { c.kit = select.value || null; paintTracks(); renderWindow(); queueSave(); });
@@ -1329,20 +1050,20 @@ function paintTracks() {
       const empty = (levelNotes.empty || []).includes(track.id), capped = (levelNotes.capped || []).includes(track.id);
       if (empty || capped) {
         const tag = document.createElement('span');
-        tag.className = 'tag flat'; tag.textContent = empty ? '这条分轨是空的' : '这条分轨几乎没声音';
-        tag.title = '分出来的这条轨里基本没有东西，转谱却在这条轨上有音符（多半是误判）。留原声听到的只会是别的乐器漏进来的声音';
+        tag.className = 'tag flat'; tag.textContent = empty ? '空分轨' : '几乎无声';
+        tag.title = '原声分轨里基本没有东西，转谱却在这条轨上有音符（多半是误判）；留原声只会听到别的乐器漏进来的声音';
         who.appendChild(tag);
       }
     }
     if (c.mode === 'swap' && (flagsByTrack[track.id] || who.querySelector('select'))) {
       const tag = document.createElement('span'), count = flagsByTrack[track.id] || 0;
       tag.className = 'tag narrow' + (count ? '' : ' ghost'); tag.textContent = `提示 ${count}`;
-      tag.title = count ? `转谱有 ${count} 条提示：这条轨的力度是平的或很窄，换完音色会显得死板。详情在「转谱情况」里` : '';
+      tag.title = count ? `转谱有 ${count} 条提示：这条轨的力度是平的或很窄，换了会显得死板；详情在「转谱情况」` : '';
       who.appendChild(tag);
     }
     const led = row.querySelector('.led');
     led.setAttribute('aria-pressed', String(c.mode !== 'mute'));
-    led.title = c.mode === 'mute' ? '这条轨现在不出声，点一下让它回来' : '点一下让这条轨不出声';
+    led.title = c.mode === 'mute' ? '已静音 · 点一下取消静音' : '点一下静音';
     row.dataset.muted = String(c.mode === 'mute');
     const slider = row.querySelector('.db');
     slider.value = c.db; slider.title = (c.db > 0 ? '+' : '') + c.db + ' dB';
@@ -1357,7 +1078,7 @@ function paintTracks() {
       e.tone && `明暗 ${e.tone > 0 ? '+' : ''}${e.tone}`, e.echo && `回声 ${e.echo}`, e.room && `混响 ${e.room}`].filter(Boolean).join('，');
     fx.setAttribute('aria-pressed', String(fxActive(e)));
     fx.title = following ? following + (changed ? '：' + changed : '')
-      : fxActive(e) ? '这条轨调过：' + changed : '八度、力度、长短、前后、松紧、疏密、明暗、回声、混响';
+      : fxActive(e) ? '调过 · ' + changed : '八度、力度、长短、前后、松紧、疏密、明暗、回声、混响';
   }
   paintPresets();
   paintCompare();
@@ -1443,7 +1164,7 @@ const ICONS = {
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
   die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
 };
-const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
+const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" '
   + `stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.note}</svg>`;
 
 function buildPresets() {
@@ -1533,7 +1254,7 @@ function paintCompare() {
     const button = document.createElement('button');
     button.type = 'button'; button.textContent = 'AB'[index] + ' · ' + name;
     button.setAttribute('aria-pressed', String(name === preset));
-    button.title = '在这两套之间来回切（` 键）';
+    button.title = '在这两套预设之间切（`）';
     button.addEventListener('click', () => selectPreset(name));
     el('cmp').appendChild(button);
   });
@@ -1545,7 +1266,7 @@ el('cmpSave').addEventListener('click', async () => {
       await api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'},
                               body: JSON.stringify({name: `${title} · ${name}`, plan: Object.assign(currentPlan(), {preset: name})})});
     }
-    setState(`存成了两个方案：「${title} · ${pair[0]}」和「${title} · ${pair[1]}」`);
+    setState(`存了两份方案 · 「${title} · ${pair[0]}」「${title} · ${pair[1]}」`);
     loadPlans();
   } catch (error) { setState(error.message, true); }
 });
@@ -1571,7 +1292,7 @@ async function renderWindow() {
   } catch (error) {
     layers = [];
     el('play').disabled = true;
-    setState('这一段渲染不出来：' + (error && error.message ? error.message : error), true);
+    setState(`这一段没渲染出来（${error && error.message ? error.message : error}），挪一下窗口或换个预设再试`, true);
   }
 }
 async function renderWindowNow() {
@@ -1579,7 +1300,7 @@ async function renderWindowNow() {
   const ticket = ++renderTicket, frames = Math.round(SPAN * RATE);
   const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap').map(t => kitOf(t.id)))];
   if (playing.some(name => !kitAudio[name])) {
-    setState(`载入音色 ${playing.filter(name => !kitAudio[name]).join('、')}…`);
+    setState(`载入音色 · ${playing.filter(name => !kitAudio[name]).join('、')}`);
     await Promise.all(playing.map(ensureKit));
     if (ticket !== renderTicket) return;
   }
@@ -1614,7 +1335,7 @@ async function renderWindowNow() {
     try {
       let now = levelsNow();
       if (!now) {                                                // a song never measured: this once, wait
-        setState('量原声的音量（每首歌量一次，几秒）…');
+        setState('量原声音量 · 每首一次，几秒');
         await measureLevels(song.key, preset);
         if (ticket !== renderTicket) return;
         now = levelsNow();
@@ -1656,7 +1377,7 @@ async function renderWindowNow() {
   }
   el('play').disabled = !layers.length;
   const note = noteAfterRender; noteAfterRender = '';        // what a roll came up with outlasts the render it caused
-  const said = layers.length ? note || `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨';
+  const said = layers.length ? note || `渲染好了 · ${ab === 'orig' ? '原曲' : '重构'} ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '渲染好了 · 全部静音';
   levelProvisional = provisional ? {key: levelKey(song.key, preset), ticket, note: said, measuredAs: provisional} : null;
   setState(provisional ? said + ' · 原声音量校准中' : said);
   if (running) startPlayback(positionInLoop());
@@ -1724,7 +1445,7 @@ function needRoom() {
   if (roomBuffer || roomLoading || !ctx) return;
   roomLoading = fetch('/reverb.wav').then(response => response.arrayBuffer()).then(bytes => ctx.decodeAudioData(bytes))
     .then(buffer => { roomBuffer = buffer; if (running) startPlayback(positionInLoop()); })
-    .catch(() => { roomLoading = null; setState('混响用的房间取不到，先不加混响', true); });
+    .catch(() => { roomLoading = null; setState('混响的房间没取到，先不加混响；刷新页面再试', true); });
 }
 
 function positionInLoop() {
@@ -1832,7 +1553,7 @@ async function loadVoices() {
 }
 
 function takeVocal(file) {
-  adoptVocal(file.name, '上传并整理中：第一次要分出主唱与和声，约 1 分钟',
+  adoptVocal(file.name, '上传整理中 · 第一次要分出主唱与和声，约 1 分钟',
     api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file}));
 }
 
@@ -1966,8 +1687,8 @@ function paintVoices() {
     const base = id === '@kit' ? '用音色把转谱出来的旋律弹出来' : (voiceList.find(v => v.id === id) || {}).desc || '';
     desc.textContent = state.state === 'running' ? `${state.message || '转换中'} · ${state.elapsed || 0} 秒`
       : state.state === 'queued' ? '排队中 · 点一下取消'
-      : state.state === 'failed' ? '转换失败：' + (state.message || '')
-      : state.state === 'idle' ? base + ' · 点一下开始转（整首）' : base;
+      : state.state === 'failed' ? '转换失败 · ' + (state.message || '')
+      : state.state === 'idle' ? base + ' · 点一下转换整首' : base;
   }
   paintTasks();
 }
@@ -2006,7 +1727,7 @@ async function chooseVoice(id, quiet) {   // quiet: taken up on loading, not a c
     return;
   }
   if (id !== '@kit' && !voiceAudio[id]) {
-    setState('载入人声…');
+    setState('载入人声');
     try {
       voiceAudio[id] = decodeWav(await fetchBytes(`/vocal/${vocal.id}/${id}.wav`));
     } catch (error) { setState(error.message, true); return; }
@@ -2069,7 +1790,7 @@ async function loadLibrary() {
   el('libNote').textContent = `${songs.length} 首 · ${songs.filter(s => s.vocal).length} 首有人声`
     + (listing.skipped ? ` · ${listing.skipped} 个目录读不了` : '') + (missing.length ? ` · 没找到 ${missing.join('、')}` : '');
   el('library').hidden = false;
-  if (!el('drop').classList.contains('loaded')) el('dropTitle').textContent = '或者把 merged.mid 拖到这里';
+  if (!el('drop').classList.contains('loaded')) el('dropTitle').textContent = '或拖入 MIDI';
   paintSongs();
 }
 function refreshLibrary() {
@@ -2092,7 +1813,8 @@ function paintSongs() {
     label.append(title, by);
     const tag = document.createElement('span');
     tag.className = 'tag ' + (item.plan ? 'ok' : item.vocal ? 'narrow' : 'plain');
-    tag.textContent = item.plan ? '有方案' : !item.vocal ? '没有人声' : item.voices.length ? `已转 ${item.voices.length} 个声音` : `${(item.stems || []).length} 条分轨`;
+    tag.textContent = item.plan ? '有方案' : !item.vocal ? '无人声' : item.voices.length ? `声音 ${item.voices.length}` : `分轨 ${(item.stems || []).length}`;
+    tag.title = item.plan ? '这首存过方案，打开就是上次的样子' : !item.vocal ? '这首没有分离出人声' : item.voices.length ? `已经转换好 ${item.voices.length} 个声音` : `分离出 ${(item.stems || []).length} 条分轨`;
     button.append(label, tag);
     button.addEventListener('click', () => openSong(item));
     el('songs').appendChild(button);
@@ -2100,7 +1822,7 @@ function paintSongs() {
   if (!el('songs').children.length) {
     const none = document.createElement('div');
     none.className = 'none';
-    none.textContent = songs.length ? '没有符合的歌' : 'XLD 里还没有合并过 MIDI 的歌：先在 XLD 里转谱并合并，或直接把 merged.mid 拖到下面';
+    none.textContent = songs.length ? '没有符合的歌' : '曲库里还没有歌 · 先在 XLD 里转谱并合并，或把 merged.mid 拖到下面';
     el('songs').appendChild(none);
   }
 }
@@ -2124,7 +1846,7 @@ async function openSong(item) {
   if (saved.plan) takePlan(saved.plan);
   await new Promise(done => takeFile(new File([bytes], safeName(item.title) + '.mid'), done));
   if (songKey !== item.key || !item.vocal) return;
-  await adoptVocal(item.title + ' · 人声', item.prepared ? '载入人声' : '整理人声中：第一次要分出主唱与和声，约 1 分钟',
+  await adoptVocal(item.title + ' · 人声', item.prepared ? '载入人声' : '整理人声中 · 第一次要分出主唱与和声，约 1 分钟',
     api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({song: item.key})}));
   if (songKey === item.key) refreshLibrary();
 }
@@ -2198,7 +1920,7 @@ function queueSave() {
 async function loadPlans() {
   try {
     const listing = await api('/api/plans');
-    el('planList').innerHTML = '<option value="">套用方案…</option>' + listing.plans.map(name => `<option>${name}</option>`).join('');
+    el('planList').innerHTML = '<option value="">套用方案</option>' + listing.plans.map(name => `<option>${name}</option>`).join('');
   } catch (error) { /* an older server: no plans */ }
 }
 el('savePlan').addEventListener('click', async () => {
@@ -2206,7 +1928,7 @@ el('savePlan').addEventListener('click', async () => {
   if (!name) return;
   try {
     await api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, plan: currentPlan()})});
-    setState(`方案「${name}」存好了`);
+    setState(`存了方案 · 「${name}」`);
     loadPlans();
   } catch (error) { setState(error.message, true); }
 });
@@ -2226,7 +1948,7 @@ el('planList').addEventListener('change', async () => {
     const saved = await api('/api/plan?name=' + encodeURIComponent(name));
     if (!saved.plan) return;
     await applyPlan(saved.plan);
-    setState(`套用了方案「${name}」`);
+    setState(`套用方案 · 「${name}」`);
   } catch (error) { setState(error.message, true); }
 });
 
@@ -2311,14 +2033,14 @@ async function roll() {
   if (!pair.includes(next.preset)) pair = [before.preset, next.preset];   // as a preset picked by hand: A / B compares the two
   previousPreset = before.preset;
   paintRolls();
-  sayRoll('掷出：' + planSummary(next), '掷出：' + next.preset);
+  sayRoll('掷骰子 · ' + planSummary(next), '掷骰子 · ' + next.preset);
   try { await applyPlan(next); } catch (error) { setState(error.message, true); }
 }
 async function rollBack() {
   if (!rolls.length || !score) return;
   const plan = rolls.pop();
   paintRolls();
-  sayRoll('回到上一份：' + planSummary(plan), '回到上一份');
+  sayRoll('回到上一份 · ' + planSummary(plan), '回到上一份 · ' + plan.preset);
   try { await applyPlan(plan); } catch (error) { setState(error.message, true); }
 }
 /* The whole line goes in the bar's row; the deck's narrow status line gets the short form after the render. */
@@ -2332,7 +2054,7 @@ el('roll').querySelector('.ic').innerHTML = icon('die');
 paintRolls();
 
 /* --- server ------------------------------------------------------------------------------ */
-const OFFLINE = '连不上本地服务：工作台可能已经退出了。重新双击仓库根目录的 音色工作台.cmd。';
+const OFFLINE = '连不上工作台的服务，重新双击仓库根目录的 音色工作台.cmd';
 
 async function api(path, options) {
   let response;
@@ -2342,8 +2064,8 @@ async function api(path, options) {
     markOffline();
     throw new Error(OFFLINE);
   }
-  const data = await response.json().catch(() => ({error: `服务端返回了 ${response.status}`}));
-  if (!response.ok || data.error) throw new Error(data.error || `服务端返回了 ${response.status}`);
+  const data = await response.json().catch(() => ({error: `服务没答上来（${response.status}），过一会儿再试`}));
+  if (!response.ok || data.error) throw new Error(data.error || `服务没答上来（${response.status}），过一会儿再试`);
   return data;
 }
 
@@ -2358,14 +2080,14 @@ async function fetchBytes(path) {
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `服务端返回了 ${response.status}`);
+    throw new Error(data.error || `服务没答上来（${response.status}），过一会儿再试`);
   }
   return response.arrayBuffer();
 }
 
 function markOffline() {
   setState(OFFLINE, true);
-  el('exportState').textContent = '服务没在跑';
+  el('exportState').textContent = '服务不在';
 }
 // Coming back to a tab that has been sitting open is exactly when the server is gone.
 document.addEventListener('visibilitychange', () => {
@@ -2394,7 +2116,7 @@ function forgetFull() {
 }
 function fullStale() {
   if (!fullPlan || fullBusy) return;
-  el('fullState').textContent = fullPlan === JSON.stringify(currentPlan()) ? '这是现在这份方案' : '方案改过了，重新渲染才是现在的样子';
+  el('fullState').textContent = fullPlan === JSON.stringify(currentPlan()) ? '这是现在的方案' : '方案改过了 · 重新渲染才是现在的样子';
 }
 async function renderFull() {
   if (fullBusy || exporting || !midiBytes) return;
@@ -2415,7 +2137,7 @@ async function renderFull() {
       if (job.error) throw new Error(job.error);
       const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
       const told = job.rebuild.tracks.filter(t => t.sounding)
-        .map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原唱' : voiceName(t.by)}`);
+        .map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原声' : voiceName(t.by)}`);
       el('fullLog').innerHTML = `<div class="flag done">${told.join(' · ')}</div>` + (job.vocalNote ? `<div class="flag">${job.vocalNote}</div>` : '');
       fullPlan = plan;
       const audio = el('fullAudio');
@@ -2456,7 +2178,7 @@ async function doExport() {
       if (job.done) { showExportResult(job); break; }
     }
   } catch (error) {
-    el('exportState').textContent = '导出失败';
+    el('exportState').textContent = '没导出来';
     el('exportLog').innerHTML = `<div class="flag">${error.message}</div>`;
   } finally {
     exporting = false;
@@ -2465,20 +2187,19 @@ async function doExport() {
 }
 
 function showExportResult(job) {
-  if (job.error) { el('exportState').textContent = '导出失败：' + job.error; return; }
+  if (job.error) { el('exportState').textContent = `没导出来（${job.error}）`; return; }
   const lines = [], done = job.rebuild || {files: [], tracks: []};
   const zh = id => (TRACKS.find(t => t.id === id) || {zh: id}).zh;
-  lines.push(`<div class="flag done">写到 <code>${job.outDir}</code> —— ${done.files.length} 个文件，`
-    + `${(done.seconds || 0).toFixed(0)} 秒。</div>`);
-  const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原唱' : voiceName(t.by)}`);
+  lines.push(`<div class="flag done">导出好了 · ${done.files.length} 个文件，${(done.seconds || 0).toFixed(0)} 秒 · <code>${job.outDir}</code></div>`);
+  const told = done.tracks.filter(t => t.sounding).map(t => `${zh(t.track)}：${t.by === 'orig' ? '原声' : t.by === 'original' ? '原声' : voiceName(t.by)}`);
   if (told.length) lines.push(`<div class="flag done">${told.join(' · ')}</div>`);
   const silent = done.tracks.filter(t => !t.sounding).map(t => zh(t.track));
-  if (silent.length) lines.push(`<div class="flag">没出声的轨：${silent.join('、')}</div>`);
+  if (silent.length) lines.push(`<div class="flag">静音的轨：${silent.join('、')}</div>`);
   const hollow = done.tracks.filter(t => t.emptyStem).map(t => zh(t.track));
-  if (hollow.length) lines.push(`<div class="flag">留了原声但分轨是空的：${hollow.join('、')}</div>`);
+  if (hollow.length) lines.push(`<div class="flag">原声分轨是空的：${hollow.join('、')}</div>`);
   if (job.vocalNote) lines.push(`<div class="flag">${job.vocalNote}</div>`);
   el('exportLog').innerHTML = lines.join('');
-  el('exportState').textContent = '完成';
+  el('exportState').textContent = '导出好了';
   el('outDir').value = job.outDir || el('outDir').value;
 }
 el('exportBtn').addEventListener('click', doExport);
@@ -2493,9 +2214,9 @@ el('revealBtn').addEventListener('click', async () => {
 });
 
 // Whatever slips through still reaches the status line instead of vanishing into a console nobody has open.
-window.addEventListener('error', event => setState('页面出错了：' + (event.message || '未知错误'), true));
+window.addEventListener('error', event => setState(`页面出了问题（${event.message || '原因不明'}），刷新页面再试`, true));
 window.addEventListener('unhandledrejection', event => {
-  setState('页面出错了：' + ((event.reason && event.reason.message) || event.reason || '未知错误'), true);
+  setState(`页面出了问题（${(event.reason && event.reason.message) || event.reason || '原因不明'}），刷新页面再试`, true);
 });
 
 /* The server stays up while a page says it is there, and is told when this one closes. The same
