@@ -271,7 +271,10 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
 #deckIn { max-width: 1180px; margin-inline: auto; display: grid; grid-template-columns: 46px 92px minmax(0, 1fr) auto auto; gap: 12px;
   align-items: center; padding: 9px max(16px, env(safe-area-inset-left, 0px)); }
 #deck #play { width: 42px; height: 42px; }
-#deck #timeline { margin: 0; height: 34px; }
+#deck #timeline { margin: 0; height: 72px; }               /* v16: the arrangement map, six lanes */
+#mapTip { position: fixed; z-index: 9; padding: 3px 8px; border-radius: 5px; background: var(--panel); border: 1px solid var(--edge);
+  color: var(--fg); font-size: .72rem; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .4); }
+#mapTip[hidden] { display: none; }
 #deck .clock { font-family: var(--mono); font-size: .74rem; color: var(--dim); }
 #deck #state { font-size: .7rem; color: var(--faint); }
 #state.bad { color: var(--warn); }
@@ -397,6 +400,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
       <p class="lede" style="margin:0 0 10px">把一首分好轨、转好谱的歌一条轨一条轨地重新演一遍：每条轨留原声、换一个来演，或者不出声。</p>
     <p class="foot" style="margin:0;border-top:none;padding-top:0">
       <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。
+      底下的长条是整首歌的编曲地图：从上到下六条是鼓、贝斯、吉他、钢琴、其他、人声，越亮那一小段这件乐器响得越满，色块越高音越高（每条按自己的音域算），鼓分底鼓、军鼓、其余三行，人声没有转谱时画的是原唱的响度；鼠标停在上面看那一刻谁在响，点一下把 12 秒的窗口挪过去。
       试听在浏览器里算，导出走真正的 memesynth。留原声的轨会对齐到「预设来演这条轨」的音量，所以只留一条轨不会打乱整体平衡。
       人声转换在后台整首跑，一次一个（保留和声：合成声音约九分钟一个，RVC 一分多钟），转过的会记住。
     </p>
@@ -404,6 +408,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
 </div>
 
 <div id="fxPop" hidden></div>
+<div id="mapTip" hidden></div>
 <div id="deck"><div id="deckIn">
   <button id="play" class="paused" disabled aria-label="播放"><span class="glyph"></span></button>
   <div class="meta"><div class="clock" id="clock">0.0 / 12.0s</div><div id="state">等文件</div></div>
@@ -739,25 +744,167 @@ function bestWindow() {
   return best;
 }
 
+/* --- the arrangement map (SPEC v16): the whole song as six lanes, who plays when ------------------ */
+const DRUM_ROWS = ['kick', 'snare', 'rest'];                    // bottom to top
+const MAP_FLOOR = 0.25;                                         // a short note or a lone hit still shows
+
+/* The numbers the map is drawn from; nothing here touches sound. `length` is the time the bar
+ * stands for (the same as the window marker's): column i covers [i, i+1) · length / columns.
+ * Per pitched track: coverage (0–1, the union of its notes inside the column over the column's
+ * length), pitch (mean pitch of what sounds there, weighted by time, 0 = the track's lowest
+ * note in the song, 1 = its highest; NaN where nothing sounds) and onsets (notes starting there).
+ * Drums: onsets per column and hits per sub-row (kick, snare, rest). */
+function arrangementMap(score, columns, length = Math.max(SPAN, score.duration)) {
+  const step = length / columns, colOf = t => Math.min(columns - 1, Math.max(0, Math.floor(t / step)));
+  const tracks = {};
+  for (const track of TRACKS) {
+    tracks[track.id] = {notes: 0, onsets: new Uint16Array(columns), coverage: new Float32Array(columns),
+                        pitch: new Float32Array(columns).fill(NaN), low: Infinity, high: -Infinity, first: null, last: null};
+  }
+  tracks.drums.rows = {kick: new Uint16Array(columns), snare: new Uint16Array(columns), rest: new Uint16Array(columns)};
+  const weight = {}, spans = {};
+  for (const track of TRACKS) { weight[track.id] = new Float64Array(columns); spans[track.id] = []; }
+  for (const note of score.notes) {
+    const id = trackOf(note.route), lane = tracks[id], end = note.start + note.duration;
+    lane.notes++;
+    lane.onsets[colOf(note.start)]++;
+    lane.first = lane.first === null ? note.start : Math.min(lane.first, note.start);
+    lane.last = lane.last === null ? end : Math.max(lane.last, end);
+    if (id === 'drums') {
+      const kind = note.route.slice(6);
+      lane.rows[kind === 'kick' || kind === 'snare' ? kind : 'rest'][colOf(note.start)]++;
+      continue;
+    }
+    lane.low = Math.min(lane.low, note.pitch); lane.high = Math.max(lane.high, note.pitch);
+    spans[id].push([note.start, end]);
+    // time-weighted pitch, column by column
+    for (let c = colOf(note.start); c < columns && c * step < end; c++) {
+      const overlap = Math.min(end, (c + 1) * step) - Math.max(note.start, c * step);
+      if (overlap > 0) { weight[id][c] += overlap; lane.pitch[c] = (Number.isNaN(lane.pitch[c]) ? 0 : lane.pitch[c]) + overlap * note.pitch; }
+    }
+  }
+  for (const track of TRACKS) {
+    const id = track.id, lane = tracks[id];
+    if (id === 'drums') continue;
+    const range = lane.high - lane.low;
+    for (let c = 0; c < columns; c++) {
+      if (weight[id][c] > 0) lane.pitch[c] = range > 0 ? (lane.pitch[c] / weight[id][c] - lane.low) / range : 0.5;
+    }
+    // coverage: merge overlapping notes first, so a chord counts once
+    const merged = [];
+    for (const [a, b] of spans[id].sort((x, y) => x[0] - y[0])) {
+      if (merged.length && a <= merged[merged.length - 1][1]) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], b);
+      else merged.push([a, b]);
+    }
+    for (const [a, b] of merged) {
+      for (let c = colOf(a); c < columns && c * step < b; c++) {
+        lane.coverage[c] += Math.max(0, Math.min(b, (c + 1) * step) - Math.max(a, c * step)) / step;
+      }
+    }
+    for (let c = 0; c < columns; c++) lane.coverage[c] = Math.min(1, lane.coverage[c]);
+  }
+  return {columns, length, step, tracks};
+}
+
+/* The sung vocal's loudness per column (0–1 of the loudest column), for a vocal lane without
+ * transcribed notes. Columns more than 45 dB under the loudest are 0. */
+function vocalLevels(audio, columns, length) {
+  const out = new Float32Array(columns), per = length * RATE / columns;
+  let peak = 0;
+  for (let c = 0; c < columns; c++) {
+    const from = Math.floor(c * per), to = Math.min(audio.length, Math.floor((c + 1) * per));
+    let energy = 0;
+    for (let i = from; i < to; i++) energy += audio[i] * audio[i];
+    out[c] = to > from ? Math.sqrt(energy / (to - from)) : 0;
+    if (out[c] > peak) peak = out[c];
+  }
+  for (let c = 0; c < columns; c++) out[c] = peak > 0 && out[c] / peak >= 10 ** (-45 / 20) ? out[c] / peak : 0;
+  return out;
+}
+
+let arrangement = null, mapVocal = {audio: null, levels: null, columns: 0};
+function mapVocalLevels() {
+  const audio = voiceAudio.original;
+  if (!audio || !arrangement) return null;
+  if (mapVocal.audio !== audio || mapVocal.columns !== arrangement.columns) {
+    mapVocal = {audio, columns: arrangement.columns, levels: vocalLevels(audio, arrangement.columns, arrangement.length)};
+  }
+  return mapVocal.levels;
+}
+
+/* Who is heard in column c: the tracks the map shows something for there. */
+function soundingAt(c) {
+  const ids = [];
+  for (const track of TRACKS) {
+    const lane = arrangement.tracks[track.id];
+    if (lane.onsets[c] || lane.coverage[c] > 0) ids.push(track.id);
+    else if (track.id === 'vocals' && !lane.notes && (mapVocalLevels() || [])[c] > 0) ids.push(track.id);
+  }
+  return ids;
+}
+
 function drawTimeline() {
   const canvas = el('density'), box = el('timeline').getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(box.width * dpr));
   canvas.height = Math.max(1, Math.round(box.height * dpr));
-  const context = canvas.getContext('2d');
-  const buckets = Math.max(1, Math.round(box.width / 3));
-  const counts = new Array(buckets).fill(0);
-  for (const note of score.notes) counts[Math.min(buckets - 1, Math.floor(note.start / score.duration * buckets))]++;
-  const peak = Math.max(1, ...counts);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = getComputedStyle(document.body).getPropertyValue('--faint').trim() || '#5c636d';
-  const barWidth = canvas.width / buckets;
-  for (let i = 0; i < buckets; i++) {
-    const height = (counts[i] / peak) * canvas.height * 0.86;
-    context.fillRect(i * barWidth, canvas.height - height, Math.max(1, barWidth - dpr), height);
+  const columns = Math.max(1, Math.round(box.width / 3));
+  if (!arrangement || arrangement.score !== score || arrangement.columns !== columns) {
+    arrangement = Object.assign(arrangementMap(score, columns), {score});
   }
+  drawMap();
   positionWindow();
 }
+
+function drawMap() {
+  if (!arrangement || !score) return;
+  const canvas = el('density'), context = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1;
+  const {columns, tracks} = arrangement, width = canvas.width / columns, gap = Math.max(1, Math.round(dpr));
+  const lane = (canvas.height - gap * (TRACKS.length - 1)) / TRACKS.length;
+  const style = getComputedStyle(document.body);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const cell = (c, y, h, alpha) => { if (alpha > 0) { context.globalAlpha = base * Math.min(1, alpha); context.fillRect(c * width, y, Math.max(1, width - gap), h); } };
+  let base = 1;
+  TRACKS.forEach((track, index) => {
+    const top = index * (lane + gap), data = tracks[track.id];
+    base = cast[track.id] && cast[track.id].mode === 'mute' ? 1 / 3 : 1;
+    context.fillStyle = style.getPropertyValue(`--t-${track.id}`).trim() || '#888';
+    if (track.id === 'drums') {
+      const row = (lane - 2 * gap) / 3;
+      DRUM_ROWS.forEach((kind, k) => {
+        const hits = data.rows[kind], peak = Math.max(1, ...hits), y = top + lane - (k + 1) * row - k * gap;
+        for (let c = 0; c < columns; c++) if (hits[c]) cell(c, y, row, Math.max(MAP_FLOOR, hits[c] / peak));
+      });
+    } else if (track.id === 'vocals' && !data.notes) {
+      const levels = mapVocalLevels(), band = lane * 0.6;
+      if (levels) for (let c = 0; c < columns; c++) cell(c, top + (lane - band) / 2, band, levels[c]);
+    } else {
+      const bar = Math.max(2 * dpr, Math.round(lane * 0.3));
+      for (let c = 0; c < columns; c++) {
+        if (!data.onsets[c] && !(data.coverage[c] > 0)) continue;
+        const alpha = data.onsets[c] ? Math.max(MAP_FLOOR, data.coverage[c]) : data.coverage[c];
+        const at = Number.isNaN(data.pitch[c]) ? 0.5 : data.pitch[c];
+        cell(c, top + (1 - at) * (lane - bar), bar, alpha);
+      }
+    }
+  });
+  context.globalAlpha = 1;
+}
+
+/* Hovering the map: the time and who plays there. */
+el('timeline').addEventListener('mousemove', event => {
+  if (!score || !arrangement) return;
+  const box = el('timeline').getBoundingClientRect(), x = event.clientX - box.left;
+  const c = Math.min(arrangement.columns - 1, Math.max(0, Math.floor(x / box.width * arrangement.columns)));
+  const at = (x / box.width) * arrangement.length, tip = el('mapTip');
+  const names = soundingAt(c).map(id => TRACKS.find(t => t.id === id).zh);
+  tip.textContent = `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, '0')} · ${names.length ? names.join(' ') : '没人'}`;
+  tip.hidden = false;
+  const width = tip.offsetWidth;
+  tip.style.left = Math.max(4, Math.min(window.innerWidth - width - 4, event.clientX - width / 2)) + 'px';
+  tip.style.top = (box.top - tip.offsetHeight - 6) + 'px';
+});
+el('timeline').addEventListener('mouseleave', () => { el('mapTip').hidden = true; });
 
 function positionWindow() {
   const percent = (value) => (value / Math.max(SPAN, score.duration)) * 100;
@@ -993,6 +1140,7 @@ function paintTracks() {
   paintPresets();
   paintCompare();
   paintStrips();
+  drawMap();                                                 // a muted lane dims; the vocal lane fills in when the vocal arrives
   for (const button of el('ab').children) {
     button.setAttribute('aria-pressed', String(button.dataset.ab === ab));
     if (button.dataset.ab === 'orig') { button.disabled = !song || !(song.stems || []).length; button.title = button.disabled ? '从曲库打开的歌才有原曲可以对照' : ''; }
