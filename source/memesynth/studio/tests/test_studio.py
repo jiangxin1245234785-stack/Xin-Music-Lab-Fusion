@@ -7,6 +7,7 @@ folder. Nothing touches XLD's analysis root or the studio's cache. The kits are 
 (`source/memesynth/kits`), because the rebuild is only meaningful through a real kit.
 """
 import json
+import math
 import sys
 import tempfile
 import threading
@@ -283,8 +284,101 @@ def test_queue_cancel_and_busy():
 # ------------------------------------------------------------------------------- effects
 def test_fx_settings_survive_a_bad_plan():
     assert effects.settings(None) == effects.DEFAULTS
-    got = effects.settings({'oct': 9, 'vel': 'loud', 'tone': -250.4, 'echo': None, 'room': '35'})
-    assert got == {'oct': 2, 'vel': 0, 'tone': -100, 'echo': 0, 'room': 35}, got
+    got = effects.settings({'oct': 9, 'vel': 'loud', 'tone': -250.4, 'echo': None, 'room': '35',
+                            'gate': 300, 'late': -99, 'loose': -5, 'thin': '40'})
+    assert got == {'oct': 2, 'vel': 0, 'gate': 100, 'late': -60, 'loose': 0, 'thin': 40, 'tone': -100, 'echo': 0, 'room': 35}, got
+    assert effects.pump_settings(None) == {'depth': 0, 'release': 180}
+    assert effects.pump_settings({'depth': 250, 'release': 'fast'}) == {'depth': 100, 'release': 180}
+    assert effects.pump_settings({'depth': 40, 'release': 10}) == {'depth': 40, 'release': 60}
+
+
+def toy_score():
+    """Bass and drums, with repeated pitches, ties in velocity and a note at time 0."""
+    from memesynth.score import Note, Score
+    notes = []
+    for i in range(12):
+        start = 0.25 * i
+        notes.append(Note(start=start, duration=0.2 if i % 3 else 0.6, pitch=40 + (i % 2) * 3, velocity=50 + (i * 7) % 40,
+                          route='bass', is_drum=False))
+        if i % 2 == 0:
+            notes.append(Note(start=start, duration=0.0, pitch=36, velocity=100, route='drums/kick', is_drum=True))
+    notes.sort(key=lambda n: (n.start, n.route, n.pitch))
+    return Score(notes=tuple(notes), duration=3.5, routes={'bass': 12, 'drums/kick': 6}, dropped={}, warnings=())
+
+
+def test_shape_note_controls_each_do_what_they_say():
+    score = toy_score()
+    plain = effects.settings({})
+    bass = lambda notes: [n for n in notes if n.route == 'bass']
+    shaped = lambda **kw: effects.shape(score, {'bass': effects.settings(kw)}, batch.track_of)
+    # thin: floor(12 · 0.7 · 0.5) = 4 dropped, the quietest as written
+    got = bass(shaped(thin=50).notes)
+    assert len(got) == 12 - 4
+    gone = sorted(set((n.start, n.velocity) for n in bass(score.notes)) - set((n.start, n.velocity) for n in got))
+    assert max(v for _, v in gone) <= min(n.velocity for n in got), gone
+    # gate: −100 is a quarter (never under 30 ms); +100 four times, never past the next same pitch
+    short = bass(shaped(gate=-100).notes)
+    assert all(abs(b.duration - max(0.03, a.duration / 4)) < 1e-12 for a, b in zip(bass(score.notes), short))
+    long = bass(shaped(gate=100).notes)
+    for note in long:
+        later = [m.start for m in long if m.pitch == note.pitch and m.start > note.start]
+        assert not later or note.start + note.duration <= min(later) + 1e-12
+    assert any(b.duration > a.duration for a, b in zip(bass(score.notes), long))
+    # late: −60 ms, never before 0
+    early = bass(shaped(late=-60).notes)
+    assert min(n.start for n in early) == 0.0 and all(abs(b.start - max(0.0, a.start - 0.06)) < 1e-12 for a, b in zip(bass(score.notes), early))
+    # loose 100: each note moved by its own jitter (place n, track index 1 = bass), inside ±30 ms and ±20
+    loose = bass(shaped(loose=100).notes)
+    expected = []
+    for n, note in enumerate(bass(score.notes)):
+        start = max(0.0, note.start + effects.jitter(n, 1, 1) * 0.03)
+        velocity = max(1, min(127, math.floor(note.velocity + effects.jitter(n, 2, 1) * 20 + 0.5)))
+        assert abs(start - note.start) <= 0.03 + 1e-12 and abs(velocity - note.velocity) <= 20
+        expected.append((round(start, 12), note.pitch, velocity))
+    assert sorted(expected) == sorted((round(n.start, 12), n.pitch, n.velocity) for n in loose)
+    assert any(abs(a[0] - b.start) > 1e-4 for a, b in zip(expected, bass(score.notes)))
+    # drums are left alone by a bass setting; the score stays sorted
+    for result in (shaped(thin=50), shaped(gate=100), shaped(late=-60), shaped(loose=100)):
+        assert [n for n in result.notes if n.route == 'drums/kick'] == [n for n in score.notes if n.route == 'drums/kick']
+        assert list(result.notes) == sorted(result.notes, key=lambda n: (n.start, n.route, n.pitch))
+
+
+def test_shape_order_and_determinism():
+    score = toy_score()
+    all_four = effects.settings({'thin': 30, 'oct': 1, 'vel': 50, 'gate': 50, 'late': 20, 'loose': 60})
+    one = effects.shape(score, {'bass': all_four}, batch.track_of)
+    two = effects.shape(score, {'bass': all_four}, batch.track_of)
+    assert one.notes == two.notes                                                   # the same input, the same output
+    # thin comes first: the dropped notes are the quietest as written, whatever vel and loose do afterwards
+    kept = [n for n in one.notes if n.route == 'bass']
+    assert len(kept) == 12 - int(12 * 0.7 * 0.3)
+    assert all(n.pitch in (52, 55) for n in kept)                                    # octave applied to what is left
+    # late comes before loose: every start is the written one + 20 ms ± 18 ms (loose 60 → 0.6 · 30 ms)
+    written = sorted(n.start for n in score.notes if n.route == 'bass')
+    assert all(any(abs(n.start - (w + 0.02)) <= 0.018 + 1e-9 for w in written) for n in kept)
+    assert min(n.start for n in kept) >= 0.0
+    # jitter stays in −1..1 and depends on every input
+    assert all(-1.0 <= effects.jitter(n, s, t) < 1.0 for n in range(500) for s in (1, 2) for t in range(6))
+    assert len({effects.jitter(0, s, t) for s in (1, 2) for t in range(6)}) == 12
+
+
+def test_pump_envelope():
+    rate = effects.RATE
+    env = effects.pump_envelope([0.5, 1.0], rate * 2, 50, 200)
+    d = 0.8 * 0.5
+    assert np.all(env[:int(0.5 * rate) + 1] == 1.0)                                 # before the first kick, and on it
+    at = lambda t: env[int(round(t * rate))]
+    assert abs(at(0.5 + 0.0025) - (1 - d * 0.5 * math.exp(-0.0025 / 0.2))) < 1e-9    # halfway up the 5 ms ramp
+    assert abs(at(0.5 + 0.1) - (1 - d * math.exp(-0.1 / 0.2))) < 1e-9
+    # the most recent kick takes over: just after 1.0 the gain is back near 1 before its own ramp
+    assert at(1.0) == 1.0 and abs(at(1.3) - (1 - d * math.exp(-0.3 / 0.2))) < 1e-9
+    assert np.all(effects.pump_envelope([], 1000, 50, 200) == 1.0)
+    assert np.all(effects.pump_envelope([0.1], 1000, 0, 200) == 1.0)
+    # a window starting later sees the same numbers as the whole
+    part = effects.pump_envelope([0.5, 1.0], 4800, 50, 200, start=int(0.98 * rate))
+    assert np.array_equal(part, env[int(0.98 * rate):int(0.98 * rate) + 4800])
+    # the deepest point is at the end of the ramp: 1 − d · exp(−5 ms / release)
+    assert abs(env.min() - (1 - d * math.exp(-0.005 / 0.2))) < 1e-6
 
 
 def test_shape_moves_octaves_and_dynamics_of_one_track_only():
@@ -411,14 +505,14 @@ def test_kits_json_carries_the_kit_loudness_table():
 
 def test_vocal_settings_follow_the_preset_or_not():
     ambient = effects.VOCAL_PRESETS['ambient']
-    own = {'oct': 1, 'vel': -20, 'tone': 40, 'echo': 5, 'room': 0}
+    own = dict(effects.DEFAULTS, oct=1, vel=-20, tone=40, echo=5, room=0)
     # follow true: the preset's sound, its own notes
-    assert effects.vocal_settings(dict(own, follow=True), 'ambient') == dict(oct=1, vel=-20, **ambient)
+    assert effects.vocal_settings(dict(own, follow=True), 'ambient') == dict(effects.DEFAULTS, oct=1, vel=-20, **ambient)
     # follow false: its own five, whatever the preset
     assert effects.vocal_settings(dict(own, follow=False), 'ambient') == own
     assert effects.vocal_settings({'follow': False}, 'ambient') == effects.DEFAULTS
     # no key: follows only if its own tone, echo and room are all 0
-    assert effects.vocal_settings({'oct': -1}, 'lofi') == dict(oct=-1, vel=0, **effects.VOCAL_PRESETS['lofi'])
+    assert effects.vocal_settings({'oct': -1}, 'lofi') == dict(effects.DEFAULTS, oct=-1, **effects.VOCAL_PRESETS['lofi'])
     assert effects.vocal_settings(own, 'lofi') == own
     assert effects.vocal_settings({'room': 10}, 'lofi')['room'] == 10 and effects.vocal_settings({'room': 10}, 'lofi')['tone'] == 0
     assert effects.vocal_settings(None, 'chiptune') == dict(effects.DEFAULTS, tone=20)

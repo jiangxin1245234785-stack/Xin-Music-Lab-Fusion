@@ -239,6 +239,7 @@ body { max-width: 1180px; padding-bottom: 96px; }
 #roll { display: inline-flex; align-items: center; gap: 5px; }
 #roll .ic { display: inline-flex; width: 15px; height: 15px; }
 #roll .ic svg { width: 100%; height: 100%; }
+#pumpBtn[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); }
 /* what the dice came up with: one line in the bar's own row (the deck's status line is two words wide) */
 #rollNote { flex: 1 0 100%; min-width: 0; font-size: .74rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rollNote:empty { display: none; }
@@ -345,6 +346,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
         <select id="planList" aria-label="套用方案"><option value="">套用方案…</option></select>
         <button type="button" class="plain dice" id="roll" title="随手配一整份：预设、每条轨谁来演、音色、八度、力度、效果（D）"><span class="ic"></span>掷骰子</button>
         <button type="button" class="plain" id="back" disabled title="回到掷之前的那一份（Z）">上一份</button>
+        <button type="button" class="plain" id="pumpBtn" aria-pressed="false">抽吸</button>
         <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
         <button type="button" class="plain" id="cmpSave" hidden title="现在这份方案，分别配上这两套预设，各存一份">存成两个方案</button>
         <span id="rollNote"></span>
@@ -408,7 +410,7 @@ select, .plain { font: inherit; font-size: .82rem; padding: 6px 8px; border-radi
       <div class="head"><h2>说明</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <p class="lede" style="margin:0 0 10px">把一首分好轨、转好谱的歌一条轨一条轨地重新演一遍：每条轨留原声、换一个来演，或者不出声。</p>
     <p class="foot" style="margin:0;border-top:none;padding-top:0">
-      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。<kbd>D</kbd>（或「掷骰子」）随手配一整份方案：换一套预设、每条轨随机留原声或换、换音色、移八度、加效果，静音的轨和人声的声音不动；<kbd>Z</kbd>（或「上一份」）退回掷之前那一份，最多退 20 步。
+      <kbd>空格</kbd> 播放暂停，<kbd>1</kbd>–<kbd>9</kbd> 和 <kbd>0</kbd> 换前十套预设（其余在分类里点），<kbd>`</kbd> 在最近选的两套之间来回切（预设栏下面会出现 A / B），每条轨右边的「调」可以移八度、压平或夸张力度、加明暗 / 回声 / 混响。<kbd>`</kbd> 也回到上一套，<kbd>A</kbd> 在原曲和重构之间切换。<kbd>D</kbd>（或「掷骰子」）随手配一整份方案：换一套预设、每条轨随机留原声或换、换音色、移八度、加效果，静音的轨和人声的声音不动；<kbd>Z</kbd>（或「上一份」）退回掷之前那一份，最多退 20 步。「调」里的长短、前后、松紧、疏密改的是换了音色那条轨的音符（音长、整体早晚、人味的小误差、去掉最轻的音）；「抽吸」让每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来。
       底下的长条是整首歌的编曲地图：从上到下六条是鼓、贝斯、吉他、钢琴、其他、人声，越亮那一小段这件乐器响得越满，色块越高音越高（每条按自己的音域算），鼓分底鼓、军鼓、其余三行，人声没有转谱时画的是原唱的响度；鼠标停在上面看那一刻谁在响，点一下把 12 秒的窗口挪过去。
       试听在浏览器里算，导出走真正的 memesynth。留原声的轨会对齐到「预设来演这条轨」的音量，所以只留一条轨不会打乱整体平衡。
       人声转换在后台整首跑，一次一个（保留和声：合成声音约九分钟一个，RVC 一分多钟），转过的会记住。
@@ -458,14 +460,21 @@ let rolls = [];                                     // the dice: plans before ea
 /* What a track can have done to it beyond its level. The same numbers are in effects.py, which
  * does for the export what the nodes below do while the page plays. */
 const FX = {echoSeconds: 0.3, echoFeedback: 0.4, echoWet: 0.7, roomWet: 0.6};
-const FX_KEYS = ['oct', 'vel', 'tone', 'echo', 'room'];
-const FX_LIMITS = {oct: [-2, 2], vel: [-100, 100], tone: [-100, 100], echo: [0, 100], room: [0, 100]};
+const FX_KEYS = ['oct', 'vel', 'gate', 'late', 'loose', 'thin', 'tone', 'echo', 'room'];
+const NOTE_KEYS = ['oct', 'vel', 'gate', 'late', 'loose', 'thin'];     // these change the notes (SPEC v14, v19)
+const FX_LIMITS = {oct: [-2, 2], vel: [-100, 100], gate: [-100, 100], late: [-60, 60], loose: [0, 100], thin: [0, 100],
+                   tone: [-100, 100], echo: [0, 100], room: [0, 100]};
+/* The pump (SPEC v20): one setting for the plan. Same numbers as effects.py's PUMP_*. */
+const PUMP_DEFAULT = {depth: 0, release: 180}, PUMP_LIMITS = {depth: [0, 100], release: [60, 400]};
+const PUMPED = ['bass', 'guitar', 'piano', 'other'];
+let pump = Object.assign({}, PUMP_DEFAULT);
 let pair = [];                                      // the two presets being compared, in the order they were picked
 function resetCast() {
   for (const track of TRACKS) {
     cast[track.id] = {mode: track.id === 'vocals' ? 'mute' : 'swap', kit: null, db: 0, solo: false, voice: '',
-                      oct: 0, vel: 0, tone: 0, echo: 0, room: 0};
+                      oct: 0, vel: 0, gate: 0, late: 0, loose: 0, thin: 0, tone: 0, echo: 0, room: 0};
   }
+  pump = Object.assign({}, PUMP_DEFAULT);
   rolls = []; if (el('back')) { el('back').disabled = true; el('rollNote').textContent = ''; }   // another song: the dice's way back starts over
   cast.vocals.follow = true;                        // the vocal's tone, echo and room follow the preset (SPEC v15)
   vocalTouched = false;
@@ -692,32 +701,115 @@ function ensureKit(name) {
   return kitLoads[name];
 }
 
-/* The score as the kits play it: each replaced track moved by octaves, its dynamics flattened
- * or widened around the track's own average (effects.shape does the same for the export). */
+/* A number in -1..1 from a note's place n in its track, a salt and the track (SPEC v19): the same
+ * 32-bit arithmetic as effects.jitter, so the page's 「松紧」 moves exactly the notes the export moves. */
+function jitter(n, salt, trackIndex) {
+  let h = (Math.imul(n, 2654435761) + salt * 40503 + trackIndex * 97) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0;
+  h ^= h >>> 13; h = Math.imul(h, 3266489917) >>> 0;
+  h ^= h >>> 16; h >>>= 0;
+  return h / 4294967296 * 2 - 1;
+}
+const MIN_GATE = 0.03;
+const byScoreOrder = (a, b) => a.start - b.start || (a.route < b.route ? -1 : a.route > b.route ? 1 : 0) || a.pitch - b.pitch;
+
+/* The notes as the kits play them: each replaced track's note controls, in the order and with the
+ * arithmetic of effects.shape (thin, octave and dynamics, gate, late, loose), then sorted as the score is.
+ * `settingsOf(id)` gives a track's numbers, or null for a track left as written. */
+function shapeNotes(base, settingsOf) {
+  const groups = new Map();
+  for (const note of base.notes) { const id = trackOf(note.route); if (!groups.has(id)) groups.set(id, []); groups.get(id).push(note); }
+  const notes = [];
+  for (const [id, mine] of groups) {
+    const c = settingsOf(id);
+    if (!c || !NOTE_KEYS.some(key => c[key])) { notes.push(...mine); continue; }
+    let items = mine.map((note, n) => ({n, note}));
+    if (c.thin) {
+      const drop = Math.floor(items.length * 0.7 * c.thin / 100);
+      // Times compared in whole microseconds, as effects.shape does (the two parsers differ in the 14th digit).
+      const micro = seconds => Math.floor(seconds * 1e6 + 0.5);
+      const order = items.map((_, j) => j).sort((x, y) => {
+        const a = items[x].note, b = items[y].note;
+        return a.velocity - b.velocity || micro(a.duration) - micro(b.duration) || micro(b.start) - micro(a.start) || y - x;
+      });
+      const gone = new Set(order.slice(0, drop));
+      items = items.filter((_, j) => !gone.has(j));
+    }
+    if (!items.length) continue;
+    let sum = 0;
+    for (const {note} of items) sum += note.velocity;
+    const mean = sum / items.length;
+    const rows = items.map(({n, note}) => {
+      let velocity = note.velocity;
+      if (c.vel) velocity = Math.max(1, Math.min(127, Math.floor(mean + (velocity - mean) * Math.pow(2, c.vel / 50) + 0.5)));
+      return {n, note, start: note.start, duration: note.duration, pitch: note.isDrum ? note.pitch : note.pitch + 12 * c.oct, velocity};
+    });
+    if (c.gate && id !== 'drums') {
+      const factor = Math.pow(2, c.gate / 50), starts = new Map();
+      for (const row of rows) { const key = row.note.route + '|' + row.pitch; if (!starts.has(key)) starts.set(key, []); starts.get(key).push(row.start); }
+      for (const list of starts.values()) list.sort((a, b) => a - b);
+      for (const row of rows) {
+        let length = row.duration * factor;
+        if (c.gate > 0) {
+          const same = starts.get(row.note.route + '|' + row.pitch);
+          let lo = 0, hi = same.length;                          // the first start strictly after this one
+          while (lo < hi) { const mid = (lo + hi) >> 1; if (same[mid] <= row.start) lo = mid + 1; else hi = mid; }
+          if (lo < same.length) length = Math.min(length, same[lo] - row.start);
+        }
+        row.duration = Math.max(MIN_GATE, length);
+      }
+    }
+    if (c.late) for (const row of rows) row.start = Math.max(0, row.start + c.late / 1000);
+    if (c.loose) {
+      const index = TRACKS.findIndex(t => t.id === id);
+      for (const row of rows) {
+        row.start = Math.max(0, row.start + jitter(row.n, 1, index) * (0.03 * c.loose / 100));
+        row.velocity = Math.max(1, Math.min(127, Math.floor(row.velocity + jitter(row.n, 2, index) * (20 * c.loose / 100) + 0.5)));
+      }
+    }
+    for (const row of rows) notes.push(Object.assign({}, row.note, {start: row.start, duration: row.duration, pitch: row.pitch, velocity: row.velocity}));
+  }
+  notes.sort(byScoreOrder);
+  return Object.assign({}, base, {notes});
+}
+
 let shaped = null;
 function shapedScore() {
-  const mark = TRACKS.map(t => cast[t.id].mode === 'swap' ? cast[t.id].oct + ',' + cast[t.id].vel : '').join('|');
+  const mark = TRACKS.map(t => cast[t.id].mode === 'swap' ? NOTE_KEYS.map(key => cast[t.id][key]).join(',') : '').join('|');
   if (shaped && shaped.base === score && shaped.mark === mark) return shaped.score;
   kitWindow = {};
-  let out = score;
-  if (/[1-9]/.test(mark)) {
-    const sums = {}, counts = {};
-    for (const note of score.notes) {
-      const id = trackOf(note.route);
-      sums[id] = (sums[id] || 0) + note.velocity; counts[id] = (counts[id] || 0) + 1;
-    }
-    out = Object.assign({}, score, {notes: score.notes.map(note => {
-      const id = trackOf(note.route), c = cast[id];
-      if (c.mode !== 'swap' || !(c.oct || c.vel)) return note;
-      const mean = sums[id] / counts[id];
-      const velocity = Math.floor(mean + (note.velocity - mean) * Math.pow(2, c.vel / 50) + 0.5);
-      return Object.assign({}, note, {velocity: Math.max(1, Math.min(127, velocity)),
-                                      pitch: note.isDrum ? note.pitch : note.pitch + 12 * c.oct});
-    })});
-  }
+  const out = /[1-9]/.test(mark) ? shapeNotes(score, id => cast[id].mode === 'swap' ? cast[id] : null) : score;
   shaped = {base: score, mark, score: out};
   return out;
 }
+
+/* --- the pump (SPEC v20): every kick pushes bass, guitar, piano and other down and lets them back ------ */
+const kickTimes = notes => notes.filter(note => note.route === 'drums/kick').map(note => note.start);
+/* Gain for samples start … start+frames-1 of the song, the same formula as effects.pump_envelope. */
+function pumpEnvelope(kicks, frames, depth, release, start = 0) {
+  const out = new Float64Array(frames).fill(1);
+  if (!depth || !kicks.length || frames <= 0) return out;
+  const hits = Float64Array.from(kicks).sort(), d = 0.8 * depth / 100;
+  let last = -1;
+  for (let i = 0; i < frames; i++) {
+    const t = (start + i) / RATE;
+    while (last + 1 < hits.length && hits[last + 1] <= t + 1e-9) last++;   // 1 ns slack, as effects.KICK_SLACK
+    if (last < 0) continue;
+    const x = Math.max(0, t - hits[last]);
+    out[i] = 1 - d * Math.min(1, x / 0.005) * Math.exp(-x / (release / 1000));
+  }
+  return out;
+}
+/* A plan's `pump`, cleaned the way effects.pump_settings does. */
+function cleanPump(value) {
+  const out = {};
+  for (const [key, fallback] of Object.entries(PUMP_DEFAULT)) {
+    const number = Math.round(Number(value && typeof value === 'object' && value[key] != null ? value[key] : fallback));
+    out[key] = Math.max(PUMP_LIMITS[key][0], Math.min(PUMP_LIMITS[key][1], Number.isFinite(number) ? number : fallback));
+  }
+  return out;
+}
+const songHasKicks = () => !!score && (score.routes['drums/kick'] || 0) > 0;
 
 /* --- a song ---------------------------------------------------------------------- */
 function takeFile(file, done) {
@@ -1073,12 +1165,42 @@ function openFx(id, anchor) {
   const pop = el('fxPop');
   if (!pop.hidden && fxTrack === id) return closeFx();
   fxTrack = id;
-  paintFx();
+  if (id === 'pump') paintPump(); else paintFx();
   pop.hidden = false;
   const box = anchor.getBoundingClientRect(), width = pop.offsetWidth, height = pop.offsetHeight;
   pop.style.left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8)) + 'px';
   pop.style.top = (box.bottom + 6 + height > window.innerHeight ? Math.max(8, box.top - height - 6) : box.bottom + 6) + 'px';
 }
+/* The pump's panel (SPEC v20): in the track panel's place and style, two sliders for the whole plan. */
+function paintPump() {
+  const pop = el('fxPop');
+  const row = (key, label, low, high, step) => `<label class="fxRow"><span>${label}</span><small>${low}</small>`
+    + `<input type="range" data-key="${key}" min="${PUMP_LIMITS[key][0]}" max="${PUMP_LIMITS[key][1]}" step="${step}" value="${pump[key]}">`
+    + `<small>${high}</small><output>${pump[key]}</output></label>`;
+  pop.style.setProperty('--tc', 'var(--signal)');
+  pop.innerHTML = '<b>抽吸 · 跟着底鼓</b>'
+    + '<p class="fxNote">每一下底鼓把贝斯、吉他、钢琴、其他压下去再放回来；鼓和人声不动。恢复是毫秒。</p>'
+    + row('depth', '深度', '无', '深', 5) + row('release', '恢复', '快', '慢', 10)
+    + '<button type="button" class="plain" id="fxReset">复位</button>';
+  for (const input of pop.querySelectorAll('input[type=range]')) {
+    fillRange(input);
+    input.addEventListener('input', () => {
+      pump[input.dataset.key] = Number(input.value);
+      input.parentElement.querySelector('output').textContent = input.value;
+      fillRange(input);
+      fxChanged(true);                                        // baked into the window: render it again
+    });
+  }
+  el('fxReset').addEventListener('click', () => { pump = Object.assign({}, PUMP_DEFAULT); closeFx(); fxChanged(true); });
+}
+function paintPumpButton() {
+  const button = el('pumpBtn'), kicks = songHasKicks();
+  button.disabled = !kicks;
+  button.setAttribute('aria-pressed', String(kicks && pump.depth > 0));
+  button.title = !kicks ? '这首的转谱里没有底鼓，抽吸没有东西可跟'
+    : pump.depth ? `抽吸：深度 ${pump.depth}，恢复 ${pump.release} ms` : '跟着底鼓，把贝斯、吉他、钢琴、其他一下一下压下去再放回来';
+}
+el('pumpBtn').addEventListener('click', event => openFx('pump', event.currentTarget));
 /* The panel's contents for `fxTrack`; painted again when the vocal starts or stops following, or the preset changes under it. */
 function paintFx() {
   const pop = el('fxPop'), id = fxTrack, c = cast[id], track = TRACKS.find(t => t.id === id);
@@ -1093,9 +1215,15 @@ function paintFx() {
   pop.innerHTML = `<b>${track.zh} · 调整</b>`
     + (id === 'vocals' ? `<label class="fxFollow"><input type="checkbox" id="fxFollow"${following ? ' checked' : ''}>`
       + `<span>跟随预设</span><small>${following ? '明暗、回声、混响用 ' + preset + ' 的' : '用自己的'}</small></label>` : '')
+    + '<h4 class="fxHead">音符</h4>'
     + row('oct', '八度', '低', '高', 1, !played || id === 'drums')
     + row('vel', '力度', '压平', '夸张', 10, !played)
-    + (played ? '' : '<p class="fxNote">八度和力度改的是音符，只对换了音色的轨有效。</p>')
+    + row('gate', '长短', '短', '长', 10, !played || id === 'drums')
+    + row('late', '前后', '赶', '拖', 5, !played)
+    + row('loose', '松紧', '准', '松', 10, !played)
+    + row('thin', '疏密', '满', '疏', 10, !played)
+    + (played ? '' : '<p class="fxNote">这几样改的是音符，只对换了音色的轨有效。</p>')
+    + '<h4 class="fxHead">声音</h4>'
     + row('tone', '明暗', '暗', '薄', 5, following && 'held')
     + row('echo', '回声', '无', '多', 5, following && 'held')
     + row('room', '混响', '无', '多', 5, following && 'held')
@@ -1114,7 +1242,7 @@ function paintFx() {
       c[key] = Number(input.value);
       input.parentElement.querySelector('output').textContent = c[key];
       fillRange(input);
-      fxChanged(key === 'oct' || key === 'vel');
+      fxChanged(NOTE_KEYS.includes(key));
     });
   }
   for (const input of pop.querySelectorAll('input[type=range]')) fillRange(input);
@@ -1127,7 +1255,7 @@ function paintFx() {
 function closeFx() { el('fxPop').hidden = true; fxTrack = ''; }
 document.addEventListener('click', event => {
   if (!event.target.isConnected) return;                     // a control the panel just repainted away
-  if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx')) closeFx();
+  if (!el('fxPop').hidden && !el('fxPop').contains(event.target) && !event.target.closest('.fx, #pumpBtn')) closeFx();
 });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeFx(); });
 
@@ -1224,15 +1352,18 @@ function paintTracks() {
     const fx = row.querySelector('.fx'), e = effective(track.id);
     const following = isVocal && c.follow ? `跟随预设 ${preset}` : '';
     const changed = [e.oct && `八度 ${e.oct > 0 ? '+' : ''}${e.oct}`, e.vel && `力度 ${e.vel > 0 ? '+' : ''}${e.vel}`,
+      e.gate && `长短 ${e.gate > 0 ? '+' : ''}${e.gate}`, e.late && `前后 ${e.late > 0 ? '+' : ''}${e.late} ms`,
+      e.loose && `松紧 ${e.loose}`, e.thin && `疏密 ${e.thin}`,
       e.tone && `明暗 ${e.tone > 0 ? '+' : ''}${e.tone}`, e.echo && `回声 ${e.echo}`, e.room && `混响 ${e.room}`].filter(Boolean).join('，');
     fx.setAttribute('aria-pressed', String(fxActive(e)));
     fx.title = following ? following + (changed ? '：' + changed : '')
-      : fxActive(e) ? '这条轨调过：' + changed : '八度、力度、明暗、回声、混响';
+      : fxActive(e) ? '这条轨调过：' + changed : '八度、力度、长短、前后、松紧、疏密、明暗、回声、混响';
   }
   paintPresets();
   paintCompare();
   paintStrips();
   drawMap();                                                 // a muted lane dims; the vocal lane fills in when the vocal arrives
+  paintPumpButton();
   for (const button of el('ab').children) {
     button.setAttribute('aria-pressed', String(button.dataset.ab === ab));
     if (button.dataset.ab === 'orig') { button.disabled = !song || !(song.stems || []).length; button.title = button.disabled ? '从曲库打开的歌才有原曲可以对照' : ''; }
@@ -1494,6 +1625,9 @@ async function renderWindowNow() {
     } catch (error) { setState(error.message, true); }
     if (ticket !== renderTicket) return;
   }
+  // The pump follows the kicks as played (a kick moved by 「前后」 moves the dip), from before the window too.
+  const kicks = pump.depth ? kickTimes(notes.notes) : [];
+  const pumpEnv = kicks.length ? pumpEnvelope(kicks, frames, pump.depth, pump.release, Math.round(windowStart * RATE)) : null;
   const recon = [];
   for (const track of TRACKS) {
     const c = cast[track.id];
@@ -1504,6 +1638,12 @@ async function renderWindowNow() {
       else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
     } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
     else if (c.mode === 'swap') data = kitTrack(kitOf(track.id), track.id);
+    // The pump is baked into the window (node automation would not loop with it), before tone / echo / room.
+    if (data && pumpEnv && PUMPED.includes(track.id)) {
+      const pumped = new Float32Array(data.length);
+      for (let i = 0; i < data.length; i++) pumped[i] = data[i] * pumpEnv[i >> 1];
+      data = pumped;
+    }
     if (data) recon.push({id: track.id, data});
   }
   if (ab === 'orig') {
@@ -2016,7 +2156,9 @@ function currentPlan() {
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
   }
   tracks.vocals.follow = cast.vocals.follow;       // SPEC v15: written always, so a plan says which it is
-  return {preset, tracks, voice: cast.vocals.voice};
+  const plan = {preset, tracks, voice: cast.vocals.voice};
+  if (pump.depth) plan.pump = {depth: pump.depth, release: pump.release};    // only when on: old plans stay readable
+  return plan;
 }
 /* A plan is a file: it may have been edited by hand or written by an older studio. Whatever
  * in it does not make sense is dropped, and the track keeps what it had. */
@@ -2042,6 +2184,7 @@ function takePlan(plan) {
     }
   }
   cast.vocals.voice = typeof plan.voice === 'string' ? plan.voice : '';
+  pump = cleanPump(plan.pump);
 }
 function queueSave() {
   if (!song) return;
@@ -2111,13 +2254,15 @@ function rollPlan(plan, context, random) {
     if (entry.mode === 'mute') continue;                         // muting is a decision: the dice leaves it be
     if (context.notes[id]) {
       entry.mode = context.stems[id] && chance(0.25) ? 'orig' : 'swap';
-      for (const key of ['oct', 'vel']) delete entry[key];
+      for (const key of NOTE_KEYS) delete entry[key];            // 前后 and 松紧 are never rolled: they stay at 0
       entry.kit = null;
       if (entry.mode === 'swap') {
         if (!chance(0.6)) entry.kit = pick(context.kits.filter(name => name !== out.preset));
         if (id !== 'drums' && !chance(0.7)) entry.oct = pick([-1, 1]);
         const vel = pick([-50, 0, 0, 50]);
         if (vel) entry.vel = vel;
+        if (id !== 'drums' && !chance(0.8)) entry.gate = pick([-50, 50]);
+        if (!chance(0.85)) entry.thin = pick([30, 60]);
       }
     }
     sound(entry);
@@ -2125,12 +2270,15 @@ function rollPlan(plan, context, random) {
   const vocals = out.tracks.vocals = out.tracks.vocals || {mode: 'mute', kit: null, db: 0, solo: false};
   for (const key of ['tone', 'echo', 'room']) delete vocals[key];
   vocals.follow = true; vocals.solo = false;
+  delete out.pump;
+  if (context.kicks && !chance(0.7)) out.pump = {depth: pick([30, 50, 70]), release: pick([150, 250])};
   return out;
 }
 
 /* One line about a plan: the preset, then only what differs from "everything follows it, nothing adjusted". */
 function planSummary(plan) {
   const parts = [plan.preset];
+  if (plan.pump && plan.pump.depth) parts.push('抽吸 ' + plan.pump.depth);
   for (const track of TRACKS) {
     const entry = (plan.tracks || {})[track.id];
     if (!entry || track.id === 'vocals' || entry.mode === 'mute') continue;
@@ -2139,6 +2287,10 @@ function planSummary(plan) {
     if (entry.kit) said.push(entry.kit);
     if (entry.oct) said.push(entry.oct > 0 ? '高八度' : '低八度');
     if (entry.vel) said.push(entry.vel > 0 ? '力度夸张' : '力度压平');
+    if (entry.gate) said.push(entry.gate > 0 ? '音拖长' : '音变短');
+    if (entry.late) said.push(entry.late > 0 ? '拖后' : '赶前');
+    if (entry.loose) said.push('松 ' + entry.loose);
+    if (entry.thin) said.push('疏 ' + entry.thin);
     if (entry.tone) said.push(entry.tone < 0 ? '偏暗' : '偏薄');
     if (entry.echo) said.push('回声 ' + entry.echo);
     if (entry.room) said.push('混响 ' + entry.room);
@@ -2152,7 +2304,7 @@ function paintRolls() { el('back').disabled = !rolls.length || !score; el('roll'
 async function roll() {
   if (!score || !kitsIndex) return;
   const before = currentPlan();
-  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}};
+  const context = {kits: Object.keys(kitsIndex), notes: {}, stems: {}, kicks: songHasKicks()};
   for (const track of TRACKS) { context.notes[track.id] = routesOf(track.id).length > 0; context.stems[track.id] = hasStem(track.id); }
   const next = rollPlan(before, context, Math.random);
   rolls.push(before); if (rolls.length > 20) rolls.shift();

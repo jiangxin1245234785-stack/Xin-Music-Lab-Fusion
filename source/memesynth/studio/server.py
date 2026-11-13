@@ -189,6 +189,31 @@ def fx_probe():
     return probe
 
 
+def shape_check(midi_bytes, plan, window=None):
+    """`/api/shapecheck`: the shaped notes of a MIDI under a plan, in order, and the pump's kick times;
+    with `window` ({start, frames} in samples) also the pump's envelope there."""
+    import tempfile
+
+    from studio.batch import plan_tracks, read_score, shaped_notes
+    if not midi_bytes:
+        raise ValueError('没有收到 MIDI')
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / 'check.mid'
+        path.write_bytes(midi_bytes)
+        score = read_score(path)
+    known = sorted(p.parent.name for p in KITS_DIR.glob('*/kit.json'))
+    tracks, preset, pump = plan_tracks(plan, known)
+    played = shaped_notes(score, tracks)
+    out = {'notes': [[n.route, n.start, n.duration, n.pitch, n.velocity] for n in played.notes],
+           'kicks': effects.kick_times(played), 'pump': pump, 'preset': preset}
+    if isinstance(window, dict):
+        # The pump's gain for a stretch of samples, as float64, so the page can compare its own sample by sample.
+        start, frames = int(window.get('start', 0)), min(int(window.get('frames', 0)), 60 * effects.RATE)
+        envelope = effects.pump_envelope(out['kicks'], frames, pump['depth'], pump['release'], start=start)
+        out['envelope'] = base64.b64encode(envelope.astype('<f8').tobytes()).decode('ascii')
+    return out
+
+
 def plan_path(kind, key):
     """Where a plan lives: `named/<name>.json` or `songs/<library key>.json`."""
     safe = ''.join(c for c in str(key) if c not in '\\/:*?"<>|.').strip()[:80]
@@ -573,6 +598,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'ok': True, 'name': path.stem})
             except (ValueError, OSError) as error:
                 return self.send_json({'error': str(error)}, 400)
+
+        if route == '/api/shapecheck':
+            # A test hook: the notes as the export would play them for this MIDI and plan, and the kicks
+            # the pump follows, so the page can compare its own shaping note by note (SPEC v19, v20).
+            try:
+                midi_bytes = base64.b64decode(payload.get('midi') or '')
+                return self.send_json(shape_check(midi_bytes, payload.get('plan') or {}, payload.get('window')))
+            except Exception as error:  # noqa: BLE001 — a test hook says what went wrong
+                return self.send_json({'error': f'{type(error).__name__}: {error}'}, 400)
 
         if route == '/api/export':
             out_dir = Path(payload.get('outDir') or DEFAULT_OUT).expanduser()

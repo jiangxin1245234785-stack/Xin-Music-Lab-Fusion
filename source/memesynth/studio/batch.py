@@ -292,6 +292,42 @@ def stem_levels(midi_path, kit_path, stems, min_duration=MIN_DURATION):
     return levels_from(by_track, stems)
 
 
+def plan_tracks(plan, known):
+    """A plan, cleaned: (tracks, preset, pump). `known` is the kit names. Used by `rebuild` and `/api/shapecheck`."""
+    if not known:
+        raise ValueError('音色库是空的')
+    plan = plan if isinstance(plan, dict) else {}
+    tracks = {name: dict(mode='swap', kit=None, db=0.0, solo=False) for name in TRACKS}
+    for name, choice in (plan.get('tracks') or {}).items():
+        if name in tracks and isinstance(choice, dict):
+            tracks[name].update({k: v for k, v in choice.items()
+                                 if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
+                                 or (name == 'vocals' and k == 'follow')})
+    # A plan can come from a file someone edited or from an older studio: whatever in it does
+    # not make sense falls back to the default instead of failing the whole export.
+    for choice in tracks.values():
+        if choice['mode'] not in ('orig', 'swap', 'mute'):
+            choice['mode'] = 'swap'
+        if choice['kit'] not in known:
+            choice['kit'] = None
+        try:
+            choice['db'] = max(-60.0, min(12.0, float(choice['db'] or 0.0)))
+        except (TypeError, ValueError):
+            choice['db'] = 0.0
+        choice.update(effects.settings(choice))
+    # The vocal's tone, echo and room come from the whole-song preset while it follows (SPEC v15);
+    # the plan keeps its own numbers and the flag, the report says what was applied.
+    tracks['vocals']['follow'] = effects.follows(tracks['vocals'])
+    preset = plan.get('preset') if plan.get('preset') in known else known[0]
+    return tracks, preset, effects.pump_settings(plan.get('pump'))
+
+
+def shaped_notes(score, tracks):
+    """The score as the kits play it: the note controls of the tracks a kit plays, and only those
+    (a kept stem's track is rendered as written, because that render is what its level is measured against)."""
+    return effects.shape(score, {name: tracks[name] for name in TRACKS if tracks[name]['mode'] == 'swap'}, track_of)
+
+
 def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice='', write_tracks=False,
             min_duration=MIN_DURATION, peak_db=-1.0, progress=None, listen_path=None):
     """Write one rebuild of a song: every track kept, replaced or silent, as `plan` says (SPEC v5).
@@ -315,31 +351,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     out_dir.mkdir(parents=True, exist_ok=True)
     say = lambda fraction, text: progress and progress(fraction, text)
     score = read_score(midi_path, min_duration=min_duration)
-    tracks = {name: dict(mode='swap', kit=None, db=0.0, solo=False) for name in TRACKS}
     known = sorted(p.parent.name for p in Path(kits_dir).glob('*/kit.json'))
-    if not known:
-        raise ValueError('音色库是空的')
-    for name, choice in (plan.get('tracks') or {}).items():
-        if name in tracks and isinstance(choice, dict):
-            tracks[name].update({k: v for k, v in choice.items()
-                                 if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
-                                 or (name == 'vocals' and k == 'follow')})
-    # A plan can come from a file someone edited or from an older studio: whatever in it does
-    # not make sense falls back to the default instead of failing the whole export.
-    for choice in tracks.values():
-        if choice['mode'] not in ('orig', 'swap', 'mute'):
-            choice['mode'] = 'swap'
-        if choice['kit'] not in known:
-            choice['kit'] = None
-        try:
-            choice['db'] = max(-60.0, min(12.0, float(choice['db'] or 0.0)))
-        except (TypeError, ValueError):
-            choice['db'] = 0.0
-        choice.update(effects.settings(choice))
-    # The vocal's tone, echo and room come from the whole-song preset while it follows (SPEC v15);
-    # the plan keeps its own numbers and the flag, the report says what was applied.
-    tracks['vocals']['follow'] = effects.follows(tracks['vocals'])
-    preset = plan.get('preset') if plan.get('preset') in known else known[0]
+    tracks, preset, pump = plan_tracks(plan, known)
     applied = {name: tracks[name] for name in TRACKS}
     applied['vocals'] = effects.vocal_settings(tracks['vocals'], preset)
     stems = stems or {}
@@ -352,9 +365,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     for name in TRACKS:
         if tracks[name]['mode'] == 'swap' and not (name == 'vocals' and sung):
             wanted.add(tracks[name]['kit'] or preset)
-    # Octave and dynamics change the notes of the tracks a kit plays, and only those: a kept
-    # stem's track is rendered as written, because that render is what its level is measured against.
-    played = effects.shape(score, {name: tracks[name] for name in TRACKS if tracks[name]['mode'] == 'swap'}, track_of)
+    played = shaped_notes(score, tracks)
+    kicks = effects.kick_times(played)                   # the pump follows the kicks as they are played (SPEC v20)
     rendered, notes = {}, {}
     for index, kit_name in enumerate(sorted(wanted)):
         say(0.05 + 0.5 * index / len(wanted), f'{kit_name} · 渲染中')
@@ -394,7 +406,11 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         if audio is not None and sounding(name):
             if sound['tone'] or sound['echo'] or sound['room']:
                 say(0.82, f'{name} · 效果')
-            layers[name] = effects.apply(audio * gain, sound)
+            audio = audio * gain
+            if pump['depth'] and name in effects.PUMPED and kicks:
+                # before tone / echo / room, so the room rings through the dip
+                audio = audio * effects.pump_envelope(kicks, len(audio), pump['depth'], pump['release'])[:, None]
+            layers[name] = effects.apply(audio, sound)
 
     frames = max((len(a) for a in layers.values()), default=0)
     if not frames:
@@ -421,6 +437,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
             files.append(str(path))
     plan_path = mix_path.with_suffix('.json')
     plan_path.write_text(json.dumps({'preset': preset, 'tracks': tracks, 'voice': voice if sung else '',
+                                     **({'pump': pump} if pump['depth'] else {}),
                                      'written': report}, ensure_ascii=False, indent=1), encoding='utf-8')
     files.append(str(plan_path))
     say(1.0, '完成')

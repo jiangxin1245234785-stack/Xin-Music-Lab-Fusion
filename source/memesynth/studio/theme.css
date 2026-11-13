@@ -97,6 +97,7 @@
 .fx svg { width: 16px; height: 16px; }
 .fxRow.off { opacity: .4; }
 .fxNote { margin: 0; font-size: .68rem; color: var(--faint); }
+.fxHead { margin: 2px 0 -3px; font-size: .66rem; font-weight: 600; letter-spacing: .12em; color: var(--faint); }
 .fxFollow { display: flex; align-items: center; gap: 6px; font-size: .76rem; cursor: pointer; }
 .fxFollow input { accent-color: var(--tc); margin: 0; }
 .fxFollow small { color: var(--faint); font-size: .66rem; margin-left: auto; }
