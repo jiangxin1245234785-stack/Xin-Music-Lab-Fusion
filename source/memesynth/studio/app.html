@@ -558,16 +558,95 @@ async function stemWindow(id) {
 }
 
 /* How the song's stems are scaled against the current preset, asked once per song and preset. */
-const levelCache = {};
-let levelNotes = null;
-function stemLevels() {
-  const key = song.key + '|' + preset;
-  if (!levelCache[key]) {
-    setState('量原声的音量（每首歌每套预设量一次，几秒）…');
-    levelCache[key] = api(`/api/levels?song=${song.key}&preset=${encodeURIComponent(preset)}`)
-      .catch(error => { delete levelCache[key]; throw error; });
+/* Measuring takes seconds (the server renders the whole song through the preset), so sound does
+ * not wait for it (v18): a preset not measured yet plays at once with the factors last measured for
+ * this song under another preset, and is corrected in place when its own arrive. Only a song never
+ * measured waits. One measurement runs at a time; the next one is for whatever preset is showing then. */
+const levelCache = {};                              // 'song|preset' → the server's answer, once it is in
+const levelOrder = {};                              // song → presets in the order their numbers came in
+let levelNotes = null, levelRunning = null, levelWaiters = {}, levelProvisional = null, pairTimer = null;
+const levelKey = (songKey, name) => songKey + '|' + name;
+
+/* The numbers to play with now: {levels, provisional, measuredAs} or null when this song has none at all yet.
+ * Borrowed numbers are corrected by how much louder the new preset's kit plays each track than the
+ * lender's (kits.json `loudness`, from tools/kit_levels.py): a stem's factor is the kit's loudness
+ * over the stem's, and only the kit's part changes with the preset. The lender is the measured preset
+ * needing the smallest correction over the kept tracks; ties (and a missing table) go to the latest. */
+const provisionalMade = {};
+const loudnessOf = (kit, track) => Number((((kitsIndex || {})[kit] || {}).loudness || {})[track]) || 0;
+function borrowedLevels(lender, levels, target) {
+  const key = song.key + '|' + lender + '|' + target;
+  if (provisionalMade[key] && provisionalMade[key].from === levels) return provisionalMade[key].levels;
+  const factors = {};
+  for (const [track, factor] of Object.entries(levels.factors || {})) {
+    factors[track] = factor * 10 ** ((loudnessOf(target, track) - loudnessOf(lender, track)) / 20);
   }
-  return levelCache[key];
+  // The spare factor is, on the server, the median of the track factors (batch.levels_from); so it is
+  // made the same way from the corrected ones. (The median of the corrections applied to the lender's
+  // spare was measured worse: up to 3.6 dB off against 1.2 dB.) With no track factors, it stays the lender's.
+  const median = values => { const s = [...values].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
+  const values = Object.values(factors);
+  const made = Object.assign({}, levels, {factors, spare: values.length ? median(values) : levels.spare});
+  provisionalMade[key] = {from: levels, levels: made};
+  return made;
+}
+function levelsNow() {
+  const own = levelCache[levelKey(song.key, preset)];
+  if (own) return {levels: own, provisional: false, measuredAs: preset};
+  const order = levelOrder[song.key] || [];
+  if (!order.length) return null;
+  const kept = TRACKS.filter(t => t.id !== 'vocals' && hasStem(t.id) && (ab === 'orig' || cast[t.id].mode === 'orig')).map(t => t.id);
+  const cost = lender => kept.reduce((sum, track) => sum + Math.abs(loudnessOf(preset, track) - loudnessOf(lender, track)), 0);
+  let best = order[order.length - 1];
+  for (let i = order.length - 2; i >= 0; i--) if (cost(order[i]) < cost(best) - 1e-9) best = order[i];
+  return {levels: borrowedLevels(best, levelCache[levelKey(song.key, best)], preset), provisional: true, measuredAs: best};
+}
+
+/* Ask for (song, preset); resolves when they are in. A request for something no longer showing when its turn comes is dropped. */
+function measureLevels(songKey, name) {
+  const key = levelKey(songKey, name);
+  if (levelCache[key]) return Promise.resolve(levelCache[key]);
+  const done = new Promise((resolve, reject) => (levelWaiters[key] = levelWaiters[key] || []).push({resolve, reject}));
+  pumpLevels();
+  return done;
+}
+/* Whether the window as it stands plays any stem at a measured level (a kept track, or 原曲). */
+const needsLevels = () => !!song && TRACKS.some(t => hasStem(t.id) && (ab === 'orig' || (t.id !== 'vocals' && cast[t.id].mode === 'orig')));
+function pumpLevels(also) {
+  if (levelRunning || !song || !needsLevels()) return;
+  // What runs next: the preset showing now, if it is still unmeasured; otherwise the one asked for in `also` (the other side of A / B).
+  let next = !levelCache[levelKey(song.key, preset)] ? [song.key, preset] : also && !levelCache[levelKey(song.key, also)] ? [song.key, also] : null;
+  if (!next) return;
+  const [songKey, name] = next, key = levelKey(songKey, name);
+  levelRunning = key;
+  api(`/api/levels?song=${songKey}&preset=${encodeURIComponent(name)}`).then(levels => {
+    levelCache[key] = levels;                                   // kept even if nobody is listening any more: it was paid for
+    (levelOrder[songKey] = levelOrder[songKey] || []).push(name);
+    for (const waiter of levelWaiters[key] || []) waiter.resolve(levels);
+    delete levelWaiters[key];
+    levelRunning = null;
+    levelsArrived(songKey, name);
+    pumpLevels();
+  }, error => {
+    for (const waiter of levelWaiters[key] || []) waiter.reject(error);
+    delete levelWaiters[key];
+    levelRunning = null;
+    if (song && song.key === songKey && preset === name) setState(error.message, true);
+  });
+}
+/* Real numbers in: if the window playing now was built on provisional ones for exactly this, rebuild it from where it is. */
+function levelsArrived(songKey, name) {
+  if (levelProvisional && levelProvisional.key === levelKey(songKey, name) && song && song.key === songKey && preset === name
+      && levelProvisional.ticket === renderTicket) {
+    noteAfterRender = levelProvisional.note;                    // the line it was showing, without 「校准中」
+    renderWindow();
+  }
+  // Idle for a few seconds with the showing preset measured: measure the other side of the compare pair too.
+  clearTimeout(pairTimer);
+  pairTimer = setTimeout(() => {
+    const other = pair.length === 2 && pair.includes(preset) ? pair.find(n => n !== preset) : null;
+    if (other && song) pumpLevels(other);
+  }, 4000);
 }
 
 function rmsOf(data) {
@@ -1389,19 +1468,29 @@ async function renderWindowNow() {
   const need = TRACKS.map(t => t.id).filter(id => hasStem(id) && (ab === 'orig' || (id !== 'vocals' && cast[id].mode === 'orig')));
   const originals = {};
   try {
-    await Promise.all(need.map(async id => { originals[id] = await stemWindow(id); }));
+    const fetching = Promise.all(need.map(async id => { originals[id] = await stemWindow(id); }));
+    // While the stems are on their way, render the kits' windows (the same ones kitTrack would make next).
+    for (const kit of playing) kitTrack(kit, '');
+    await fetching;
   } catch (error) { setState(error.message, true); }
   if (ticket !== renderTicket) return;
 
   // A kept stem sits where the preset would have put that track, measured by the server over
   // the whole song (the numbers the export uses), not over this window: a stretch where the
   // stem is nearly silent would otherwise be turned up into noise.
-  let factors = {}, spare = 1;
+  let factors = {}, spare = 1, provisional = null;
   if (need.length) {
     try {
-      const levels = await stemLevels();
-      factors = levels.factors; spare = levels.spare;
-      if (levelNotes !== levels) { levelNotes = levels; paintTracks(); }     // which stems are empty shows on their rows
+      let now = levelsNow();
+      if (!now) {                                                // a song never measured: this once, wait
+        setState('量原声的音量（每首歌量一次，几秒）…');
+        await measureLevels(song.key, preset);
+        if (ticket !== renderTicket) return;
+        now = levelsNow();
+      }
+      if (now.provisional) { provisional = now.measuredAs; measureLevels(song.key, preset).catch(() => {}); }
+      factors = now.levels.factors; spare = now.levels.spare;
+      if (levelNotes !== now.levels) { levelNotes = now.levels; paintTracks(); }     // which stems are empty shows on their rows
     } catch (error) { setState(error.message, true); }
     if (ticket !== renderTicket) return;
   }
@@ -1427,8 +1516,12 @@ async function renderWindowNow() {
   }
   el('play').disabled = !layers.length;
   const note = noteAfterRender; noteAfterRender = '';        // what a roll came up with outlasts the render it caused
-  setState(layers.length ? note || `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨');
+  const said = layers.length ? note || `${ab === 'orig' ? '原曲' : '重构'} · ${layers.length} 条轨 · ${(performance.now() - started).toFixed(0)} ms` : '这个方案里没有出声的轨';
+  levelProvisional = provisional ? {key: levelKey(song.key, preset), ticket, note: said, measuredAs: provisional} : null;
+  setState(provisional ? said + ' · 原声音量校准中' : said);
   if (running) startPlayback(positionInLoop());
+  // The real numbers may have come in while this window was being built: correct it now rather than never.
+  if (provisional && levelCache[levelKey(song.key, preset)]) levelsArrived(song.key, preset);
   const other = pair.find(name => name !== preset);          // the other side of a comparison, ready to flip to
   if (other) ensureKit(other).catch(() => {});
 }

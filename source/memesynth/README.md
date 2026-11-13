@@ -99,6 +99,8 @@ cd source/memesynth
 runtime/0.5.0/envs/basic/python.exe source/memesynth/tools/make_kits.py all
 ```
 
+重建或新加了 kit 之后，再跑一次 `runtime/0.5.0/envs/basic/python.exe -X utf8 source/memesynth/tools/kit_levels.py`（几分钟）：它重写 `kits/levels.json`（每套 kit 每条轨相对 fmkeys 的响度），工作台换预设时借来的原声音量靠它校正。
+
 | kit | 声音 | 换完是什么感觉 |
 |---|---|---|
 | `acid` | TR-808 + TB-303 | 电子舞曲，低音带酸性扫频 |

@@ -390,6 +390,25 @@ def test_vocal_table_covers_every_kit_and_only_those():
     assert all(index[name]['vocal'] == effects.VOCAL_PRESETS[name] for name in index), 'kits.json disagrees'
 
 
+def test_kits_json_carries_the_kit_loudness_table():
+    """kits.json gives each kit its row of tools/kit_levels.py's table; without the file, empty rows (the page borrows plainly)."""
+    table = server.KITS_DIR / 'levels.json'
+    index = server.kit_index()
+    if table.is_file():
+        rows = json.loads(table.read_text(encoding='utf-8'))['kits']
+        assert all(index[name]['loudness'] == rows[name]['db'] for name in index if name in rows), 'kits.json disagrees with levels.json'
+        assert index['fmkeys']['loudness'] and not any(index['fmkeys']['loudness'].values())
+    kept = server.KITS_DIR
+    with tempfile.TemporaryDirectory() as scratch:
+        try:
+            server.KITS_DIR = Path(scratch)
+            assert server.kit_loudness() == {}
+            (Path(scratch) / 'levels.json').write_text('{ not json', encoding='utf-8')
+            assert server.kit_loudness() == {}
+        finally:
+            server.KITS_DIR = kept
+
+
 def test_vocal_settings_follow_the_preset_or_not():
     ambient = effects.VOCAL_PRESETS['ambient']
     own = {'oct': 1, 'vel': -20, 'tone': 40, 'echo': 5, 'room': 0}

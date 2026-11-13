@@ -98,6 +98,7 @@ def kit_index():
     order = ['acid', 'chiptune', 'pluck', 'musicbox', 'fmkeys', 'organ', 'orchestra', 'gamelan', 'synthwave', 'supersaw']
     order += [name for name in about if name not in order]
     found = {p.parent.name: p for p in sorted(KITS_DIR.glob('*/kit.json'))}
+    loudness = kit_loudness()
     index = {}
     for name in order + [n for n in found if n not in order]:
         if name not in found:
@@ -114,8 +115,20 @@ def kit_index():
                         for sample, entry in kit['samples'].items()},
             'voices': kit['voices'],
             'vocal': effects.vocal_preset(name),             # what this preset does to the vocal (SPEC v15)
+            # how loud this kit plays each track, dB vs fmkeys (tools/kit_levels.py): the page corrects borrowed levels with it
+            'loudness': loudness.get(name, {}),
         }
     return index
+
+
+def kit_loudness():
+    """`kits/levels.json` as {kit: {track: dB}}; empty when the file is missing or unreadable (the page then borrows plainly)."""
+    try:
+        data = json.loads((KITS_DIR / 'levels.json').read_text(encoding='utf-8'))
+        return {kit: {track: float(value) for track, value in row.get('db', {}).items()}
+                for kit, row in data.get('kits', {}).items()}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
 
 
 def library_listing(extra=()):

@@ -1,0 +1,498 @@
+{
+ "about": "RMS of each track as each kit plays it, in dB relative to fmkeys playing the same track; mean over the songs below, spread = max - min over them. Written by tools/kit_levels.py; re-run after kits change.",
+ "reference": "fmkeys",
+ "tracks": [
+  "drums",
+  "bass",
+  "guitar",
+  "piano",
+  "other"
+ ],
+ "measuredOn": [
+  "09 Black Country, New Road - Forever Howlong - 09 Nancy Tries to Take the Night__dbcaf0ec7f",
+  "03 100 years of choke - 百年の窒息__6071177814",
+  "06 Scorpius Circus__1ace6c462c"
+ ],
+ "kits": {
+  "acid": {
+   "db": {
+    "drums": 2.03,
+    "bass": -2.58,
+    "guitar": -15.43,
+    "piano": -13.58,
+    "other": -6.89
+   },
+   "spread": {
+    "drums": 0.18,
+    "bass": 2.03,
+    "guitar": 0.6,
+    "piano": 9.15,
+    "other": 1.59
+   }
+  },
+  "ambient": {
+   "db": {
+    "drums": 3.24,
+    "bass": -0.62,
+    "guitar": -1.28,
+    "piano": -0.29,
+    "other": 2.75
+   },
+   "spread": {
+    "drums": 0.43,
+    "bass": 1.01,
+    "guitar": 2.31,
+    "piano": 2.46,
+    "other": 1.27
+   }
+  },
+  "c64": {
+   "db": {
+    "drums": -0.55,
+    "bass": -0.33,
+    "guitar": -1.9,
+    "piano": -1.26,
+    "other": 2.47
+   },
+   "spread": {
+    "drums": 3.38,
+    "bass": 0.28,
+    "guitar": 1.38,
+    "piano": 1.76,
+    "other": 0.88
+   }
+  },
+  "chiptune": {
+   "db": {
+    "drums": 3.85,
+    "bass": -1.69,
+    "guitar": -3.04,
+    "piano": 4.22,
+    "other": 10.88
+   },
+   "spread": {
+    "drums": 1.31,
+    "bass": 0.08,
+    "guitar": 0.83,
+    "piano": 0.41,
+    "other": 1.65
+   }
+  },
+  "electro": {
+   "db": {
+    "drums": -0.04,
+    "bass": -0.01,
+    "guitar": -0.02,
+    "piano": -1.95,
+    "other": -1.52
+   },
+   "spread": {
+    "drums": 1.09,
+    "bass": 0.94,
+    "guitar": 0.47,
+    "piano": 1.24,
+    "other": 0.33
+   }
+  },
+  "fmkeys": {
+   "db": {
+    "drums": 0.0,
+    "bass": 0.0,
+    "guitar": 0.0,
+    "piano": 0.0,
+    "other": 0.0
+   },
+   "spread": {
+    "drums": 0.0,
+    "bass": 0.0,
+    "guitar": 0.0,
+    "piano": 0.0,
+    "other": 0.0
+   }
+  },
+  "futurebass": {
+   "db": {
+    "drums": 1.92,
+    "bass": -0.22,
+    "guitar": -1.26,
+    "piano": -1.88,
+    "other": 1.44
+   },
+   "spread": {
+    "drums": 0.69,
+    "bass": 0.23,
+    "guitar": 0.38,
+    "piano": 1.37,
+    "other": 0.76
+   }
+  },
+  "gamelan": {
+   "db": {
+    "drums": -7.17,
+    "bass": -0.17,
+    "guitar": 1.84,
+    "piano": 7.3,
+    "other": 4.38
+   },
+   "spread": {
+    "drums": 0.11,
+    "bass": 3.13,
+    "guitar": 1.02,
+    "piano": 9.43,
+    "other": 1.57
+   }
+  },
+  "garage": {
+   "db": {
+    "drums": -0.01,
+    "bass": 0.01,
+    "guitar": 0.02,
+    "piano": -0.66,
+    "other": 0.06
+   },
+   "spread": {
+    "drums": 2.34,
+    "bass": 1.65,
+    "guitar": 1.05,
+    "piano": 2.63,
+    "other": 0.3
+   }
+  },
+  "glitch": {
+   "db": {
+    "drums": 1.38,
+    "bass": -0.58,
+    "guitar": -4.95,
+    "piano": 3.14,
+    "other": -1.36
+   },
+   "spread": {
+    "drums": 0.56,
+    "bass": 0.22,
+    "guitar": 0.3,
+    "piano": 0.17,
+    "other": 1.04
+   }
+  },
+  "hardstyle": {
+   "db": {
+    "drums": -0.04,
+    "bass": 1.88,
+    "guitar": -1.83,
+    "piano": 1.5,
+    "other": -0.05
+   },
+   "spread": {
+    "drums": 2.77,
+    "bass": 0.27,
+    "guitar": 1.27,
+    "piano": 0.53,
+    "other": 0.51
+   }
+  },
+  "hoover": {
+   "db": {
+    "drums": 1.99,
+    "bass": 0.59,
+    "guitar": 0.01,
+    "piano": 0.0,
+    "other": 0.24
+   },
+   "spread": {
+    "drums": 0.72,
+    "bass": 0.07,
+    "guitar": 0.55,
+    "piano": 0.38,
+    "other": 0.6
+   }
+  },
+  "house": {
+   "db": {
+    "drums": 0.92,
+    "bass": -0.02,
+    "guitar": 0.01,
+    "piano": -0.01,
+    "other": 0.03
+   },
+   "spread": {
+    "drums": 0.91,
+    "bass": 1.3,
+    "guitar": 0.87,
+    "piano": 1.87,
+    "other": 0.77
+   }
+  },
+  "hyperpop": {
+   "db": {
+    "drums": 0.07,
+    "bass": 1.09,
+    "guitar": -0.71,
+    "piano": 0.01,
+    "other": -1.21
+   },
+   "spread": {
+    "drums": 2.38,
+    "bass": 0.44,
+    "guitar": 0.96,
+    "piano": 0.25,
+    "other": 0.86
+   }
+  },
+  "italo": {
+   "db": {
+    "drums": 1.1,
+    "bass": 0.0,
+    "guitar": 0.02,
+    "piano": -1.5,
+    "other": -0.1
+   },
+   "spread": {
+    "drums": 0.53,
+    "bass": 1.45,
+    "guitar": 0.13,
+    "piano": 0.18,
+    "other": 0.57
+   }
+  },
+  "lofi": {
+   "db": {
+    "drums": 2.22,
+    "bass": 0.37,
+    "guitar": -2.06,
+    "piano": 4.32,
+    "other": 6.89
+   },
+   "spread": {
+    "drums": 0.28,
+    "bass": 0.26,
+    "guitar": 1.63,
+    "piano": 0.73,
+    "other": 0.53
+   }
+  },
+  "megadrive": {
+   "db": {
+    "drums": 0.18,
+    "bass": -0.61,
+    "guitar": 1.38,
+    "piano": 1.8,
+    "other": 4.43
+   },
+   "spread": {
+    "drums": 0.69,
+    "bass": 0.04,
+    "guitar": 1.68,
+    "piano": 0.76,
+    "other": 0.81
+   }
+  },
+  "musicbox": {
+   "db": {
+    "drums": -2.2,
+    "bass": -2.11,
+    "guitar": 2.72,
+    "piano": 8.28,
+    "other": 5.96
+   },
+   "spread": {
+    "drums": 1.9,
+    "bass": 0.82,
+    "guitar": 0.84,
+    "piano": 9.46,
+    "other": 1.31
+   }
+  },
+  "orchestra": {
+   "db": {
+    "drums": 4.31,
+    "bass": -4.5,
+    "guitar": -5.94,
+    "piano": -5.39,
+    "other": 7.01
+   },
+   "spread": {
+    "drums": 1.92,
+    "bass": 1.1,
+    "guitar": 0.53,
+    "piano": 9.29,
+    "other": 0.41
+   }
+  },
+  "organ": {
+   "db": {
+    "drums": 0.02,
+    "bass": -0.44,
+    "guitar": 1.74,
+    "piano": 0.86,
+    "other": 9.95
+   },
+   "spread": {
+    "drums": 0.79,
+    "bass": 0.77,
+    "guitar": 3.48,
+    "piano": 3.91,
+    "other": 0.47
+   }
+  },
+  "phonk": {
+   "db": {
+    "drums": -0.01,
+    "bass": 1.06,
+    "guitar": -0.02,
+    "piano": -0.0,
+    "other": 0.15
+   },
+   "spread": {
+    "drums": 1.56,
+    "bass": 1.15,
+    "guitar": 0.88,
+    "piano": 6.02,
+    "other": 0.14
+   }
+  },
+  "pluck": {
+   "db": {
+    "drums": -1.26,
+    "bass": -11.23,
+    "guitar": -4.07,
+    "piano": -1.91,
+    "other": -1.69
+   },
+   "spread": {
+    "drums": 1.7,
+    "bass": 1.34,
+    "guitar": 0.78,
+    "piano": 9.06,
+    "other": 1.85
+   }
+  },
+  "psytrance": {
+   "db": {
+    "drums": -0.54,
+    "bass": 0.01,
+    "guitar": -0.0,
+    "piano": 0.03,
+    "other": -1.2
+   },
+   "spread": {
+    "drums": 0.12,
+    "bass": 2.48,
+    "guitar": 1.31,
+    "piano": 1.19,
+    "other": 0.81
+   }
+  },
+  "reese": {
+   "db": {
+    "drums": -0.0,
+    "bass": -0.75,
+    "guitar": -0.0,
+    "piano": 1.21,
+    "other": -0.28
+   },
+   "spread": {
+    "drums": 0.38,
+    "bass": 0.8,
+    "guitar": 1.48,
+    "piano": 0.89,
+    "other": 0.53
+   }
+  },
+  "supersaw": {
+   "db": {
+    "drums": 1.51,
+    "bass": -0.66,
+    "guitar": -4.08,
+    "piano": -1.11,
+    "other": 1.0
+   },
+   "spread": {
+    "drums": 0.15,
+    "bass": 0.3,
+    "guitar": 0.92,
+    "piano": 1.79,
+    "other": 0.4
+   }
+  },
+  "synthwave": {
+   "db": {
+    "drums": 1.73,
+    "bass": -0.69,
+    "guitar": -3.35,
+    "piano": 0.35,
+    "other": 2.74
+   },
+   "spread": {
+    "drums": 0.14,
+    "bass": 0.01,
+    "guitar": 0.84,
+    "piano": 2.32,
+    "other": 0.6
+   }
+  },
+  "techno": {
+   "db": {
+    "drums": 1.13,
+    "bass": 0.02,
+    "guitar": -1.48,
+    "piano": 0.01,
+    "other": 1.13
+   },
+   "spread": {
+    "drums": 0.76,
+    "bass": 1.97,
+    "guitar": 0.03,
+    "piano": 2.89,
+    "other": 1.38
+   }
+  },
+  "trap": {
+   "db": {
+    "drums": 3.18,
+    "bass": 0.49,
+    "guitar": -3.02,
+    "piano": -1.26,
+    "other": 2.27
+   },
+   "spread": {
+    "drums": 1.31,
+    "bass": 1.33,
+    "guitar": 0.29,
+    "piano": 3.9,
+    "other": 0.44
+   }
+  },
+  "vaporwave": {
+   "db": {
+    "drums": 0.02,
+    "bass": -0.02,
+    "guitar": 0.01,
+    "piano": -0.01,
+    "other": -0.05
+   },
+   "spread": {
+    "drums": 0.51,
+    "bass": 0.2,
+    "guitar": 2.05,
+    "piano": 3.21,
+    "other": 1.38
+   }
+  },
+  "wobble": {
+   "db": {
+    "drums": 0.01,
+    "bass": -0.0,
+    "guitar": 0.05,
+    "piano": -0.02,
+    "other": 1.24
+   },
+   "spread": {
+    "drums": 0.99,
+    "bass": 0.23,
+    "guitar": 1.36,
+    "piano": 1.61,
+    "other": 0.94
+   }
+  }
+ }
+}

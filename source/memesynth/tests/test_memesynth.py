@@ -479,6 +479,35 @@ def _():
                 assert similarity < 0.98, f'{left} 与 {right} 的钢琴声部几乎相同（相似度 {similarity:.3f}）'
 
 
+@check('kit 响度表（kit_levels）的平均和离散按定义算')
+def _():
+    import kit_levels
+    levels = {'a': {'fmkeys': {'bass': 0.1, 'drums': 0.2}, 'loud': {'bass': 0.2, 'drums': 0.0}},
+              'b': {'fmkeys': {'bass': 0.1, 'drums': 0.2}, 'loud': {'bass': 0.4, 'drums': 0.4}}}
+    got = kit_levels.table(levels)
+    assert got['fmkeys']['db'] == dict.fromkeys(kit_levels.TRACKS, 0.0), got['fmkeys']
+    want_bass = (20 * np.log10(2) + 20 * np.log10(4)) / 2
+    assert abs(got['loud']['db']['bass'] - want_bass) < 0.01 and abs(got['loud']['spread']['bass'] - 20 * np.log10(2)) < 0.01, got['loud']
+    assert abs(got['loud']['db']['drums'] - 20 * np.log10(2)) < 0.01 and got['loud']['spread']['drums'] == 0.0   # a silent song is left out
+    assert got['loud']['db']['piano'] == 0.0                                                                    # nothing anywhere: 0
+
+
+@check('kits/levels.json：每套构建了的 kit 都有一行，fmkeys 全是 0，数都是有限的')
+def _():
+    import json
+    _, names = built_kits()
+    path = ROOT / 'kits' / 'levels.json'
+    if not path.is_file():
+        raise _Skip('还没量：跑 tools/kit_levels.py')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    assert sorted(data['kits']) == sorted(names), set(data['kits']) ^ set(names)
+    assert all(value == 0.0 for value in data['kits']['fmkeys']['db'].values())
+    for name, row in data['kits'].items():
+        assert sorted(row['db']) == sorted(data['tracks']) and sorted(row['spread']) == sorted(data['tracks']), name
+        assert all(np.isfinite(v) for v in [*row['db'].values(), *row['spread'].values()]), name
+    assert len(data['measuredOn']) == 3
+
+
 def run():
     for name in PASSED:
         print(f'  ok    {name}')
