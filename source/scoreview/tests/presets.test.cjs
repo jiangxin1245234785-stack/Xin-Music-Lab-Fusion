@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel, BENCH, breathOnLanes, cutAtBar, barTopOf} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, BENCH, breathOnLanes, cutAtBar, barTopOf, alike} = require('./helpers.cjs');
 
 // The core as it was before the presets (0.8.0, frozen the day they were started).
 const BEFORE = require('./fixtures/score-view-0.8.0.js');
@@ -57,7 +57,8 @@ const oldPart = fx => fx && Object.fromEntries(OLD_FX_KEYS.map(key => [key, fx[k
 
 // `oldOptions` go to 0.8.0, `newOptions` to this core; every frame and every statistic
 // 0.8.0 reports must be the same.
-function sameAs080(model, oldOptions, newOptions, times, label) {
+function sameAs080(source, oldOptions, newOptions, times, label) {
+  const model = alike(source);
   const before = recorder(), after = recorder();
   const old = BEFORE.create(before.canvas, model, () => 0, oldOptions);
   // The lane names as text and the section bar as blocks: the look 0.8.0 had (looks.test.cjs holds the others).
@@ -106,7 +107,10 @@ test('the six presets, and how they and the level name each other', () => {
   // 'clear' is 0.8.0's 'light', value for value, and its new amounts draw nothing.
   assert.deepEqual({...ScoreView.FX_PRESETS.clear}, {halo: 0.5, haloLife: 0.15, haloReach: 1, hitSparks: 0,
     light: 0.55, afterglow: 0.6, shimmer: 0.3, sound: 0, burn: 0, column: 0.07, columnHalf: 24, near: 0.4, pulse: 1,
-    breathe: 0.035, snare: 0.3, sparks: 4});
+    breathe: 0.035, snare: 0.3, sparks: 4, accentGap: 8});
+  // 0.22.0: the kick's lift and the snare's flash come on accents only, this far apart; more often on the loud presets.
+  assert.deepEqual(Object.fromEntries(Object.entries(ScoreView.FX_PRESETS).filter(([, p]) => p).map(([k, p]) => [k, p.accentGap])),
+    {clear: 8, keys: 8, ink: 8, stage: 4, strong: 5});
   const surface = mockCanvas(800, 400);
   const view = ScoreView.create(surface.canvas, fullModel(), () => 0);
   assert.equal(view.options().fxPreset, 'clear');

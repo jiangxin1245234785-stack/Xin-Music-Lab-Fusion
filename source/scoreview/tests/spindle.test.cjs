@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, alike} = require('./helpers.cjs');
 
 const BEFORE = require('./fixtures/score-view-0.17.0.js');
 const DATA = path.join(__dirname, '..', '..', '..', 'work', 'scoreview-20261110', 'data');
@@ -79,7 +79,7 @@ const heights = p => Array.from({length: p.points.length / 8}, (_, k) => {
 });
 
 test("shapeSet: 'two' by default; 'spindle' taken; 'three' (withdrawn) and anything else read as 'two'", () => {
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   assert.equal(ScoreView.DEFAULTS.shapeSet, 'two');
   const view = ScoreView.create(mockCanvas().canvas, oneLane('strings'), () => 0);
   for (const value of ['three', 'four', 3, null, 'SPINDLE']) { view.setOptions({shapeSet: value}); assert.equal(view.options().shapeSet, 'two', String(value)); }
@@ -97,21 +97,24 @@ test('the three-way set is gone from the core, and so is the solid spindle', () 
   assert.equal(ScoreView.SPINDLE.lift, undefined);
 });
 
-test("shapes off, on without a set, 'two', 'three' and unknown values (shapeLinks or not, pitchWeight off) draw exactly what 0.17.0 drew", () => {
+test("shapes off (spindle and links given or not) draw exactly what 0.17.0 drew; on without a set, 'three' and unknown values (shapeLinks or not, pitchWeight off) draw exactly 'two'", () => {
   assert.equal(BEFORE.VERSION, '0.17.0');
   let compared = 0;
-  for (const model of [fullModel(), oneLane('strings'), oneLane('violin'), oneLane('piano'), pilot('qilixiang'), pilot('meguri')]) {
+  // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+  for (const model of [fullModel(), oneLane('strings'), oneLane('violin'), oneLane('piano'), pilot('qilixiang'), pilot('meguri')].map(alike)) {
     const times = steps(0, model.track.duration, 21).map(t => t + 0.013).concat([4.05, 6, 9.1, 10.2]);
-    for (const look of [{}, {fxPreset: 'strong'}, {focusGroup: 'strings', simplify: false, mergeTimbres: false}]) {
+    // Timbre tracks apart with names (0.22.0 numbers icons there instead: SPEC-7 ⑤, looks.test.cjs).
+    for (const look of [{}, {fxPreset: 'strong'}, {focusGroup: 'strings', simplify: false, mergeTimbres: false, laneLabels: 'text'}]) {
       for (const shapes of [{}, {showShapes: true}]) {
-        const old = frames(BEFORE, model, {...look, ...shapes}, times).list;
+        // With the shapes on, 'two' itself is the reference: 0.22.0 made the struck head smaller (SPEC-7).
+        const old = shapes.showShapes ? frames(ScoreView, model, {...look, ...shapes, shapeSet: 'two'}, times).list : frames(BEFORE, model, {...look, ...shapes}, times).list;
         const givens = shapes.showShapes
           ? [...['two', 'three', 'x', undefined].map(set => ({...look, ...shapes, ...(set ? {shapeSet: set} : {})})),
              {...look, ...shapes, shapeSet: 'two', shapeLinks: true, pitchWeight: false}, {...look, ...shapes, shapeLinks: true}]
           : [{...look}, {...look, shapeSet: 'spindle'}, {...look, shapeSet: 'spindle', shapeLinks: true, pitchWeight: false}];
         for (const given of givens) {
           frames(ScoreView, model, given, times).list.forEach((frame, i) => {
-            assert.equal(frame.calls, old[i].calls, `${JSON.stringify(given)} ${times[i]} 秒：和 0.17.0 画的不一样`);
+            assert.equal(frame.calls, old[i].calls, `${JSON.stringify(given)} ${times[i]} 秒：和 ${shapes.showShapes ? '「two」' : '0.17.0'} 画的不一样`);
             assert.deepEqual(frame.stats, old[i].stats);
             compared++;
           });

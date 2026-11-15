@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, alike} = require('./helpers.cjs');
 
 const BEFORE = require('./fixtures/score-view-0.20.0.js');
 const A = ScoreView.COVER_ADAPT, T = ScoreView.TEXTURE_ADAPT;
@@ -21,7 +21,7 @@ function model() {
 }
 function frames(core, options, times, measure, picture = {width: 480, height: 480}) {
   const surface = mockCanvas(800, 400);
-  const view = core.create(surface.canvas, model(), () => 0, {showTexture: true, ...options});
+  const view = core.create(surface.canvas, alike(model()), () => 0, {showTexture: true, ...options});
   if (picture) measure === undefined ? view.setCover(picture) : view.setCover(picture, measure);
   view.draw(0);
   return times.map(t => { surface.reset(); const stats = view.draw(t); return {stats, calls: surface.calls.slice(), json: JSON.stringify(surface.calls)}; });
@@ -39,7 +39,7 @@ const veilFor = m => {
 const BUSY = {mean: 0.71, spread: 0.32}, MID = {mean: 0.36, spread: 0.15}, PLAIN = {mean: 0.23, spread: 0.03}, DARK = {mean: 0.05, spread: 0.12};
 
 test('coverAdapt and textureAdapt: off by default, booleans only; the version moved up a step', () => {
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   assert.equal(ScoreView.DEFAULTS.coverAdapt, false);
   assert.equal(ScoreView.DEFAULTS.textureAdapt, false);
   const view = ScoreView.create(mockCanvas().canvas, model(), () => 0);

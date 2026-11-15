@@ -168,11 +168,11 @@ test('merging timbre tracks gives one lane per stem and keeps the melody and the
   assert.equal(merged.lanes()[1].visible, false);
 });
 
-test('simplify joins a chain on one pitch, then drops what is short, then what is quiet', () => {
+test('simplify joins a chain on one pitch, then drops a blip, then what is both faint for the lane and short (0.22.0)', () => {
   const {notes, stats} = ScoreView.simplifyNotes([
     [9, 0.2, 60, 100], [9.2, 0.2, 60, 60], [9.4, 0.2, 60, 30],      // a chain: one note, the loudest velocity
-    [10, 0.03, 72, 100],                                             // a blip
-    [11, 0.5, 67, 20],                                               // quiet
+    [10, 0.02, 72, 100],                                             // a blip
+    [11, 0.1, 67, 20],                                               // faint (under 0.4 of the median 100) and short
     [12, 0.05, 64, 30], [12.05, 0.05, 64, 30], [12.1, 0.05, 64, 90], // short pieces that add up to a real note
     [20, 0.5, 60, 100],                                              // the same pitch much later stays apart
     [20.1, 0.5, 61, 100]                                             // a neighbouring pitch is never joined

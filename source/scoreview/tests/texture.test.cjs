@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel, barTopOf} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, barTopOf, alike} = require('./helpers.cjs');
 const adapter = require(process.env.SCOREVIEW_ADAPTER || path.join(__dirname, '..', 'adapter', 'track-model.cjs'));
 const {cues} = require(process.env.SCOREVIEW_CUES || path.join(__dirname, '..', 'adapter', 'cues.cjs'));
 
@@ -58,7 +58,8 @@ test("the default is off; showTexture takes booleans, textureAt 'below' or 'abov
 test('off, and nothing given, draw exactly what 0.12.0 drew, a texture lane in the model or not', () => {
   assert.equal(BEFORE.VERSION, '0.12.0');
   let compared = 0;
-  for (const model of [fullModel(), small(Array(60).fill(-20)), withTexture('qilixiang'), withTexture('meguri')]) {
+  // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+  for (const model of [fullModel(), small(Array(60).fill(-20)), withTexture('qilixiang'), withTexture('meguri')].map(alike)) {
     const times = steps(0, model.track.duration, 41).map(t => t + 0.013).concat([9.02, 10, 10.02, 30.01]);
     // The swell is left out here: SPEC-FIX §7 widened it on purpose after 0.12.0 (dynamics.test.cjs holds it).
     for (const look of [{}, {fxPreset: 'strong'}, {laneLabels: 'text', sectionStyle: 'block', focusGroup: 'guitar'}]) {
@@ -173,7 +174,7 @@ test('in the neutral colour, no brighter than a note, untouched by the effects, 
   // The neutral colour is the 'other' group's own.
   assert.ok(fillsOf(plain[0]).length);
   // Under the drums ('below') the kick's breath stops above it: no effect reaches the band.
-  const kick = frames(ScoreView, model, {showTexture: true, fxPreset: 'strong'}, [10.02]).list[0];
+  const kick = frames(ScoreView, model, {showTexture: true, fxPreset: 'strong'}, [9.02]).list[0];
   const breath = kick.surface.filter(call => call.name === 'fillRect' && /^rgba\(255,255,255,/.test(call.fillStyle) && call.args[0] === 0 && call.args[2] === 800);
   assert.ok(breath.length === 1 && kick.stats.fx.breathe > 0, '这一帧应当有底鼓呼吸');
   assert.ok(breath[0].args[1] + breath[0].args[3] <= kick.stats.texture.top, `呼吸盖到了带子：${JSON.stringify(breath[0].args)}，带子从 ${kick.stats.texture.top}`);

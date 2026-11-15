@@ -7,7 +7,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, alike} = require('./helpers.cjs');
+// The models here have no drum lane: a drum dot is then the widest one can be (drawDrums: 4 px tall, 1.6 times as wide).
+const DOT = 1.6 * 4;
 
 const BEFORE = require('./fixtures/score-view-0.16.0.js');
 const DATA = path.join(__dirname, '..', '..', '..', 'work', 'scoreview-20261110', 'data');
@@ -57,7 +59,7 @@ function paths(calls) {
 const fills = frame => frame.surface.filter(call => call.name === 'fill').map(call => [call.fillStyle, call.state.shadowColor, call.state.shadowBlur, call.alpha]);
 
 test('the default is off; showShapes takes booleans only; the version moved up a step', () => {
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   assert.equal(ScoreView.DEFAULTS.showShapes, false);
   const view = ScoreView.create(mockCanvas().canvas, oneLane('piano'), () => 0);
   assert.equal(view.options().showShapes, false);
@@ -71,7 +73,8 @@ test('the default is off; showShapes takes booleans only; the version moved up a
 test('off, and nothing given, draw exactly what 0.16.0 drew (the strict canvas: every drawing state)', () => {
   assert.equal(BEFORE.VERSION, '0.16.0');
   let compared = 0;
-  for (const model of [fullModel(), oneLane('piano'), oneLane('bass'), pilot('qilixiang'), pilot('meguri')]) {
+  // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+  for (const model of [fullModel(), oneLane('piano'), oneLane('bass'), pilot('qilixiang'), pilot('meguri')].map(alike)) {
     const times = steps(0, model.track.duration, 31).map(t => t + 0.013).concat([4.05, 9.02, 10, 10.02, 30.01]);
     for (const look of [{}, {fxPreset: 'strong'}, {laneLabels: 'text', sectionStyle: 'block', focusGroup: 'guitar', simplify: false, mergeTimbres: false}]) {
       const old = frames(BEFORE, model, look, times).list;
@@ -88,10 +91,10 @@ test('off, and nothing given, draw exactly what 0.16.0 drew (the strict canvas: 
 });
 
 for (const group of ['piano', 'guitar']) {
-  test(`struck (${group}): a head at the onset, as wide as tall, ${S.head} times the note at most and never over ${S.headCap} semitones taller; the body tapers to the tail over ${S.taper} s`, () => {
+  test(`struck (${group}): a head at the onset, as wide as tall, ${S.head} times the note at most, never over ${S.headCap} semitones taller nor wider than a drum dot, always ${S.headOver} px prouder; the body tapers to the tail over ${S.taper} s`, () => {
     const off = frames(ScoreView, oneLane(group), LOOK, [3]).list[0], on = frames(ScoreView, oneLane(group), {...LOOK, showShapes: true}, [3]).list[0];
     const g = geometry(off);
-    const T = g.T, head = Math.min(T * S.head, T + g.semitone * S.headCap), tail = Math.max(S.tailMin, T * S.tail);
+    const T = g.T, head = Math.max(T + S.headOver, Math.min(T * S.head, T + g.semitone * S.headCap, DOT)), tail = Math.max(S.tailMin, T * S.tail);
     assert.ok(head > T, '头要比音符粗');
     const shaped = paths(on.surface).filter(p => p.rects.length && p.points.length);
     assert.equal(shaped.length, 1, '这一帧的音符都在一条路径里（未弹那一桶）');
@@ -121,7 +124,7 @@ for (const group of ['piano', 'guitar']) {
 test(`bass: struck, ${S.bass} times as thick, never more than ${S.bassCap} semitones thicker`, () => {
   const off = frames(ScoreView, oneLane('bass'), LOOK, [3]).list[0], on = frames(ScoreView, oneLane('bass'), {...LOOK, showShapes: true}, [3]).list[0];
   const g = geometry(off);
-  const full = Math.min(g.T * S.bass, g.T + g.semitone * S.bassCap), head = Math.min(full * S.head, full + g.semitone * S.headCap);
+  const full = Math.min(g.T * S.bass, g.T + g.semitone * S.bassCap), head = Math.max(full + S.headOver, Math.min(full * S.head, full + g.semitone * S.headCap, DOT));
   assert.ok(full > g.T, '贝斯要粗一档');
   const [shaped] = paths(on.surface).filter(p => p.rects.length && p.points.length);
   const c = g.centre(g.long);
@@ -163,13 +166,16 @@ test('a lane listened to alone keeps its shapes; notes are shaped after simplify
   assert.ok(paths(focused.surface).some(p => p.rects.length && p.points.length), '聚焦时照样有形状');
   const other = frames(ScoreView, model, {...LOOK, focusGroup: 'bass', showShapes: true}, [3]).list[0];
   assert.ok(paths(other.surface).some(p => p.rects.length && p.points.length), '别的轨被聚焦时也照样有形状');
-  // Two pieces of one pitch that simplifying joins: one head.
+  // Two pieces of one pitch that simplifying joins (the second clearly softer: the tail of the same strike): one head.
   const pieces = oneLane('piano');
-  pieces.lanes[0].notes = [[4, 0.5, 60, 90], [4.52, 0.5, 60, 90], [9, 0.5, 62, 90]];
+  pieces.lanes[0].notes = [[4, 0.5, 60, 90], [4.52, 0.5, 60, 60], [9, 0.5, 62, 90]];
   const joined = frames(ScoreView, pieces, {...LOOK, simplify: true, showShapes: true}, [3]).list[0];
   assert.equal(joined.stats.shaped, 2);
   const split = frames(ScoreView, pieces, {...LOOK, simplify: false, showShapes: true}, [3]).list[0];
   assert.equal(split.stats.shaped, 3);
+  // As loud: struck again (0.22.0), so two heads even simplified.
+  pieces.lanes[0].notes[1][3] = 90;
+  assert.equal(frames(ScoreView, pieces, {...LOOK, simplify: true, showShapes: true}, [3]).list[0].stats.shaped, 3);
 });
 
 test('on the pilots: every shaped lane is a piano, guitar or bass lane; the strings, voice and drums draw as before', () => {

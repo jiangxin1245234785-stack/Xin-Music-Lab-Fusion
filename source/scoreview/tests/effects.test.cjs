@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel, BENCH} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, BENCH, alike} = require('./helpers.cjs');
 
 // The core as it was before the effects (0.7.0, frozen the day they were started). With
 // `effects: 'off'` the core must draw exactly what this one draws.
@@ -43,7 +43,8 @@ function recorder(width = 800, height = 400) {
 
 const picture = {width: 480, height: 480};
 
-function sameFrames(model, options, times, label) {
+function sameFrames(source, options, times, label) {
+  const model = alike(source);
   const before = recorder(), after = recorder();
   const old = BEFORE.create(before.canvas, model, () => 0, options);
   // Names as text, the section bar as blocks: the look 0.7.0 had (looks.test.cjs holds the others).
@@ -305,10 +306,18 @@ test('S4: a drum is known by the name of its row, whatever order the rows come i
   }
 });
 
-test('S4: a softer snare flashes less', () => {
+test('S4: a softer snare flashes less; one that is not an accent does not flash (0.22.0)', () => {
   const {view} = make(ONLY.drums);
   const loud = view.draw(31).fx.snare, soft = view.draw(36).fx.snare;
-  assert.ok(soft > 0 && soft < loud * 0.5, `力度 40 的军鼓闪 ${soft}，力度 127 的闪 ${loud}`);
+  assert.ok(loud > 0 && soft === 0, `力度 40 的军鼓（不是重音）闪 ${soft}，力度 127 的闪 ${loud}`);
+  // Two accents (each loud for this song and louder than the snares around it), 10 s apart: the softer flashes less.
+  const model = fxModel();
+  const snare = ROWS.indexOf('snare');
+  model.lanes[1].hits = [[20, snare, 127], [20.5, snare, 40], [30, snare, 100], [30.5, snare, 40]];
+  const {view: two} = make(ONLY.drums, model);
+  const strong = two.draw(20).fx.snare, weaker = two.draw(30).fx.snare;
+  assert.ok(weaker > 0 && Math.abs(weaker / strong - 100 / 127) < 0.01, `力度 100 的重音闪 ${weaker}，力度 127 的闪 ${strong}`);
+  assert.equal(two.draw(20.5).fx.snare, 0);
 });
 
 test('the effects that cover an area are drawn under the notes and the words, never over them', () => {

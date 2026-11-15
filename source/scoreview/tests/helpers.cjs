@@ -67,13 +67,13 @@ function fullModel() {
        notes: [[10, 0.5, 59, 96], [10.6, 0.4, 61, 90], [30, 1, 64, 100]],
        contour: {hop: 0.01, start: 0, midi: [59.1, null]}},
       {id: 'guitar/clean electric guitar', label: '电吉他', kind: 'pitched', group: 'guitar', groupLabel: '吉他',
-       notes: [[9, 0.2, 60, 100], [9.2, 0.2, 60, 100], [9.4, 0.2, 60, 100], [10, 0.03, 72, 100], [11, 0.5, 67, 20], [40, 1, 55, 90]]},
+       notes: [[9, 0.2, 60, 100], [9.2, 0.2, 60, 75], [9.4, 0.2, 60, 55], [10, 0.02, 72, 100], [11, 0.1, 67, 20], [40, 1, 55, 90]]},
       {id: 'guitar/acoustic guitar', label: '木吉他', kind: 'pitched', group: 'guitar', groupLabel: '吉他',
-       notes: [[9, 0.2, 60, 100], [12, 0.5, 64, 80]]},
+       notes: [[9, 0.2, 60, 70], [12, 0.5, 64, 80]]},
       {id: 'bass', label: '贝斯', kind: 'pitched', group: 'bass', notes: [[8, 2, 36, 100], [10, 2, 38, 100]]},
       {id: 'drums', label: '鼓', kind: 'drums', group: 'drums',
        rows: ['kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride'],
-       hits: [[9, 0, 110], [9.5, 1, 100], [10, 0, 110], [10, 2, 80], [10.5, 1, 100], [50, 5, 90]]}
+       hits: [[9, 0, 110], [9.5, 1, 100], [10, 0, 70], [10, 2, 80], [10.5, 1, 60], [50, 5, 90]]}
     ],
     chords: [[0, 4.2, 'D#m', 0.78], [4.2, 20, 'F#', 0.6], [30, 40, 'Cm', 0.5]],
     chordTones: {'D#m': [3, 6, 10], 'F#': [6, 10, 1], Cm: [0, 3, 7]},
@@ -175,4 +175,91 @@ function barTopOf(view, x, height) {
   return height;
 }
 
-module.exports = {ScoreView, mockCanvas, fullModel, lanesOnly, OPTIONAL_LAYERS, BENCH, breathOnLanes, cutAtBar, barTopOf};
+// 0.22.0 changed two defaults on purpose (work/score-shapes-20261114/SPEC-7.md): simplifying no longer joins a
+// struck lane's strikes or grows a note past SIMPLIFY.longest, and a kick lifts / a snare flashes only on an accent
+// (DRUM_ACCENT, accentGap). The suites that hold "this draws exactly what an older core drew" give both cores the
+// model through `alike`, an input on which the old and the new rules agree, so everything else is still compared
+// frame for frame (the new rules have tests of their own):
+//   - on every lane with notes, each chain the old rule would join (same pitch, next starting within
+//     joinGap of the chain's end, timbre tracks of a group together) is written as the note the old rule made, in
+//     pieces of at most SIMPLIFY.longest that leave more than joinGap between them, in the lane of its first piece;
+//   - of the kicks and snares, only those that fire under the new rule with the longest gap of any preset are kept
+//     (repeated until it holds): the old core fired every one, the new one then fires every one too.
+function alike(source) {
+  const model = JSON.parse(JSON.stringify(source));
+  const {joinGap, longest} = ScoreView.SIMPLIFY;
+  // Every lane with notes, grouped as merging folds them (a melody lane on its own), so no two notes that either rule
+  // could join are left, merged or not: the held lanes too, as a chain longer than SIMPLIFY.longest is now cut.
+  const groups = new Map();
+  for (const lane of model.lanes) {
+    if (lane.kind === 'drums' || !Array.isArray(lane.notes)) continue;
+    const key = lane.kind === 'pitched' ? `g:${lane.group}` : `l:${lane.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(lane);
+  }
+  for (const lanes of groups.values()) {
+    const all = [];
+    lanes.forEach(lane => lane.notes.forEach(note => all.push({note, lane})));
+    all.sort((a, b) => a.note[2] - b.note[2] || a.note[0] - b.note[0]);
+    const out = new Map(lanes.map(lane => [lane, []]));
+    let chain = null;
+    const close = () => {
+      if (!chain) return;
+      const [start, dur, pitch, vel, role] = chain.note;
+      for (let at = start; at < start + dur - 1e-9; at += longest + joinGap * 2) {
+        const piece = [at, Math.min(longest, start + dur - at), pitch, vel];
+        if (role !== undefined) piece.push(role);
+        out.get(chain.lane).push(piece);
+      }
+    };
+    for (const {note, lane} of all) {
+      if (chain && note[2] === chain.note[2] && note[0] <= chain.note[0] + chain.note[1] + joinGap) {
+        chain.note[1] = Math.max(chain.note[0] + chain.note[1], note[0] + note[1]) - chain.note[0];
+        chain.note[3] = Math.max(chain.note[3], note[3]);
+        if (chain.note.length > 4 || note.length > 4) chain.note[4] = Math.max(chain.note.length > 4 ? chain.note[4] : -1, note.length > 4 ? note[4] : -1);
+      } else { close(); chain = {note: note.slice(), lane}; }
+    }
+    close();
+    for (const lane of lanes) lane.notes = out.get(lane).sort((a, b) => a[0] - b[0] || a[2] - b[2]);
+  }
+  // The notes either rule drops after joining are left out: the old one dropped under 0.06 s or under velocity 40, the
+  // new one under minDuration, or softer than `faint` of the lane's median and shorter than `faintDur`. The median is
+  // the merged group's or the lane's own, so this is repeated over both until nothing more goes.
+  const {minDuration, faint, faintDur} = ScoreView.SIMPLIFY;
+  const median = notes => { const v = notes.map(n => n[3]).sort((a, b) => a - b); return v.length ? v[v.length >> 1] : 0; };
+  const drops = (note, typical) => note[1] < 0.06 || note[3] < 40 || note[1] < minDuration || (note[3] < faint * typical && note[1] < faintDur);
+  for (let round = 0; round < 50; round++) {
+    let gone = 0;
+    for (const lanes of [...groups.values(), ...[...groups.values()].flat().map(lane => [lane])]) {
+      const typical = median(lanes.flatMap(lane => lane.notes));
+      for (const lane of lanes) {
+        const kept = lane.notes.filter(note => !drops(note, typical));
+        gone += lane.notes.length - kept.length;
+        lane.notes = kept;
+      }
+    }
+    if (!gone) break;
+  }
+  const gap = Math.max(...Object.values(ScoreView.FX_PRESETS).filter(Boolean).map(preset => preset.accentGap));
+  for (const lane of model.lanes) {
+    if (lane.kind !== 'drums' || !Array.isArray(lane.hits)) continue;
+    const named = name => ScoreView.DRUM_ACCENT.drums.includes(lane.rows[name]);
+    for (let round = 0; round < 50; round++) {
+      const hits = lane.hits.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const count = hits.length, set = {count, time: new Float32Array(count), row: new Uint8Array(count), vel: new Uint8Array(count)};
+      hits.forEach((hit, i) => { set.time[i] = hit[0]; set.row[i] = hit[1]; set.vel[i] = hit[2]; });
+      const accent = ScoreView.drumAccents(set, lane.rows), last = new Map(), keep = [];
+      hits.forEach((hit, i) => {
+        if (!named(hit[1])) { keep.push(hit); return; }
+        const before = last.has(hit[1]) ? last.get(hit[1]) : -Infinity;
+        if (accent[i] && set.time[i] - before >= gap) { keep.push(hit); last.set(hit[1], set.time[i]); }
+      });
+      const done = keep.length === lane.hits.length;
+      lane.hits = keep;
+      if (done) break;
+    }
+  }
+  return model;
+}
+
+module.exports = {ScoreView, mockCanvas, fullModel, lanesOnly, OPTIONAL_LAYERS, BENCH, breathOnLanes, cutAtBar, barTopOf, alike};

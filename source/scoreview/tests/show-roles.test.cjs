@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, alike} = require('./helpers.cjs');
 const adapter = require(process.env.SCOREVIEW_ADAPTER || path.join(__dirname, '..', 'adapter', 'track-model.cjs'));
 
 const BEFORE = require('./fixtures/score-view-0.15.0.js');
@@ -78,7 +78,7 @@ const blockRects = frame => frame.bars.filter(bar => { const c = rgbaOf(bar.styl
 
 test('the default is off; showRoles takes booleans only; the model says whether it has roles', () => {
   assert.equal(ScoreView.DEFAULTS.showRoles, false);
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   const view = ScoreView.create(mockCanvas().canvas, shapes(), () => 0);
   assert.equal(view.options().showRoles, false);
   view.setOptions({showRoles: 'yes'});
@@ -96,7 +96,8 @@ test('off, and nothing given, draw exactly what 0.15.0 drew, roles in the model 
   let compared = 0;
   const pilots = ['qilixiang', 'meguri'].map(name => withRoles(pilot(name)));
   for (const p of pilots) assert.ok(p.health.roles.ok && p.health.roles.lead > 0, JSON.stringify(p.health.roles));
-  for (const model of [fullModel(), shapes(), shapes(false), ...pilots.map(p => p.model)]) {
+  // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+  for (const model of [fullModel(), shapes(), shapes(false), ...pilots.map(p => p.model)].map(alike)) {
     const times = steps(0, model.track.duration, 31).map(t => t + 0.013).concat([4.05, 6.5, 9.02, 10, 12.1, 30.01]);
     for (const look of [{}, {fxPreset: 'strong'}, {laneLabels: 'text', sectionStyle: 'block', focusGroup: 'guitar', simplify: false, mergeTimbres: false}]) {
       const old = frames(BEFORE, model, look, times).list;

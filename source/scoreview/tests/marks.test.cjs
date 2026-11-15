@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, fullModel, BENCH, breathOnLanes, cutAtBar, barTopOf} = require('./helpers.cjs');
+const {ScoreView, fullModel, BENCH, breathOnLanes, cutAtBar, barTopOf, alike} = require('./helpers.cjs');
 const {cues} = require('../adapter/cues.cjs');
 
 // The core as it was before the marks (0.9.2, frozen the day they were started).
@@ -60,7 +60,8 @@ const hexRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join
 
 // --- 'sentence' is 0.9.2 -----------------------------------------------------------------------
 
-function sameAs092(model, options, times, label) {
+function sameAs092(source, options, times, label) {
+  const model = alike(source);
   const before = recorder(), after = recorder();
   const old = BEFORE.create(before.canvas, model, () => 0, options);
   const now = ScoreView.create(after.canvas, model, () => 0, {...options});
@@ -88,7 +89,8 @@ test("captionStyle 'sentence' draws exactly what 0.9.2 drew, frame for frame, se
     for (const look of [{fxPreset: 'off'}, {fxPreset: 'clear'}, {fxPreset: 'strong'}, {fxPreset: 'keys'}]) {
       for (const labels of [{laneLabels: 'text', sectionStyle: 'block'}, {laneLabels: 'icon', sectionStyle: 'line'}]) {
         const options = {...look, ...labels, ...style};
-        sameAs092(marked(), {...BENCH, ...options}, steps(0, 40, 81).concat(around([A, B, C, D])), `试验台 ${JSON.stringify(options)}`);
+        // Icons with the timbre tracks apart: 0.22.0 numbers them instead of naming them (SPEC-7 ⑤, looks.test.cjs), so that look is compared merged.
+        sameAs092(marked(), {...BENCH, ...options, ...(options.laneLabels === 'icon' ? {mergeTimbres: true} : {})}, steps(0, 40, 81).concat(around([A, B, C, D])), `试验台 ${JSON.stringify(options)}`);
         frames += 81 + 28;
         for (const name of ['qilixiang', 'meguri']) {
           const model = pilot(name);

@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel, BENCH, cutAtBar, barTopOf} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, BENCH, cutAtBar, barTopOf, alike} = require('./helpers.cjs');
 
 const BEFORE = require('./fixtures/score-view-0.11.0.js');
 const DATA = path.join(__dirname, '..', '..', '..', 'work', 'scoreview-20261110', 'data');
@@ -42,7 +42,7 @@ const curveOf = energy => {
 };
 
 test("the default is 'off'; only 'song' and 'off' are taken", () => {
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   assert.equal(ScoreView.DEFAULTS.fxDynamics, 'off');
   const view = ScoreView.create(mockCanvas().canvas, fullModel(), () => 0);
   assert.equal(view.options().fxDynamics, 'off');
@@ -57,7 +57,8 @@ test("the default is 'off'; only 'song' and 'off' are taken", () => {
 
 test("'off', and nothing given, draw exactly what 0.11.0 drew, frame for frame, but for effects cut at the section bar", () => {
   assert.equal(BEFORE.VERSION, '0.11.0');
-  const models = [fullModel(), pilot('qilixiang'), pilot('meguri')];
+  // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+  const models = [fullModel(), pilot('qilixiang'), pilot('meguri')].map(alike);
   let compared = 0, cut = 0;
   for (const fxPreset of ['clear', 'keys', 'ink', 'stage', 'strong', 'off']) {
     for (const look of [{}, {laneLabels: 'text', sectionStyle: 'block', captionStyle: 'sentence'}, {focusGroup: 'guitar', loop: [21, 45]}]) {

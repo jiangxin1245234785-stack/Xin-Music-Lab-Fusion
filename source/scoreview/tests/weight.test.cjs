@@ -109,7 +109,7 @@ test("with the shapes on: the struck head and tail and the spindle's halo and co
     const heads = shaped.calls.filter(call => call.name === 'rect').sort((a, b) => a.args[0] - b.args[0]);
     heads.forEach((head, i) => {
       const own = m.on[i].height, full = own;   // the bass is not made thicker on top of its weight
-      assert.ok(near(head.args[3], Math.min(full * SH.head, full + m.semitone * SH.headCap)), `${group} 第 ${i + 1} 个音的头 ${head.args[3]}`);
+      assert.ok(near(head.args[3], Math.max(full + SH.headOver, Math.min(full * SH.head, full + m.semitone * SH.headCap, 1.6 * 4))), `${group} 第 ${i + 1} 个音的头 ${head.args[3]}`);
       assert.ok(near(head.args[1] + head.args[3] / 2, centre(m.off[i])), '头在中线上');
     });
     // The body starts at the weighted thickness.

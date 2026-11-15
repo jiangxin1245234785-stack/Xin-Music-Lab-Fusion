@@ -208,16 +208,42 @@ test("an icon's brightness follows its lane's loudness, slowly, between half and
   assert.ok(stroke, '图标的亮度没有用在线上');
 });
 
-test('a lane with no icon of its own, or sharing its group with another lane on screen, keeps its name', () => {
+test('every lane has an icon (0.22.0): a group without one takes the nearest kind\'s or the quaver; lanes of one group shown apart are numbered', () => {
   const odd = draw(oneLane('kazoo'), {laneLabels: 'icon'});
-  assert.equal(odd.stats.labels[0].shown, 'text');
-  assert.ok(odd.surface.texts().some(item => item.text === '名字-kazoo'));
-  // Timbre tracks shown apart: two guitar lanes, both by name; the other lanes by icon.
+  assert.equal(odd.stats.labels[0].shown, 'icon', '认不出的组也用图标（八分音符）');
+  assert.ok(!odd.surface.texts().some(item => item.text === '名字-kazoo'), '不再写整行名字');
+  assert.equal(draw(oneLane('cello'), {laneLabels: 'icon'}).stats.labels[0].shown, 'icon');
+  // The nearest kind: a cello lane draws the strings' icon (same pen moves as a strings lane), a kazoo the quaver.
+  const moves = group => JSON.stringify(iconCalls(draw(oneLane(group), {laneLabels: 'icon'}).surface)[0].map(call => [call.name, ...call.args.map(v => Math.round(v * 100))]));
+  assert.equal(moves('cello'), moves('strings'));
+  assert.equal(moves('kazoo'), moves('other'));
+  // Timbre tracks shown apart: both guitar lanes by the guitar icon, numbered 1 and 2 top to bottom, no names.
   const split = draw(fullModel(), {laneLabels: 'icon', mergeTimbres: false}, 10);
-  const shown = Object.fromEntries(split.stats.labels.map(item => [item.lane, item.shown]));
-  assert.deepEqual(shown, {vocals: 'icon', 'guitar/clean electric guitar': 'text', 'guitar/acoustic guitar': 'text', bass: 'icon', drums: 'icon'});
+  const shown = Object.fromEntries(split.stats.labels.map(item => [item.lane, [item.shown, item.number || 0]]));
+  assert.deepEqual(shown, {vocals: ['icon', 0], 'guitar/clean electric guitar': ['icon', 1], 'guitar/acoustic guitar': ['icon', 2], bass: ['icon', 0], drums: ['icon', 0]});
+  const texts = split.surface.texts().map(item => item.text);
+  assert.ok(texts.includes('1') && texts.includes('2'), '序号画出来了');
+  assert.ok(!['电吉他', '木吉他'].some(name => texts.includes(name)), '分开时轨头不写名字');
+  // The number sits just right of the icon, at its foot, in the lane's colour, smaller than a name.
+  const guitar = split.stats.labels.find(item => item.lane === 'guitar/acoustic guitar');
+  const two = split.surface.texts().find(item => item.text === '2');
+  assert.ok(Math.abs(two.x - (guitar.x + guitar.size + 1)) < 0.01 && Math.abs(two.y - (guitar.y + guitar.size)) < 0.01);
   const merged = draw(fullModel(), {laneLabels: 'icon'}, 10);
-  assert.ok(merged.stats.labels.every(item => item.shown === 'icon'), '合并后吉他只有一条，应当用图标');
+  assert.ok(merged.stats.labels.every(item => item.shown === 'icon' && !item.number), '合并后吉他只有一条，用图标，不编号');
+  // Many lanes apart on a short canvas: every icon one smaller size that fits the shortest lane, never under 8 px.
+  const many = fullModel();
+  for (let k = 0; k < 3; k++) many.lanes.splice(2, 0, {id: `guitar/t${k}`, label: `t${k}`, kind: 'pitched', group: 'guitar', groupLabel: '吉他', notes: [[9, 1, 50 + k, 90]]});
+  const crowded = draw(many, {laneLabels: 'icon', mergeTimbres: false}, 10).stats.labels.filter(item => item.lane !== 'texture');
+  const sizes = new Set(crowded.filter(item => item.shown === 'icon').map(item => item.size));
+  assert.equal(sizes.size, 1, `图标大小不一：${[...sizes]}`);
+  const [size] = sizes;
+  assert.ok(size < 13 * 1.7 && size >= 8, `挤的时候缩小但不小于 8：${size}`);
+  assert.ok(crowded.every(item => item.shown === 'icon'), '每条轨都有图标');
+  // Six more: the short lanes are given room (at least 0.6 of an even share, or 8 px) so that none goes without an icon.
+  const more = fullModel();
+  for (let k = 0; k < 6; k++) more.lanes.splice(2, 0, {id: `guitar/u${k}`, label: `u${k}`, kind: 'pitched', group: 'guitar', groupLabel: '吉他', notes: [[9, 1, 50 + k, 90]]});
+  const packed = draw(more, {laneLabels: 'icon', mergeTimbres: false}, 10).stats.labels;
+  assert.ok(packed.every(item => item.shown === 'icon'), `挤成 11 条也每条有图标：${packed.filter(item => item.shown !== 'icon').map(item => item.lane)}`);
 });
 
 test("a lane's name is still there to be asked for at its icon", () => {

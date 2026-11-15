@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.21.0';
+  const VERSION = '0.22.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -142,7 +142,10 @@
   // into a wall); body: from the full thickness at the onset straight down to `tail` of it (never under `tailMin`
   // pixels) over the first `taper` seconds, then that thin to the end. The bass: `bass` times the thickness, never
   // more than `bassCap` semitones thicker than the note would be.
-  const SHAPES = Object.freeze({head: 2, headCap: 2, tail: 0.3, tailMin: 1, taper: 0.6, bass: 1.35, bassCap: 1.1});
+  // Since 0.22.0 (SPEC-7: the 2x head drew the eye and was bigger than a drum dot) the head is `head` 1.4 times the
+  // thickness, never wider than a drum dot on the same screen (drumDotWidth), but always `headOver` pixels prouder than
+  // the body, so a head is still seen where the body is already as thick as a dot.
+  const SHAPES = Object.freeze({head: 1.4, headOver: 1, headCap: 2, tail: 0.3, tailMin: 1, taper: 0.6, bass: 1.35, bassCap: 1.1});
 
   // --- the spindle (shapeSet: 'spindle'), kept apart from the two-way set above so it can be deleted whole ---
   // Groups drawn as spindles (bowed: the sound swells and lets go), each note in two layers of its own colour:
@@ -194,8 +197,9 @@
     light: 0.55, afterglow: 0.6, shimmer: 0.3, sound: 0, burn: 0,
     // S3 play line: brightness, half width in pixels, how much a note inside it is lit, the downbeat jump
     column: 0.07, columnHalf: 24, near: 0.4, pulse: 1,
-    // S4 drums: the kick's lift, the snare's flash, sparks a hat or cymbal throws
-    breathe: 0.035, snare: 0.3, sparks: 4
+    // S4 drums: the kick's lift, the snare's flash, sparks a hat or cymbal throws; since 0.22.0 the lift and the flash
+    // come only on an accent (DRUM_ACCENT), at least `accentGap` seconds after the last one of the same drum
+    breathe: 0.035, snare: 0.3, sparks: 4, accentGap: 8
   });
   const FX_PRESETS = Object.freeze({
     clear: FX_CLEAR,
@@ -209,10 +213,17 @@
       column: 0.035, near: 0, pulse: 0, breathe: 0.02, snare: 0, sparks: 0}),
     // The rhythm leads: the kick, the snare and the downbeat stronger; the melody's effects give way.
     stage: Object.freeze({...FX_CLEAR, halo: 0.25, light: 0.3, shimmer: 0.15, column: 0.08, near: 0.2,
-      pulse: 2.6, snare: 0.7, sparks: 9, breathe: 0.06}),
-    strong: Object.freeze({...FX_CLEAR, halo: 0.85, light: 0.85, shimmer: 0.5, column: 0.12, near: 0.65, pulse: 1.4, breathe: 0.06, snare: 0.5, sparks: 7}),
+      pulse: 2.6, snare: 0.7, sparks: 9, breathe: 0.06, accentGap: 4}),
+    strong: Object.freeze({...FX_CLEAR, halo: 0.85, light: 0.85, shimmer: 0.5, column: 0.12, near: 0.65, pulse: 1.4, breathe: 0.06, snare: 0.5, sparks: 7,
+      accentGap: 5}),
     off: null
   });
+  // Which kicks lift the background and which snares flash (0.22.0, SPEC-7: every one of them did, 143 flashes a minute
+  // on a busy song): a hit among this song's loud ones for that drum (at least the `top` share of its velocities) and
+  // clearly louder than the same drum around it (`standout` times the median within `around` seconds either side). Of
+  // those, a hit fires only `accentGap` seconds (the preset's) or more after the last one that fired. Found once per
+  // lane, the spacing once per gap: a function of the song alone, so a paused or scrubbed frame is the same.
+  const DRUM_ACCENT = Object.freeze({top: 0.75, standout: 1.1, around: 2, drums: ['kick', 'snare']});
   // `effects` and the preset it names, both ways.
   const LEVEL_PRESET = Object.freeze({off: 'off', light: 'clear', strong: 'strong'});
   const PRESET_LEVEL = Object.freeze({off: 'off', clear: 'light', strong: 'strong'});
@@ -305,11 +316,24 @@
   // What "simplified" means. A transcription writes a held or re-struck pitch as a chain of
   // notes that touch, leaves blips a few tens of milliseconds long, and reports notes where
   // the stem is all but silent. Each rule answers one of those.
+  // Joining mends a note the transcriber cut up; it never turns many strikes into one line (0.22.0, SPEC-7: a
+  // tremolo of 311 strikes had become one 29.9 s note). On a struck or plucked lane (`struck`: piano, guitar, bass) a
+  // piece is joined only when it is clearly softer than the strike that started the note (at most `fade` of its
+  // velocity) and not louder than `rise` times the piece just before it: a piece as loud, or one that swells up again,
+  // is struck again. On any lane a joined note stops growing at `longest` seconds; the
+  // next piece starts a note of its own. A note that was that long to begin with is left as it is.
   const SIMPLIFY = Object.freeze({
     joinGap: 0.04,          // same pitch, next one starts within this of the last one's end: one note
-    minDuration: 0.06,      // after joining, anything shorter is dropped
-    minVelocity: 40         // after joining (a joined note keeps its loudest part's velocity)
+    fade: 0.8,              // struck lanes: the next piece at most this much of the strike's velocity
+    rise: 1.25,             // struck lanes: and not louder than this much of the piece just before it (struck again)
+    longest: 6,             // a joined note is never longer than this many seconds
+    // After joining, only what is plainly the transcriber's noise is dropped (0.22.0, SPEC-7 ④: 0.21.0 dropped every note
+    // under 0.06 s and every one under velocity 40, and a fast run of soft notes went with them):
+    minDuration: 0.03,      // anything shorter than this: a blip
+    faint: 0.4,             // and a note both softer than this share of the lane's median velocity
+    faintDur: 0.12          // and shorter than this many seconds (a joined note keeps its loudest part's velocity)
   });
+  const STRUCK_GROUPS = Object.freeze(['piano', 'guitar', 'bass']);
 
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -374,6 +398,16 @@
   // it (the room is taken from the tallest lanes); where even that cannot be, the icon is
   // left out. Its brightness follows how loud the lane is (ICON_DIM for a silent one).
   const ICON_SCALE = 1.7, ICON_PAD = 3, ICON_DIM = 0.5;
+  // Since 0.22.0 (SPEC-7 ⑤) every lane has an icon: a group without one of its own takes the nearest kind's (ICON_NEAREST,
+  // else the quaver of 'other'), and a group on screen more than once (its timbre tracks shown apart) has the same icon
+  // on each lane with a small number beside it (1, 2, … top to bottom, MARK_NUMBER of the name's font size), not its name.
+  const ICON_NEAREST = Object.freeze({keys: 'piano', keyboard: 'piano', organ: 'piano', synth: 'piano', cello: 'strings', viola: 'strings',
+    orchestra: 'strings', choir: 'vocals', voice: 'vocals', percussion: 'drums'});
+  const iconFor = group => ICONS[group] || ICONS[ICON_NEAREST[group]] || ICONS.other;
+  const MARK_NUMBER = 0.72;
+  // With a group shown apart and a lane too short for the icon at its one size, every icon on screen is
+  // drawn at one smaller size, as tall as the shortest lane, but never under ICON_MIN pixels (a lane shorter has none).
+  const ICON_MIN = 8;
   // The texture band (showTexture). Under `floor` dB (the levels layer's scale) the stem counts
   // as silent and nothing is drawn. Above it, how thick and how light the band is goes by this
   // song's own 'other' stem while it sounds: its `low` share of those frames is the thinnest
@@ -493,7 +527,12 @@
   function simplifyNotes(notes, rules) {
     const joinGap = rules && finite(rules.joinGap) ? rules.joinGap : SIMPLIFY.joinGap;
     const minDuration = rules && finite(rules.minDuration) ? rules.minDuration : SIMPLIFY.minDuration;
-    const minVelocity = rules && finite(rules.minVelocity) ? rules.minVelocity : SIMPLIFY.minVelocity;
+    const faint = rules && finite(rules.faint) ? rules.faint : SIMPLIFY.faint;
+    const faintDur = rules && finite(rules.faintDur) ? rules.faintDur : SIMPLIFY.faintDur;
+    const fade = rules && finite(rules.fade) ? rules.fade : SIMPLIFY.fade;
+    const longest = rules && finite(rules.longest) ? rules.longest : SIMPLIFY.longest;
+    const rise = rules && finite(rules.rise) ? rules.rise : SIMPLIFY.rise;
+    const struck = Boolean(rules && rules.struck);
     const byPitch = new Map();
     for (const note of notes) {
       const chain = byPitch.get(note[2]);
@@ -502,23 +541,30 @@
     const joined = [];
     for (const chain of byPitch.values()) {
       chain.sort((a, b) => a[0] - b[0]);
-      let current = null;
+      let current = null, strike = 0, last = 0;
       for (const note of chain) {
-        if (current && note[0] <= current[0] + current[1] + joinGap) {
+        const fading = !struck || (note[3] <= strike * fade && note[3] <= last * rise);
+        last = note[3];
+        if (current && note[0] <= current[0] + current[1] + joinGap &&
+            Math.max(current[0] + current[1], note[0] + note[1]) - current[0] <= longest && fading) {
           current[1] = Math.max(current[0] + current[1], note[0] + note[1]) - current[0];
           current[3] = Math.max(current[3], note[3]);
           if (current.length > 4 || note.length > 4) current[4] = Math.max(current.length > 4 ? current[4] : -1, note.length > 4 ? note[4] : -1);
         } else {
           current = note.length > 4 ? [note[0], note[1], note[2], note[3], note[4]] : [note[0], note[1], note[2], note[3]];
+          strike = note[3];
           joined.push(current);
         }
       }
     }
     const kept = [];
     let short = 0, quiet = 0;
+    // The lane's own typical loudness: the median velocity of its notes after joining.
+    const velocities = joined.map(note => note[3]).sort((a, b) => a - b);
+    const typical = velocities.length ? velocities[velocities.length >> 1] : 0;
     for (const note of joined) {
       if (note[1] < minDuration) short++;
-      else if (note[3] < minVelocity) quiet++;
+      else if (note[3] < faint * typical && note[1] < faintDur) quiet++;
       else kept.push(note);
     }
     kept.sort((a, b) => a[0] - b[0] || a[2] - b[2]);
@@ -526,6 +572,45 @@
       notes: kept,
       stats: {input: notes.length, joined: notes.length - joined.length, short, quiet, output: kept.length}
     };
+  }
+
+  // The accents of a drum lane's hits (DRUM_ACCENT), one flag a hit; `hits` is the lane's {count, time, row, vel}.
+  function drumAccents(hits, rowNames) {
+    const accent = new Uint8Array(hits.count);
+    for (const name of DRUM_ACCENT.drums) {
+      const index = [];
+      for (let i = 0; i < hits.count; i++) if (rowNames[hits.row[i]] === name) index.push(i);
+      if (!index.length) continue;
+      const sorted = index.map(i => hits.vel[i]).sort((a, b) => a - b);
+      const floor = sorted[Math.floor(DRUM_ACCENT.top * (sorted.length - 1))];
+      let from = 0, to = 0;
+      for (const i of index) {
+        const time = hits.time[i];
+        while (hits.time[index[from]] < time - DRUM_ACCENT.around) from++;
+        while (to < index.length && hits.time[index[to]] <= time + DRUM_ACCENT.around) to++;
+        // The others around it (a hit alone there stands out by itself).
+        const near = index.slice(from, to).filter(k => k !== i).map(k => hits.vel[k]).sort((a, b) => a - b);
+        if (hits.vel[i] >= floor && (!near.length || hits.vel[i] + 1e-6 >= DRUM_ACCENT.standout * near[near.length >> 1])) accent[i] = 1;
+      }
+    }
+    return accent;
+  }
+
+  // Of a drum lane's accents, the ones that fire with `gap` seconds between two of the same drum; kept per gap.
+  function firedHits(lane, gap) {
+    const hits = lane.hits;
+    if (!hits.fired) hits.fired = new Map();
+    let fired = hits.fired.get(gap);
+    if (fired) return fired;
+    fired = new Uint8Array(hits.count);
+    const last = new Map();
+    for (let i = 0; i < hits.count; i++) {
+      if (!hits.accent[i]) continue;
+      const name = lane.rowNames[hits.row[i]], before = last.has(name) ? last.get(name) : -Infinity;
+      if (hits.time[i] - before >= gap) { fired[i] = 1; last.set(name, hits.time[i]); }
+    }
+    hits.fired.set(gap, fired);
+    return fired;
   }
 
   // The pitches a lane has to make room for: the 2nd to 98th percentile, so one stray note
@@ -956,6 +1041,7 @@
         const count = lane.hits.length;
         entry.hits = {count, time: new Float32Array(count), row: new Uint8Array(count), vel: new Uint8Array(count)};
         lane.hits.forEach((hit, i) => { entry.hits.time[i] = hit[0]; entry.hits.row[i] = hit[1]; entry.hits.vel[i] = hit[2]; });
+        entry.hits.accent = drumAccents(entry.hits, entry.rowNames);
         return;
       }
       let raw = visible.length === 1 ? visible[0].notes : [].concat(...visible.map(lane => lane.notes));
@@ -966,7 +1052,7 @@
       entry.range = pitchRange(raw);
       let notes = raw;
       if (options.simplify) {
-        const simplified = simplifyNotes(raw);
+        const simplified = simplifyNotes(raw, {struck: STRUCK_GROUPS.includes(entry.group)});
         notes = simplified.notes;
         entry.removed = simplified.stats;
       }
@@ -1279,10 +1365,15 @@
     // pitch span); with none, every lane gets its usual share.
     // Every lane at least an icon tall plus ICON_PAD above and below; what the short lanes
     // gain, the lanes above that height give up in proportion to how much they have above it,
-    // so the total stays the same. Where there is not room for all of them, nothing changes.
-    function roomForIcons(heights, room) {
-      const least = (size.width < 520 ? 11 : 13) * ICON_SCALE + ICON_PAD * 2;
-      if (heights.length * least > room) return heights;
+    // so the total stays the same. Where there is not room for all of them, nothing changes, except with a group shown
+    // apart (0.22.0): then every lane is made at least as tall as the room allows, down to an ICON_MIN icon with no room
+    // above or below (drawEdges draws all icons at the size of the shortest).
+    function roomForIcons(heights, room, lanes) {
+      const groups = lanes.map(lane => lane.group), split = new Set(groups).size < groups.length;
+      let least = (size.width < 520 ? 11 : 13) * ICON_SCALE + ICON_PAD * 2;
+      // (at most 0.6 of an even share, so the lanes keep most of their differences in height)
+      if (split) least = Math.min(least, Math.max(ICON_MIN, 0.6 * room / heights.length));
+      if (heights.length * least > room + 1e-9) return heights;
       const short = heights.reduce((sum, value) => sum + Math.max(0, least - value), 0);
       if (short <= 0) return heights;
       const spare = heights.reduce((sum, value) => sum + Math.max(0, value - least), 0);
@@ -1314,7 +1405,7 @@
       });
       const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
       let heights = weights.map(weight => room * weight / total);
-      if (options.laneLabels === 'icon') heights = roomForIcons(heights, room);
+      if (options.laneLabels === 'icon') heights = roomForIcons(heights, room, lanes);
       let y = top;
       return lanes.map((lane, index) => {
         const laneHeight = heights[index];
@@ -1471,14 +1562,22 @@
     // The struck shape (SHAPES) for a bucket of note rectangles [x, y, width, thickness, ...]: one path, one fill.
     // Each note is a head block at its onset and a body from the full thickness down to the tail, on the note's
     // centre line. A note shorter than its head is just the head.
+    // How wide a drum dot is on this screen (drawDrums: half a drum row, 2 to 4 pixels tall, 1.6 times as wide); with no
+    // drum lane on screen, the widest a dot can be.
+    function drumDotWidth() {
+      const drums = geometry.lanes.find(item => item.lane.kind === 'drums');
+      return 1.6 * (drums ? clamp(drums.rowHeight * 0.5, 2, 4) : 4);
+    }
+
     function fillShapes(rects, style, shape, box, pps) {
       if (!rects.length) return;
+      const dot = drumDotWidth();
       context.fillStyle = style;
       context.beginPath();
       for (let i = 0; i < rects.length; i += 4) {
         const x = rects[i], width = rects[i + 2], base = rects[i + 3], centre = rects[i + 1] + base / 2;
         const full = shape === 'bass' && !options.pitchWeight ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;
-        const head = Math.min(full * SHAPES.head, full + box.semitone * SHAPES.headCap);
+        const head = Math.max(full + SHAPES.headOver, Math.min(full * SHAPES.head, full + box.semitone * SHAPES.headCap, dot));
         const tail = Math.max(SHAPES.tailMin, full * SHAPES.tail);
         context.rect(x, centre - head / 2, head, head);
         if (width <= head) continue;
@@ -1879,29 +1978,43 @@
 
       context.textBaseline = 'middle';
       stats.labels = [];
-      // A group on screen more than once (timbre tracks split apart) would show the same
-      // icon twice, so those lanes keep their names.
-      const groupCount = new Map();
-      for (const box of geometry.lanes) groupCount.set(box.lane.group, (groupCount.get(box.lane.group) || 0) + 1);
+      // A group on screen more than once (timbre tracks split apart): the same icon on each, numbered top to bottom.
+      const groupCount = new Map(), groupRank = [];
+      for (const box of geometry.lanes) {
+        groupCount.set(box.lane.group, (groupCount.get(box.lane.group) || 0) + 1);
+        groupRank.push(groupCount.get(box.lane.group));
+      }
       // How loud each lane is now (its share, which glides between sections), for the icons' brightness.
       const shares = options.laneLabels === 'icon' && prepared.stretches ? sharesAt(stats.time, geometry.area.lanes) : null;
+      // Only with a group shown apart (else as before: one size, a lane too short for it has no icon).
+      const split = [...groupCount.values()].some(n => n > 1);
+      const iconSide = split ? Math.max(ICON_MIN, Math.min(labelFont * ICON_SCALE, ...geometry.lanes.map(box => box.height))) : labelFont * ICON_SCALE;
       for (const [index, box] of geometry.lanes.entries()) {
         const {lane} = box;
-        const icon = options.laneLabels === 'icon' && groupCount.get(lane.group) === 1 ? ICONS[lane.group] : null;
+        const icon = options.laneLabels === 'icon' ? iconFor(lane.group) : null;
+        const number = icon && groupCount.get(lane.group) > 1 ? groupRank[index] : 0;
         // The lane a mark names glows in its own colour as the mark lights, then settles.
         const flash = frameMark && frameMark.flash > 0 && frameMark.cue.object === groupOf(lane) ? frameMark.flash : 0;
         if (flash) context.save();
         if (icon) {
           // One size, centred in the name column, in the middle of its own lane.
-          const side = labelFont * ICON_SCALE;
-          if (box.height < side + 2) stats.labels.push({lane: lane.id, shown: 'none', size: 0});
+          const side = iconSide;
+          if (box.height < side + (split ? -1e-6 : 2)) stats.labels.push({lane: lane.id, shown: 'none', size: 0});
           else {
             const x = gutter / 2 - side / 2, y = (box.top + box.bottom) / 2 - side / 2;
             const level = round3(flash ? Math.max(iconLevel(shares ? shares[index] : 1), 0.55 + 0.45 * flash) : iconLevel(shares ? shares[index] : 1));
             if (flash) drawIcon(icon, x, y, side, lane.color, round3(MARK_HALO * flash), 1 + MARK_WIDEN * flash);
             drawIcon(icon, x, y, side, lane.color, level);
+            if (number) {
+              context.font = `600 ${Math.round(labelFont * MARK_NUMBER)}px ${FONT}`;
+              context.textAlign = 'left';
+              context.textBaseline = 'alphabetic';
+              context.fillStyle = rgba(lane.color, level);
+              context.fillText(String(number), x + side + 1, y + side);
+              context.textBaseline = 'middle';
+            }
             stats.labels.push({lane: lane.id, shown: 'icon', size: Math.round(side * 100) / 100, x: Math.round(x * 100) / 100,
-                               y: Math.round(y * 100) / 100, level, ...(flash ? {flash: round3(flash)} : {})});
+                               y: Math.round(y * 100) / 100, level, ...(number ? {number} : {}), ...(flash ? {flash: round3(flash)} : {})});
           }
         } else {
           context.font = `600 ${labelFont}px ${FONT}`;
@@ -2504,9 +2617,9 @@
       for (const box of geometry.lanes) {
         const lane = box.lane;
         if (lane.kind !== 'drums') continue;
-        const hits = lane.hits;
+        const hits = lane.hits, fired = firedHits(lane, level.accentGap);
         for (let i = lowerBound(hits.time, hits.count, now - FX.breatheLife); i < hits.count && hits.time[i] <= now; i++) {
-          if (lane.rowNames[hits.row[i]] !== 'kick') continue;
+          if (lane.rowNames[hits.row[i]] !== 'kick' || !fired[i]) continue;
           lift = Math.max(lift, level.breathe * hits.vel[i] / 127 * (1 - (now - hits.time[i]) / FX.breatheLife));
         }
       }
@@ -2521,7 +2634,7 @@
     // S4, snare and cymbals: a short flash where a snare hit sits, fine sparks off a hat or
     // a cymbal. The drum dots themselves are drawn as before.
     function drawDrumEffects(strikes, box, now) {
-      const {lane} = box, {level, stats} = frameFx, hits = lane.hits;
+      const {lane} = box, {level, stats} = frameFx, hits = lane.hits, fired = firedHits(lane, level.accentGap);
       const spark = mix(lane.color, 0.6);
       context.save();
       context.globalCompositeOperation = 'lighter';
@@ -2529,7 +2642,7 @@
         const i = strikes[k], x = strikes[k + 1], y = strikes[k + 2];
         const name = lane.rowNames[hits.row[i]], age = now - hits.time[i], loud = hits.vel[i] / 127;
         if (name === 'snare' && age < FX.snareLife) {
-          if (level.snare <= 0) continue;
+          if (level.snare <= 0 || !fired[i]) continue;
           const left = 1 - age / FX.snareLife, strength = round3(level.snare * loud * left * left);
           const reach = Math.max(22, box.rowHeight * 3) * (1 + 0.3 * age / FX.snareLife);
           const flash = context.createRadialGradient(x, y, 0, x, y, reach);
@@ -2764,8 +2877,8 @@
   }
 
   return Object.freeze({
-    create, simplifyNotes, smoothChords, toneNames, noteName, CONTRACT, VERSION,
-    DEFAULTS, SIMPLIFY, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
+    create, simplifyNotes, drumAccents, smoothChords, toneNames, noteName, CONTRACT, VERSION,
+    DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
     COVER_ADAPT, TEXTURE_ADAPT, measureCover,
     // Checks a model the way `create` would, without a canvas.
     inspect: model => { const p = prepare(model); return {track: p.track, lanes: p.lanes.length, skipped: p.skipped, ...p.has}; }

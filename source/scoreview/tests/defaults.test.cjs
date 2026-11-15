@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {ScoreView, mockCanvas, fullModel, cutAtBar, barTopOf} = require('./helpers.cjs');
+const {ScoreView, mockCanvas, fullModel, cutAtBar, barTopOf, alike} = require('./helpers.cjs');
 
 const BEFORE = require('./fixtures/score-view-0.10.0.js');
 const DATA = path.join(__dirname, '..', '..', '..', 'work', 'scoreview-20261110', 'data');
@@ -40,7 +40,7 @@ function frames(core, model, options, times) {
 }
 
 test('the defaults are the chosen look: icon, line, mark, clear (and the backdrop follows the loudness)', () => {
-  assert.equal(ScoreView.VERSION, '0.21.0');
+  assert.equal(ScoreView.VERSION, '0.22.0');
   for (const [key, value] of Object.entries(CHOSEN)) assert.equal(ScoreView.DEFAULTS[key], value, key);
   const surface = mockCanvas(800, 400);
   const view = ScoreView.create(surface.canvas, markedModel(), () => 0);
@@ -80,8 +80,9 @@ test('each old look, asked for by name, draws exactly what 0.10.0 drew (the kick
     for (const fxPreset of ['off', 'clear', 'strong']) {
       // 0.10.0 is told everything (its own defaults were text / block / sentence); the new core the same.
       const options = {laneLabels: 'text', sectionStyle: 'block', captionStyle: 'sentence', ...look, fxPreset};
-      for (const model of [markedModel(), ...pilots]) {
-        const times = steps(0, model.track.duration, 61).map(t => t + 0.013).concat([10, 10.02, 30.01]);
+      // Both cores get the same input, one the old and the new rules agree on (helpers.alike).
+      for (const model of [markedModel(), ...pilots].map(alike)) {
+        const times = steps(0, model.track.duration, 61).map(t => t + 0.013).concat([9.02, 10, 10.02, 30.01]);
         const old = frames(BEFORE, model, options, times), now = frames(ScoreView, model, options, times);
         now.forEach((frame, i) => {
           compared++;
