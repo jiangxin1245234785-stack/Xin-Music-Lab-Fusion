@@ -23,6 +23,38 @@ const tool = require('../scripts/migrate-stems.cjs');
 const derived = require('../core/derived-assets.cjs');
 const HEADER = Buffer.from('4d546864000000060000000103c04d54726b0000000400ff2f00', 'hex');
 
+// Key repair (2026-11-15): what a Mega 53 key repair may change in a song's reading, and its arguments.
+{
+  const base = () => ({stems: {ok: true, runId: 's'}, vocals: ['current', null], strings: null, refinement: {r1: ['no', '尚未生成当前范围的结果'], r2: ['ok', 'mega-53', 'violin', 'full']},
+    midi: {bass: {read: ['ok', 'b', 3, 'bass-highres'], engines: {}, runs: []},
+      strings: {read: ['no', 'midi-missing'], engines: {'strings-muscriptor-large': ['no', 'midi-missing']}, runs: [['m1', 'source-changed', false, 9, 'strings-muscriptor-large']]}}});
+  const before = base(), after = base();
+  after.refinement.r1 = ['ok', 'mega-53', 'strings', 'full']; after.strings = ['r1', 'strings'];
+  after.midi.strings = {read: ['ok', 'm1', 9, 'strings-muscriptor-large'], engines: {'strings-muscriptor-large': ['ok', 'm1', 9]}, runs: [['m1', 'superseded', true, 9, 'strings-muscriptor-large']]};
+  let c = tool.keyRepairChanges(before, after, ['r1']);
+  assert.equal(c.unexpected.length, 0, JSON.stringify(c.unexpected)); assert.equal(c.expected.length, 5);
+  c = tool.keyRepairChanges(before, after, ['r2']);
+  assert(c.unexpected.some(u => u.what === 'refinement r1') && c.unexpected.some(u => u.what === 'strings source'), 'only the repaired results may start to read');
+  const otherStem = base(); Object.assign(otherStem.refinement, after.refinement); otherStem.strings = after.strings; otherStem.midi.strings = after.midi.strings; otherStem.midi.bass.read = ['no', 'midi-stale'];
+  assert.deepEqual(tool.keyRepairChanges(before, otherStem, ['r1']).unexpected.map(u => u.what), ['midi.bass'], 'any other part changing is not expected');
+  const lostNotes = JSON.parse(JSON.stringify(after)); lostNotes.midi.strings.runs[0][3] = 8;
+  assert(tool.keyRepairChanges(before, lostNotes, ['r1']).unexpected.some(u => /strings versions/.test(u.what)), 'strings versions keep ids, notes and engines');
+  const noSource = base(); noSource.midi.strings = after.midi.strings;
+  assert(tool.keyRepairChanges(before, noSource, ['r1']).unexpected.some(u => /its source did not change/.test(u.what)), 'the strings part may change only with its source');
+  const readBefore = base(); readBefore.midi.strings.read = ['ok', 'm0', 4, 'yourmt3-plus'];
+  const readAfter = JSON.parse(JSON.stringify(after));
+  assert(tool.keyRepairChanges(readBefore, readAfter, ['r1']).unexpected.some(u => u.what === 'strings part read'), 'a strings part that read before must read the same');
+  assert.deepEqual(tool.keyRepairChanges(before, before, ['r1']), {expected: [], unexpected: []});
+  const args = ['--root', 'x', '--runtime', 'y'];
+  assert.throws(() => tool.parseArgs([...args, '--repair-keys']), /needs --song or --all/);
+  assert.throws(() => tool.parseArgs([...args, '--undo-key-repair', '--all']), /needs --song/);
+  assert.throws(() => tool.parseArgs([...args, '--repair-keys', '--dry-run', '--all']), /say one of/);
+  const parsed = tool.parseArgs([...args, '--repair-keys', '--all', '--delete-wav']);
+  assert.equal(parsed.deleteWav, false, 'a key repair never deletes WAVs'); assert.deepEqual(parsed.oldRoots, tool.KNOWN_OLD_ROOTS);
+  assert.deepEqual(tool.parseArgs([...args, '--dry-run', '--old-root', 'D:\\old']).oldRoots, [path.resolve('D:\\old')]);
+  console.log('migrate-stems key repair: ok (only the repaired results and the strings part made from them may start to read; arguments)');
+}
+
 function floatWav(file, frames, fill) {
   const data = Buffer.alloc(frames * 8);
   for (let i = 0; i < frames; i++) for (let c = 0; c < 2; c++) data.writeFloatLE(fill(i, c), (i * 2 + c) * 4);
