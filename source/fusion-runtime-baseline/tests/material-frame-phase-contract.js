@@ -13,7 +13,7 @@ const shadow = read('generator-runtime-shadow.js');
 const animate = app.slice(
   app.indexOf('function animate()'),
   app.indexOf(
-    "enterButton.addEventListener('click'",
+    "intensityInput.addEventListener('input'",
     app.indexOf('function animate()')
   )
 );

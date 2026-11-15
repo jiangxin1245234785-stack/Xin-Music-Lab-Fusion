@@ -9,7 +9,6 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const html = read('index.html');
 const app = read('app.js');
 const fusion = read('fusion.js');
-const shadow = read('resolver-legacy-shadow.js');
 const generatorShadow = read('generator-runtime-shadow.js');
 const generatorPresetSelector = read('generator-preset-selector.js');
 const generatorPresetFiles = read('generator-preset-file-control.js');
@@ -17,8 +16,6 @@ const generatorPresetRepository = read('generator-preset-repository-control.js')
 const productControlDock = read('product-control-dock.js');
 const presetRepositoryCore = read('desktop/glitch-preset-repository.cjs');
 const generatorSource = read('generator-source-adapter.js');
-const targetInspector = read('target-inspector.js');
-const stabilityMonitor = read('shadow-stability-monitor.js');
 const frameOwnership = read('frame-ownership-monitor.js');
 const outputController = read('generator-output-controller.js');
 const main = read('desktop/main.cjs');
@@ -27,40 +24,35 @@ const buildDesktop = read('scripts/build-desktop.cjs');
 const pkg = JSON.parse(read('package.json'));
 
 for (const id of [
-  'fusionButton', 'fusionPanel', 'fusionLoad', 'fusionAudio', 'fusionMaster',
-  'fusionProof', 'fusionSection', 'fusionChord', 'fusionVotes', 'fusionHud',
-  'fusionModeInternal', 'fusionModeExternal', 'fusionLibraryList', 'fusionLibrarySearch',
-  'fusionExternalToggle', 'fusionPrevious', 'fusionNext', 'fusionAnalysisCard',
+  'fusionButton', 'fusionPanel', 'fusionLoad', 'fusionAudio',
+  'fusionLibraryList', 'fusionLibrarySearch',
+  'fusionPlay', 'fusionPrevious', 'fusionNext', 'fusionAnalysisCard',
   'fusionAnalysisEngine', 'fusionAnalysisRun', 'fusionAnalysisCancel', 'fusionAnalysisProgress',
   'glitchWebglCanvas', 'generatorCanvas', 'generatorPresetControl',
   'generatorPresetFiles', 'generatorPresetRepository', 'productControlDock'
 ]) assert(html.includes(`id="${id}"`), `missing Fusion DOM id: ${id}`);
 
+// The parked read-outs of the old layout are gone, and so is everything that fed them.
+for (const token of [
+  'xl-legacy', 'id="fusionHud"', 'id="fusionVotes"', 'id="fusionMaster"', 'id="fusionSection"', 'id="fusionChord"',
+  'id="fusionLiveState"', 'id="trackTitle"', 'id="trackMeta"', 'id="energyLabel"', 'id="timelineFill"'
+]) assert(!html.includes(token), `index.html still carries a removed read-out: ${token}`);
+for (const token of ['dom.hud', 'dom.votes', 'dom.master', 'setMonitor', 'updateVotes', 'dom.trackTitle'])
+  assert(!fusion.includes(token), `fusion.js still feeds a removed read-out: ${token}`);
+assert(html.includes('data-product-fx-master'), 'the FX master slider in the settings drawer must remain');
 assert(html.includes('<script src="./fusion.js"></script>'), 'fusion.js must load after the visual engine');
 assert(html.includes('<script src="./music-feature-resolver.js"></script>'), 'MusicFeatureResolver must load before app/fusion runtime');
-assert(html.includes('<script src="./source-inspector.js"></script>'), 'Source Inspector module must be loaded');
-assert(html.includes('<script src="./resolver-legacy-shadow.js"></script>'), 'Resolver/Legacy Shadow comparator must be loaded');
 assert(html.includes('<script src="./generator-runtime-shadow.js"></script>'), 'Generator Runtime Shadow loader must be loaded');
 assert(html.includes('<script src="./generator-preset-selector.js"></script>'), 'Generator product preset selector must be loaded');
 assert(html.includes('<script src="./generator-preset-file-control.js"></script>'), 'Generator product preset files UI must be loaded');
 assert(html.includes('<script src="./generator-preset-repository-control.js"></script>'), 'Generator file repository UI must be loaded');
 assert(html.includes('<script src="./product-control-dock.js"></script>'), 'Product control dock must be loaded');
 assert(html.includes('<script src="./generator-source-adapter.js"></script>'), 'Generator Source Adapter must be loaded');
-assert(html.includes('<script src="./target-inspector.js"></script>'), 'Target Inspector module must be loaded');
 assert(html.includes('<script src="./frame-ownership-monitor.js"></script>'), 'Frame Ownership monitor must be loaded');
-assert(html.includes('<script src="./shadow-stability-monitor.js"></script>'), 'Shadow Stability monitor must be loaded');
 assert(html.includes('<script src="./generator-output-controller.js"></script>'), 'Generator Output controller must be loaded');
 assert(
   html.indexOf('./music-feature-resolver.js') < html.indexOf('./app.js'),
   'MusicFeatureResolver must load before app.js'
-);
-assert(
-  html.indexOf('./source-inspector.js') < html.indexOf('./app.js'),
-  'Source Inspector must load before app.js'
-);
-assert(
-  html.indexOf('./resolver-legacy-shadow.js') < html.indexOf('./app.js'),
-  'Resolver/Legacy Shadow comparator must load before app.js'
 );
 assert(
   html.indexOf('./generator-runtime-shadow.js') < html.indexOf('./app.js'),
@@ -87,21 +79,14 @@ assert(
   'Generator Source Adapter must load before Fusion runtime'
 );
 assert(
-  html.indexOf('./target-inspector.js') < html.indexOf('./fusion.js'),
-  'Target Inspector must load before fusion runtime'
-);
-assert(
-  html.indexOf('./shadow-stability-monitor.js') < html.indexOf('./fusion.js'),
-  'Shadow Stability monitor must load before fusion runtime'
-);
-assert(
   html.indexOf('./generator-output-controller.js') < html.indexOf('./fusion.js'),
   'Generator Output controller must load before fusion runtime'
 );
 assert(app.includes('window.SmokeResonanceTimeline'), 'visual engine must expose the offline timeline bridge');
 assert(app.includes('window.SmokeResonanceFrameClock'), 'visual engine must expose its single RAF clock');
 assert(app.includes('engineFrameSubscribers'), 'Resolver must subscribe to the existing RAF rather than create another RAF');
-assert(app.includes('window.SmokeResonanceAudioSource'), 'visual engine must expose direct internal and external source routing');
+assert(app.includes('window.SmokeResonanceAudioSource'), 'visual engine must expose the direct local playback route');
+assert(!app.includes('startExternal') && !app.includes('getDisplayMedia'), 'the visual engine must not capture system audio');
 assert(app.includes('fusionTimelineState.boundaryPulse'), 'offline boundaries must feed the post-FX event path');
 assert(app.includes('fusionTimelineState.climax') && app.includes('fusionTimelineState.drop'), 'offline climax and drop must remain distinct visual signals');
 assert(app.includes('glitchWebglRenderer.render'), 'the visual source must feed the WebGL2 glitch renderer');
@@ -111,7 +96,18 @@ assert(!fusion.includes('validateManifest(state.manifest'), 'manifest validation
 assert(fusion.includes("'chord-chordmini': 1.5, 'chord-btc': 1.35"), 'ChordMini-led harmony consensus policy is missing');
 assert(fusion.includes("'chord-consonance': 1.0"), 'consonance-ACE must vote at the base prior');
 assert(fusion.includes('sectionSignals') && fusion.includes('climax: section.climax'), 'typed offline section mapping is missing');
-assert(fusion.includes('8s PROOF'), 'proof mode is missing');
+// Debug-only diagnostics are gone: comparators, inspectors, the stability gate and the proof button.
+for (const name of ['resolver-legacy-shadow.js', 'shadow-stability-monitor.js', 'source-inspector.js', 'target-inspector.js']) {
+  assert(!fs.existsSync(path.join(root, name)), `removed diagnostic module is back: ${name}`);
+  assert(!html.includes(name), `removed diagnostic module is still loaded: ${name}`);
+}
+for (const token of [
+  'SmokeResonancePhaseIIGate', 'SmokeResonanceSourceInspectorView', 'SmokeResonanceTargetInspectorView',
+  'SmokeResonanceShadowStabilityGate', 'resolverLegacyShadow', 'shadowTelemetry', 'fusionProof', '8s PROOF'
+]) assert(!fusion.includes(token), `fusion.js still carries a removed diagnostic: ${token}`);
+for (const token of ['id="sourceInspector"', 'id="targetInspector"', 'id="shadowStabilityGate"', 'id="fusionProof"', 'data-product-source'])
+  assert(!html.includes(token), `index.html still carries a removed diagnostic: ${token}`);
+assert(!main.includes('fusion:shadow-telemetry') && !preload.includes('shadowTelemetry'), 'shadow telemetry IPC must be gone');
 assert(main.includes('xldTimelineProvider.validateManifest'), 'main process must validate XLD manifests through the shared adapter');
 assert(main.includes("ipcMain.handle('fusion:open-bridge'"), 'bridge file picker IPC is missing');
 assert(main.includes("ipcMain.handle('fusion:scan-library'"), 'automatic local library scan IPC is missing');
@@ -122,16 +118,13 @@ assert(main.includes('DEFAULT_LIBRARY_ROOT'), 'Fusion must own a local library r
 assert(preload.includes("contextBridge.exposeInMainWorld('XinsMusicLabFusion'"), 'preload bridge is missing');
 assert(preload.includes('onAnalysisTask') && preload.includes('runAnalysis'), 'analysis progress bridge is missing');
 assert(fusion.includes('scanLibrary()'), 'Fusion renderer must scan the library automatically');
-assert(fusion.includes("setSourceMode('external')"), 'Fusion renderer must distinguish external listening');
+assert(!fusion.includes('setSourceMode') && !fusion.includes("'external'") && !fusion.includes('fusionSource'), 'Fusion renderer is local-library only: no source mode switch');
+assert(fusion.includes("event.code === 'Space'") && fusion.includes('togglePlayback();'), 'Space must play or pause the local track');
 assert(fusion.includes('attachMediaElement(dom.audio)'), 'internal playback must use a direct PCM analysis route');
 assert(fusion.includes('musicFeatureResolver.resolve({'), 'Fusion must resolve Realtime and XLD provider frames');
 assert(fusion.includes('window.SmokeResonanceUnifiedMusicFrame'), 'Fusion must expose the resolved Shadow frame');
-assert(fusion.includes('window.SmokeResonanceSourceInspectorView'), 'Fusion must expose read-only Inspector diagnostics');
-assert(fusion.includes('window.SmokeResonancePhaseIIGate'), 'Fusion must expose the read-only Phase II Gate report');
 assert(fusion.includes('window.SmokeResonanceGeneratorRuntimeShadowView'), 'Fusion must expose the read-only Generator Runtime Shadow report');
 assert(fusion.includes('window.SmokeResonanceGeneratorSourceView'), 'Fusion must expose the read-only Generator source status');
-assert(fusion.includes('window.SmokeResonanceTargetInspectorView'), 'Fusion must expose the read-only Target Inspector report');
-assert(fusion.includes('window.SmokeResonanceShadowStabilityGate'), 'Fusion must expose the read-only Shadow Stability Gate report');
 assert(fusion.includes('window.SmokeResonanceFrameOwnershipGate'), 'Fusion must expose the read-only Frame Ownership Gate report');
 assert(fusion.includes('window.SmokeResonanceGeneratorOutput'), 'Fusion must expose the formal Generator output report');
 assert(fusion.includes('window.SmokeResonanceGeneratorPresets'), 'Fusion must expose the Phase V product preset bridge');
@@ -139,8 +132,6 @@ assert(fusion.includes('window.SmokeResonanceGeneratorPresetControl'), 'Fusion m
 assert(fusion.includes('window.SmokeResonanceGeneratorPresetFiles'), 'Fusion must expose the Phase V-3 JSON preset bridge');
 assert(fusion.includes('window.SmokeResonanceGeneratorPresetRepository'), 'Fusion must expose the Phase V-4 file repository bridge');
 assert(fusion.includes('window.SmokeResonanceProductControls'), 'Fusion must expose the Phase V-5 product controls bridge');
-assert(fusion.includes('sourceInspector?.update(clock.nowMs, unifiedMusicFrame'), 'Inspector must consume only the resolved Shadow frame');
-assert(fusion.includes('resolverLegacyShadow?.update('), 'Resolver/Legacy comparison must run in Shadow');
 assert(
   /generatorRuntimeShadow\?\.evaluate\(\s*unifiedMusicFrame,\s*clock,\s*\{ render: false \}\s*\)/.test(fusion),
   'XML must evaluate Generator mappings before material rendering on the resolved frame and Engine Clock'
@@ -149,9 +140,6 @@ assert(
   fusion.includes('generatorRuntimeShadow?.renderCurrentSource()'),
   'XML must render the current material source after material generation'
 );
-assert(fusion.includes('targetInspector?.update('), 'Target Inspector must consume Legacy snapshot plus Generator Runtime report');
-assert(fusion.includes('shadowStabilityMonitor?.observe('), 'Shadow Stability Gate must observe Generator Runtime reports');
-assert(fusion.includes('bridge.shadowTelemetry()'), 'Shadow Stability Gate must request isolated process telemetry');
 assert(fusion.includes('generatorRuntimeShadow?.load()'), 'XML must load the versioned Generator browser artifact');
 assert(fusion.includes('generatorRuntimeShadow?.dispose()'), 'XML must dispose the Generator runtime lifecycle');
 assert(fusion.includes('6.6.1-integration-v.3/browser/index.js'), 'XML must use the Phase V-3 Generator browser entry');
@@ -197,9 +185,9 @@ assert(!generatorPresetRepository.includes('getContext('), 'Preset repository UI
 assert(!presetRepositoryCore.includes('Math.random('), 'Preset repository core must not own unseeded randomness');
 assert(!presetRepositoryCore.includes("sourceId: 'audio."), 'Preset repository core must not hard-code audio mappings');
 assert(fusion.includes("root: $('#productControlDock')"), 'Product control dock must bind to the persistent top UI');
-assert(fusion.includes('masterSource: dom.master'), 'Product FX Master must delegate to the existing master owner');
+assert(fusion.includes('setMaster: applyMaster') && fusion.includes("localStorage.setItem('xins-fusion-master'") && fusion.includes('fxStrength: state.master'),
+  'Product FX Master must set, persist and apply the one master value');
 assert(fusion.includes("qualitySource: $('#qualityButton')"), 'Product quality must delegate to the existing quality owner');
-assert(fusion.includes('productControlDock?.update(clock.nowMs, unifiedMusicFrame'), 'Product source summary must use the unified Engine Clock frame');
 assert(fusion.includes('productControlDock?.dispose()'), 'Product control dock lifecycle cleanup is missing');
 assert(productControlDock.includes("const VERSION = '5.5.0-productization'"), 'Product control dock version is missing');
 assert(!productControlDock.includes('requestAnimationFrame'), 'Product control dock must not create another RAF');
@@ -225,10 +213,9 @@ assert(!generatorPresetSelector.includes('requestAnimationFrame'), 'Preset selec
 assert(!generatorPresetSelector.includes('getContext('), 'Preset selector must not create a GPU context');
 assert(!generatorPresetSelector.includes("sourceId: 'audio."), 'Preset selector must not hard-code audio mappings');
 assert(fusion.includes('rendererEnabled: true'), 'Generator formal renderer must remain enabled in IV-5');
-assert(fusion.includes('rendererExpected: true'), 'Stability gate must validate the formal renderer in IV-5');
 assert(fusion.includes('qualityProvider: () => ({'), 'Generator must consume the existing XML quality control');
 assert(fusion.includes("mode: $('#qualityButton')?.dataset.mode || 'auto'"), 'Quality provider must preserve Auto fallback');
-assert(fusion.includes('generatorRuntimeShadow?.status() || null'), 'Stability monitor must observe renderer quality and context lifecycle status');
+assert(fusion.includes('generatorRuntimeShadow?.status() || null'), 'Frame ownership and output control must observe renderer quality and context lifecycle status');
 assert(fusion.includes('frameOwnershipMonitor?.observe(clock, generatorRuntimeStatus)'), 'Frame Ownership must reconcile the same Engine Clock and Generator status');
 assert(fusion.includes("owner: 'legacy.animate'"), 'Legacy animate must remain the sole continuous RAF owner after the IV-5 visual switch');
 assert(fusion.includes("subscriber: 'generator-runtime-shadow'"), 'Generator must remain a synchronous Engine Clock subscriber');
@@ -240,27 +227,17 @@ assert(fusion.includes('generatorOutputController?.dispose()'), 'Formal output c
 assert(fusion.includes('sourceProvider: () => generatorSourceAdapter?.get() || null'), 'Generator source provider route is missing');
 assert(generatorShadow.includes('createSourceAwareWebglRenderPort'), 'Loader must support the source-aware render port behind its flag');
 assert(generatorShadow.includes('this.runtime.render(sourceFrame, this.report)'), 'Source-aware loader must render the selected XML source plus material fields when enabled');
-assert(fusion.includes('visualGlitch?.state()?.features || null'), 'Shadow comparison must read the existing Legacy snapshot');
 assert(
   /visualFrameClock\?\.subscribe\(\s*updateResolverShadow,\s*\{ phase: 'pre-material' \}\s*\)/.test(fusion),
   'Resolver must use the pre-material XML engine frame phase'
 );
 assert(!fusion.includes('visualTimeline?.set(unifiedMusicFrame'), 'Resolved Shadow frame must not drive the Legacy timeline');
 assert(!fusion.includes('visualGlitch?.set(unifiedMusicFrame'), 'Resolved Shadow frame must not drive the FX renderer');
-assert(!shadow.includes('glitchFeatureBus.update'), 'Shadow comparator must not write to the Legacy bus');
-assert(!shadow.includes('visualGlitch.set'), 'Shadow comparator must not write to the FX renderer');
-assert(!shadow.includes('visualTimeline.set'), 'Shadow comparator must not write to the Legacy timeline');
 assert(!generatorShadow.includes('requestAnimationFrame'), 'XML Runtime Shadow must not create a second RAF');
 assert(!generatorShadow.includes('getContext('), 'XML Runtime Shadow must not create a GPU context');
 assert(!generatorSource.includes('requestAnimationFrame'), 'Generator Source Adapter must not create a second RAF');
 assert(!generatorSource.includes('getContext('), 'Generator Source Adapter must not create a GPU context');
 assert(generatorSource.includes("effect.startsWith('beta-')"), 'Generator Source Adapter must select Butterchurn canvas explicitly');
-assert(!targetInspector.includes('requestAnimationFrame'), 'Target Inspector must not create a second RAF');
-assert(!targetInspector.includes('getContext('), 'Target Inspector must not create a GPU context');
-assert(!targetInspector.includes('Math.random'), 'Target Inspector must not create nondeterministic output');
-assert(!stabilityMonitor.includes('requestAnimationFrame'), 'Shadow Stability monitor must not create a second RAF');
-assert(!stabilityMonitor.includes('getContext('), 'Shadow Stability monitor must not create a GPU context');
-assert(!stabilityMonitor.includes('Math.random'), 'Shadow Stability monitor must not create nondeterministic output');
 assert(!frameOwnership.includes('requestAnimationFrame'), 'Frame Ownership monitor must not create a second RAF');
 assert(!frameOwnership.includes('getContext('), 'Frame Ownership monitor must not touch GPU state');
 assert(!frameOwnership.includes('performance.now'), 'Frame Ownership monitor must use only injected Engine Clock');
@@ -283,12 +260,6 @@ assert(
 );
 assert(app.includes('requestAnimationFrame(animate);'), 'Legacy animate must remain the continuous Engine Clock owner in IV-5');
 assert(app.includes('window.SmokeResonanceGeneratorOutput?.snapshotCanvas?.()'), 'Snapshots must capture the formal Generator canvas when active');
-assert(main.includes("ipcMain.handle('fusion:shadow-telemetry'"), 'Main process must expose isolated shadow telemetry');
-assert(preload.includes('shadowTelemetry'), 'Preload must expose shadow telemetry only through IPC');
-assert(main.includes('process.getCPUUsage?.()'), 'Telemetry must use scalar main-process CPU diagnostics');
-assert(main.includes('Promise.race(['), 'Telemetry must time out rather than block the Shadow gate');
-assert(main.includes('JSON.stringify({'), 'Telemetry must cross IPC as a clone-safe JSON scalar payload');
-assert(preload.includes('JSON.parse(payload)'), 'Preload must deserialize the diagnostics payload before UI observation');
 assert(html.includes('<script src="./glitch-feature-bus.js"></script>'), 'feature bus must load before app.js');
 assert(html.includes('<script src="./glitch-webgl.js"></script>'), 'WebGL2 renderer must load before app.js');
 

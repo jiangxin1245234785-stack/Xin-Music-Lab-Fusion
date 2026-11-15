@@ -1,5 +1,7 @@
 # Third-party notices
 
+> Historical note: `section-engines.js`, named in the MSAF research reference at the end, was removed in November 2026 together with live system-audio capture; that entry is kept for the record. The Butterchurn entries are current.
+
 The optional **Beta · GitHub** section includes local copies of these open-source projects:
 
 ## Butterchurn 2.6.7

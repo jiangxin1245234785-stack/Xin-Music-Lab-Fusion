@@ -1,85 +1,54 @@
-# Xin’s Music Lab
+# Xin’s Music Lab（XML）
 
-当前开发版：0.5.0-dev.stems.7。XLD 0.5.0-dev.core.5 提供 BS-RoFormer SW / Demucs 多模型分轨；XML 读取其当前 WAV 与对应 MIDI，便捷生成沿用当前模型。新模型入口在 XLD，详见 ../../work/weg-separation-20260914/HANDOFF.md。
+当前开发版以本目录 `package.json` 和仓库根目录的共用启动入口为准。
 
-一个监听电脑当前播放声音的音乐可视化小玩具。经典区以早期桌面播放器为灵感；Beta 区接入开源 MilkDrop 引擎。
+一个 Electron 桌面应用：播放本地曲库，给正在播放的歌配画面，并提供跟着音乐滚动的“谱面”。
+段落、和弦、分轨、MIDI 全部来自 XLD 的离线分析结果；XML 自己只做播放、实时频谱特征和渲染，不做音乐识别，也不采集系统声音。
+曲库目录和分析结果目录与 XLD 共用同一份设置（`%APPDATA%\Xin's Local Deck Beta\settings.json`）。没分析过的歌也能播放、看频谱；分析过的歌在谱面里信息最全。
 
-## 1.2.0 Demo.11 · 频谱饱满度、和弦旁路与双 OUR
+## 界面
 
-- `OUR LIVE` 保留原有即时段落判断；`OUR FUSED` 延迟融合频谱饱满度、Foote 边界、Form 复现与和声变化，两版并行便于听辨。
-- 新增独立 `Spectral Fullness`：综合有效频带覆盖率、频谱底部抬升、相邻频带连续性、低中高频共同占用和持续时间，避免把孤立高峰误判为高潮。
-- 新增轻量 `Harmony Lens`：从固定原始 FFT 提取 12 维 Chroma，输出当前和弦、置信度、和声变化与紧张度。它只提供结构证据，不单独定义高潮。
-- Section Lab 同时显示四条时间轨、融合候选进度与全部用户权重；所有结果继续与视觉频响校准隔离，且暂不接管视觉调制。
-- `window.SmokeResonanceSections.config()` 可读写融合权重，`harmony()` 可读取和弦旁路。
+- **顶栏**：当前曲目（封面、标题、艺术家、专辑），点它打开曲库；右侧是“曲库”和“外观与设置”两个按钮。
+- **画面条**：一行：谱面、LED 频谱、霓虹丝带、脉冲星；“更多画面 · 15”里是 Butterchurn（MilkDrop）与 Glitch 的 Beta 预设。频谱的读法固定（对数横轴 20 Hz–20 kHz、响度 −92 到 −18 dB、高频补偿 +2 dB/oct、平滑 68%），没有校准面板。
+- **播放条**：上一首 / 播放 / 下一首、进度、“听”（原曲或某一条分轨）、沉浸模式。
+- **曲库抽屉**：搜索、只看已分析、按专辑展开的曲目列表；底部是 XLD 结果卡片（在 XLD 中分析、更新结果；“更多操作”里有分析选项、打开输出目录、导入 JSON 等）。
+- **设置抽屉**：外观（配色、调色、跟和弦变色、字号、语言、响应）；画面效果（FX 开关、导演、特效强度、画质、打开 XLD 评测台 / 生成器）；用哪个分析结果（段落引擎、和弦引擎）；更多（FX Rack 设置、猫指挥及动作、快照、置顶、脉冲星样式）。
 
-## 1.2.0 Demo.10 · 多引擎段落识别工作台
+谱面里：点一条音轨只听那条分轨，再点回到整首；点段落跳到段落开头；双击（或 Shift+点）段落循环播放。
 
-- 新增独立 `section-features.js` 原始分析总线：使用固定 4096 点 FFT、固定平滑与自适应频带基线，完全绕开视觉频响、倾斜、自动增益和显示平滑设置。
-- 段落 Lab 同时运行 OUR 实时状态机、Foote 棋盘新颖度边界和 Recurrence Form 复现聚类三种方案，并在同一三轨时间轴比较判断、置信度与延迟。
-- Foote 与 Form 只负责观察，不参与 FX Rack、导演或 Glitch 调制；可分别停用，所有历史只保存在内存。
-- `window.SmokeResonanceSections` 提供 `get()`、`input()`、`enable(name, bool)`、`reset()` 与 `references()`，便于后续录制对比数据和接入更多外部适配器。
+快捷键：`Space` 播放 / 暂停 · `H` 隐藏界面 · `D` 导演（自动换画面） · `G` 特效开关 · `S` 保存画面 · `F10` 置顶 · `Esc` 关闭抽屉。
 
-## 1.2.0 Demo.9 · 三形态脉冲星与结构化 Glitch
+界面有中文与英文两种语言，契约见 `I18N_RELEASE.md`。
 
-- 段落引擎不再猜测主歌或副歌，改为追踪编制密度、声部增量、持续性和突然抽空，输出稀疏、加层、全奏、高潮、抽空、余波六种器乐结构状态。
-- Glitch 从独立视觉场景改为全局后处理旋钮架，可覆盖经典频谱、现代场景及 MilkDrop。
-- 通用后处理分为连续基础层、音乐相关底噪层和稀疏爆发层。`glitch-engine.js` 用慢/快包络差、张力累积器和最小事件间隔决定何时释放，画面层只负责执行撕裂、块错位、切片拉伸、通道偏移和同步丢失。
-- 亮度只跟随响度，饱和度跟随频率丰富度，对比度跟随动态范围；高频底噪改为短时保持的图样，不再逐帧随机乱闪。
+手写字幕在“外观与设置 → 谱面阅读”里；可设置起止秒与文字，修改/删除会保留本机历史。开发版字幕跨版本保存在 `%APPDATA%/XinMusicDevelopment/Listening Notes`，不写分析原件。
 
-- 校准、视觉频响、状态路由彼此独立：低中高频增益和 A/C/ITU-R 468 预设不会改写原始声学测量。
-- 原创映射加入 Acid 腐蚀轴；Glitch 实验室可分别调节编制密度、Acid 与瞬态响应。
-- 新增 Synthwave、Acid Toxic、Ultraviolet、Solar Flare 配色，以及色相循环、呼吸和带冷却的瞬态频闪。
+## 运行与测试
 
-`mapping-engine.js` 继续负责声学到感知层的映射，但 Demo.10 起只读取独立原始段落总线。声部规模不是字面意义上的乐器计数，而是结合有效频带占用、稳定谐波层、频谱跨度、谱熵、瞬态惩罚与慢速历史基线得到的连续估计。`mapping-lab.js` 显示最近约 30 秒的三引擎对比结果。
+- 日常运行：仓库根目录的 `启动XML.cmd`；与 `启动XLD.cmd` 读取同一个当前开发包指针。源码测试必须使用隔离档案。
+- 测试：`npm test`（`pretest` 跑 i18n 六步检查，随后是语法检查与各模块契约测试，全部是 Node 脚本）。
+- 需要 Electron 的测试不在 `npm test` 里：`tests/runtime-smoke.cjs`、`tests/i18n-step6-layout-electron.cjs`、`tests/stems-electron-smoke.cjs`、`tests/roundtrip-electron.cjs`、`tests/asar-contract.js`（打包后检查）等。
+- 打包：使用 `../release-tools/build-dev.cjs`，详见 [统一开发包流程](../release-tools/DEVELOPMENT-BUILDS.md)；会连同谱面核心构建并实际启动两个 exe 后再切入口。旧的单应用 dist 不是当前开发包交付入口。
+- 综合渲染 `tests/runtime-smoke.cjs` 默认创建可见窗口以验证动画；`SMOKE_VISIBLE=0` 仅供隐藏诊断。
 
-原先独立的“壮丽崩坏”入口已从主目录撤下。`original-glitch.js` 暂时保留为兼容代码；新的 FX Rack 直接作用于当前视觉结果，不要求用户切换到另一套画面。
+## 主要文件
 
-## 打开方式
+| 文件 | 作用 |
+|---|---|
+| `index.html`、`style.css`、`shell.css`、`shell.js` | 页面结构；`shell.css` / `shell.js` 是顶栏、播放条和两个抽屉的样式与行为 |
+| `app.js` | 视觉引擎：唯一的 RAF 时钟、音频特征、各画面、配色、导演、猫指挥、FX Rack、快照 |
+| `fusion.js` | 曲库、播放、读取 XLD 结果并把段落 / 和弦送进画面，装配 Generator 与各控制件 |
+| `score-scene.js` | 谱面场景，渲染核心在 `../scoreview` |
+| `stem-controls.js` | 分轨试听与 MIDI 状态 |
+| `xld-timeline-provider-adapter.js`、`realtime-provider-adapter.js`、`music-feature-resolver.js` | 把 XLD 时间线与实时特征合成统一的音乐帧 |
+| `material-target-registry.js`、`visual-material-runtime.js` | 画面运行时：每个画面都在这里注册，按帧更新与渲染，并把当前画面交给 Generator |
+| `generator-*.js`、`frame-ownership-monitor.js`、`product-control-dock.js` | Glitch Generator 的接入、预设（选择 / JSON 文件 / 仓库）、输出切换，以及设置抽屉里的特效强度与画质 |
+| `glitch-engine.js`、`glitch-feature-bus.js`、`glitch-webgl.js` | FX Rack 的事件引擎、特征总线与 WebGL2 反馈渲染 |
+| `conductor-poses.js` | 猫指挥的姿势骨架 |
+| `i18n/` | 词条目录、翻译器、静态 / 动态绑定 |
+| `desktop/` | Electron 主进程与 preload：曲库扫描、读取 XLD 分析、MIDI 资源、预设仓库、启动 XLD |
+| `vendor/` | Butterchurn 2.6.7、Butterchurn Presets 2.4.7（MIT）与 Glitch Generator 构建产物 |
+| `tools/glitch-generator/` | 打包的 Generator 编辑器 |
 
-建议使用最新版 Microsoft Edge 或 Google Chrome 打开 `index.html`，然后：
-
-1. 点击“连接电脑声音”。
-2. 在浏览器弹出的窗口中选择“整个屏幕”，不要只选单个窗口。
-3. 开启“共享系统音频”或“同时共享系统音频”。
-4. 播放网易云、Spotify、QQ 音乐、浏览器视频或任意其他电脑声音。
-
-这是浏览器的隐私限制：网页无法在未授权的情况下偷偷监听系统声音，因此每次重新打开页面都需要手动连接一次。
-
-## 操作
-
-- 点击方形监听按钮或按空格：暂停 / 继续分析（不会暂停外部播放器）
-- “更换来源”：重新选择要捕获的系统声音来源
-- 底部“经典款”：LED 频谱、镜像频谱、示波器、环形频谱、瀑布图、机械 VU；瀑布图带频率网格与分层色阶，VU 改为 LOW / DETAIL 两个真实 dBFS 区间表，不再使用容易满格的视觉能量值
-- 底部“现代款”：霓虹丝带、脉冲星、超空间、脉冲网格、棱镜花；脉冲星可切换低频居中的折叠频谱、左低右高的单向频谱和真实 L/R 双声道，单声道输入自动安全回退。条纹生成约为 90–170 ms，并按画质档位独立限制为约 24–45 FPS
-- 底部“Beta · GitHub”：Glowsticks、Thumb Drum、Groove、Bouncing、Paint Spill、Star Nova、Rewop；均从本地 Butterchurn Presets 开源包中按节奏响应重新筛选，并由统一的响度/瞬态门控抑制脱离音乐的乱闪。其后另有 Posterize、Disconnected、Tack Tile、Matrix 四个 Glitch 预设：低、中、高频瞬态共同触发撕裂，频率丰富度映射饱和度、整体响度映射亮度、瞬态动态范围映射对比度
-- 新增 Datamosh、RGB Split、Codec Rain、Signal Loss 四种实时 Glitch 后处理：分别使用跨帧残留、高频瞬态色差、动态范围压缩块和强拍同步丢失。它们不是随机闪屏，撕裂速率由 onset / spectral flux 驱动，亮度、饱和度和对比度继续服从声音映射
-- “导演”：以 12 个有效节拍为乐句参考，并结合段落能量变化自动选场；选场评分同时考虑响度、对数频谱重心、频率密度、谱平坦度和动态范围，避免连续重复画面。按 `D` 可随时接管或归还控制
-- “画质 Auto”：实时估算帧率并自适应像素密度；也可以循环切换 High 与 Eco。高分屏不再一律顶格渲染，Butterchurn 与 Canvas 共用同一渲染尺寸，减少卡顿和显卡空转
-- “快照”或 `S`：保存不带控制界面的当前画面，并保留猫指挥叠层与 Designed by Xin 签名
-- 桌面版“置顶”或 `F10`：让窗口保持在其他播放器上方，便于作为桌面氛围层使用
-- 右上“Glitch”：调整编制、低中高鼓组、Acid 撕蚀、段落、节奏，以及基础/底噪/爆发三层权重；橙线显示张力累积，红线显示实际释放，设置自动保存在本机
-- 右上角色点：切换 EVA-01 紫绿、EVA-02 红橙、EVA-00 蓝白和自定义配色
-- “调色”：分别修改主色、高光和背景色；可以载入三套 EVA 风底稿继续改，结果保存在本机
-- “猫指挥”：在任意视觉效果上叠加正/背面燕尾服卡通猫与按古典编制排列的管弦乐团。六套参考姿势保存在 `conductor-poses.js` 骨架素材库中，通过肩、肘、腕与手套关键点连续插值；前排是第一/第二小提琴、中提琴、大提琴与低音提琴，中排是长笛、双簧管、单簧管与大管，后排是圆号、小号、长号和大号，最后方为定音鼓与镲片
-- “动作”：调整指挥速度、手势幅度、角色大小、横纵位置、朝向、乐团显眼程度与声部文字；文字可设为显示 5 秒、始终显示或隐藏，全部设置会自动保存
-- 响应：调整经典款对音频的响应幅度
-- “校准”：打开频谱映射面板，可调最低/最高频率、dB 底线/顶线、高频补偿、平滑度、自动增益和对数/线性横轴
-- 校准预设：开源分析器、千千经典、电子低频、人声清晰、高频展开；手动设置会保存在本机
-- 右下控制栏的沉浸按钮：全屏并隐藏界面；右上角淡色按钮退出
-- `H`：快速隐藏 / 显示界面
-
-声音流仅在当前页面的内存中进行实时频谱分析，不会录制、保存或上传。Windows 上推荐使用 Edge 或 Chrome；不同系统和浏览器对“整个系统音频”的支持程度可能不同。
-
-## Windows 桌面版
-
-当前 Demo 便携版位于 `dist/Xins-Music-Lab-1.2.0-demo.11.exe`。Electron 桌面壳使用 Windows 回环音频直接驱动现有可视化，不需要将声音上传到网络。Demo.11 的段落专用分析器按画质档以约 12–19 Hz 更新，频谱饱满度与和弦旁路共享同一固定 FFT，避免重复计算和占用渲染帧预算。
+第三方许可见 `THIRD_PARTY_NOTICES.md`。`GLITCH_UPGRADE_DESIGN.md`、`GLITCH_GENERATION_RESEARCH.md`、`OPEN_SOURCE_RESEARCH.md` 是历史设计记录。
 
 Designed by Xin · 1245234785@qq.com
-
-## 渲染说明
-
-经典频谱使用 4096 点 FFT 与 dB 数据，每根视觉柱对其覆盖的真实 Hz 频段求功率均值；LED 频谱会显示频率和 dB 刻度。内部特征层额外计算 RMS、正向 spectral flux、对数频谱重心、谱平坦度、频率密度、频谱跨度 breadth、稳定峰 voices、编制丰度 richness、短时动态范围和 onset；可通过 `window.SmokeResonanceFeatures.get()` 读取。校准也提供 `window.SmokeResonanceCalibration` 接口，可调用 `get()`、`set({...})`、`applyPreset(name)` 与 `presets()`。
-
-Beta 使用 MIT 许可的 [Butterchurn](https://github.com/jberg/butterchurn) 和 [Butterchurn Presets](https://github.com/jberg/butterchurn-presets)。固定版本已放在项目的 `vendor` 目录，不再依赖运行时 CDN；预设优先选择无额外自定义 shader 的兼容版本。MilkDrop 仍需要浏览器支持 WebGL 2 和硬件加速，连续渲染失败时会自动切换到本地“棱镜花”。
-
-本轮产品化研究与取舍记录见 [`OPEN_SOURCE_RESEARCH.md`](./OPEN_SOURCE_RESEARCH.md)。新增特征提取、导演和 Glitch 后处理均为本项目实现，没有复制 AGPL 项目代码，也没有增加联网运行时依赖。

@@ -25,7 +25,8 @@ const manifestKeys = [
   ...dynamicUi.ATTRIBUTE_BINDINGS.map(binding => binding[2]),
   ...dynamicUi.CONTROL_LABEL_BINDINGS.map(binding => binding[1])
 ];
-assert.ok(manifestKeys.length >= 100, `expected at least 100 panel bindings, received ${manifestKeys.length}`);
+// 115 before 2026-11-13; the spectrum calibration panel's 27 bindings went with the panel.
+assert.ok(manifestKeys.length >= 88, `expected at least 88 panel bindings, received ${manifestKeys.length}`);
 
 const referencedKeys = new Set(manifestKeys);
 for (const source of [app, fusion]) {
@@ -48,9 +49,9 @@ assert.match(dynamicSource, /const runtimeBindings = new Map\(\)/);
 assert.match(dynamicSource, /runtimeBindings\.set\(element, binding\)/);
 assert.match(dynamicSource, /bridge\(host\)\.subscribe\(render\)/);
 assert.match(dynamicSource, /function unbind\(element\)/);
-assert.match(app, /dynamicI18n\?\.unbind\(sourceLabel\)/);
-assert.match(fusion, /clearUiBinding\(dom\.trackTitle\)/);
-assert.match(fusion, /clearUiBinding\(dom\.trackMeta\)/);
+assert.match(fusion, /clearUiBinding\(dom\.analysisTitle\)/);
+assert.match(fusion, /clearUiBinding\(dom\.analysisStatus\)/);
+assert.doesNotMatch(fusion, /dom\.trackTitle|dom\.trackMeta/);
 assert.match(fusion, /dynamicI18n\?\.subscribe/);
 
 for (const forbidden of [

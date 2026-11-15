@@ -9,8 +9,8 @@ const read = filename => asarLib.extractFile(asar, filename).toString('utf8');
 const app = read('app.js');
 const html = read('index.html');
 const glitchEngine = read('glitch-engine.js');
-const sectionFeatures = read('section-features.js');
-const sectionEngines = read('section-engines.js');
+const packaged = filename => { try { read(filename); return true; } catch (_) { return false; } };
+const preload = read('desktop/preload.cjs');
 const fusion = read('fusion.js');
 const productDock = read('product-control-dock.js');
 const main = read('desktop/main.cjs');
@@ -28,22 +28,29 @@ const generatorEditorRuntime = asarLib.extractFile(
 );
 const assertions = {
   version: pkg.version === '0.5.0-productization',
-  responseApi: app.includes('SmokeResonanceResponse'),
+  noCalibrationPanel: !app.includes('SmokeResonanceResponse') && !app.includes('SmokeResonanceCalibration')
+    && !html.includes('id="calibrationPanel"') && !html.includes('data-response-key'),
   colorApi: app.includes('SmokeResonanceColor'),
   sectionEngine: app.includes('orchestrationPersistence'),
-  independentSectionBus: sectionFeatures.includes('raw-section-bus-v1') && app.includes('createSectionAnalyser(4096)'),
-  parallelSectionEngines: sectionEngines.includes('FooteNoveltyEngine') && sectionEngines.includes('RecurrenceFormEngine') && sectionEngines.includes('FusedSectionEngine') && app.includes('SmokeResonanceSections'),
-  sectionWorkbench: html.includes('SECTION ANALYSIS WORKBENCH') && html.includes('data-section-engine-toggle="fused"') && html.includes('data-section-engine-toggle="foote"') && html.includes('data-section-engine-toggle="recurrence"'),
-  spectralFullnessAndHarmony: sectionFeatures.includes('spectralFullness') && sectionFeatures.includes('extractHarmony') && html.includes('data-section-chord'),
+  noBuiltInRecognition: !app.includes('SmokeResonanceSections') && !app.includes('createSectionAnalyser')
+    && !app.includes('original-glitch') && !html.includes('SECTION ANALYSIS WORKBENCH')
+    && !html.includes('data-section-engine-toggle') && !html.includes('data-mapping-key')
+    && ['section-features.js', 'section-engines.js', 'mapping-engine.js', 'live-harmony.js', 'mapping-lab.js', 'original-glitch.js']
+      .every(name => !packaged(name)),
   universalRack: app.includes('drawUniversalGlitchPostFx'),
   cycleControl: html.includes('data-color-fx-key="cycle"'),
-  responseControl: html.includes('data-response-key="lowGain"'),
   weightRack: html.includes('data-glitch-key="ensembleWeight"') && html.includes('data-glitch-key="drumWeight"') && html.includes('data-glitch-key="abrasionWeight"') && html.includes('data-glitch-key="rhythmLock"'),
-  analysisBoundary: html.includes('data-mapping-key="sectionSensitivity"') && !html.includes('data-mapping-key="acidWeight"'),
-  sectionConfidence: app.includes('sectionScores') && html.includes('data-mapping-meter="climaxConfidence"') && html.includes('data-mapping-meter="dropConfidence"'),
   pulsarVisual: app.includes('drawPulsar') && html.includes('data-effect="pulsar"'),
   strongerFx: html.includes('data-glitch-key="sectionDrive"') && html.includes('data-glitch-key="fxStrength"'),
-  mediaConsole: html.includes('id="mediaPlayPause"'),
+  noExternalListening: !html.includes('id="mediaPlayPause"') && !html.includes('id="captureButton"')
+    && !html.includes('id="fusionModeExternal"') && !app.includes('getDisplayMedia')
+    && !fusion.includes('setSourceMode') && !main.includes('setDisplayMediaRequestHandler')
+    && !main.includes('app:media-control') && !preload.includes('mediaControl'),
+  noDebugDiagnostics: !html.includes('id="sourceInspector"') && !html.includes('id="targetInspector"')
+    && !html.includes('id="shadowStabilityGate"') && !html.includes('id="fusionProof"')
+    && !fusion.includes('SmokeResonancePhaseIIGate') && !main.includes('fusion:shadow-telemetry')
+    && ['resolver-legacy-shadow.js', 'shadow-stability-monitor.js', 'source-inspector.js', 'target-inspector.js']
+      .every(name => !packaged(name)),
   curveMonitor: html.includes('id="glitchCurveCanvas"'),
   directorOwnsTransitions: app.includes("setEffect(next, 'director')") && !app.includes('glitchAutoState') && !html.includes('glitchShuffle'),
   adaptivePulsar: app.includes('currentQualityBudget') && app.includes('pulsarCaptureMs'),

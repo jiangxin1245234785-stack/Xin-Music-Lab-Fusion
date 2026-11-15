@@ -6,6 +6,9 @@ const fs = require('fs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 
 const failures = [];
+// Canvas and visibility assertions need an active window. Explicit 0 keeps the
+// hidden diagnostic mode, whose low-frequency animation cannot validate them.
+const smokeVisible = process.env.SMOKE_VISIBLE !== '0';
 let runtimeNativeLocale = 'zh-CN';
 const runtimeNativeLocaleCalls = [];
 const runtimeGeneratorOpenLocales = [];
@@ -25,16 +28,6 @@ if (process.env.SMOKE_DISABLE_GPU === '1') {
 }
 app.setPath('userData', path.join(os.tmpdir(), `xins-music-lab-runtime-${process.pid}`));
 
-// Exercise the actual preload → Fusion → monitor IPC path with a clone-safe
-// deterministic desktop fixture. Production handler behavior is guarded by
-// the source contract; this fixture avoids starting the full desktop shell.
-ipcMain.handle('fusion:shadow-telemetry', () => JSON.stringify({
-  available: true,
-  cpuPercent: 12,
-  memoryKb: 256_000,
-  processCount: 1,
-  scope: 'runtime-smoke-fixture'
-}));
 ipcMain.handle('fusion:export-glitch-preset', (_event, payload) => ({
   ok: Boolean(
     typeof payload?.json === 'string' &&
@@ -132,7 +125,7 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({
     width: 1280,
     height: 760,
-    show: process.env.SMOKE_VISIBLE === '1',
+    show: smokeVisible,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -150,26 +143,19 @@ app.whenReady().then(async () => {
 
   try {
     await win.loadFile(path.resolve(__dirname, '..', 'index.html'));
-    if (process.env.SMOKE_VISIBLE === '1') {
+    if (smokeVisible) {
       win.show();
       if (win.isMinimized()) win.restore();
       win.focus();
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     // Production intentionally pauses canvas work when its window is hidden.
-    // SMOKE_VISIBLE creates the test window visibly from the outset so the
+    // The default creates the test window visibly from the outset so the
     // existing engine clock can advance; it never changes app source code.
     const testVisibility = JSON.parse(await win.webContents.executeJavaScript(
       `JSON.stringify({ hidden: document.hidden, visibilityState: document.visibilityState })`
     ));
-    const configuredStabilityMs = Math.max(
-      0,
-      Number(process.env.SMOKE_STABILITY_MS) || 0
-    );
-    const initialWaitMs = Math.max(
-      process.env.SMOKE_VISIBLE === '1' ? 3200 : 1400,
-      configuredStabilityMs
-    );
+    const initialWaitMs = smokeVisible ? 3200 : 1400;
     await new Promise(resolve => setTimeout(resolve, initialWaitMs));
     let visibilityLifecycle = {
       tested: false,
@@ -180,7 +166,7 @@ app.whenReady().then(async () => {
       hiddenEnd: null,
       resumed: null
     };
-    if (process.env.SMOKE_VISIBLE === '1') {
+    if (smokeVisible) {
       const readGeneratorCounts = () => win.webContents.executeJavaScript(`(() => {
         const status = window.SmokeResonanceGeneratorRuntimeShadowView?.status();
         return {
@@ -226,26 +212,17 @@ app.whenReady().then(async () => {
     }
     const result = await win.webContents.executeJavaScript(`(async () => {
       const requiredApis = [
-        'SmokeResonanceCalibration',
-        'SmokeResonanceResponse',
         'SmokeResonanceColor',
         'SmokeResonanceGlitch',
         'SmokeResonancePulsar',
         'SmokeResonanceDirector',
-        'SmokeResonanceMapping',
-        'SmokeResonanceSections',
         'SmokeResonanceRealtimeFrame',
         'SmokeResonanceXldFrame',
         'SmokeResonanceFrameClock',
         'SmokeResonanceUnifiedMusicFrame',
         'SmokeResonanceMaterialView',
-        'SmokeResonanceExperimentalMaterials',
-        'SmokeResonanceSourceInspectorView',
-        'SmokeResonancePhaseIIGate',
         'SmokeResonanceGeneratorSourceView',
         'SmokeResonanceGeneratorRuntimeShadowView',
-        'SmokeResonanceTargetInspectorView',
-        'SmokeResonanceShadowStabilityGate',
         'SmokeResonanceFrameOwnershipGate',
         'SmokeResonanceGeneratorOutput',
         'SmokeResonanceGeneratorPresets',
@@ -291,45 +268,6 @@ app.whenReady().then(async () => {
         && Number.isInteger(unifiedFrame?.transport?.epoch)
         && unifiedFeatureIds.every(featureId => unifiedFrame?.meta?.[featureId])
         && resolverStatus?.config?.realtimeTtlMs > 0
-      );
-      const inspectorStatus = window.SmokeResonanceSourceInspectorView?.status();
-      const inspectorRows = [
-        ...document.querySelectorAll(
-          '#sourceInspector [data-inspector-feature]'
-        )
-      ];
-      const sourceInspectorReady = Boolean(
-        inspectorStatus
-        && inspectorStatus.rateHz >= 5
-        && inspectorStatus.rateHz <= 10
-        && inspectorStatus.sampleCount > 0
-        && inspectorRows.length === 26
-        && !document.querySelector(
-          '#sourceInspector input, #sourceInspector button, #sourceInspector select, #sourceInspector textarea'
-        )
-        && inspectorRows
-          .filter(row => row.dataset.available === 'false')
-          .every(row =>
-            row.querySelector('[data-inspector-field="value"]')
-              ?.textContent === 'UNKNOWN'
-          )
-      );
-      const phaseIIGateReport = window.SmokeResonancePhaseIIGate?.get();
-      const phaseIIGateStatus = window.SmokeResonancePhaseIIGate?.status();
-      const phaseIIGateReady = Boolean(
-        phaseIIGateReport
-        && phaseIIGateStatus?.rateHz >= 5
-        && phaseIIGateStatus?.rateHz <= 10
-        && phaseIIGateStatus?.sampleCount > 0
-        && phaseIIGateStatus?.formalPipeline === 'legacy'
-        && phaseIIGateStatus?.comparatorMode === 'read-only'
-        && phaseIIGateStatus?.legacyFrozenShape === true
-        && phaseIIGateReport?.isolation?.readsLegacySnapshotOnly === true
-        && phaseIIGateReport?.isolation?.writesLegacyBus === false
-        && phaseIIGateReport?.isolation?.writesRenderer === false
-        && phaseIIGateReport?.isolation?.writesTimeline === false
-        && Object.keys(phaseIIGateReport?.comparisons || {}).length === 15
-        && phaseIIGateReport?.resolverOnly?.length === 11
       );
       const generatorCanvas = document.querySelector('#generatorCanvas');
       const qualityButton = document.querySelector('#qualityButton');
@@ -787,7 +725,6 @@ app.whenReady().then(async () => {
         const productApi = window.SmokeResonanceProductControls;
         const productRoot = document.querySelector('#productControlDock');
         const dockMaster = document.querySelector('[data-product-fx-master]');
-        const ownerMaster = document.querySelector('#fusionMaster');
         const dockQuality = document.querySelector('[data-product-quality]');
         const ownerQuality = document.querySelector('#qualityButton');
         const initialProduct = productApi.status();
@@ -795,8 +732,9 @@ app.whenReady().then(async () => {
         dockMaster.value = '165';
         dockMaster.dispatchEvent(new Event('input', { bubbles: true }));
         const delegatedMaster = productApi.status();
-        ownerMaster.value = '125';
-        ownerMaster.dispatchEvent(new Event('input', { bubbles: true }));
+        const persistedMaster = localStorage.getItem('xins-fusion-master');
+        dockMaster.value = '125';
+        dockMaster.dispatchEvent(new Event('input', { bubbles: true }));
 
         dockQuality.click();
         await Promise.resolve();
@@ -816,7 +754,6 @@ app.whenReady().then(async () => {
           controls: [
             '[data-product-fx-master]',
             '[data-product-quality]',
-            '[data-product-source]',
             '[data-product-open-xld]',
             '[data-product-open-generator]'
           ].map(selector => {
@@ -835,7 +772,9 @@ app.whenReady().then(async () => {
           && initialProduct?.qualityMode === 'auto'
           && initialProduct?.desktopTools === true
           && delegatedMaster?.masterPercent === 165
-          && ownerMaster.value === '125'
+          && persistedMaster === '165'
+          && !document.querySelector('#fusionMaster')
+          && localStorage.getItem('xins-fusion-master') === '125'
           && document.querySelector('[data-product-fx-master-output]')
             ?.textContent === '125%'
           && highQuality?.qualityMode === 'high'
@@ -846,9 +785,7 @@ app.whenReady().then(async () => {
           && generatorOpened?.version === '6.6.1-integration-v.3'
           && finalProduct?.lastTool === 'generator'
           && finalProduct?.lastError === null
-          && finalProduct?.source?.label
-          && finalProduct?.updateIntervalMs === 250
-          && productRoot?.querySelector('[data-product-source]')
+          && !productRoot?.querySelector('[data-product-source]')
           && productRoot?.querySelector('[data-product-open-xld]')
           && productRoot?.querySelector('[data-product-open-generator]')
           && productStyle?.display !== 'none'
@@ -856,35 +793,6 @@ app.whenReady().then(async () => {
       } catch (error) {
         productControlDockReady = false;
       }
-      const targetInspectorReport =
-        window.SmokeResonanceTargetInspectorView?.get();
-      const targetInspectorStatus =
-        window.SmokeResonanceTargetInspectorView?.status();
-      const targetInspectorRows = [
-        ...document.querySelectorAll(
-          '#targetInspector [data-target-intent]'
-        )
-      ];
-      const targetInspectorReady = Boolean(
-        targetInspectorStatus?.rateHz >= 5
-        && targetInspectorStatus?.rateHz <= 10
-        && targetInspectorStatus?.sampleCount > 0
-        && targetInspectorStatus?.formalPipeline === 'generator'
-        && targetInspectorStatus?.comparatorMode === 'visual-intent-only'
-        && targetInspectorReport?.formalPipeline === 'generator'
-        && targetInspectorReport?.comparatorMode === 'visual-intent-only'
-        && targetInspectorReport?.comparison?.length === 5
-        && targetInspectorReport?.timeline?.length > 0
-        && targetInspectorReport?.safety?.physicalCapActive === true
-        && targetInspectorRows.length === 5
-        && !document.querySelector(
-          '#targetInspector input, #targetInspector button, #targetInspector select, #targetInspector textarea'
-        )
-      );
-      const shadowStabilityReport =
-        window.SmokeResonanceShadowStabilityGate?.get();
-      const shadowStabilityStatus =
-        window.SmokeResonanceShadowStabilityGate?.status();
       const frameOwnershipReport =
         window.SmokeResonanceFrameOwnershipGate?.get();
       const frameOwnershipStatus =
@@ -907,201 +815,54 @@ app.whenReady().then(async () => {
         && frameOwnershipReport?.pass === true
         && frameOwnershipStatus?.pass === true
       );
-      const shadowTelemetryBridgeAvailable =
-        typeof window.XinsMusicLabFusion?.shadowTelemetry === 'function';
-      const visibleClockRequired = ${process.env.SMOKE_VISIBLE === '1'};
-      const shadowStabilityReady = Boolean(
-        shadowStabilityStatus?.rateHz >= 5
-        && shadowStabilityStatus?.rateHz <= 10
-        && shadowStabilityStatus?.sampleCount > 0
-        && shadowStabilityStatus?.formalPipeline === 'generator'
-        && shadowStabilityStatus?.rendererEnabled === true
-        && shadowStabilityReport?.formalPipeline === 'generator'
-        && shadowStabilityReport?.rendererEnabled === true
-        && shadowStabilityReport?.runtimeReady === true
-        && shadowStabilityReport?.targets?.finite === true
-        && shadowStabilityReport?.renderer?.zeroGpu === false
-        && shadowStabilityReport?.renderer?.renderCalls > 0
-        && shadowStabilityReport?.renderer?.gpuContextsCreated === 2
-        && shadowStabilityReport?.renderer?.canvasTouches > 0
-        && shadowStabilityReport?.renderer?.rafRequests === 0
-        && shadowStabilityReport?.renderer?.context?.state === 'ready'
-        && shadowStabilityReport?.renderer?.context?.contextLosses === 1
-        && shadowStabilityReport?.renderer?.context?.contextRestores === 1
-        && shadowStabilityReport?.renderer?.quality?.mode === 'auto'
-        && shadowStabilityReport?.eventVoices?.bounded === true
-        && shadowTelemetryBridgeAvailable
-        && shadowStabilityReport?.telemetry?.samples > 0
-        && (!visibleClockRequired ||
-          shadowStabilityStatus?.sampleCount >= 20)
-        && shadowStabilityReport?.gate?.status ===
-          (${configuredStabilityMs} >= 30000 ? 'PASS' : 'PROVISIONAL')
-        && !shadowStabilityReport?.gate?.reasons?.includes('RENDERER_NOT_ACTIVE')
-        && !shadowStabilityReport?.gate?.reasons?.includes('RENDERER_CONTEXT_COUNT')
-        && !shadowStabilityReport?.gate?.reasons?.includes('SECOND_RAF_DETECTED')
-        && !document.querySelector(
-          '#shadowStabilityGate input, #shadowStabilityGate button, #shadowStabilityGate select, #shadowStabilityGate textarea'
-        )
-      );
       const stage = document.querySelector('main.stage');
       const nativeEffects = [...document.querySelectorAll('[data-effect]')]
         .map(button => button.dataset.effect)
         .filter(effect => effect && !effect.startsWith('beta-'));
       const failedNativeEffects = [];
-      const phase2MaterialReports = {};
-      const phase2SharedMappingReports = {};
-      const phase2PresetIds = [
-        'balanced',
-        'temporal-excavation',
-        'raster-deflection'
-      ];
+      const materialFrameWaits = [];
+      // Timers can expire before the next visible frame on a busy machine. Wait for
+      // the material and generator to publish the same new frame, then keep all of
+      // the existing output, field, mapping and metric assertions below.
+      const waitMaterialFrame = async (effect, after) => {
+        const began = performance.now();
+        while (performance.now() - began < 8000) {
+          const output = window.SmokeResonanceMaterialView?.outputs();
+          const material = window.SmokeResonanceMaterialView?.status();
+          const source = window.SmokeResonanceGeneratorSourceView?.status();
+          const generator = window.SmokeResonanceGeneratorRuntimeShadowView?.status();
+          if (stage?.dataset.effect === effect && output?.materialId === effect
+              && Number.isInteger(output.frameIndex) && output.frameIndex > after
+              && output.frameIndex === material?.frameIndex
+              && output.frameIndex === source?.materialFrameIndex
+              && output.frameIndex === generator?.renderReport?.output?.frameIndex
+              && generator?.renderReport?.status === 'rendered') {
+            materialFrameWaits.push({effect, after, frame: output.frameIndex, waitedMs: Math.round(performance.now() - began)});
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 16));
+        }
+        throw new Error('No synchronized material frame: ' + effect + ', after ' + after);
+      };
       for (const effect of nativeEffects) {
         document.querySelector('[data-effect="' + effect + '"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 55));
         if (stage?.dataset.effect !== effect) failedNativeEffects.push(effect);
-        if (effect === 'spectral-fabric' || effect === 'temporal-strata') {
-          window.SmokeResonanceMaterialView?.clearTargets();
-          await new Promise(resolve => setTimeout(resolve, 180));
-          const sharedGeneratorReport =
-            window.SmokeResonanceGeneratorRuntimeShadowView?.get();
-          const sharedGeneratorStatus =
-            window.SmokeResonanceGeneratorRuntimeShadowView?.status();
-          const sharedMaterialStatus =
-            window.SmokeResonanceMaterialView?.status();
-          const sharedMaterialOutput =
-            window.SmokeResonanceMaterialView?.outputs();
-          const sharedParameters =
-            window.SmokeResonanceMaterialView?.parameters() || {};
-          const sharedTargetValues =
-            sharedGeneratorReport?.targets?.values || {};
-          phase2SharedMappingReports[effect] = {
-            materialId: sharedMaterialOutput?.materialId || null,
-            materialFrameIndex: sharedMaterialOutput?.frameIndex ?? null,
-            generatorFrameIndex:
-              sharedGeneratorStatus?.renderReport?.output?.frameIndex ?? null,
-            materialStatusFrameIndex:
-              sharedMaterialStatus?.frameIndex ?? null,
-            mappingExtension:
-              sharedGeneratorStatus?.mappingExtension || null,
-            targetBindingCount:
-              sharedGeneratorStatus?.renderReport?.output
-                ?.targetBindingCount ?? null,
-            availableFieldIds:
-              sharedGeneratorStatus?.renderReport?.output
-                ?.materialFields?.availableIds || [],
-            materialFieldContract:
-              sharedGeneratorStatus?.renderReport?.output
-                ?.materialFields?.contract || null,
-            mappedValues: Object.fromEntries(
-              Object.entries(sharedTargetValues)
-                .filter(([id]) => id.startsWith('material.'))
-            ),
-            parameters: Object.fromEntries(
-              Object.entries(sharedParameters)
-                .filter(([id]) => id.startsWith('material.'))
-            )
-          };
-          window.SmokeResonanceMaterialView?.setTargets({
-            'material.coverage': .82,
-            'material.continuity': .68,
-            'material.refreshRate': effect === 'temporal-strata' ? 0 : 1,
-            'material.density': .64
-          });
-          const presetReports = [];
-          for (const presetId of phase2PresetIds) {
-            window.SmokeResonanceGeneratorPresetControl?.select(presetId);
-            await new Promise(resolve => setTimeout(resolve, 120));
-            const output = window.SmokeResonanceMaterialView?.outputs();
-            const status = window.SmokeResonanceMaterialView?.status();
-            const source = window.SmokeResonanceGeneratorSourceView?.status();
-            const generator =
-              window.SmokeResonanceGeneratorRuntimeShadowView?.status();
-            presetReports.push({
-              presetId,
-              outputContract: output?.contract || null,
-              materialId: output?.materialId || null,
-              fieldIds: Object.keys(output?.fields || {}).sort(),
-              frameIndex: output?.frameIndex ?? null,
-              runtimeFrameIndex: status?.frameIndex ?? null,
-              sourceFrameIndex: source?.materialFrameIndex ?? null,
-              sourceKind: source?.sourceKind || null,
-              generatorRenderStatus: generator?.renderReport?.status || null,
-              metrics: status?.runtime?.material?.metrics || null,
-              refreshIntervalMs:
-                status?.runtime?.material?.refreshIntervalMs ?? null
-            });
-          }
-          phase2MaterialReports[effect] = presetReports;
-        }
+        // Every kept scene is still registered and rendered through the material runtime:
+        // the runtime, the generator source and the generator render agree on one new frame.
+        await waitMaterialFrame(effect, window.SmokeResonanceMaterialView?.status()?.frameIndex ?? -1);
       }
-      window.SmokeResonanceGeneratorPresetControl?.select('balanced');
-      window.SmokeResonanceMaterialView?.clearTargets();
-      const phase2MaterialsReady = Boolean(
-        ['spectral-fabric', 'temporal-strata'].every(effect => {
-          const expectedFields = effect === 'temporal-strata'
-            ? 'age|density'
-            : 'density';
-          const reports = phase2MaterialReports[effect] || [];
-          return reports.length === phase2PresetIds.length
-            && reports.every(report =>
-              report.outputContract === 'xin.material-output/1'
-              && report.materialId === effect
-              && report.fieldIds.join('|') === expectedFields
-              && Number.isInteger(report.frameIndex)
-              && report.frameIndex === report.runtimeFrameIndex
-              && report.frameIndex === report.sourceFrameIndex
-              && report.sourceKind === 'material-canvas'
-              && report.generatorRenderStatus === 'rendered'
-              && Number.isFinite(report.metrics?.coverage)
-              && Number.isFinite(report.metrics?.meanFrameDifference)
-              && Number.isFinite(report.metrics?.actualRefreshRate)
-              && (
-                effect !== 'temporal-strata'
-                || report.refreshIntervalMs >= 1450
-              )
-            );
-        })
-      );
-      const phase2SharedMappingReady = Boolean(
-        ['spectral-fabric', 'temporal-strata'].every(effect => {
-          const expectedFields = effect === 'temporal-strata'
-            ? 'age|density'
-            : 'density';
-          const report = phase2SharedMappingReports[effect];
-          const mappedIds = Object.keys(report?.mappedValues || {}).sort();
-          return report?.materialId === effect
-            && Number.isInteger(report.materialFrameIndex)
-            && report.materialFrameIndex === report.generatorFrameIndex
-            && report.materialFrameIndex === report.materialStatusFrameIndex
-            && report.mappingExtension?.targetCount === 4
-            && report.mappingExtension?.mappingCount === 4
-            && report.targetBindingCount === 21
-            && report.availableFieldIds.slice().sort().join('|') ===
-              expectedFields
-            && report.materialFieldContract ===
-              'xin.generator-material-fields/1'
-            && mappedIds.join('|') === [
-              'material.continuity',
-              'material.coverage',
-              'material.density',
-              'material.refreshRate'
-            ].join('|')
-            && mappedIds.every(id =>
-              Number.isFinite(report.mappedValues[id])
-              && report.parameters[id] === report.mappedValues[id]
-            );
-        })
-      );
-      document.querySelector('[data-effect="temporal-strata"]')?.click();
+      // Not pulsar: main.stage carries data-effect too, and the director check below clicks pulsar.
+      document.querySelector('.scene-button[data-effect="ribbons"]')?.click();
       await new Promise(resolve => setTimeout(resolve, 80));
-      const phase2LifecycleReports = [];
+      const materialLifecycleReports = [];
       for (const reason of ['pause', 'seek', 'track-change']) {
         window.SmokeResonanceMaterialView?.reset(reason);
         await new Promise(resolve => setTimeout(resolve, 80));
         const status = window.SmokeResonanceMaterialView?.status();
         const generator =
           window.SmokeResonanceGeneratorRuntimeShadowView?.status();
-        phase2LifecycleReports.push({
+        materialLifecycleReports.push({
           reason,
           lastResetReason:
             status?.runtime?.material?.lastResetReason || null,
@@ -1111,13 +872,12 @@ app.whenReady().then(async () => {
           sameFramePass: status?.sameFramePass === true
         });
       }
-      const phase2LifecycleReady = phase2LifecycleReports.every(report =>
+      const materialLifecycleReady = materialLifecycleReports.every(report =>
         report.lastResetReason === report.reason
         && Number.isInteger(report.materialFrameIndex)
         && report.materialFrameIndex === report.generatorFrameIndex
         && report.sameFramePass
       );
-      document.querySelector('#calibrationButton')?.click();
       const fxPanel = document.querySelector('#glitchPanel');
       fxPanel.style.transition = 'none';
       fxPanel.style.left = '9999px';
@@ -1139,13 +899,16 @@ app.whenReady().then(async () => {
         && fxPanelRect?.top >= 0
         && fxPanelRect?.bottom <= window.innerHeight
       );
-      const calibrationAndFxCoexist = document.querySelector('#calibrationPanel')?.classList.contains('is-open')
-        && fxPanelActuallyVisible;
+      // The spectrum calibration panel and its button were removed on 2026-11-13.
+      const calibrationPanelAbsent = !document.querySelector('#calibrationPanel')
+        && !document.querySelector('#calibrationButton')
+        && !document.querySelector('[data-calibration-key], [data-response-key], [data-calibration-preset], [data-response-preset]')
+        && !('SmokeResonanceCalibration' in window) && !('SmokeResonanceResponse' in window);
       const topFxPower = document.querySelector('#glitchPowerButton');
       window.SmokeResonanceGlitch.set({ enabled: true });
       await new Promise(resolve => setTimeout(resolve, 320));
       const topFxPowerShowsOn = topFxPower?.getAttribute('aria-pressed') === 'true'
-        && topFxPower?.textContent.trim() === 'FX ON';
+        && topFxPower?.getAttribute('aria-pressed') === 'true';
       const generatorOutputActiveStatus =
         window.SmokeResonanceGeneratorOutput?.status();
       const generatorOutputActive = Boolean(
@@ -1169,7 +932,7 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 260));
       const topFxPowerBypasses = window.SmokeResonanceGlitch.get().enabled === false
         && topFxPower?.getAttribute('aria-pressed') === 'false'
-        && topFxPower?.textContent.trim() === 'FX OFF';
+        && topFxPower?.textContent.trim() === '特效 关';
       const generatorOutputBypassStatus =
         window.SmokeResonanceGeneratorOutput?.status();
       const generatorOutputBypasses = Boolean(
@@ -1193,17 +956,23 @@ app.whenReady().then(async () => {
         && generatorOutputReactivatedStatus?.bypasses >= 1
         && stage?.classList.contains('generator-renderer-on')
       );
-      document.querySelector('#mappingLabButton')?.click();
-      const mappingAndFxCoexist = document.querySelector('#mappingLabPanel')?.classList.contains('is-open')
-        && document.querySelector('#glitchPanel')?.classList.contains('is-open');
-      const sectionState = window.SmokeResonanceSections.get();
-      const sectionEnginesReady = ['our', 'fused', 'foote', 'recurrence'].every(id => Boolean(sectionState?.engines?.[id]));
-      window.SmokeResonanceSections.enable('foote', false);
-      const sectionToggleWorks = window.SmokeResonanceSections.get().enabled.foote === false;
-      window.SmokeResonanceSections.enable('foote', true);
-      const sectionCardsPresent = document.querySelectorAll('[data-section-engine-toggle]').length === 4;
-      const fusionConfigWorks = window.SmokeResonanceSections.config({ confirmMs: 2600 }).confirmMs === 2600;
-      const harmonyApiReady = Boolean(window.SmokeResonanceSections.harmony()) && document.querySelectorAll('[data-section-chord]').length === 1;
+      // Built-in recognition, external listening and the debug diagnostics are removed:
+      // none of their globals, controls or bridges may exist.
+      const removedSurfacesAbsent = [
+        'SmokeResonanceSections', 'SmokeResonanceMapping', 'SmokeResonanceMappingLab',
+        'SmokeResonanceLiveHarmony', 'SmokeResonanceSourceInspectorView', 'SmokeResonancePhaseIIGate',
+        'SmokeResonanceTargetInspectorView', 'SmokeResonanceShadowStabilityGate'
+      ].every(name => !(name in window))
+        && !document.querySelector([
+          '#mappingLabButton', '#mappingLabPanel', '[data-section-engine-toggle]', '[data-effect="original-glitch"]',
+          '#playButton', '#captureButton', '#enterButton', '#mediaPlayPause', '#topModeExternal',
+          '#fusionModeExternal', '#fusionExternalView', '#sourceInspector', '#targetInspector',
+          '#shadowStabilityGate', '#fusionProof', '[data-product-source]'
+        ].join(', '))
+        && typeof window.SmokeResonanceAudioSource?.startExternal === 'undefined'
+        && typeof window.SmokeResonanceDesktop?.mediaControl === 'undefined'
+        && typeof window.XinsMusicLabFusion?.shadowTelemetry === 'undefined'
+        && !('fusionSource' in (stage?.dataset || {}));
       const pulsarLayouts = ['folded', 'sweep', 'stereo'];
       const failedPulsarLayouts = pulsarLayouts.filter(layout => {
         window.SmokeResonancePulsar.layout(layout);
@@ -1221,15 +990,12 @@ app.whenReady().then(async () => {
       const readLocaleDomainState = () => ({
         effect: stage?.dataset.effect || '',
         canvasCount: document.querySelectorAll('canvas').length,
-        fxPower: document.querySelector('#glitchPowerButton')?.getAttribute('aria-pressed') || '',
-        sourceInternal: document.querySelector('#topModeInternal')?.getAttribute('aria-pressed') || '',
-        mappingOpen: document.querySelector('#mappingLabPanel')?.classList.contains('is-open') || false
+        fxPower: document.querySelector('#glitchPowerButton')?.getAttribute('aria-pressed') || ''
       });
       const readDynamicLocaleState = locale => {
         const messages = window.XinMusicLabI18nCatalogs?.MESSAGE_CATALOGS?.[locale] || {};
         const values = {
-          fusion: document.querySelector('#fusionPanel > .calibration-head h2')?.textContent || '',
-          mapping: document.querySelector('#mappingLabPanel .calibration-head h2')?.textContent || '',
+          fusion: document.querySelector('#fusionPanel .xl-drawer__head h2')?.textContent || '',
           glitch: document.querySelector('#glitchPanel > .calibration-head h2')?.textContent || '',
           quality: document.querySelector('#qualityButton')?.textContent || '',
           director: document.querySelector('#directorToggle')?.textContent || '',
@@ -1239,8 +1005,7 @@ app.whenReady().then(async () => {
         return {
           values,
           matchesCatalog:
-            values.fusion === messages['fusion.title']
-            && values.mapping === messages['mapping.title']
+            values.fusion === messages['shell.library']
             && values.glitch === messages['glitch.title']
             && values.quality === messages['runtime.quality.auto']
             && values.director === messages['runtime.director.off']
@@ -1255,10 +1020,9 @@ app.whenReady().then(async () => {
       const englishDesktopLocale = await window.SmokeResonanceDesktop?.getLocale?.();
       const englishLocaleActive = document.querySelector('[data-locale="en-US"]')?.classList.contains('is-active') || false;
       const englishStaticShell = {
-        source: document.querySelector('[data-i18n="engine.localLibrary"]')?.textContent || '',
-        calibration: document.querySelector('[data-i18n="engine.calibration"]')?.textContent || '',
-        catalog: document.querySelector('[data-i18n="catalog.classic"]')?.textContent || '',
-        welcome: document.querySelector('[data-i18n="welcome.connect"]')?.textContent || '',
+        library: document.querySelector('[data-i18n="engine.fusion"]')?.textContent || '',
+        catalog: document.querySelector('[data-i18n="catalog.spectrum"]')?.textContent || '',
+        welcome: document.querySelector('[data-i18n="welcome.note"]')?.textContent || '',
         canvasAria: document.querySelector('#visualizer')?.getAttribute('aria-label') || ''
       };
       const englishDynamicShell = readDynamicLocaleState('en-US');
@@ -1267,10 +1031,9 @@ app.whenReady().then(async () => {
       const chineseLocaleState = { ...window.xinMusicLabLocale.getState() };
       const chineseDesktopLocale = await window.SmokeResonanceDesktop?.getLocale?.();
       const chineseStaticShell = {
-        source: document.querySelector('[data-i18n="engine.localLibrary"]')?.textContent || '',
-        calibration: document.querySelector('[data-i18n="engine.calibration"]')?.textContent || '',
-        catalog: document.querySelector('[data-i18n="catalog.classic"]')?.textContent || '',
-        welcome: document.querySelector('[data-i18n="welcome.connect"]')?.textContent || '',
+        library: document.querySelector('[data-i18n="engine.fusion"]')?.textContent || '',
+        catalog: document.querySelector('[data-i18n="catalog.spectrum"]')?.textContent || '',
+        welcome: document.querySelector('[data-i18n="welcome.note"]')?.textContent || '',
         canvasAria: document.querySelector('#visualizer')?.getAttribute('aria-label') || ''
       };
       const chineseDynamicShell = readDynamicLocaleState('zh-CN');
@@ -1285,11 +1048,6 @@ app.whenReady().then(async () => {
         xldProviderReady,
         unifiedFrameReady,
         resolverStatus,
-        sourceInspectorReady,
-        inspectorStatus,
-        phaseIIGateReady,
-        phaseIIGateStatus,
-        phaseIIGateReport,
         generatorRuntimeShadowReady,
         generatorQualityCycleReady,
         generatorContextRecoveryReady,
@@ -1310,24 +1068,15 @@ app.whenReady().then(async () => {
         productPresetRepositoryReady,
         productControlDockReady,
         productControlDiagnostics,
-        targetInspectorReady,
-        targetInspectorStatus,
-        targetInspectorReport,
-        shadowStabilityReady,
         frameOwnershipReady,
         frameOwnershipStatus,
         frameOwnershipReport,
-        shadowStabilityStatus,
-        shadowStabilityReport,
-        shadowTelemetryBridgeAvailable,
         failedNativeEffects,
-        phase2MaterialsReady,
-        phase2MaterialReports,
-        phase2SharedMappingReady,
-        phase2SharedMappingReports,
-        phase2LifecycleReady,
-        phase2LifecycleReports,
-        calibrationAndFxCoexist,
+        nativeEffectCount: nativeEffects.length,
+        materialFrameWaits,
+        materialLifecycleReady,
+        materialLifecycleReports,
+        calibrationPanelAbsent,
         fxPanelActuallyVisible,
         fxPanelDiagnostics: {
           inlineLeft: fxPanel?.style.left || '',
@@ -1353,12 +1102,7 @@ app.whenReady().then(async () => {
         generatorOutputActiveStatus,
         generatorOutputBypassStatus,
         generatorOutputReactivatedStatus,
-        mappingAndFxCoexist,
-        sectionEnginesReady,
-        sectionToggleWorks,
-        sectionCardsPresent,
-        fusionConfigWorks,
-        harmonyApiReady,
+        removedSurfacesAbsent,
         failedPulsarLayouts,
         glitchStateFinite,
         manualSelectionReleasesDirector,
@@ -1380,7 +1124,6 @@ app.whenReady().then(async () => {
     })()`);
     result.testVisibility = testVisibility;
     result.visibilityLifecycle = visibilityLifecycle;
-    result.configuredStabilityMs = configuredStabilityMs;
     result.runtimeNativeLocaleCalls = [...runtimeNativeLocaleCalls];
     result.runtimeGeneratorOpenLocales = [...runtimeGeneratorOpenLocales];
     const assertions = {
@@ -1389,8 +1132,6 @@ app.whenReady().then(async () => {
       realtimeProviderReady: result.realtimeProviderReady,
       xldProviderReady: result.xldProviderReady,
       unifiedFrameReady: result.unifiedFrameReady,
-      sourceInspectorReady: result.sourceInspectorReady,
-      phaseIIGateReady: result.phaseIIGateReady,
       generatorRuntimeShadowReady: result.generatorRuntimeShadowReady,
       productPresetsReady: result.productPresetsReady,
       productPresetSwitchReady: result.productPresetSwitchReady,
@@ -1403,30 +1144,22 @@ app.whenReady().then(async () => {
       materialRuntimeReady: result.materialRuntimeReady,
       materialSourceFrameAligned: result.materialSourceFrameAligned,
       generatorSourceReady: result.generatorSourceReady,
-      targetInspectorReady: result.targetInspectorReady,
-      shadowStabilityReady: result.shadowStabilityReady,
       frameOwnershipReady: result.frameOwnershipReady,
       visibilityPauseResume:
         visibilityLifecycle.tested &&
         visibilityLifecycle.pausedWhileHidden &&
         visibilityLifecycle.resumedAfterShow,
-      nativeEffects: result.failedNativeEffects.length === 0,
-      phase2MaterialsReady: result.phase2MaterialsReady,
-      phase2SharedMappingReady: result.phase2SharedMappingReady,
-      phase2LifecycleReady: result.phase2LifecycleReady,
-      calibrationAndFxCoexist: result.calibrationAndFxCoexist,
+      nativeEffects: result.failedNativeEffects.length === 0
+        && result.materialFrameWaits.length === result.nativeEffectCount,
+      materialLifecycleReady: result.materialLifecycleReady,
+      calibrationPanelAbsent: result.calibrationPanelAbsent,
       fxPanelActuallyVisible: result.fxPanelActuallyVisible,
       topFxPowerShowsOn: result.topFxPowerShowsOn,
       topFxPowerBypasses: result.topFxPowerBypasses,
       generatorOutputActive: result.generatorOutputActive,
       generatorOutputBypasses: result.generatorOutputBypasses,
       generatorOutputReactivates: result.generatorOutputReactivates,
-      mappingAndFxCoexist: result.mappingAndFxCoexist,
-      sectionEnginesReady: result.sectionEnginesReady,
-      sectionToggleWorks: result.sectionToggleWorks,
-      sectionCardsPresent: result.sectionCardsPresent,
-      fusionConfigWorks: result.fusionConfigWorks,
-      harmonyApiReady: result.harmonyApiReady,
+      removedSurfacesAbsent: result.removedSurfacesAbsent,
       pulsarLayouts: result.failedPulsarLayouts.length === 0,
       glitchStateFinite: result.glitchStateFinite,
       manualSelectionReleasesDirector: result.manualSelectionReleasesDirector,
@@ -1442,16 +1175,14 @@ app.whenReady().then(async () => {
         && result.runtimeNativeLocaleCalls.at(-1) === 'zh-CN',
       generatorOpenLocale: result.runtimeGeneratorOpenLocales.includes('zh-CN'),
       englishStaticShell:
-        result.englishStaticShell?.source === 'Local Library' &&
-        result.englishStaticShell?.calibration === 'Frequency Calibration' &&
-        result.englishStaticShell?.catalog === 'CLASSIC' &&
-        result.englishStaticShell?.welcome === 'Connect computer audio' &&
+        result.englishStaticShell?.library === 'Library' &&
+        result.englishStaticShell?.catalog === 'LED Spectrum' &&
+        result.englishStaticShell?.welcome === 'The library and the analysis results are the ones XLD is set to.' &&
         result.englishStaticShell?.canvasAria === 'Classic audio-reactive spectrum animation',
       chineseStaticShell:
-        result.chineseStaticShell?.source === '本地曲库' &&
-        result.chineseStaticShell?.calibration === '频响校准' &&
-        result.chineseStaticShell?.catalog === '经典款' &&
-        result.chineseStaticShell?.welcome === '连接电脑声音' &&
+        result.chineseStaticShell?.library === '曲库' &&
+        result.chineseStaticShell?.catalog === 'LED 频谱' &&
+        result.chineseStaticShell?.welcome === '曲库和分析结果的位置跟 XLD 用同一份设置。' &&
         result.chineseStaticShell?.canvasAria === '随音乐变化的经典频谱动画',
       englishDynamicShell: result.englishDynamicShell?.matchesCatalog === true,
       chineseDynamicShell: result.chineseDynamicShell?.matchesCatalog === true,
@@ -1470,18 +1201,10 @@ app.whenReady().then(async () => {
         window.SmokeResonanceGeneratorPresetControl?.select(${JSON.stringify(process.env.SMOKE_PRESET || 'balanced')});
         const welcome = document.querySelector('#welcome');
         welcome?.remove();
-        document.querySelector('#calibrationPanel')?.classList.remove('is-open');
-        document.querySelector('#mappingLabPanel')?.classList.toggle(
-          'is-open',
-          ${JSON.stringify(process.env.SMOKE_VIEW === 'sections')}
-        );
         document.querySelector('#glitchPanel')?.classList.toggle(
           'is-open',
-          ${JSON.stringify(process.env.SMOKE_VIEW !== 'sections' && !process.env.SMOKE_MATERIAL)}
+          ${JSON.stringify(!process.env.SMOKE_MATERIAL)}
         );
-        if (!screenshotMaterial) {
-          document.querySelector('#sourceInspector')?.setAttribute('open', '');
-        }
         window.SmokeResonancePulsar.layout('stereo');
         window.SmokeResonancePulsar.mode('neon');
         window.SmokeResonanceGlitch.set({

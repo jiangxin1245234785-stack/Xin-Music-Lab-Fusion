@@ -5,9 +5,12 @@ const { runAudit } = require('../scripts/i18n-release-audit.cjs');
 
 const report = runAudit();
 assert.equal(report.ok, true, JSON.stringify(report.details, null, 2));
-assert.ok(report.counts.catalog >= 450, `expected broad catalog coverage, got ${report.counts.catalog}`);
+// The floor is what the catalog holds now (455 on 2026-11-14), so a key that goes missing is noticed.
+// It was 450, then lowered to 400 when the calibration panel went; 400 would let 55 keys vanish unseen.
+assert.ok(report.counts.catalog >= 455, `expected broad catalog coverage, got ${report.counts.catalog}`);
 assert.ok(report.counts.staticBindings >= 100, `expected at least 100 static bindings, got ${report.counts.staticBindings}`);
-assert.ok(report.counts.dynamicManifestKeys >= 100, `expected broad dynamic coverage, got ${report.counts.dynamicManifestKeys}`);
+// 114 before 2026-11-13; the spectrum calibration panel's 27 keys went with the panel.
+assert.ok(report.counts.dynamicManifestKeys >= 87, `expected broad dynamic coverage, got ${report.counts.dynamicManifestKeys}`);
 assert.deepEqual(report.locales, ['zh-CN', 'en-US']);
 
 console.log(

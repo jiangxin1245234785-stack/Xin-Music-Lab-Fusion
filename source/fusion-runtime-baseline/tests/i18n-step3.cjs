@@ -25,8 +25,11 @@ for (const key of uniqueKeys) {
   assert.ok(Object.hasOwn(catalogs.EN_US_MESSAGES, key), `missing en-US message: ${key}`);
 }
 
+for (const id of ['trackTitle', 'trackMeta', 'sourceLabel', 'energyLabel']) {
+  assert.equal(html.includes(`id="${id}"`), false, `removed read-out is back: ${id}`);
+}
 for (const id of [
-  'trackTitle', 'trackMeta', 'sourceLabel', 'energyLabel', 'qualityButton',
+  'fusionTrack', 'fusionArtist', 'fusionAlbum', 'qualityButton',
   'pulsarLayoutButton', 'pulsarStyleButton', 'glitchPowerButton',
   'directorToggle', 'conductorToggle', 'pinButton'
 ]) {

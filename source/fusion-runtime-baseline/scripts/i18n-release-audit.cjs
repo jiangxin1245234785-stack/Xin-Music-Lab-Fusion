@@ -42,8 +42,7 @@ function referencedMessageKeys() {
 
 function rawMetadataViolations(html) {
   const protectedIds = [
-    'trackTitle', 'trackMeta', 'fusionTrack', 'fusionArtist', 'fusionAlbum',
-    'fusionChord', 'fusionLibraryRoot', 'fusionAnalysisPercent'
+    'fusionTrack', 'fusionArtist', 'fusionAlbum', 'fusionLibraryRoot', 'fusionAnalysisPercent'
   ];
   return protectedIds.filter(id => {
     const match = html.match(new RegExp(`<[^>]+id="${id}"[^>]*>`, 'i'));

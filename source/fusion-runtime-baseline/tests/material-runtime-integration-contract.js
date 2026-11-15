@@ -39,18 +39,12 @@ assert.match(app, /materialRuntime\?\.reset\('resize'\)/);
 
 const animate = app.slice(
   app.indexOf('function animate()'),
-  app.indexOf("enterButton.addEventListener('click'", app.indexOf('function animate()'))
+  app.indexOf("intensityInput.addEventListener('input'", app.indexOf('function animate()'))
 );
 for (const oldBranch of [
   "activeEffect === 'spectrum'",
-  "activeEffect === 'mirror'",
-  "activeEffect === 'waveform'",
-  "activeEffect === 'radial'",
-  "activeEffect === 'waterfall'",
-  "activeEffect === 'pulsar'",
-  "activeEffect === 'tunnel'",
-  "activeEffect === 'pulse-grid'",
-  "activeEffect === 'bloom'"
+  "activeEffect === 'ribbons'",
+  "activeEffect === 'pulsar'"
 ]) {
   assert.equal(
     animate.includes(oldBranch),

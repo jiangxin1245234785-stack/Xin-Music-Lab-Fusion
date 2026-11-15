@@ -1,0 +1,266 @@
+/* The shell: one top bar, a scene strip and a transport bar at the bottom, two drawers on the
+   right. Everything else is the picture. Loaded after style.css; where a rule here names an
+   older class it is taking that element out of its old place, not restyling the old layout.
+   Sizes are written at 100 % and multiplied by --ui-scale (1.4 by default: the size that is
+   comfortable to read), so the bars and drawers are laid out for the text people actually see. */
+.stage {
+  --xl-top: calc(48px * var(--ui-scale));
+  --xl-scenes: calc(40px * var(--ui-scale));
+  --xl-transport: calc(52px * var(--ui-scale));
+  --xl-line: rgba(255,255,255,.09);
+  --xl-ground: rgba(13,16,22,.88);
+  --xl-panel: rgba(18,23,34,.97);
+  --xl-text: #e8ecf5;
+  --xl-dim: #a3acbf;
+  --xl-accent: #72e8ce;
+  --xl-accent-soft: rgba(114,232,206,.14);
+}
+
+/* --- one look for every button in the shell ------------------------------------------- */
+.xl-top__actions > button, .xl-drawer__head > button:not(.calibration-close), .xl-row > button, .xl-grid > button, .xl-more__row > button, .xl-settings .product-control-dock button,
+.xl-drawer .fusion-analysis-card button, .xl-drawer .ui-scale-control button, .xl-drawer .locale-control button {
+  height: calc(31px * var(--ui-scale)); padding: 0 calc(11px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14);
+  border-radius: calc(8px * var(--ui-scale)); background: transparent; color: var(--xl-text); font: inherit;
+  font-size: calc(12.5px * var(--ui-scale)); letter-spacing: 0; text-transform: none; white-space: nowrap; cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s; box-shadow: none; transform: none;
+}
+.xl-top__actions > button:hover, .xl-row > button:hover, .xl-grid > button:hover, .xl-more__row > button:hover,
+.xl-settings .product-control-dock button:hover, .xl-drawer .fusion-analysis-card button:hover { border-color: rgba(114,232,206,.55); background: rgba(255,255,255,.05); }
+.xl-top__actions > button[aria-expanded="true"], .xl-row > button[aria-pressed="true"], .xl-grid > button[aria-pressed="true"],
+.xl-row > button.is-active, .xl-grid > button.is-active, .xl-drawer .locale-control button[aria-pressed="true"] {
+  border-color: var(--xl-accent); background: var(--xl-accent-soft); color: #d6fff5;
+}
+.xl-drawer button:disabled, .xl-transport button:disabled { opacity: .42; cursor: default; }
+
+/* --- top bar ---------------------------------------------------------------------------- */
+.xl-top {
+  position: absolute; z-index: 8; left: 0; right: 0; top: 0; height: var(--xl-top); box-sizing: border-box;
+  display: flex; align-items: center; gap: calc(14px * var(--ui-scale)); padding: 0 calc(17px * var(--ui-scale));
+  background: var(--xl-ground); border-bottom: 1px solid var(--xl-line); backdrop-filter: blur(18px);
+  color: var(--xl-text); font-size: calc(13px * var(--ui-scale)); transition: opacity .35s, transform .35s;
+}
+.xl-brand { display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); flex: 0 0 auto; min-width: calc(150px * var(--ui-scale)); padding: 0; border: 0; background: transparent; color: inherit; font-family: inherit; font-weight: 600; font-size: calc(13.5px * var(--ui-scale)); letter-spacing: .02em; white-space: nowrap; cursor: pointer; }
+.xl-brand:focus-visible, .welcome button:focus-visible { outline: 2px solid var(--xl-accent); outline-offset: 3px; }
+.xl-brand__mark { width: calc(18px * var(--ui-scale)); height: calc(18px * var(--ui-scale)); border-radius: calc(5px * var(--ui-scale)); background: var(--xl-accent); }
+.xl-now {
+  flex: 1 1 auto; min-width: 0; height: calc(33px * var(--ui-scale)); display: flex; align-items: center; justify-content: center;
+  gap: calc(9px * var(--ui-scale)); padding: 0 calc(13px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.12);
+  border-radius: calc(9px * var(--ui-scale)); background: rgba(255,255,255,.04); color: inherit; font: inherit; cursor: pointer;
+}
+.xl-now:hover { border-color: rgba(114,232,206,.5); }
+.xl-now strong { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48%; font-size: inherit; }
+.xl-now__meta { display: flex; gap: .45em; min-width: 0; color: var(--xl-dim); white-space: nowrap; overflow: hidden; }
+.xl-now__meta span, .xl-now__meta small { overflow: hidden; text-overflow: ellipsis; font-size: inherit; letter-spacing: 0; text-transform: none; color: inherit; }
+.xl-now__meta #fusionAlbum::before { content: '· '; }
+.xl-now__cover { width: calc(22px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); border-radius: 4px; object-fit: cover; flex: none; }
+.xl-now__cover:not([src]), .xl-now__cover[src=""] { display: none; }
+.xl-chevron { width: calc(13px * var(--ui-scale)); height: calc(13px * var(--ui-scale)); fill: none; stroke: var(--xl-dim); stroke-width: 2; flex: none; }
+.xl-top__actions { display: flex; gap: calc(7px * var(--ui-scale)); flex: 0 0 auto; min-width: calc(150px * var(--ui-scale)); justify-content: flex-end; }
+.xl-top__actions > button { height: calc(33px * var(--ui-scale)); padding: 0 calc(13px * var(--ui-scale)); border-radius: calc(9px * var(--ui-scale)); font-size: calc(13px * var(--ui-scale)); }
+
+/* --- scene strip: the old catalogue, now a row above the transport ----------------------- */
+.visual-catalog {
+  position: absolute; z-index: 8; left: 0; right: 0; top: auto; bottom: var(--xl-transport); width: auto; max-width: none;
+  height: var(--xl-scenes); box-sizing: border-box; margin: 0; padding: 0 calc(17px * var(--ui-scale)); transform: none;
+  display: flex; align-items: center; gap: calc(6px * var(--ui-scale)); border: 0; border-top: 1px solid var(--xl-line);
+  border-radius: 0; background: var(--xl-ground); backdrop-filter: blur(18px); box-shadow: none; overflow-x: auto; overflow-y: hidden;
+}
+.visual-catalog .scene-button { height: calc(29px * var(--ui-scale)); padding: 0 calc(10px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); font-size: calc(12.5px * var(--ui-scale)); color: rgba(232,236,245,.72); border: 1px solid transparent; white-space: nowrap; }
+.visual-catalog .scene-button.is-active { color: #d6fff5; background: var(--xl-accent-soft); border-color: var(--xl-accent); box-shadow: none; font-weight: 600; }
+.visual-catalog .catalog-label { font-size: calc(10.5px * var(--ui-scale)); letter-spacing: .04em; color: var(--xl-dim); text-transform: none; }
+.visual-catalog .catalog-archive summary { height: calc(29px * var(--ui-scale)); font-size: calc(12px * var(--ui-scale)); color: var(--xl-dim); letter-spacing: 0; }
+/* The strip is one short row now (2026-11-13), so "more scenes" sits near the left: the drawer
+   hangs from the strip itself, from its left padding, instead of from the summary's right edge. */
+.visual-catalog .catalog-archive { position: static; }
+.visual-catalog .catalog-archive__drawer { left: calc(17px * var(--ui-scale)); right: auto; bottom: calc(100% + 3px); }
+.stage.ui-hidden .visual-catalog { transform: translateY(8px); }
+
+/* --- transport --------------------------------------------------------------------------- */
+.xl-transport {
+  position: absolute; z-index: 9; left: 0; right: 0; bottom: 0; height: var(--xl-transport); box-sizing: border-box;
+  display: flex; align-items: center; gap: calc(13px * var(--ui-scale)); padding: 0 calc(17px * var(--ui-scale));
+  background: rgba(16,20,28,.95); border-top: 1px solid var(--xl-line); color: var(--xl-text);
+  font-size: calc(13px * var(--ui-scale)); transition: opacity .35s, transform .35s;
+}
+.xl-transport__keys { display: flex; align-items: center; gap: calc(5px * var(--ui-scale)); flex: none; }
+.xl-transport .fusion-skip, .xl-transport .fusion-play {
+  width: calc(33px * var(--ui-scale)); height: calc(33px * var(--ui-scale)); display: grid; place-items: center; padding: 0; margin: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--xl-text); font-size: calc(19px * var(--ui-scale)); line-height: 1; cursor: pointer; box-shadow: none;
+}
+.xl-transport .fusion-play { width: calc(37px * var(--ui-scale)); height: calc(37px * var(--ui-scale)); background: var(--xl-text); color: #0d1016; font-size: calc(14px * var(--ui-scale)); }
+.xl-transport .fusion-skip:hover { background: rgba(255,255,255,.08); }
+.xl-transport #fusionTime, .xl-transport #fusionDuration { flex: none; color: #c9d0de; font-variant-numeric: tabular-nums; font-size: calc(12.5px * var(--ui-scale)); }
+.xl-transport #fusionSeek { flex: 1 1 auto; min-width: 0; height: calc(18px * var(--ui-scale)); margin: 0; accent-color: var(--xl-accent); cursor: pointer; }
+.xl-listen { display: flex; align-items: center; gap: calc(6px * var(--ui-scale)); flex: none; color: var(--xl-dim); }
+.xl-listen select, .xl-drawer select {
+  height: calc(31px * var(--ui-scale)); max-width: calc(170px * var(--ui-scale)); padding: 0 calc(8px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14);
+  border-radius: calc(8px * var(--ui-scale)); background: #121722; color: var(--xl-text); font: inherit; font-size: calc(12.5px * var(--ui-scale));
+}
+.xl-transport .icon-button { position: static; flex: none; width: calc(33px * var(--ui-scale)); height: calc(33px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: transparent; color: var(--xl-text); transform: none; }
+.xl-transport .icon-button svg { width: calc(15px * var(--ui-scale)); height: calc(15px * var(--ui-scale)); }
+
+/* --- drawers ----------------------------------------------------------------------------- */
+.xl-drawer, .fusion-panel.xl-drawer {
+  position: absolute; z-index: 12; top: var(--xl-top); right: 0; bottom: var(--xl-transport); left: auto; box-sizing: border-box;
+  width: min(calc(440px * var(--ui-scale)), 100%); max-height: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  border: 0; border-left: 1px solid var(--xl-line); border-radius: 0; background: var(--xl-panel); color: var(--xl-text);
+  box-shadow: -24px 0 60px rgba(0,0,0,.4); backdrop-filter: none; overflow: hidden; font-size: calc(13px * var(--ui-scale));
+  opacity: 0; visibility: hidden; transform: translateX(16px); pointer-events: none; transition: opacity .25s, transform .25s, visibility .25s;
+}
+.xl-drawer.is-open, .fusion-panel.xl-drawer.is-open { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+.stage.ui-hidden .xl-top, .stage.ui-hidden .xl-transport, .stage.ui-hidden .xl-drawer { opacity: 0; pointer-events: none; }
+.stage.ui-hidden .xl-top { transform: translateY(-8px); }
+.stage.ui-hidden .xl-transport { transform: translateY(8px); }
+.xl-drawer__head { flex: none; display: flex; align-items: center; gap: calc(10px * var(--ui-scale)); padding: calc(12px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(8px * var(--ui-scale)); }
+.xl-drawer__head h2 { margin: 0; font-size: calc(16px * var(--ui-scale)); font-weight: 700; letter-spacing: 0; white-space: nowrap; }
+.xl-drawer__head > span { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); }
+.xl-drawer__head > span b { font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xl-drawer__head > span small { font-size: calc(9.5px * var(--ui-scale)); opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xl-drawer__head .calibration-close { margin-left: auto; flex: none; width: calc(31px * var(--ui-scale)); height: calc(31px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: transparent; color: var(--xl-text); font-size: calc(16px * var(--ui-scale)); line-height: 1; cursor: pointer; }
+
+/* the library: the list takes whatever height is left */
+.xl-drawer .fusion-library { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 0 calc(12px * var(--ui-scale)); border: 0; border-radius: 0; background: none; }
+.xl-drawer .fusion-library__filter { flex: none; display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); padding: 0 calc(2px * var(--ui-scale)) calc(9px * var(--ui-scale)); margin: 0; }
+.xl-drawer .fusion-library__filter input[type="search"] { flex: 1 1 auto; min-width: 0; height: calc(33px * var(--ui-scale)); padding: 0 calc(10px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: #0d1016; color: var(--xl-text); font: inherit; }
+.xl-drawer .fusion-library__only { display: flex; align-items: center; gap: calc(5px * var(--ui-scale)); white-space: nowrap; color: var(--xl-dim); cursor: pointer; }
+.xl-drawer .fusion-library__list { flex: 1 1 auto; min-height: 0; max-height: none; margin: 0; overflow-y: auto; }
+.xl-drawer__foot { flex: none; max-height: 46%; overflow-y: auto; display: flex; flex-direction: column; gap: calc(7px * var(--ui-scale)); padding: calc(10px * var(--ui-scale)) calc(14px * var(--ui-scale)); border-top: 1px solid var(--xl-line); }
+.xl-drawer__foot .fusion-link-card { align-self: flex-start; }
+.xl-drawer__foot .fusion-analysis-card { margin: 0; padding: 0; border: 0; background: none; display: flex; flex-direction: column; gap: calc(6px * var(--ui-scale)); }
+.xl-drawer__foot .fusion-analysis-card__head { display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); }
+.xl-drawer__foot .fusion-analysis-card__head > span { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.xl-drawer__foot .fusion-analysis-card__head small { display: none; }
+.xl-drawer__foot .fusion-analysis-card__head b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xl-drawer__foot small, .xl-drawer__foot .fusion-analysis-card__status { color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); letter-spacing: 0; }
+.xl-more > summary { cursor: pointer; color: var(--xl-dim); padding: calc(3px * var(--ui-scale)) 0; }
+.xl-more__row, .xl-drawer .fusion-analysis-card__controls { display: flex; flex-wrap: wrap; gap: calc(6px * var(--ui-scale)); margin: calc(6px * var(--ui-scale)) 0 0; }
+
+/* settings */
+.xl-settings__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: calc(14px * var(--ui-scale)); padding: calc(4px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(14px * var(--ui-scale)); }
+.xl-group { display: flex; flex-direction: column; gap: calc(9px * var(--ui-scale)); padding-top: calc(12px * var(--ui-scale)); border-top: 1px solid var(--xl-line); }
+.xl-group:first-child { border-top: 0; padding-top: 0; }
+.xl-group h3 { margin: 0; font-size: calc(11px * var(--ui-scale)); font-weight: 400; letter-spacing: .04em; color: var(--xl-dim); }
+.xl-row { display: flex; align-items: center; flex-wrap: wrap; gap: calc(8px * var(--ui-scale)); min-height: calc(31px * var(--ui-scale)); }
+.xl-row__label, .xl-row .intensity > span { flex: 0 0 calc(74px * var(--ui-scale)); color: var(--xl-text); font-size: inherit; letter-spacing: 0; text-transform: none; }
+.xl-row .swatches { display: flex; flex-wrap: wrap; gap: calc(7px * var(--ui-scale)); flex: 1 1 auto; }
+.xl-row .intensity { display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); flex: 1 1 auto; }
+.xl-row .intensity input, .xl-settings .product-control-dock input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--xl-accent); }
+.xl-toggle-list { display: grid; gap: calc(7px * var(--ui-scale)); }
+.xl-toggle-field { display: flex; align-items: center; justify-content: space-between; gap: calc(14px * var(--ui-scale)); min-height: calc(34px * var(--ui-scale)); color: var(--xl-text); font-size: calc(12.5px * var(--ui-scale)); cursor: pointer; }
+.xl-toggle-field > span { min-width: 0; line-height: 1.5; }
+.xl-toggle-field small { display: block; color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); }
+.xl-settings .xl-switch { position: relative; height: auto; min-height: calc(36px * var(--ui-scale)); min-width: 0; padding: calc(8px * var(--ui-scale)) calc(62px * var(--ui-scale)) calc(8px * var(--ui-scale)) calc(11px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: transparent; box-shadow: none; color: var(--xl-text); font: inherit; font-size: calc(12.5px * var(--ui-scale)); line-height: 1.5; white-space: normal; text-align: left; cursor: pointer; }
+.xl-settings .xl-switch:hover { border-color: var(--xl-accent); background: rgba(255,255,255,.04); }
+.xl-switch::before, .xl-switch-input { width: calc(35px * var(--ui-scale)); height: calc(20px * var(--ui-scale)); border-radius: calc(12px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.28); background: #434c5d; box-sizing: border-box; }
+.xl-switch::before { content: ''; position: absolute; top: 50%; right: calc(11px * var(--ui-scale)); transform: translateY(-50%); }
+.xl-switch::after, .xl-switch-input::after { content: ''; width: calc(12px * var(--ui-scale)); height: calc(12px * var(--ui-scale)); border-radius: 50%; background: #f4f7fc; transition: transform .15s; }
+.xl-switch::after { position: absolute; top: calc(50% - 6px * var(--ui-scale)); right: calc(30px * var(--ui-scale)); }
+.xl-switch[aria-checked="true"]::before, .xl-switch-input:checked { background: var(--xl-accent); border-color: var(--xl-accent); }
+.xl-switch[aria-checked="true"]::after, .xl-switch-input:checked::after { transform: translateX(calc(15px * var(--ui-scale))); background: #06231d; }
+.xl-switch-input { position: relative; flex: none; appearance: none; margin: 0; cursor: pointer; }
+.xl-switch-input::after { position: absolute; top: calc(3px * var(--ui-scale) - 1px); left: calc(3px * var(--ui-scale) - 1px); }
+.xl-switch:focus-visible, .xl-switch-input:focus-visible { outline: 2px solid var(--xl-accent); outline-offset: 3px; }
+.xl-switch-input:disabled { opacity: .42; cursor: default; }
+.score-dynamics-status { margin: 0 0 calc(7px * var(--ui-scale)); color: var(--xl-text); font-size: calc(12px * var(--ui-scale)); line-height: 1.6; overflow-wrap: anywhere; }
+.score-dynamics-note { display: block; margin-top: calc(7px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); line-height: 1.6; }
+.xl-row .ui-scale-control, .xl-row .locale-control { display: flex; align-items: center; gap: calc(6px * var(--ui-scale)); border: 0; padding: 0; background: none; }
+.xl-row .ui-scale-control b { min-width: calc(44px * var(--ui-scale)); text-align: center; font-weight: 400; font-variant-numeric: tabular-nums; }
+.xl-row .locale-control { margin-left: auto; }
+.xl-row .locale-control i { display: none; }
+.xl-settings .product-control-dock { position: static; width: auto; display: flex; flex-wrap: wrap; align-items: center; gap: calc(8px * var(--ui-scale)); margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.xl-settings .product-control-dock .settings-label, .xl-settings .product-control-dock__advanced { display: none; }
+.xl-settings .product-control-dock__master { flex: 1 1 100%; display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); }
+.xl-settings .product-control-dock__master > span { flex: 0 0 calc(74px * var(--ui-scale)); font-size: inherit; letter-spacing: 0; text-transform: none; color: var(--xl-text); }
+.xl-settings .product-control-dock output { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); }
+.xl-settings .fusion-engine-select { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(8px * var(--ui-scale)); margin: 0; }
+.xl-settings .fusion-engine-select label { display: flex; flex-direction: column; gap: calc(4px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); letter-spacing: 0; text-transform: none; }
+.xl-settings .fusion-engine-select select { max-width: none; width: 100%; }
+.xl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(7px * var(--ui-scale)); }
+.xl-grid > button { text-align: left; }
+.xl-settings .hint { position: static; margin: auto 0 0; padding-top: calc(10px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(10.5px * var(--ui-scale)); letter-spacing: 0; opacity: 1; transform: none; }
+
+/* --- the older floating panels keep their content; they open inside the free area --------- */
+.palette-panel, .conductor-panel, .glitch-panel {
+  top: calc(var(--xl-top) + 10px); z-index: 13;
+  max-height: calc(100% - var(--xl-top) - var(--xl-scenes) - var(--xl-transport) - 20px); overflow-y: auto;
+}
+.toast { top: calc(var(--xl-top) + 12px); z-index: 10; }
+.immersive-exit { top: calc(var(--xl-top) + 10px); }
+.stage.ui-hidden .immersive-exit { top: 22px; }
+
+/* --- opening screen ----------------------------------------------------------------------- */
+.home-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: calc(12px * var(--ui-scale)); }
+.welcome__content h2 { margin: 0; color: var(--xl-text); font-size: calc(26px * var(--ui-scale)); line-height: 1.3; font-weight: 500; letter-spacing: 0; }
+.welcome__content > p:not(.eyebrow) { margin: calc(12px * var(--ui-scale)) 0; font-size: calc(13px * var(--ui-scale)); line-height: 1.7; color: #c9d0de; }
+.welcome button { min-height: calc(35px * var(--ui-scale)); padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.18); border-radius: calc(9px * var(--ui-scale)); background: rgba(255,255,255,.03); color: var(--xl-text); font: inherit; font-size: calc(13px * var(--ui-scale)); line-height: 1.5; cursor: pointer; }
+.welcome button:hover { border-color: var(--xl-accent); background: rgba(114,232,206,.08); }
+.welcome button:disabled { opacity: .45; cursor: default; }
+.home-section { margin: calc(20px * var(--ui-scale)) 0; }
+.home-section h3 { margin: 0 0 calc(8px * var(--ui-scale)); color: var(--xl-text); font-size: calc(15px * var(--ui-scale)); font-weight: 500; }
+.home-note { margin: 0 0 calc(8px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(12px * var(--ui-scale)); line-height: 1.6; }
+.home-tracks { display: grid; gap: calc(6px * var(--ui-scale)); }
+.welcome .home-track { display: grid; gap: calc(3px * var(--ui-scale)); width: 100%; min-width: 0; text-align: left; }
+.home-track strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.home-track span { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); overflow-wrap: anywhere; }
+.home-actions { display: flex; flex-wrap: wrap; gap: calc(8px * var(--ui-scale)); }
+.welcome .home-primary { background: var(--xl-accent); color: #06231d; font-weight: 600; border-color: transparent; }
+.welcome .home-primary:hover { background: #8ff0db; }
+.welcome__content small { display: block; margin-top: calc(12px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); letter-spacing: 0; }
+.stage.ui-hidden .welcome { visibility: hidden; pointer-events: none; }
+
+/* --- library rows at a size that can be read ------------------------------------------- */
+.xl-drawer .fusion-library-album__head { grid-template-columns: calc(10px * var(--ui-scale)) calc(30px * var(--ui-scale)) minmax(0,1fr); gap: calc(8px * var(--ui-scale)); padding: calc(6px * var(--ui-scale)) calc(6px * var(--ui-scale)); color: var(--xl-text); }
+.xl-drawer .fusion-library-album__cover { width: calc(30px * var(--ui-scale)); height: calc(30px * var(--ui-scale)); }
+.xl-drawer .fusion-library-album__copy strong, .xl-drawer .fusion-library-track__main strong { font-size: calc(12.5px * var(--ui-scale)); }
+.xl-drawer .fusion-library-album__copy strong { font-weight: 600; }
+.xl-drawer .fusion-library-album__copy small, .xl-drawer .fusion-library-track__main small { font-size: calc(10.5px * var(--ui-scale)); color: var(--xl-dim); }
+.xl-drawer .fusion-library-track__main { grid-template-columns: calc(22px * var(--ui-scale)) minmax(0,1fr); padding: calc(6px * var(--ui-scale)) calc(8px * var(--ui-scale)); color: rgba(232,236,245,.86); }
+.xl-drawer .fusion-library-track__main > i { font: normal calc(10.5px * var(--ui-scale))/1 inherit; font-variant-numeric: tabular-nums; color: var(--xl-dim); }
+.fusion-library-track__details { display: flex; flex-wrap: wrap; align-items: center; gap: calc(5px * var(--ui-scale)); font-size: calc(10px * var(--ui-scale)); line-height: 1.5; }
+.fusion-library-track__state { color: #b4d9d0; }
+.fusion-library-track__state[data-analysis-state="none"] { color: var(--xl-dim); }
+.fusion-library-track__play-state { padding: 0 calc(5px * var(--ui-scale)); border-radius: 4px; color: var(--xl-accent); background: var(--xl-accent-soft); }
+.xl-drawer .fusion-library-track__analyze { font-size: calc(10.5px * var(--ui-scale)); padding: calc(4px * var(--ui-scale)) calc(7px * var(--ui-scale)); border-radius: calc(6px * var(--ui-scale)); }
+.xl-drawer .fusion-library__only { font-size: calc(12px * var(--ui-scale)); }
+.xl-drawer .fusion-library__only span { font-size: inherit; letter-spacing: 0; }
+.xl-drawer__foot .fusion-link-card { max-width: 100%; }
+.xl-drawer__foot .fusion-link-card small { white-space: normal; max-width: none; }
+
+.score-layers-run.is-docked { position: static; align-self: flex-start; height: calc(31px * var(--ui-scale)); padding: 0 calc(11px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); border: 1px solid var(--xl-accent); background: var(--xl-accent-soft); color: #d6fff5; font: inherit; font-size: calc(12.5px * var(--ui-scale)); }
+.score-sync.is-docked { position: static; padding: 0; border: 0; background: none; color: var(--xl-text); font-size: inherit; gap: calc(8px * var(--ui-scale)); }
+.score-sync.is-docked button { width: calc(31px * var(--ui-scale)); height: calc(31px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); font-size: calc(14px * var(--ui-scale)); }
+/* --- score: export video (score-export-controls.js) --------------------------------------- */
+.score-export { display: grid; gap: calc(6px * var(--ui-scale)); }
+.score-export__choices { display: grid; gap: calc(6px * var(--ui-scale)); }
+.score-export__choices[hidden], .score-export__progress[hidden], .score-export__status[hidden] { display: none; }
+.score-export__choices button { display: flex; justify-content: space-between; align-items: baseline; gap: calc(10px * var(--ui-scale)); text-align: left; }
+.score-export__choices small { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); }
+.score-export__progress { width: 100%; height: calc(6px * var(--ui-scale)); accent-color: var(--xl-accent); }
+.score-export__status { margin: 0; font-size: calc(12px * var(--ui-scale)); color: var(--xl-text); overflow-wrap: anywhere; }
+/* --- settings details ------------------------------------------------------------------- */
+.xl-row .intensity { border: 0; padding: 0; margin: 0; }
+.xl-row .ui-scale-control b { font-size: inherit; color: var(--xl-text); }
+.xl-settings .product-control-dock, .xl-settings .product-control-dock * { font-family: inherit; letter-spacing: 0; }
+.xl-settings .product-control-dock__master { border: 0; padding: 0; background: none; }
+.xl-transport .fusion-skip { font-size: calc(24px * var(--ui-scale)); padding-bottom: calc(3px * var(--ui-scale)); }
+
+/* --- the library's foot stays small so the list keeps the height ------------------------- */
+.xl-drawer__foot { max-height: 34%; gap: calc(5px * var(--ui-scale)); padding: calc(8px * var(--ui-scale)) calc(14px * var(--ui-scale)); }
+.xl-drawer__foot .fusion-link-card { border: 0; padding: 0; background: none; box-shadow: none; }
+.xl-drawer__foot .fusion-link-card__signal { display: none; }
+.xl-drawer__foot .fusion-link-card small { color: var(--xl-dim); }
+.xl-drawer__foot #fusionStemStatus { display: none; }
+.xl-drawer__foot .fusion-analysis-card__progress { height: 2px; margin: 0; }
+/* Inside an album every track has the same artist line: one line per track shows twice as many. */
+.xl-drawer .fusion-library-track__main small { display: none; }
+.xl-drawer .fusion-library-track__main { padding: calc(7px * var(--ui-scale)) calc(8px * var(--ui-scale)); }
+
+/* choosing the folders */
+.xl-drawer__head > button:not(.calibration-close) { flex: none; }
+#xlAnalysisRoot { display: block; margin-top: calc(6px * var(--ui-scale)); word-break: break-all; }
+.score-note-form { display: grid; gap: calc(9px * var(--ui-scale)); padding-top: calc(8px * var(--ui-scale)); }
+.score-note-form label { display: grid; gap: 4px; min-width: 0; }
+.score-note-form input,.score-note-form textarea,.score-note-form select { width: 100%; min-width: 0; max-width: none; font: inherit; color: inherit; background: #121722; border: 1px solid var(--xl-line); border-radius: 6px; padding: 6px; }
+.score-note-form textarea { resize: vertical; }
+.score-note-form small { color: var(--xl-dim); overflow-wrap: anywhere; }
+.score-note-form button { justify-self: start; }

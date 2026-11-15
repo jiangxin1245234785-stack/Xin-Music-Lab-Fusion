@@ -57,7 +57,7 @@ const bootstrapAt = html.indexOf('./i18n/bootstrap.js');
 assert.ok(bootstrapAt > 0 && bootstrapAt < html.indexOf('./app.js') && bootstrapAt < html.indexOf('./fusion.js'));
 assert.ok(inventory.htmlTextCandidates > 100);
 assert.ok(inventory.htmlAttributeCandidates > 50);
-assert.ok(inventory.dynamicPresentationSinks > 100);
+assert.ok(inventory.dynamicPresentationSinks > 70);
 assert.doesNotMatch(read('app.js'), /XinMusicLabI18n|xinMusicLabLocale/);
 assert.doesNotMatch(read('fusion.js'), /XinMusicLabI18n|xinMusicLabLocale/);
 

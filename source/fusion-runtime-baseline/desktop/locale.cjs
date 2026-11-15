@@ -7,6 +7,8 @@ const NATIVE_MESSAGES = Object.freeze({
   'zh-CN': Object.freeze({
     'dialog.bridge.openTitle': '选择 XLD 的 music-lab.json',
     'dialog.bridge.filter': 'XLD 音乐分析桥接文件',
+    'dialog.library.chooseTitle': '选择放音乐的文件夹',
+    'dialog.analysis.chooseTitle': '选择放分析结果的文件夹',
     'dialog.preset.exportTitle': '导出 Glitch Generator 预设',
     'dialog.preset.importTitle': '导入 Glitch Generator 预设',
     'dialog.preset.filter': 'Glitch Generator 预设',
@@ -17,6 +19,8 @@ const NATIVE_MESSAGES = Object.freeze({
   'en-US': Object.freeze({
     'dialog.bridge.openTitle': 'Choose an XLD music-lab.json file',
     'dialog.bridge.filter': 'XLD Music Lab bridge file',
+    'dialog.library.chooseTitle': 'Choose the folder that holds the music',
+    'dialog.analysis.chooseTitle': 'Choose the folder that holds the analysis results',
     'dialog.preset.exportTitle': 'Export Glitch Generator preset',
     'dialog.preset.importTitle': 'Import Glitch Generator preset',
     'dialog.preset.filter': 'Glitch Generator preset',

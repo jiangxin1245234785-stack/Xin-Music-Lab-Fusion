@@ -38,8 +38,8 @@ function register(id, canvas) {
 }
 
 register('spectrum', canvasA);
-register('waveform', canvasB);
-assert.deepEqual(registry.status().ids, ['spectrum', 'waveform']);
+register('ribbons', canvasB);
+assert.deepEqual(registry.status().ids, ['spectrum', 'ribbons']);
 assert.throws(
   () => register('spectrum', canvasA),
   /MATERIAL_ID_DUPLICATE/
@@ -98,17 +98,17 @@ assert.throws(
   /MATERIAL_FRAME_DUPLICATE/
 );
 
-runtime.activate('waveform', 'material-change');
+runtime.activate('ribbons', 'material-change');
 const second = orchestrator.run({
   musicFrame: { contract: 'xin.music-frame/1' },
   clock: { frameIndex: 8, nowMs: 116.67, deltaMs: 16.67 },
   target: { width: 960, height: 540 }
 });
 assert.equal(second.materialOutput.color.source, canvasB);
-assert.equal(runtime.status().activeMaterialId, 'waveform');
+assert.equal(runtime.status().activeMaterialId, 'ribbons');
 assert.equal(runtime.status().material.lastResetReason, 'material-change');
 assert.ok(calls.includes('spectrum:reset:material-deactivate'));
-assert.ok(calls.includes('waveform:reset:material-change'));
+assert.ok(calls.includes('ribbons:reset:material-change'));
 
 const observed = orchestrator.observeGlitch(8, { status: 'rendered' });
 assert.equal(observed.matches, true);

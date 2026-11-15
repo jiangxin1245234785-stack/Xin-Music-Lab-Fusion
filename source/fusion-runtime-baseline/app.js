@@ -17,8 +17,6 @@
   const glitchWebglCanvas = $('#glitchWebglCanvas');
   const generatorCanvas = $('#generatorCanvas');
   const materialApi = window.SmokeResonanceVisualMaterial || null;
-  const experimentalMaterialApi =
-    window.SmokeResonanceExperimentalMaterials || null;
   const materialRegistry = materialApi?.createRegistry() || null;
   const materialTargetRegistry =
     window.SmokeResonanceMaterialTargets?.create() || null;
@@ -48,23 +46,7 @@
   let webglFailureNotified = false;
   const conductorCanvas = $('#conductorCanvas');
   const conductorCtx = conductorCanvas.getContext('2d', { alpha: true });
-  const playButton = $('#playButton');
-  const mediaPrevious = $('#mediaPrevious');
-  const mediaPlayPause = $('#mediaPlayPause');
-  const mediaNext = $('#mediaNext');
-  const enterButton = $('#enterButton');
-  const captureButton = $('#captureButton');
-  const welcome = $('#welcome');
-  const trackTitle = $('#trackTitle');
-  const trackMeta = $('#trackMeta');
-  const sourceLabel = $('#sourceLabel');
-  const energyLabel = $('#energyLabel');
-  const timelineFill = $('#timelineFill');
   const intensityInput = $('#intensity');
-  const calibrationButton = $('#calibrationButton');
-  const calibrationPanel = $('#calibrationPanel');
-  const calibrationClose = $('#calibrationClose');
-  const calibrationReset = $('#calibrationReset');
   const paletteButton = $('#paletteButton');
   const palettePanel = $('#palettePanel');
   const paletteClose = $('#paletteClose');
@@ -93,7 +75,6 @@
   const pulsarStyleButton = $('#pulsarStyleButton');
   const snapshotButton = $('#snapshotButton');
   const pinButton = $('#pinButton');
-  const mappingLabButton = $('#mappingLabButton');
   const colorFlash = $('#colorFlash');
   const toast = $('#toast');
 
@@ -109,40 +90,16 @@
   const customColors = { main: '#8d7cff', hot: '#72e8ce', dark: '#1a153a' };
 
   const effectNames = {
-    'spectral-fabric': '材料 · 频谱织物',
-    'temporal-strata': '材料 · 时间地层',
     spectrum: '经典 LED 频谱',
-    mirror: '镜像频谱',
-    waveform: '示波器波形',
-    radial: '环形频谱',
-    waterfall: '频谱瀑布图',
-    vu: '机械 VU 表',
     ribbons: '现代 · 霓虹丝带',
     pulsar: '现代 · 层叠脉冲星',
-    tunnel: '现代 · 超空间',
-    'pulse-grid': '现代 · 脉冲网格',
-    bloom: '现代 · 棱镜花',
-    'original-glitch': '原创 · 壮丽崩坏实验室'
+    score: '听歌 · 谱面'
   };
 
-  const calibrationPresets = {
-    'open-flat': { label: '开源分析器', minFreq: 20, maxFreq: 20000, minDb: -92, maxDb: -18, tilt: 2, smoothing: .68, scale: 'log', autoGain: false },
-    classic: { label: '千千经典', minFreq: 30, maxFreq: 16000, minDb: -78, maxDb: -16, tilt: 1.5, smoothing: .78, scale: 'log', autoGain: false },
-    electronic: { label: '电子低频', minFreq: 25, maxFreq: 18000, minDb: -84, maxDb: -12, tilt: 1, smoothing: .7, scale: 'log', autoGain: true },
-    vocal: { label: '人声清晰', minFreq: 70, maxFreq: 16000, minDb: -90, maxDb: -22, tilt: 3.5, smoothing: .62, scale: 'log', autoGain: true },
-    air: { label: '高频展开', minFreq: 40, maxFreq: 22000, minDb: -96, maxDb: -24, tilt: 6, smoothing: .58, scale: 'log', autoGain: true }
-  };
-  const calibration = { ...calibrationPresets['open-flat'] };
-  const responsePresets = {
-    flat: { label: '平直', lowGain: 0, midGain: 0, highGain: 0, weighting: 'flat' },
-    warm: { label: '暖厚', lowGain: 4, midGain: 1.5, highGain: -2, weighting: 'flat' },
-    clarity: { label: '清晰', lowGain: -1.5, midGain: 3, highGain: 2, weighting: 'flat' },
-    air: { label: '空气感', lowGain: -2, midGain: 0, highGain: 5, weighting: 'flat' },
-    'a-weighted': { label: 'A 感知', lowGain: 0, midGain: 0, highGain: 0, weighting: 'a' },
-    'c-weighted': { label: 'C 冲击', lowGain: 0, midGain: 0, highGain: 0, weighting: 'c' },
-    itu468: { label: '468 细节', lowGain: 0, midGain: 0, highGain: 0, weighting: '468' }
-  };
-  const frequencyResponse = { ...responsePresets.flat, preset: 'flat' };
+  // How the spectrum is read, fixed since the 频谱校准 panel was removed (2026-11-13): its old
+  // default (log axis, flat visual response, no auto gain). LED spectrum, pulsar and the audio
+  // features all map through this.
+  const spectrumMapping = Object.freeze({ minFreq: 20, maxFreq: 20000, minDb: -92, maxDb: -18, tilt: 2, smoothing: .68 });
   const betaPresetNames = {
     'beta-1': 'Eo.S. - glowsticks v2 05 and proton lights (+Krash′s beat code) _Phat_remix02b',
     'beta-2': 'Geiss - Thumb Drum',
@@ -205,33 +162,16 @@
   let dpr = 1;
   let frame = 0;
   let switchToken = 0;
-  let captureToken = 0;
-  let capturePending = false;
   let resizeRequest = 0;
   let toastTimer;
-  let autoGainOffset = 0;
 
   const spectrumLevels = [];
   const spectrumPeaks = [];
-  const mirrorLevels = [];
   const ribbonSpectrumLevels = [];
   const ribbonFastLevels = [];
   const ribbonPreviousRaw = [];
   const ribbonTransientLevels = [];
-  const vuLevels = [0, 0];
-  const vuState = { detailBaseline: 0, previousCentroid: 0 };
-  const waterfallCanvas = document.createElement('canvas');
-  const waterfallCtx = waterfallCanvas.getContext('2d', { alpha: false });
-  const waterfallState = { lastUpdateAt: 0, primed: false };
   const bandCache = new Map();
-  const modernParticles = [];
-  const modernState = {
-    tunnelTravel: 0,
-    tunnelDrift: 0,
-    tunnelCx: .5,
-    tunnelCy: .48,
-    bloomRotation: 0
-  };
   const pulsarState = {
     history: [],
     lastCaptureAt: 0,
@@ -336,8 +276,7 @@
     longFrameRatio: 0,
     stableSamples: 0,
     lastFrameAt: 0,
-    lastAdjustmentAt: 0,
-    lastUiAt: 0
+    lastAdjustmentAt: 0
   };
   const directorState = {
     enabled: false,
@@ -346,24 +285,16 @@
     lastBeatAt: 0,
     lastSwitchAt: 0,
     energyAnchor: 0,
-    lastSection: 'SPARSE',
-    sectionChangedAt: 0,
     history: []
   };
 
   const audioState = {
     context: null,
     analyser: null,
-    sectionAnalyser: null,
     data: null,
     floatData: null,
     waveData: null,
-    sectionFloatData: null,
-    sectionWaveData: null,
-    sectionLastAt: 0,
-    sectionFrame: null,
     source: null,
-    stream: null,
     sourceKind: 'none',
     mediaElement: null,
     mediaSource: null,
@@ -446,21 +377,7 @@
     fragments: [],
     filter: ''
   };
-  const mappingEngine = window.SmokeResonanceMappingEngine?.create();
-  const sectionFeatureExtractor = window.SmokeResonanceSectionFeatures?.create({ bandCount: 24 });
-  const sectionEngineSuite = window.SmokeResonanceSectionEngines?.create();
   const glitchEngine = window.SmokeResonanceGlitchEngine?.create();
-  const originalGlitchRenderer = window.SmokeResonanceOriginalGlitch?.create();
-  const mappingLab = mappingEngine && window.SmokeResonanceMappingLab?.create(mappingEngine, sectionEngineSuite);
-  const liveHarmony = window.SmokeResonanceLiveHarmony?.create();
-  let mappingOutput = mappingEngine?.get() || null;
-  let sectionOutput = sectionEngineSuite?.get() || null;
-  let liveChord = { label: '—', root: -1, rootName: 'N', confidence: 0 };
-  // Live-chord signal consumed by the glitch engine when no XLD timeline is
-  // connected (i.e. external monitoring). change decays each frame.
-  const liveChordSignal = { chord: '—', confidence: 0, change: 0 };
-  let liveChordKey = '';
-  let liveChordFrame = 0;
 
   function showToast(message, duration = 2300) {
     toast.textContent = message;
@@ -474,28 +391,7 @@
     analyser.fftSize = fftSize;
     analyser.minDecibels = -120;
     analyser.maxDecibels = 0;
-    analyser.smoothingTimeConstant = calibration.smoothing;
-    return analyser;
-  }
-
-  function createSectionAnalyser(fftSize) {
-    const analyser = audioState.context.createAnalyser();
-    analyser.fftSize = fftSize;
-    analyser.minDecibels = -120;
-    analyser.maxDecibels = 0;
-    analyser.smoothingTimeConstant = .12;
-    return analyser;
-  }
-
-  // Large FFT for real-time chord (chroma) analysis — finer low-frequency
-  // resolution so roots/bass register. Light internal smoothing; the harmony
-  // engine adds its own temporal smoothing on top.
-  function createChromaAnalyser(fftSize) {
-    const analyser = audioState.context.createAnalyser();
-    analyser.fftSize = fftSize;
-    analyser.minDecibels = -100;
-    analyser.maxDecibels = -10;
-    analyser.smoothingTimeConstant = .55;
+    analyser.smoothingTimeConstant = spectrumMapping.smoothing;
     return analyser;
   }
 
@@ -534,26 +430,14 @@
     if (!AudioContext) throw new Error('当前环境不支持 Web Audio');
     audioState.context = new AudioContext();
     audioState.analyser = createAudioAnalyser(4096);
-    audioState.sectionAnalyser = createSectionAnalyser(4096);
-    audioState.chromaAnalyser = createChromaAnalyser(16384);
     audioState.data = new Uint8Array(audioState.analyser.frequencyBinCount);
     audioState.floatData = new Float32Array(audioState.analyser.frequencyBinCount);
     audioState.waveData = new Uint8Array(audioState.analyser.fftSize);
-    audioState.sectionFloatData = new Float32Array(audioState.sectionAnalyser.frequencyBinCount);
-    audioState.sectionWaveData = new Uint8Array(audioState.sectionAnalyser.fftSize);
-    audioState.chromaData = new Float32Array(audioState.chromaAnalyser.frequencyBinCount);
   }
 
   function connectBetaAudio() {
     if (!betaState.visualizer || !audioState.source) return;
     try { betaState.visualizer.connectAudio(audioState.source); } catch (_) {}
-  }
-
-  function setCapturePending(pending) {
-    capturePending = Boolean(pending);
-    enterButton.disabled = capturePending;
-    captureButton.disabled = capturePending;
-    if (capturePending) bindUiText(captureButton.querySelector('span'), 'runtime.capture.connecting', '正在连接…');
   }
 
   function resetAudioAnalysis() {
@@ -580,42 +464,11 @@
     rhythmState.previousOnset = 0;
     rhythmState.intervals.length = 0;
     bandCache.clear();
-    if (mappingEngine) mappingOutput = mappingEngine.reset(performance.now());
-    sectionFeatureExtractor?.reset();
-    audioState.sectionLastAt = 0;
-    audioState.sectionFrame = sectionFeatureExtractor?.get() || null;
-    if (sectionEngineSuite) sectionOutput = sectionEngineSuite.reset(performance.now());
-  }
-
-  function stopCapture(showMessage = true, invalidateRequest = true) {
-    if (invalidateRequest) captureToken++;
-    const source = audioState.source;
-    const stream = audioState.stream;
-    audioState.source = null;
-    audioState.stream = null;
-    audioState.sourceKind = 'none';
-    if (source === audioState.mediaSource) audioState.mediaConnected = false;
-    if (audioState.stereoSource === source) audioState.stereoSource = null;
-    if (source) {
-      try { source.disconnect(); } catch (_) {}
-    }
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-    audioState.playing = false;
-    audioState.started = false;
-    bindUiText(sourceLabel, 'runtime.audio.system', '系统音频');
-    bindUiText(energyLabel, 'runtime.audio.waiting', '等待连接');
-    timelineFill.style.width = '0%';
-    if (!capturePending) bindUiText(captureButton.querySelector('span'), 'runtime.capture.connect', '连接声音');
-    updatePlayButton();
-    if (showMessage) showToast(uiText('runtime.capture.stopped', '已停止监听电脑声音'));
   }
 
   async function attachInternalMedia(element) {
     if (!(element instanceof HTMLMediaElement)) return { ok: false, error: 'invalid-media-element' };
     initAudio();
-    if (audioState.stream || audioState.sourceKind === 'external') stopCapture(false);
     try { await audioState.context.resume(); } catch (_) {}
     if (audioState.mediaElement && audioState.mediaElement !== element) return { ok: false, error: 'media-element-conflict' };
     if (!audioState.mediaSource) {
@@ -629,8 +482,6 @@
     if (!audioState.mediaConnected) {
       try {
         audioState.mediaSource.connect(audioState.analyser);
-        audioState.mediaSource.connect(audioState.sectionAnalyser);
-        if (audioState.chromaAnalyser) audioState.mediaSource.connect(audioState.chromaAnalyser);
         audioState.mediaSource.connect(audioState.context.destination);
         audioState.mediaConnected = true;
       } catch (_) {
@@ -644,7 +495,6 @@
     setStereoAnalysisEnabled(pulsarState.layout === 'stereo');
     connectBetaAudio();
     resetAudioAnalysis();
-    updatePlayButton();
     return { ok: true, kind: 'internal' };
   }
 
@@ -658,174 +508,27 @@
     audioState.playing = false;
     if (audioState.stereoSource === audioState.mediaSource) audioState.stereoSource = null;
     resetAudioAnalysis();
-    updatePlayButton();
     return { ok: true, kind: 'none' };
   }
 
   function setInternalPlaying(playing) {
     if (audioState.sourceKind !== 'internal') return false;
     audioState.playing = Boolean(playing);
-    updatePlayButton();
     return audioState.playing;
-  }
-
-  async function startCapture() {
-    if (capturePending) return;
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      showToast('请使用最新版 Edge 或 Chrome 打开', 3200);
-      return;
-    }
-    const requestId = ++captureToken;
-    setCapturePending(true);
-    let stream = null;
-    try {
-      initAudio();
-      await audioState.context.resume();
-      if (requestId !== captureToken) return;
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'monitor', frameRate: { ideal: 1, max: 5 } },
-        audio: { suppressLocalAudioPlayback: false },
-        systemAudio: 'include',
-        selfBrowserSurface: 'exclude',
-        surfaceSwitching: 'exclude'
-      });
-    } catch (error) {
-      const message = error?.name === 'NotAllowedError'
-        ? '已取消连接'
-        : error?.message === '当前环境不支持 Web Audio'
-          ? error.message
-          : '未能连接系统音频';
-      showToast(message);
-      return;
-    } finally {
-      if (!stream || requestId !== captureToken) setCapturePending(false);
-    }
-
-    if (requestId !== captureToken) {
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-
-    const audioTracks = stream.getAudioTracks();
-    if (!audioTracks.length) {
-      stream.getTracks().forEach(track => track.stop());
-      setCapturePending(false);
-      showToast('请选择“整个屏幕”并开启“共享系统音频”', 3600);
-      return;
-    }
-
-    let nextSource = null;
-    try {
-      nextSource = audioState.context.createMediaStreamSource(stream);
-      nextSource.connect(audioState.analyser);
-      nextSource.connect(audioState.sectionAnalyser);
-      if (audioState.chromaAnalyser) nextSource.connect(audioState.chromaAnalyser);
-    } catch (_) {
-      try { nextSource?.disconnect(); } catch (_) {}
-      stream.getTracks().forEach(track => track.stop());
-      setCapturePending(false);
-      showToast('音频分析器连接失败，请重新选择声音来源', 3600);
-      return;
-    }
-    const previousSource = audioState.source;
-    const previousStream = audioState.stream;
-    audioState.source = nextSource;
-    audioState.stream = stream;
-    audioState.sourceKind = 'external';
-    try { previousSource?.disconnect(); } catch (_) {}
-    if (audioState.stereoSource === previousSource) audioState.stereoSource = null;
-    previousStream?.getTracks().forEach(track => track.stop());
-    setStereoAnalysisEnabled(pulsarState.layout === 'stereo');
-    connectBetaAudio();
-    audioState.started = true;
-    audioState.playing = true;
-    resetAudioAnalysis();
-    welcome.classList.add('is-gone');
-    bindUiText(trackTitle, 'runtime.capture.listeningTitle', '正在聆听这台电脑');
-    bindUiText(trackMeta, 'runtime.capture.listeningMeta', '系统音频实时分析 · 不录制、不上传、不产生回声');
-    dynamicI18n?.unbind(sourceLabel);
-    sourceLabel.textContent = audioTracks[0].label || uiText('runtime.audio.system', '系统音频');
-    bindUiText(captureButton.querySelector('span'), 'runtime.capture.change', '更换来源');
-    const stopIfCurrent = () => {
-      if (audioState.stream === stream && captureToken === requestId) stopCapture(false);
-    };
-    stream.getVideoTracks()[0]?.addEventListener('ended', stopIfCurrent, { once: true });
-    audioTracks[0].addEventListener('ended', stopIfCurrent, { once: true });
-    setCapturePending(false);
-    bindUiText(captureButton.querySelector('span'), 'runtime.capture.change', '更换来源');
-    updatePlayButton();
-    showToast(uiText('runtime.capture.connected', '已连接，经典频谱开始工作'));
-  }
-
-  async function toggleListening() {
-    if (!audioState.started) return startCapture();
-    try {
-      if (audioState.context.state === 'suspended') {
-        await audioState.context.resume();
-        audioState.playing = audioState.context.state === 'running';
-        showToast(audioState.playing
-          ? uiText('runtime.listen.resumed', '继续监听')
-          : uiText('runtime.listen.resumeFailed', '音频分析器未能恢复'));
-      } else {
-        await audioState.context.suspend();
-        audioState.playing = false;
-        showToast(uiText('runtime.listen.paused', '已暂停分析，音乐不会受到影响'));
-      }
-    } catch (_) {
-      audioState.playing = audioState.context?.state === 'running';
-      showToast(uiText('runtime.listen.toggleFailed', '音频分析器状态切换失败，请重新连接声音'));
-    }
-    updatePlayButton();
-  }
-
-  function updatePlayButton() {
-    playButton.setAttribute('aria-pressed', String(audioState.playing));
-    bindUiAttribute(
-      playButton,
-      'aria-label',
-      audioState.playing ? 'runtime.listen.pauseAria' : 'runtime.listen.startAria',
-      audioState.playing ? '暂停监听' : '开始监听'
-    );
   }
 
   function frequencyAt(position) {
     const t = Math.max(0, Math.min(1, position));
-    if (calibration.scale === 'linear') {
-      return calibration.minFreq + (calibration.maxFreq - calibration.minFreq) * t;
-    }
-    if (calibration.scale === 'bark') {
-      const from = 6 * Math.asinh(calibration.minFreq / 600);
-      const to = 6 * Math.asinh(calibration.maxFreq / 600);
-      return 600 * Math.sinh((from + (to - from) * t) / 6);
-    }
-    if (calibration.scale === 'mel') {
-      const from = 2595 * Math.log10(1 + calibration.minFreq / 700);
-      const to = 2595 * Math.log10(1 + calibration.maxFreq / 700);
-      return 700 * (Math.pow(10, (from + (to - from) * t) / 2595) - 1);
-    }
-    return calibration.minFreq * Math.pow(calibration.maxFreq / calibration.minFreq, t);
+    return spectrumMapping.minFreq * Math.pow(spectrumMapping.maxFreq / spectrumMapping.minFreq, t);
   }
 
   function frequencyPosition(frequency) {
-    if (calibration.scale === 'linear') {
-      return (frequency - calibration.minFreq) / (calibration.maxFreq - calibration.minFreq);
-    }
-    if (calibration.scale === 'bark') {
-      const from = 6 * Math.asinh(calibration.minFreq / 600);
-      const to = 6 * Math.asinh(calibration.maxFreq / 600);
-      return (6 * Math.asinh(frequency / 600) - from) / (to - from);
-    }
-    if (calibration.scale === 'mel') {
-      const from = 2595 * Math.log10(1 + calibration.minFreq / 700);
-      const to = 2595 * Math.log10(1 + calibration.maxFreq / 700);
-      return (2595 * Math.log10(1 + frequency / 700) - from) / (to - from);
-    }
-    return Math.log(frequency / calibration.minFreq) / Math.log(calibration.maxFreq / calibration.minFreq);
+    return Math.log(frequency / spectrumMapping.minFreq) / Math.log(spectrumMapping.maxFreq / spectrumMapping.minFreq);
   }
 
   function averageBandDb(fromHz, toHz) {
     const data = audioState.floatData;
-    if (!data?.length || !audioState.context) return calibration.minDb;
+    if (!data?.length || !audioState.context) return spectrumMapping.minDb;
     const binHz = audioState.context.sampleRate / audioState.analyser.fftSize;
     const from = Math.max(0, Math.floor(fromHz / binHz));
     const to = Math.min(data.length - 1, Math.max(from, Math.ceil(toHz / binHz)));
@@ -839,79 +542,14 @@
     return 10 * Math.log10(Math.max(1e-14, power / Math.max(1, count)));
   }
 
-  function visiblePeakDb() {
-    const data = audioState.floatData;
-    if (!data?.length || !audioState.context) return calibration.maxDb;
-    const binHz = audioState.context.sampleRate / audioState.analyser.fftSize;
-    const from = Math.max(0, Math.floor(calibration.minFreq / binHz));
-    const to = Math.min(data.length - 1, Math.ceil(calibration.maxFreq / binHz));
-    let peak = -140;
-    for (let i = from; i <= to; i++) if (Number.isFinite(data[i])) peak = Math.max(peak, data[i]);
-    return peak;
-  }
-
-  function calibratedValue(db, centerHz) {
-    const tilt = calibration.tilt * Math.log2(Math.max(20, centerHz) / 1000);
-    return Math.max(0, Math.min(1, (db + tilt + autoGainOffset - calibration.minDb) / (calibration.maxDb - calibration.minDb)));
-  }
-
-  const itu468Curve = [
-    [20, -38], [31.5, -30], [63, -24], [100, -20], [200, -14], [400, -8],
-    [800, -2], [1000, 0], [2000, 5.6], [3150, 9], [6300, 12.2], [10000, 8.1], [20000, -11.7]
-  ];
-
-  function smoothBlend(edge0, edge1, value) {
-    const x = Math.max(0, Math.min(1, (value - edge0) / Math.max(1e-6, edge1 - edge0)));
-    return x * x * (3 - 2 * x);
-  }
-
-  function standardWeightingDb(frequency, type) {
-    const f = Math.max(10, Number(frequency) || 10);
-    const f2 = f * f;
-    if (type === 'a') {
-      const numerator = 12200 ** 2 * f2 ** 2;
-      const denominator = (f2 + 20.6 ** 2)
-        * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2))
-        * (f2 + 12200 ** 2);
-      return Math.max(-24, Math.min(8, 20 * Math.log10(Math.max(1e-12, numerator / denominator)) + 2));
-    }
-    if (type === 'c') {
-      const ratio = 12200 ** 2 * f2 / ((f2 + 20.6 ** 2) * (f2 + 12200 ** 2));
-      return Math.max(-18, Math.min(6, 20 * Math.log10(Math.max(1e-12, ratio)) + .06));
-    }
-    if (type === '468') {
-      const logF = Math.log(f);
-      for (let index = 0; index < itu468Curve.length - 1; index++) {
-        const from = itu468Curve[index];
-        const to = itu468Curve[index + 1];
-        if (f <= to[0]) {
-          const amount = (logF - Math.log(from[0])) / Math.log(to[0] / from[0]);
-          return from[1] + (to[1] - from[1]) * Math.max(0, Math.min(1, amount));
-        }
-      }
-      return itu468Curve[itu468Curve.length - 1][1];
-    }
-    return 0;
-  }
-
-  function responseGainDb(frequency) {
-    const logF = Math.log2(Math.max(20, frequency));
-    const lowToMid = smoothBlend(Math.log2(110), Math.log2(440), logF);
-    const midToHigh = smoothBlend(Math.log2(1200), Math.log2(4800), logF);
-    let gain = frequencyResponse.lowGain + (frequencyResponse.midGain - frequencyResponse.lowGain) * lowToMid;
-    gain += (frequencyResponse.highGain - gain) * midToHigh;
-    gain += standardWeightingDb(frequency, frequencyResponse.weighting);
-    return Math.max(-24, Math.min(16, gain));
-  }
-
   function mappedValue(db, centerHz) {
-    return calibratedValue(db + responseGainDb(centerHz), centerHz);
+    const tilt = spectrumMapping.tilt * Math.log2(Math.max(20, centerHz) / 1000);
+    return Math.max(0, Math.min(1, (db + tilt - spectrumMapping.minDb) / (spectrumMapping.maxDb - spectrumMapping.minDb)));
   }
 
-  function averageHz(fromHz, toHz, mapped = true) {
+  function averageHz(fromHz, toHz) {
     const center = Math.sqrt(Math.max(1, fromHz) * Math.max(1, toHz));
-    const db = averageBandDb(fromHz, toHz);
-    return mapped ? mappedValue(db, center) : calibratedValue(db, center);
+    return mappedValue(averageBandDb(fromHz, toHz), center);
   }
 
   function updateAudioFeatures(target) {
@@ -941,7 +579,7 @@
     for (let bin = from; bin <= to; bin += stride) {
       const frequency = Math.max(25, bin * binHz);
       const db = Number.isFinite(data[bin]) ? data[bin] : -140;
-      const magnitude = Math.max(1e-5, calibratedValue(db, frequency));
+      const magnitude = Math.max(1e-5, mappedValue(db, frequency));
       const logPosition = Math.max(0, Math.min(1, Math.log(frequency / 25) / Math.log(16000 / 25)));
       const ensembleIndex = Math.min(ensembleBandCount - 1, Math.floor(logPosition * ensembleBandCount));
       ensembleSums[ensembleIndex] += magnitude;
@@ -1137,100 +775,24 @@
     return audioState.features;
   }
 
-  function updateRawSectionFrame(now) {
-    if (!sectionFeatureExtractor || !audioState.sectionAnalyser || !audioState.context) return null;
-    const interval = currentQualityLevel() === 0 ? 82 : currentQualityLevel() === 1 ? 66 : 52;
-    if (now - audioState.sectionLastAt < interval) return null;
-    audioState.sectionLastAt = now;
-    if (audioState.playing) {
-      audioState.sectionAnalyser.getFloatFrequencyData(audioState.sectionFloatData);
-      audioState.sectionAnalyser.getByteTimeDomainData(audioState.sectionWaveData);
-    }
-    audioState.sectionFrame = sectionFeatureExtractor.update({
-      spectrum: audioState.sectionFloatData,
-      waveform: audioState.sectionWaveData,
-      sampleRate: audioState.context.sampleRate,
-      fftSize: audioState.sectionAnalyser.fftSize,
-      playing: audioState.playing
-    }, now);
-    return audioState.sectionFrame;
-  }
-
-  const LIVE_SECTION_LABELS = { SPARSE: '稀疏', LAYERING: '加层', FULL: '全奏', CLIMAX: '高潮', DROP: '抽空', AFTERGLOW: '余波' };
-  const liveHudChord = $('#fusionHudChord');
-  const liveHudSection = $('#fusionHudSection');
-  // The 段落 Lab panel's existing chord slot — in external mode it shows our
-  // live chord engine, so section + live harmony sit together in one submenu.
-  const liveLabChord = document.querySelector('[data-section-chord]');
-  const liveLabChordConfidence = document.querySelector('[data-section-chord-confidence]');
-  // Real-time chord (and live section) for external/system-audio monitoring,
-  // where there is no XLD offline timeline. Drives the docked readout and feeds
-  // the glitch chord channel. Local playback keeps using XLD's offline data.
-  function updateLiveHarmony(now) {
-    liveChordSignal.change *= 0.9;
-    const external = stage?.dataset.fusionSource === 'external';
-    if (!external || !audioState.playing || !audioState.chromaAnalyser || !liveHarmony) {
-      if (liveChordKey) { liveChordKey = ''; liveHarmony?.reset?.(); }
-      liveChordSignal.chord = '—';
-      liveChordSignal.confidence = 0;
-      return;
-    }
-    if (++liveChordFrame % 4 !== 0) return; // ~15 Hz is ample for chords
-    audioState.chromaAnalyser.getFloatFrequencyData(audioState.chromaData);
-    liveChord = liveHarmony.update(audioState.chromaData, audioState.context.sampleRate, audioState.chromaAnalyser.fftSize, true);
-    liveChordSignal.chord = liveChord.label;
-    liveChordSignal.confidence = liveChord.confidence;
-    if (liveChord.label !== liveChordKey) {
-      if (liveChordKey && liveChord.label !== 'N') {
-        liveChordSignal.change = Math.max(liveChordSignal.change, Math.max(0.4, liveChord.confidence));
-      }
-      liveChordKey = liveChord.label;
-    }
-    if (liveHudChord) {
-      liveHudChord.textContent = liveChord.label === 'N'
-        ? 'CHORD —'
-        : `CHORD ${liveChord.label} · ${Math.round(liveChord.confidence * 100)}%`;
-    }
-    if (liveHudSection) {
-      const section = mappingOutput?.section;
-      liveHudSection.textContent = `SECTION ${LIVE_SECTION_LABELS[section] || '实时'}`;
-    }
-    // Mirror into the 段落 Lab panel's chord slot (overrides its offline value
-    // while monitoring live, so the lab shows the real-time chord).
-    if (liveLabChord) liveLabChord.textContent = liveChord.label === 'N' ? '—' : liveChord.label;
-    if (liveLabChordConfidence) liveLabChordConfidence.textContent = `${Math.round(liveChord.confidence * 100)}%`;
-  }
-
   function getEnergy() {
     if (!audioState.analyser || !audioState.playing) {
       const idle = .025 + Math.sin(frame * .017) * .006;
       Object.keys(audioState.accents).forEach(key => { audioState.accents[key] *= .72; });
       return { bass: idle, mid: idle, treble: idle * .7, overall: idle };
     }
-    audioState.analyser.smoothingTimeConstant = calibration.smoothing;
     audioState.analyser.getFloatFrequencyData(audioState.floatData);
     audioState.analyser.getByteFrequencyData(audioState.data);
     bandCache.clear();
 
-    if (calibration.autoGain) {
-      const peak = visiblePeakDb();
-      const desired = Math.max(-12, Math.min(18, calibration.maxDb - 7 - peak));
-      autoGainOffset += (desired - autoGainOffset) * .035;
-    } else {
-      autoGainOffset += (0 - autoGainOffset) * .08;
-    }
-    const rawTarget = {
-      bass: averageHz(25, 220, false),
-      mid: averageHz(220, 2400, false),
-      treble: averageHz(2400, 12000, false),
-      overall: averageHz(30, 14000, false)
-    };
+    // The flat visual response adds nothing, so the raw and the mapped band levels are one value.
     const target = {
       bass: averageHz(25, 220),
       mid: averageHz(220, 2400),
       treble: averageHz(2400, 12000),
       overall: averageHz(30, 14000)
     };
+    const rawTarget = { ...target };
     const accentGain = { bass: 5.2, mid: 6.2, treble: 8.4, overall: 5.4 };
     Object.keys(target).forEach(key => {
       const rise = Math.max(0, target[key] - audioState.instant[key]);
@@ -1248,8 +810,7 @@
 
   function updateRealtimeProviderFrame(energy, now) {
     if (!realtimeProviderAdapter) return null;
-    const internal = audioState.sourceKind === 'internal';
-    const media = internal ? audioState.mediaElement : null;
+    const media = audioState.sourceKind === 'internal' ? audioState.mediaElement : null;
     const connected = Boolean(
       audioState.started
       && audioState.source
@@ -1268,7 +829,7 @@
     realtimeProviderFrame = realtimeProviderAdapter.update({
       clock: { frameIndex: frame, nowMs: now, deltaMs },
       transport: {
-        mode: internal ? 'internal' : 'external',
+        mode: 'internal',
         state: audioState.playing
           ? 'playing'
           : audioState.started ? 'paused' : 'stopped',
@@ -1311,32 +872,12 @@
       for (let i = 0; i < total; i++) {
         const from = frequencyAt(i / total);
         const to = frequencyAt((i + 1) / total);
-        const center = calibration.scale === 'log' ? Math.sqrt(from * to) : (from + to) * .5;
+        const center = Math.sqrt(from * to);
         values[i] = mappedValue(averageBandDb(from, to), center);
       }
       bandCache.set(total, values);
     }
     return bandCache.get(total)[index] || 0;
-  }
-
-  function drawGrid(horizon = .74) {
-    const y0 = h * horizon;
-    ctx.save();
-    ctx.strokeStyle = `rgba(${currentPalette.main.join(',')},.052)`;
-    ctx.lineWidth = 1;
-    for (let y = y0; y < h; y += 18) {
-      ctx.beginPath();
-      ctx.moveTo(0, y + .5);
-      ctx.lineTo(w, y + .5);
-      ctx.stroke();
-    }
-    for (let x = 0; x < w; x += Math.max(48, w / 20)) {
-      ctx.beginPath();
-      ctx.moveTo(x + .5, y0);
-      ctx.lineTo(x + .5, h);
-      ctx.stroke();
-    }
-    ctx.restore();
   }
 
   function formatFrequency(value) {
@@ -1347,13 +888,13 @@
   function drawSpectrumScale(pad, baseY, maxHeight) {
     const top = baseY - maxHeight;
     const frequencyTicks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-    const dbTicks = [calibration.minDb, (calibration.minDb + calibration.maxDb) * .5, calibration.maxDb];
+    const dbTicks = [spectrumMapping.minDb, (spectrumMapping.minDb + spectrumMapping.maxDb) * .5, spectrumMapping.maxDb];
     ctx.save();
     ctx.lineWidth = 1;
     ctx.font = '8px "Segoe UI", sans-serif';
     ctx.textBaseline = 'top';
     for (const frequency of frequencyTicks) {
-      if (frequency < calibration.minFreq || frequency > calibration.maxFreq) continue;
+      if (frequency < spectrumMapping.minFreq || frequency > spectrumMapping.maxFreq) continue;
       const position = frequencyPosition(frequency);
       const x = pad + position * (w - pad * 2);
       ctx.strokeStyle = `rgba(${currentPalette.main.join(',')},.08)`;
@@ -1366,9 +907,9 @@
       ctx.fillText(formatFrequency(frequency), x, baseY + 9);
     }
     for (const db of dbTicks) {
-      const position = (db - calibration.minDb) / (calibration.maxDb - calibration.minDb);
+      const position = (db - spectrumMapping.minDb) / (spectrumMapping.maxDb - spectrumMapping.minDb);
       const y = baseY - position * maxHeight;
-      ctx.strokeStyle = `rgba(${currentPalette.hot.join(',')},${db === calibration.maxDb ? .12 : .07})`;
+      ctx.strokeStyle = `rgba(${currentPalette.hot.join(',')},${db === spectrumMapping.maxDb ? .12 : .07})`;
       ctx.beginPath();
       ctx.moveTo(pad, y + .5);
       ctx.lineTo(w - pad, y + .5);
@@ -1397,7 +938,7 @@
     ctx.globalCompositeOperation = 'screen';
     for (let i = 0; i < bars; i++) {
       const target = Math.min(1, spectrumValue(i, bars) * intensity);
-      const response = target > (spectrumLevels[i] || 0) ? .58 - calibration.smoothing * .18 : .22 - calibration.smoothing * .12;
+      const response = target > (spectrumLevels[i] || 0) ? .58 - spectrumMapping.smoothing * .18 : .22 - spectrumMapping.smoothing * .12;
       spectrumLevels[i] = (spectrumLevels[i] || 0) + (target - (spectrumLevels[i] || 0)) * response;
       spectrumPeaks[i] = Math.max(spectrumLevels[i], (spectrumPeaks[i] || 0) - .008);
       const value = spectrumLevels[i];
@@ -1425,296 +966,8 @@
     ctx.restore();
   }
 
-  function drawMirrorSpectrum(energy) {
-    const pad = Math.max(24, w * .06);
-    const available = w - pad * 2;
-    const bars = Math.max(32, Math.min(80, Math.floor(available / 14)));
-    const gap = 3;
-    const barWidth = (available - gap * (bars - 1)) / bars;
-    const center = h * .5;
-    const maxHeight = Math.min(h * .38, 300);
-    const gradient = ctx.createLinearGradient(0, center - maxHeight, 0, center + maxHeight);
-    gradient.addColorStop(0, `rgba(${currentPalette.hot.join(',')},.9)`);
-    gradient.addColorStop(.5, `rgba(${currentPalette.main.join(',')},.25)`);
-    gradient.addColorStop(1, `rgba(${currentPalette.hot.join(',')},.9)`);
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.fillStyle = gradient;
-    ctx.shadowBlur = 10 + energy.treble * 18;
-    ctx.shadowColor = `rgb(${currentPalette.main.join(',')})`;
-    for (let i = 0; i < bars; i++) {
-      const target = Math.min(1, spectrumValue(i, bars) * intensity);
-      mirrorLevels[i] = (mirrorLevels[i] || 0) + (target - (mirrorLevels[i] || 0)) * .3;
-      const height = 2 + mirrorLevels[i] * maxHeight;
-      const x = pad + i * (barWidth + gap);
-      ctx.fillRect(x, center - height, barWidth, height - 2);
-      ctx.fillRect(x, center + 2, barWidth, height - 2);
-    }
-    ctx.globalAlpha = .32;
-    ctx.fillRect(pad, center, available, 1);
-    ctx.restore();
-  }
-
-  function drawWaveform(energy) {
-    drawGrid(.7);
-    const samples = audioState.waveData;
-    if (audioState.playing && audioState.analyser && samples) audioState.analyser.getByteTimeDomainData(samples);
-    const pad = Math.max(28, w * .055);
-    const centerY = h * .5;
-    const amplitude = Math.min(h * .31, 260) * intensity;
-    const gradient = ctx.createLinearGradient(pad, 0, w - pad, 0);
-    gradient.addColorStop(0, `rgba(${currentPalette.main.join(',')},.18)`);
-    gradient.addColorStop(.5, `rgba(${currentPalette.hot.join(',')},1)`);
-    gradient.addColorStop(1, `rgba(${currentPalette.main.join(',')},.18)`);
-
-    const trace = (mirror, alpha, width) => {
-      ctx.beginPath();
-      const count = samples?.length || 512;
-      for (let i = 0; i < count; i++) {
-        const idle = Math.sin(i * .055 + frame * .018) * .012;
-        const sample = audioState.playing && samples ? (samples[i] - 128) / 128 : idle;
-        const x = pad + i / (count - 1) * (w - pad * 2);
-        const y = centerY + sample * amplitude * mirror;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = width;
-      ctx.stroke();
-    };
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.strokeStyle = gradient;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.shadowBlur = 12 + energy.treble * 24;
-    ctx.shadowColor = `rgb(${currentPalette.hot.join(',')})`;
-    trace(1, .95, 2.1);
-    trace(-1, .18, 1);
-    ctx.restore();
-  }
-
-  function drawRadialSpectrum(energy) {
-    const cx = w * .5;
-    const cy = h * .49;
-    const size = Math.min(w, h);
-    const inner = size * (.14 + energy.bass * .025);
-    const maxLength = size * .25 * intensity;
-    const bars = w < 700 ? 72 : 104;
-    const rotation = frame * .0012;
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.lineCap = 'round';
-    ctx.translate(cx, cy);
-    ctx.rotate(rotation);
-    for (let i = 0; i < bars; i++) {
-      const mirrored = i < bars / 2 ? i : bars - i - 1;
-      const value = Math.min(1, spectrumValue(mirrored, bars / 2) * intensity);
-      const angle = i / bars * Math.PI * 2;
-      const length = 3 + value * maxLength;
-      const color = value > .56 ? currentPalette.hot : currentPalette.main;
-      ctx.strokeStyle = `rgba(${color.join(',')},${.25 + value * .72})`;
-      ctx.lineWidth = 1.2 + value * 2.4;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-      ctx.lineTo(Math.cos(angle) * (inner + length), Math.sin(angle) * (inner + length));
-      ctx.stroke();
-    }
-    ctx.rotate(-rotation);
-    ctx.shadowBlur = 18 + energy.bass * 28;
-    ctx.shadowColor = `rgb(${currentPalette.hot.join(',')})`;
-    ctx.strokeStyle = `rgba(${currentPalette.hot.join(',')},${.22 + energy.overall * .6})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, 0, inner * .82, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, 0, inner * (1.04 + energy.bass * .08), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-
   function mixColor(a, b, amount) {
     return a.map((value, index) => Math.round(value + (b[index] - value) * amount));
-  }
-
-  function waterfallColor(value) {
-    const level = Math.max(0, Math.min(1, Math.pow(Math.max(0, value - .025) / .975, 1.18)));
-    if (level < .22) return mixColor([3, 5, 14], currentPalette.dark, level / .22);
-    if (level < .52) return mixColor(currentPalette.dark, currentPalette.main, (level - .22) / .3);
-    if (level < .8) return mixColor(currentPalette.main, currentPalette.hot, (level - .52) / .28);
-    return mixColor(currentPalette.hot, [245, 250, 255], (level - .8) / .2);
-  }
-
-  function updateWaterfallHistory(now) {
-    const width = waterfallCanvas.width;
-    const height = waterfallCanvas.height;
-    if (!audioState.playing || !width || now - waterfallState.lastUpdateAt < 55) return;
-    waterfallState.lastUpdateAt = now;
-    waterfallCtx.drawImage(waterfallCanvas, 0, 1, width, height - 1, 0, 0, width, height - 1);
-    waterfallCtx.fillStyle = 'rgba(2,3,10,.012)';
-    waterfallCtx.fillRect(0, 0, width, height - 1);
-    for (let x = 0; x < width; x++) {
-      const value = Math.min(1, spectrumValue(x, width) * intensity);
-      const color = waterfallColor(value);
-      waterfallCtx.fillStyle = `rgb(${color.join(',')})`;
-      waterfallCtx.fillRect(x, height - 1, 1, 1);
-    }
-    waterfallState.primed = true;
-  }
-
-  function drawWaterfall() {
-    ctx.save();
-    ctx.globalAlpha = .97;
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(waterfallCanvas, 0, 0, w, h);
-    const scan = ctx.createLinearGradient(0, 0, 0, h);
-    scan.addColorStop(0, 'rgba(0,0,0,.32)');
-    scan.addColorStop(.72, 'rgba(0,0,0,.03)');
-    scan.addColorStop(.982, 'rgba(255,255,255,0)');
-    scan.addColorStop(1, 'rgba(255,255,255,.12)');
-    ctx.fillStyle = scan;
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1;
-    ctx.font = '500 9px "Segoe UI", sans-serif';
-    ctx.textBaseline = 'bottom';
-    const frequencyTicks = [20, 100, 500, 1000, 5000, 10000, 20000];
-    frequencyTicks.forEach((frequency, index) => {
-      const x = frequencyPosition(frequency) * w;
-      ctx.strokeStyle = 'rgba(255,255,255,.055)';
-      ctx.beginPath();
-      ctx.moveTo(x + .5, 0);
-      ctx.lineTo(x + .5, h);
-      ctx.stroke();
-      ctx.fillStyle = index === 0 || index === frequencyTicks.length - 1 ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.2)';
-      ctx.textAlign = index === 0 ? 'left' : index === frequencyTicks.length - 1 ? 'right' : 'center';
-      ctx.fillText(formatFrequency(frequency), x, h - 14);
-    });
-    for (let row = 1; row < 8; row++) {
-      const y = row / 8 * h;
-      ctx.strokeStyle = 'rgba(255,255,255,.035)';
-      ctx.beginPath();
-      ctx.moveTo(0, y + .5);
-      ctx.lineTo(w, y + .5);
-      ctx.stroke();
-    }
-    ctx.textAlign = 'right';
-    ctx.fillStyle = `rgba(${currentPalette.hot.join(',')},.5)`;
-    ctx.fillText(waterfallState.primed ? 'HISTORY  ↑' : 'BUILDING HISTORY', w - 18, 21);
-    ctx.fillStyle = `rgba(${currentPalette.hot.join(',')},.7)`;
-    ctx.fillText('NOW', w - 18, h - 18);
-    ctx.restore();
-  }
-
-  function drawVuMeter(x, y, radius, level, label, readout) {
-    const start = Math.PI * 1.15;
-    const end = Math.PI * 1.85;
-    ctx.save();
-    ctx.translate(x, y);
-    const panelX = -radius * 1.14;
-    const panelY = -radius * 1.08;
-    const panelW = radius * 2.28;
-    const panelH = radius * 1.42;
-    const face = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
-    face.addColorStop(0, 'rgba(245,239,214,.13)');
-    face.addColorStop(.58, 'rgba(80,76,72,.1)');
-    face.addColorStop(1, 'rgba(5,7,12,.48)');
-    ctx.fillStyle = 'rgba(3,5,10,.7)';
-    ctx.fillRect(panelX - 5, panelY - 5, panelW + 10, panelH + 10);
-    ctx.fillStyle = face;
-    ctx.fillRect(panelX, panelY, panelW, panelH);
-    ctx.strokeStyle = 'rgba(255,255,255,.12)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(panelX + .5, panelY + .5, panelW - 1, panelH - 1);
-    [[panelX + 9, panelY + 9], [panelX + panelW - 9, panelY + 9], [panelX + 9, panelY + panelH - 9], [panelX + panelW - 9, panelY + panelH - 9]].forEach(([sx, sy]) => {
-      ctx.fillStyle = 'rgba(255,255,255,.12)';
-      ctx.beginPath();
-      ctx.arc(sx, sy, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.strokeStyle = `rgba(${currentPalette.main.join(',')},.34)`;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, start, end);
-    ctx.stroke();
-
-    for (let i = 0; i <= 20; i++) {
-      const angle = start + (end - start) * i / 20;
-      const major = i % 5 === 0;
-      const inner = radius - (major ? 15 : 8);
-      ctx.strokeStyle = i > 16 ? 'rgba(255,105,84,.8)' : `rgba(${currentPalette.hot.join(',')},${major ? .72 : .32})`;
-      ctx.lineWidth = major ? 1.5 : 1;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-      ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-      ctx.stroke();
-    }
-
-    const needleAngle = start + (end - start) * Math.min(1, level);
-    ctx.shadowBlur = 16;
-    ctx.shadowColor = `rgb(${currentPalette.hot.join(',')})`;
-    ctx.strokeStyle = `rgb(${currentPalette.hot.join(',')})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(needleAngle) * (radius - 12), Math.sin(needleAngle) * (radius - 12));
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = `rgb(${currentPalette.main.join(',')})`;
-    ctx.beginPath();
-    ctx.arc(0, 0, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.42)';
-    ctx.font = '600 10px "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, 0, -radius * .26);
-    ctx.font = '8px "Segoe UI", sans-serif';
-    ctx.fillText('−40   −20   −10    0', 0, -radius * .48);
-    ctx.fillStyle = 'rgba(255,255,255,.26)';
-    ctx.font = '600 9px "Segoe UI", sans-serif';
-    ctx.fillText(readout, 0, radius * .12);
-    ctx.fillStyle = level > .86 ? 'rgba(255,87,68,.92)' : 'rgba(255,255,255,.08)';
-    ctx.beginPath();
-    ctx.arc(radius * .92, -radius * .88, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    const glass = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
-    glass.addColorStop(0, 'rgba(255,255,255,.055)');
-    glass.addColorStop(.42, 'rgba(255,255,255,0)');
-    glass.addColorStop(1, 'rgba(255,255,255,.018)');
-    ctx.fillStyle = glass;
-    ctx.fillRect(panelX + 1, panelY + 1, panelW - 2, panelH - 2);
-    ctx.restore();
-  }
-
-  function drawVu(energy) {
-    const levelDb = audioState.playing
-      ? Math.max(-72, Math.min(0, 20 * Math.log10(Math.max(1e-6, audioState.rawRms))))
-      : -72;
-    const meterLevel = db => Math.pow(Math.max(0, Math.min(1, (db + 42) / 42)), 1.22);
-    const levelTarget = meterLevel(levelDb);
-    const centroidMotion = Math.min(1, Math.abs(audioState.features.centroid - vuState.previousCentroid) * 5);
-    vuState.previousCentroid = audioState.features.centroid;
-    const detailRaw = audioState.playing ? Math.min(1,
-      audioState.features.density * .26 +
-      audioState.features.flux * .28 +
-      energy.treble * .18 +
-      audioState.accents.treble * .18 +
-      centroidMotion * .1
-    ) : 0;
-    vuState.detailBaseline += (detailRaw - vuState.detailBaseline) * (detailRaw > vuState.detailBaseline ? .012 : .004);
-    const detailTarget = audioState.playing
-      ? Math.min(1, detailRaw * .62 + Math.max(0, detailRaw - vuState.detailBaseline) * 1.75)
-      : 0;
-    vuLevels[0] += (levelTarget - vuLevels[0]) * (levelTarget > vuLevels[0] ? .14 : .035);
-    vuLevels[1] += (detailTarget - vuLevels[1]) * (detailTarget > vuLevels[1] ? .3 : .085);
-    const radius = Math.min(w * .2, h * .33, 250);
-    const y = h * .67;
-    drawVuMeter(w * .28, y, radius, vuLevels[0], 'LEVEL', `${Math.round(levelDb)} dBFS`);
-    drawVuMeter(w * .72, y, radius, vuLevels[1], 'DETAIL', `${Math.round(detailTarget * 100)}% MOTION`);
   }
 
   function traceSmoothRibbon(points) {
@@ -1750,7 +1003,7 @@
       amplitude += Math.pow(10, db / 20);
     }
     const averageDb = 20 * Math.log10(Math.max(1e-6, amplitude / Math.max(1, end - start)));
-    const center = calibration.scale === 'log' ? Math.sqrt(from * to) : (from + to) * .5;
+    const center = Math.sqrt(from * to);
     return mappedValue(averageDb, center);
   }
 
@@ -1768,8 +1021,6 @@
     let leftData = audioState.leftData;
     let rightData = audioState.rightData;
     if (pulsarState.layout === 'stereo' && audioState.playing && audioState.leftAnalyser && audioState.rightAnalyser) {
-      audioState.leftAnalyser.smoothingTimeConstant = calibration.smoothing;
-      audioState.rightAnalyser.smoothingTimeConstant = calibration.smoothing;
       audioState.leftAnalyser.getByteFrequencyData(leftData);
       audioState.rightAnalyser.getByteFrequencyData(rightData);
       let leftPower = 0;
@@ -2033,220 +1284,6 @@
       ctx.shadowBlur = 5 + highAccent * 7;
       ctx.stroke();
     }
-    ctx.restore();
-  }
-
-  function ensureModernParticles() {
-    const target = w < 720 ? 92 : 156;
-    while (modernParticles.length < target) {
-      modernParticles.push({
-        x: Math.random() * 2 - 1,
-        y: Math.random() * 2 - 1,
-        z: .12 + Math.random() * .88,
-        speed: .0015 + Math.random() * .0032,
-        band: Math.floor(Math.random() * 72),
-        screenX: NaN,
-        screenY: NaN
-      });
-    }
-    if (modernParticles.length > target) modernParticles.length = target;
-  }
-
-  function drawTunnel(energy) {
-    ensureModernParticles();
-    const bassAccent = audioState.accents.bass;
-    modernState.tunnelDrift += .004 + energy.mid * .003;
-    modernState.tunnelTravel = (modernState.tunnelTravel + .0022 + energy.bass * .0028 + bassAccent * .0045) % 1;
-    const targetCx = .5 + Math.sin(modernState.tunnelDrift) * .035 * (.3 + energy.mid);
-    const targetCy = .48 + Math.cos(modernState.tunnelDrift * .72) * .026 * (.3 + energy.bass);
-    modernState.tunnelCx += (targetCx - modernState.tunnelCx) * .035;
-    modernState.tunnelCy += (targetCy - modernState.tunnelCy) * .035;
-    const cx = w * modernState.tunnelCx;
-    const cy = h * modernState.tunnelCy;
-    const maxRadius = Math.hypot(w, h) * .62;
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-
-    for (const particle of modernParticles) {
-      const value = spectrumValue(particle.band, 72);
-      const previousX = particle.screenX;
-      const previousY = particle.screenY;
-      particle.z -= particle.speed * (1.05 + energy.bass * 3.2 + bassAccent * 4.8 + value * 1.4);
-      if (particle.z < .045) {
-        particle.x = Math.random() * 2 - 1;
-        particle.y = Math.random() * 2 - 1;
-        particle.z = 1;
-        particle.screenX = NaN;
-        particle.screenY = NaN;
-      }
-      const x = cx + particle.x / particle.z * w * .16;
-      const y = cy + particle.y / particle.z * h * .16;
-      particle.screenX = x;
-      particle.screenY = y;
-      const alpha = Math.max(0, Math.min(1, Math.sin(Math.min(1, 1 - particle.z) * Math.PI * .82) * (.28 + value * .76)));
-      const color = value > .5 ? currentPalette.hot : currentPalette.main;
-      ctx.strokeStyle = `rgba(${color.join(',')},${alpha})`;
-      ctx.lineWidth = Math.max(.55, (1 - particle.z) * (1.25 + value * 2.2));
-      ctx.beginPath();
-      if (Number.isFinite(previousX) && Math.hypot(x - previousX, y - previousY) < Math.max(w, h) * .12) ctx.moveTo(previousX, previousY);
-      else ctx.moveTo(x, y);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    }
-
-    const rings = 30;
-    const segments = 132;
-    for (let ring = 0; ring < rings; ring++) {
-      const travel = (ring / rings + modernState.tunnelTravel) % 1;
-      const radius = Math.pow(travel, 1.72) * maxRadius + 10;
-      ctx.beginPath();
-      for (let i = 0; i <= segments; i++) {
-        const angle = i / segments * Math.PI * 2;
-        const value = spectrumValue(i % 72, 72);
-        const wobble = Math.sin(angle * 3 + modernState.tunnelDrift * 2.1 + ring * .8) * radius * .022 * (1 + value);
-        const rr = radius + wobble + value * 19 * intensity;
-        const x = cx + Math.cos(angle) * rr * (1 + energy.mid * .035);
-        const y = cy + Math.sin(angle) * rr * (.62 + energy.treble * .08);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      const color = ring % 3 === 0 ? currentPalette.hot : currentPalette.main;
-      const ringFade = Math.pow(Math.sin(travel * Math.PI), .7);
-      ctx.strokeStyle = `rgba(${color.join(',')},${ringFade * (.07 + travel * .3)})`;
-      ctx.lineWidth = .55 + travel * 1.4;
-      ctx.shadowBlur = travel > .7 ? 12 : 0;
-      ctx.shadowColor = `rgb(${color.join(',')})`;
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawPulseGrid(energy) {
-    const horizon = h * .43;
-    const pad = w * .04;
-    const columns = w < 720 ? 14 : 22;
-    const rows = 24;
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.lineWidth = 1;
-    ctx.shadowColor = `rgb(${currentPalette.main.join(',')})`;
-    ctx.shadowBlur = 7 + energy.mid * 16;
-
-    for (let col = 0; col <= columns; col++) {
-      const t = col / columns;
-      const xBottom = pad + t * (w - pad * 2);
-      const xTop = w * .5 + (t - .5) * w * .1;
-      ctx.strokeStyle = `rgba(${currentPalette.main.join(',')},${.06 + spectrumValue(Math.min(columns - 1, col), columns) * .24})`;
-      ctx.beginPath();
-      ctx.moveTo(xTop, horizon);
-      ctx.lineTo(xBottom, h);
-      ctx.stroke();
-    }
-    for (let row = 0; row < rows; row++) {
-      const t = (row / rows + frame * .0035 * (1 + energy.bass * 3)) % 1;
-      const perspective = t * t;
-      const y = horizon + perspective * (h - horizon);
-      const value = spectrumValue(row % 48, 48);
-      ctx.strokeStyle = `rgba(${(row % 5 === 0 ? currentPalette.hot : currentPalette.main).join(',')},${.05 + perspective * .25 + value * .12})`;
-      ctx.beginPath();
-      ctx.moveTo(w * .5 - (w * .06 + perspective * w * .5), y + Math.sin(frame * .02 + row) * value * 4);
-      ctx.lineTo(w * .5 + (w * .06 + perspective * w * .5), y - Math.sin(frame * .02 + row) * value * 4);
-      ctx.stroke();
-    }
-
-    const bars = 54;
-    const width = w * .58;
-    const left = (w - width) * .5;
-    for (let i = 0; i < bars; i++) {
-      const value = spectrumValue(i, bars);
-      const barWidth = width / bars * .58;
-      const x = left + i / (bars - 1) * width;
-      const height = (12 + value * h * .25) * intensity;
-      const color = value > .58 ? currentPalette.hot : currentPalette.main;
-      ctx.fillStyle = `rgba(${color.join(',')},${.16 + value * .72})`;
-      ctx.fillRect(x, horizon - height, barWidth, height);
-    }
-    ctx.restore();
-  }
-
-  function traceClosedSmoothPath(points, tension = .72) {
-    if (points.length < 3) return;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let index = 0; index < points.length; index++) {
-      const p0 = points[(index - 1 + points.length) % points.length];
-      const p1 = points[index];
-      const p2 = points[(index + 1) % points.length];
-      const p3 = points[(index + 2) % points.length];
-      ctx.bezierCurveTo(
-        p1.x + (p2.x - p0.x) / 6 * tension,
-        p1.y + (p2.y - p0.y) / 6 * tension,
-        p2.x - (p3.x - p1.x) / 6 * tension,
-        p2.y - (p3.y - p1.y) / 6 * tension,
-        p2.x,
-        p2.y
-      );
-    }
-    ctx.closePath();
-  }
-
-  function drawBloom(energy) {
-    const cx = w * .5;
-    const cy = h * .47;
-    const petals = 8;
-    const pointCount = 288;
-    const spectrumBands = 96;
-    const minSize = Math.min(w, h);
-    modernState.bloomRotation += .0011 + energy.mid * .0008 + audioState.accents.treble * .0012;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(modernState.bloomRotation);
-    ctx.globalCompositeOperation = 'screen';
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-
-    const halo = ctx.createRadialGradient(0, 0, minSize * .035, 0, 0, minSize * .34);
-    halo.addColorStop(0, `rgba(${currentPalette.hot.join(',')},${.055 + energy.bass * .08})`);
-    halo.addColorStop(.45, `rgba(${currentPalette.main.join(',')},${.022 + energy.overall * .035})`);
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(0, 0, minSize * .35, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (let layer = 0; layer < 6; layer++) {
-      const bloomPoints = [];
-      for (let i = 0; i < pointCount; i++) {
-        const normalized = i / pointCount;
-        const angle = normalized * Math.PI * 2;
-        const bandPosition = normalized * (spectrumBands - 1);
-        const bandLow = Math.floor(bandPosition);
-        const bandHigh = Math.min(spectrumBands - 1, bandLow + 1);
-        const mix = bandPosition - bandLow;
-        const value = spectrumValue(bandLow, spectrumBands) * (1 - mix) + spectrumValue(bandHigh, spectrumBands) * mix;
-        const petalPhase = .5 - .5 * Math.cos(angle * petals + layer * .16);
-        const petal = petalPhase * petalPhase * (3 - 2 * petalPhase);
-        const base = minSize * (.115 + layer * .022 + energy.bass * .012);
-        const petalLift = petal * minSize * (.045 + value * .022 * intensity);
-        const spectrumLift = value * minSize * (.018 + intensity * .018);
-        const harmonic = Math.sin(angle * 3 - modernState.bloomRotation * 4 + layer * .7) * minSize * .008 * (.35 + energy.mid);
-        const radius = base + petalLift + spectrumLift + harmonic;
-        bloomPoints.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-      }
-      traceClosedSmoothPath(bloomPoints);
-      const color = layer % 2 ? currentPalette.hot : currentPalette.main;
-      ctx.strokeStyle = `rgba(${color.join(',')},${.18 + layer * .075 + energy.overall * .12})`;
-      ctx.lineWidth = .75 + layer * .11 + energy.treble * 1.05;
-      ctx.shadowBlur = 7 + energy.mid * 18 + audioState.accents.treble * 6;
-      ctx.shadowColor = `rgb(${color.join(',')})`;
-      ctx.stroke();
-    }
-    ctx.rotate(-modernState.bloomRotation * 1.75);
-    ctx.fillStyle = `rgba(${currentPalette.hot.join(',')},${.1 + energy.bass * .28})`;
-    ctx.shadowBlur = 28 + energy.bass * 42;
-    ctx.shadowColor = `rgb(${currentPalette.hot.join(',')})`;
-    ctx.beginPath();
-    ctx.arc(0, 0, 4 + energy.bass * 13, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
   }
 
@@ -3743,7 +2780,7 @@
 
   function updateRhythmState(now) {
     const onset = Math.min(1, Math.max(audioState.features.onset || 0, audioState.accents.overall || 0));
-    const threshold = Math.max(.095, mappingOutput?.onsetThreshold || .12);
+    const threshold = .12;
     const gap = now - rhythmState.lastBeatAt;
     const fresh = audioState.playing
       && onset > threshold
@@ -3787,10 +2824,7 @@
   function currentGlitchSignals() {
     fusionTimelineState.boundaryPulse *= .94;
     fusionTimelineState.chordPulse *= .9;
-    const ensemble = Math.min(1, Math.max(0,
-      (mappingOutput?.orchestration || audioState.features.orchestrationDensity || 0) * .74
-      + (mappingOutput?.orchestrationSurge || 0) * .42
-    ));
+    const ensemble = Math.min(1, Math.max(0, (audioState.features.orchestrationDensity || 0) * .74));
     const lowDrum = Math.min(1, Math.max(audioState.accents.bass || 0, audioState.features.onset * audioState.energy.bass * .82));
     const midDrum = Math.min(1, Math.max(audioState.accents.mid || 0, audioState.features.flux * audioState.energy.mid * .88));
     const highDrum = Math.min(1, Math.max(audioState.accents.treble || 0, audioState.features.onset * audioState.energy.treble, audioState.features.flux * .62));
@@ -3798,8 +2832,8 @@
       [lowDrum, midDrum, highDrum],
       [glitchConfig.drumLow, glitchConfig.drumMid, glitchConfig.drumHigh]
     );
-    const source = mappingOutput?.source || audioState.features;
-    const dissonance = Math.min(1, Math.max(mappingOutput?.acid || 0, (source.roughness || 0) * .72 + (source.flatness || 0) * .28));
+    const source = audioState.features;
+    const dissonance = Math.min(1, Math.max(source.acid || 0, (source.roughness || 0) * .72 + (source.flatness || 0) * .28));
     const abrasionTransient = Math.min(1, Math.max((source.sharpness || 0) * (audioState.features.onset || 0), audioState.accents.treble || 0, (source.flux || 0) * .72));
     const abrasion = weightedSignal(
       [dissonance, source.roughness || 0, abrasionTransient, source.sweep || 0],
@@ -3810,15 +2844,8 @@
     const distance = Math.min(subPhase, 1 - subPhase);
     const gridPulse = Math.exp(-Math.pow(distance / .115, 2)) * rhythmState.confidence;
     const rhythm = Math.min(1, Math.max(rhythmState.pulse, gridPulse));
-    const sectionScores = mappingOutput?.sectionScores || {};
-    const liveSection = Math.min(1, Math.max(
-      (sectionScores.layering || 0) * .45,
-      (sectionScores.full || 0) * .72,
-      sectionScores.climax || 0,
-      (sectionScores.drop || 0) * .95
-    ));
+    // Section, climax, drop, build and chord come from the XLD timeline; without it they are neutral.
     const section = Math.min(1, Math.max(
-      liveSection,
       fusionTimelineState.connected ? fusionTimelineState.section : 0,
       fusionTimelineState.boundaryPulse
     ));
@@ -3827,19 +2854,11 @@
     const weightedAbrasion = abrasion * glitchConfig.abrasionWeight;
     const weightedSection = section * glitchConfig.sectionDrive;
     const drive = Math.min(1, (weightedEnsemble + weightedDrum + weightedAbrasion + weightedSection) / 3.05);
-    // XLD offline timeline (internal) drives chord when connected; otherwise the
-    // live chord engine (external monitoring) supplies it.
-    const chordConfidence = fusionTimelineState.connected ? fusionTimelineState.chordConfidence : liveChordSignal.confidence;
-    const chordChange = fusionTimelineState.connected ? Math.min(1, fusionTimelineState.chordPulse) : Math.min(1, liveChordSignal.change);
-    const climaxState = fusionTimelineState.connected
-      ? fusionTimelineState.climax
-      : Math.min(1, Number(sectionScores.climax) || 0);
-    const dropState = fusionTimelineState.connected
-      ? fusionTimelineState.drop
-      : Math.min(1, Number(sectionScores.drop) || 0);
-    const buildState = fusionTimelineState.connected
-      ? fusionTimelineState.build
-      : Math.min(1, Math.max(Number(sectionScores.layering) || 0, Number(sectionScores.full) * .35 || 0));
+    const chordConfidence = fusionTimelineState.connected ? fusionTimelineState.chordConfidence : 0;
+    const chordChange = fusionTimelineState.connected ? Math.min(1, fusionTimelineState.chordPulse) : 0;
+    const climaxState = fusionTimelineState.connected ? fusionTimelineState.climax : 0;
+    const dropState = fusionTimelineState.connected ? fusionTimelineState.drop : 0;
+    const buildState = fusionTimelineState.connected ? fusionTimelineState.build : 0;
     return {
       ensemble,
       beat: drum,
@@ -3860,7 +2879,7 @@
       build: buildState,
       boundaryPulse: fusionTimelineState.boundaryPulse,
       sectionSerial: fusionTimelineState.boundarySerial,
-      chord: fusionTimelineState.connected ? fusionTimelineState.chord : liveChordSignal.chord,
+      chord: fusionTimelineState.connected ? fusionTimelineState.chord : '—',
       chordConfidence,
       chordChange,
       drive
@@ -3868,8 +2887,6 @@
   }
 
   const chordHueRoots = Object.freeze({ C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 });
-  let liveSectionKey = '';
-  let liveSectionSerial = 0;
 
   function glitchChordHue(label) {
     const match = String(label || '').match(/^([A-G](?:#|b)?)/);
@@ -3878,11 +2895,6 @@
 
   function buildGlitchFeatureFrame(energy, signals, now) {
     if (!glitchFeatureBus) return null;
-    if (!fusionTimelineState.connected) {
-      const nextKey = String(mappingOutput?.section || '');
-      if (nextKey && liveSectionKey && nextKey !== liveSectionKey) liveSectionSerial++;
-      if (nextKey) liveSectionKey = nextKey;
-    }
     return glitchFeatureBus.update({
       playing: audioState.playing,
       loudness: Math.min(1, energy.overall * 1.18),
@@ -3903,7 +2915,7 @@
       onset: Math.max(audioState.features.onset, audioState.accents.overall),
       bassPeak: Math.max(audioState.accents.bass, signals.lowDrum),
       boundaryPulse: signals.boundaryPulse,
-      sectionSerial: fusionTimelineState.connected ? signals.sectionSerial : liveSectionSerial,
+      sectionSerial: fusionTimelineState.connected ? signals.sectionSerial : 0,
       chordChange: signals.chordChange
     }, now);
   }
@@ -3914,7 +2926,7 @@
     const strength = Math.max(.4, glitchConfig.fxStrength);
     const elapsed = glitchState.lastFxAt ? Math.max(1 / 240, Math.min(.05, (now - glitchState.lastFxAt) / 1000)) : 1 / 60;
     glitchState.lastFxAt = now;
-    const freePulse = Math.min(1, (signals.weightedBeat * .74 + signals.weightedAcid * .22 + (mappingOutput?.orchestrationSurge || 0) * .42 + signals.weightedSection * .28 + signals.chordChange * .3) * strength);
+    const freePulse = Math.min(1, (signals.weightedBeat * .74 + signals.weightedAcid * .22 + signals.weightedSection * .28 + signals.chordChange * .3) * strength);
     const rhythmMix = glitchConfig.rhythmLock * Math.min(1, rhythmState.confidence * 1.35);
     const pulse = freePulse * (1 - rhythmMix) + Math.max(freePulse * .34, signals.rhythm) * rhythmMix;
     glitchState.beatPulse = Math.max(glitchState.beatPulse * .76, pulse);
@@ -4191,8 +3203,8 @@
   function drawGlitchPostFx(energy) {
     const profile = glitchProfiles[activeEffect] || glitchProfiles['beta-glitch-1'];
     const now = performance.now();
-    const ensembleTarget = mappingOutput?.orchestration ?? audioState.features.richness;
-    const acidTarget = mappingOutput?.acid ?? audioState.features.acid;
+    const ensembleTarget = audioState.features.richness;
+    const acidTarget = audioState.features.acid;
     glitchState.ensemble += (ensembleTarget - glitchState.ensemble) * (ensembleTarget > glitchState.ensemble ? .22 : .065);
     glitchState.acid += (acidTarget - glitchState.acid) * (acidTarget > glitchState.acid ? .31 : .09);
     glitchState.smoothBass += (energy.bass - glitchState.smoothBass) * .12;
@@ -4327,7 +3339,6 @@
         resetReason === 'seek') {
       spectrumLevels.length = 0;
       spectrumPeaks.length = 0;
-      mirrorLevels.length = 0;
       ribbonSpectrumLevels.length = 0;
       ribbonFastLevels.length = 0;
       ribbonPreviousRaw.length = 0;
@@ -4340,10 +3351,6 @@
       pulsarState.lastCaptureAt = 0;
       pulsarState.lastDrawAt = 0;
     }
-    if (materialId === 'original-glitch' &&
-        resetReason !== 'material-deactivate') {
-      originalGlitchRenderer?.reset();
-    }
   }
 
   function renderButterchurnMaterial() {
@@ -4354,43 +3361,22 @@
       betaState.renderFailures++;
       if (betaState.renderFailures === 3) {
         betaState.lastError = error?.message || '渲染失败';
-        setActiveEffectState('bloom', 'renderer-fallback');
+        setActiveEffectState('spectrum', 'renderer-fallback');
         selectButton(activeEffect);
-        showToast('MilkDrop 与当前显卡不兼容，已切换到棱镜花', 4200);
+        showToast('MilkDrop 与当前显卡不兼容，已切换到 LED 频谱', 4200);
       }
     }
   }
 
   const legacyMaterialRenderers = Object.freeze({
     spectrum: frame => drawSpectrum(frame.musicFrame.energy),
-    mirror: frame => drawMirrorSpectrum(frame.musicFrame.energy),
-    waveform: frame => drawWaveform(frame.musicFrame.energy),
-    radial: frame => drawRadialSpectrum(frame.musicFrame.energy),
-    waterfall: () => drawWaterfall(),
-    vu: frame => drawVu(frame.musicFrame.energy),
     ribbons: frame => drawRibbons(frame.musicFrame.energy),
     pulsar: frame => drawPulsar(
       frame.musicFrame.energy,
       frame.musicFrame.now
     ),
-    tunnel: frame => drawTunnel(frame.musicFrame.energy),
-    'pulse-grid': frame => drawPulseGrid(frame.musicFrame.energy),
-    bloom: frame => drawBloom(frame.musicFrame.energy),
-    'original-glitch': frame => {
-      if (!frame.musicFrame.mapping) return;
-      originalGlitchRenderer?.draw({
-        ctx,
-        canvas,
-        width: w,
-        height: h,
-        palette: currentPalette,
-        mapping: frame.musicFrame.mapping,
-        energy: frame.musicFrame.energy,
-        spectrumValue,
-        frame: frame.clock.frameIndex,
-        now: frame.musicFrame.now
-      });
-    }
+    // The listening score draws on its own canvas (score-scene.js); here the base canvas is only left clear.
+    score: () => {}
   });
 
   function renderLegacyMaterialFrame(id, frame) {
@@ -4422,31 +3408,6 @@
     }
     for (const id of availableEffects) {
       const beta = id.startsWith('beta-');
-      const experimental = experimentalMaterialApi?.describe(id);
-      if (experimental) {
-        materialRegistry.register({
-          id,
-          label: effectNames[id] || experimental.label || id,
-          category: experimental.category,
-          sourceKind: experimental.sourceKind,
-          experimental: true,
-          create: () => experimentalMaterialApi.create(id, {
-            createCanvas: (width, height) => {
-              const surface = document.createElement('canvas');
-              surface.width = width;
-              surface.height = height;
-              return surface;
-            },
-            createSurface: materialApi.createSurface,
-            presentSurface: surface => {
-              ctx.clearRect(0, 0, w, h);
-              ctx.imageSmoothingEnabled = true;
-              ctx.drawImage(surface.source, 0, 0, w, h);
-            }
-          })
-        });
-        continue;
-      }
       materialRegistry.register({
         id,
         label: effectNames[id] || betaPresetNames[id] || id,
@@ -4457,11 +3418,6 @@
           label: effectNames[id] || betaPresetNames[id] || id,
           sourceKind: beta ? 'butterchurn-canvas' : 'base-canvas',
           reset: reason => resetLegacyMaterialState(id, reason),
-          update: frame => {
-            if (id === 'waterfall') {
-              updateWaterfallHistory(frame.clock.nowMs);
-            }
-          },
           render: frame => renderLegacyMaterialFrame(id, frame)
         })
       });
@@ -4558,19 +3514,11 @@
     if (name === activeEffect) return;
     glitchWebglRenderer?.reset();
     glitchFeatureBus?.reset(performance.now());
-    if (name === 'original-glitch' && (!mappingEngine || !originalGlitchRenderer)) {
-      showToast('原创映射模块未加载，请重新打开应用');
-      return;
-    }
-    if (name === 'original-glitch') {
-      setCalibrationPanel(true);
-      setMappingLabPanel(true);
-    }
     const token = ++switchToken;
     selectButton(name);
     if (name.startsWith('beta-')) {
       if (!audioState.context) {
-        showToast('请先连接电脑声音');
+        showToast('请先播放一首歌');
         selectButton(activeEffect);
         return;
       }
@@ -4846,7 +3794,7 @@
     glitchRackToggle.setAttribute('aria-pressed', String(glitchConfig.enabled));
     glitchRackToggle.textContent = glitchConfig.enabled ? 'ON' : 'OFF';
     glitchPowerButton.setAttribute('aria-pressed', String(glitchConfig.enabled));
-    glitchPowerButton.textContent = glitchConfig.enabled ? 'FX ON' : 'FX OFF';
+    bindUiText(glitchPowerButton, glitchConfig.enabled ? 'shell.fxOn' : 'shell.fxOff', glitchConfig.enabled ? '特效 开' : '特效 关');
     stage.classList.toggle('postfx-on', glitchConfig.enabled);
     syncGlitchRendererState();
   }
@@ -5034,124 +3982,6 @@
     }
   }
 
-  function formatCalibrationValue(key, value) {
-    if (key === 'minFreq' || key === 'maxFreq') return value >= 1000 ? `${Number((value / 1000).toFixed(1))} kHz` : `${Math.round(value)} Hz`;
-    if (key === 'minDb' || key === 'maxDb') return `${Math.round(value)} dB`;
-    if (key === 'tilt') return `${value >= 0 ? '+' : ''}${Number(value).toFixed(1)} dB/oct`;
-    if (key === 'smoothing') return `${Math.round(value * 100)}%`;
-    return String(value);
-  }
-
-  function syncCalibrationControls(activePreset = 'custom') {
-    document.querySelectorAll('[data-calibration-key]').forEach(input => {
-      const key = input.dataset.calibrationKey;
-      if (input.type === 'checkbox') input.checked = Boolean(calibration[key]);
-      else input.value = calibration[key];
-    });
-    document.querySelectorAll('[data-output-for]').forEach(output => {
-      const key = output.dataset.outputFor;
-      output.textContent = formatCalibrationValue(key, calibration[key]);
-    });
-    document.querySelectorAll('[data-calibration-preset]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.calibrationPreset === activePreset);
-    });
-  }
-
-  function applyCalibration(values, activePreset = 'custom', persist = true) {
-    const next = { ...calibration, ...values };
-    next.minFreq = Math.max(20, Math.min(1000, Number(next.minFreq)));
-    next.maxFreq = Math.max(2000, next.minFreq + 100, Math.min(22000, Number(next.maxFreq)));
-    next.minDb = Math.max(-120, Math.min(-45, Number(next.minDb)));
-    next.maxDb = Math.max(next.minDb + 6, Math.max(-50, Math.min(0, Number(next.maxDb))));
-    next.tilt = Math.max(-8, Math.min(12, Number(next.tilt)));
-    next.smoothing = Math.max(0, Math.min(.95, Number(next.smoothing)));
-    next.scale = ['linear', 'log', 'bark', 'mel'].includes(next.scale) ? next.scale : 'log';
-    next.autoGain = Boolean(next.autoGain);
-    Object.assign(calibration, next);
-    if (audioState.analyser) audioState.analyser.smoothingTimeConstant = calibration.smoothing;
-    bandCache.clear();
-    spectrumLevels.length = 0;
-    spectrumPeaks.length = 0;
-    mirrorLevels.length = 0;
-    ribbonSpectrumLevels.length = 0;
-    ribbonFastLevels.length = 0;
-    ribbonPreviousRaw.length = 0;
-    ribbonTransientLevels.length = 0;
-    syncCalibrationControls(activePreset);
-    if (persist) {
-      try { localStorage.setItem('xins-fusion-calibration', JSON.stringify(calibration)); } catch (_) {}
-    }
-    window.dispatchEvent(new CustomEvent('smoke-resonance:calibrationchange', { detail: { ...calibration } }));
-    return { ...calibration };
-  }
-
-  function applyCalibrationPreset(name) {
-    const preset = calibrationPresets[name];
-    if (!preset) return null;
-    const result = applyCalibration(preset, name);
-    showToast(`频谱校准 · ${preset.label}`);
-    return result;
-  }
-
-  function formatResponseValue(value) {
-    const number = Number(value);
-    return `${number >= 0 ? '+' : ''}${number.toFixed(1)} dB`;
-  }
-
-  function syncResponseControls(activePreset = frequencyResponse.preset || 'custom') {
-    document.querySelectorAll('[data-response-key]').forEach(input => {
-      input.value = frequencyResponse[input.dataset.responseKey];
-    });
-    document.querySelectorAll('[data-response-output]').forEach(output => {
-      output.textContent = formatResponseValue(frequencyResponse[output.dataset.responseOutput]);
-    });
-    document.querySelectorAll('[data-response-preset]').forEach(button => {
-      button.classList.toggle('is-active', button.dataset.responsePreset === activePreset);
-    });
-  }
-
-  function applyFrequencyResponse(values, activePreset = 'custom', persist = true) {
-    for (const key of ['lowGain', 'midGain', 'highGain']) {
-      if (values[key] !== undefined) frequencyResponse[key] = Math.max(-12, Math.min(12, Number(values[key]) || 0));
-    }
-    if (values.weighting !== undefined) {
-      frequencyResponse.weighting = ['flat', 'a', 'c', '468'].includes(values.weighting) ? values.weighting : 'flat';
-    }
-    frequencyResponse.preset = activePreset;
-    bandCache.clear();
-    spectrumLevels.length = 0;
-    spectrumPeaks.length = 0;
-    mirrorLevels.length = 0;
-    ribbonSpectrumLevels.length = 0;
-    ribbonFastLevels.length = 0;
-    ribbonPreviousRaw.length = 0;
-    ribbonTransientLevels.length = 0;
-    syncResponseControls(activePreset);
-    if (persist) {
-      try { localStorage.setItem('xins-fusion-frequency-response', JSON.stringify(frequencyResponse)); } catch (_) {}
-    }
-    window.dispatchEvent(new CustomEvent('smoke-resonance:responsechange', { detail: { ...frequencyResponse } }));
-    return { ...frequencyResponse };
-  }
-
-  function applyResponsePreset(name) {
-    const preset = responsePresets[name];
-    if (!preset) return null;
-    const result = applyFrequencyResponse(preset, name);
-    showToast(`视觉频响 · ${preset.label}（原始测量未改动）`);
-    return result;
-  }
-
-  function setCalibrationPanel(open) {
-    calibrationPanel.classList.toggle('is-open', open);
-    calibrationPanel.setAttribute('aria-hidden', String(!open));
-    calibrationButton.setAttribute('aria-expanded', String(open));
-  }
-
-  function setMappingLabPanel(open) {
-    mappingLab?.setOpen(Boolean(open));
-  }
-
   function setPanelPosition(panel, left, top) {
     const width = Math.max(1, panel.offsetWidth);
     const height = Math.max(1, panel.offsetHeight);
@@ -5220,26 +4050,9 @@
     get: () => ({ kind: audioState.sourceKind, playing: audioState.playing, started: audioState.started }),
     attachMediaElement: element => attachInternalMedia(element),
     detachMediaElement: () => detachInternalMedia(),
-    setMediaPlaying: value => setInternalPlaying(value),
-    startExternal: () => startCapture(),
-    stopExternal: () => {
-      if (audioState.sourceKind === 'external') stopCapture(false);
-      return { kind: audioState.sourceKind, playing: audioState.playing };
-    }
+    setMediaPlaying: value => setInternalPlaying(value)
   });
 
-  window.SmokeResonanceCalibration = Object.freeze({
-    get: () => ({ ...calibration }),
-    set: values => applyCalibration(values),
-    applyPreset: applyCalibrationPreset,
-    presets: () => Object.fromEntries(Object.entries(calibrationPresets).map(([key, value]) => [key, { ...value }]))
-  });
-  window.SmokeResonanceResponse = Object.freeze({
-    get: () => ({ ...frequencyResponse }),
-    set: values => applyFrequencyResponse(values),
-    applyPreset: applyResponsePreset,
-    presets: () => Object.fromEntries(Object.entries(responsePresets).map(([key, value]) => [key, { ...value }]))
-  });
   window.SmokeResonanceColor = Object.freeze({
     get: () => ({ palette: activePaletteName, effects: { ...colorFx } }),
     palette: name => applyPalette(name),
@@ -5334,32 +4147,6 @@
     get: () => ({ enabled: directorState.enabled, beatCount: directorState.beatCount, history: [...directorState.history] }),
     set: enabled => setDirectorEnabled(enabled)
   });
-  window.SmokeResonanceMapping = Object.freeze({
-    get: () => mappingEngine?.get() || null,
-    config: values => values ? mappingEngine?.setConfig(values) : mappingEngine?.getConfig(),
-    reset: () => mappingEngine?.reset(performance.now())
-  });
-  window.SmokeResonanceSections = Object.freeze({
-    get: () => sectionEngineSuite?.get() || null,
-    input: () => sectionFeatureExtractor?.get() || null,
-    config: values => values ? sectionEngineSuite?.setConfig(values) : sectionEngineSuite?.getConfig(),
-    harmony: () => {
-      const frame = sectionFeatureExtractor?.get();
-      return frame ? {
-        chord: frame.chord, confidence: frame.chordConfidence, change: frame.chordChange,
-        tension: frame.harmonicTension, chroma: [...(frame.chroma || [])]
-      } : null;
-    },
-    enable: (name, enabled) => sectionEngineSuite?.setEnabled(name, enabled),
-    reset: () => {
-      sectionFeatureExtractor?.reset();
-      if (mappingEngine) mappingOutput = mappingEngine.reset(performance.now());
-      if (sectionEngineSuite) sectionOutput = sectionEngineSuite.reset(performance.now());
-      return sectionOutput;
-    },
-    references: () => window.SmokeResonanceSectionEngines?.references() || {}
-  });
-
   function qualityLabel(mode) {
     return mode === 'high' ? '画质 High' : mode === 'eco' ? '画质 Eco' : '画质 Auto';
   }
@@ -5469,7 +4256,7 @@
 
   function chooseDirectorScene(energy) {
     const features = audioState.features;
-    const sectionScale = mappingOutput?.orchestration || features.orchestrationDensity || 0;
+    const sectionScale = features.orchestrationDensity || 0;
     const targetEnergy = Math.min(1, energy.overall * .78 + sectionScale * .46 + features.onset * .12);
     const targetTexture = Math.min(1, features.density * .42 + features.flatness * .28 + features.acid * .3);
     const recent = new Set(directorState.history.slice(-3));
@@ -5505,17 +4292,10 @@
     }
     directorState.previousOnset = onset;
     const dwell = now - directorState.lastSwitchAt;
-    const currentSection = mappingOutput?.section || 'SPARSE';
-    if (currentSection !== directorState.lastSection) {
-      directorState.lastSection = currentSection;
-      directorState.sectionChangedAt = now;
-    }
-    const structuralShift = now - directorState.sectionChangedAt < 1200
-      && ['LAYERING', 'FULL', 'CLIMAX', 'DROP', 'AFTERGLOW'].includes(currentSection);
-    const sectionShift = structuralShift || Math.abs(energy.overall - directorState.energyAnchor) > .19 && directorState.beatCount >= 4;
+    const sectionShift = Math.abs(energy.overall - directorState.energyAnchor) > .19 && directorState.beatCount >= 4;
     const phraseBoundary = directorState.beatCount >= 12;
     const ambientBoundary = dwell > 19000;
-    if (dwell > (structuralShift ? 3200 : 6200) && (phraseBoundary || sectionShift || ambientBoundary)) {
+    if (dwell > 6200 && (phraseBoundary || sectionShift || ambientBoundary)) {
       const next = chooseDirectorScene(energy);
       directorState.beatCount = 0;
       directorState.lastSwitchAt = now;
@@ -5534,8 +4314,6 @@
     directorState.lastBeatAt = 0;
     directorState.lastSwitchAt = performance.now() - 4200;
     directorState.energyAnchor = audioState.energy.overall;
-    directorState.lastSection = mappingOutput?.section || 'SPARSE';
-    directorState.sectionChangedAt = 0;
     directorToggle.setAttribute('aria-pressed', String(directorState.enabled));
     bindUiText(
       directorToggle,
@@ -5610,19 +4388,6 @@
       : uiText('runtime.pin.disabled', '窗口置顶已关闭'));
   }
 
-  async function controlSystemMedia(action) {
-    if (!window.SmokeResonanceDesktop?.mediaControl) {
-      showToast(uiText('runtime.media.desktopOnly', '系统媒体控制仅在桌面版可用'));
-      return;
-    }
-    const result = await window.SmokeResonanceDesktop.mediaControl(action);
-    const labels = { previous: '上一曲', 'play-pause': '播放 / 暂停', next: '下一曲' };
-    const actionLabel = labels[action];
-    showToast(result?.ok
-      ? uiText('runtime.media.result', `系统媒体 · ${actionLabel}`, { action: actionLabel })
-      : uiText('runtime.media.failed', '系统媒体控制失败'));
-  }
-
   function resize() {
     const nativeDpr = window.devicePixelRatio || 1;
     const nextDpr = qualityState.mode === 'high'
@@ -5656,20 +4421,6 @@
     conductorCanvas.style.width = `${w}px`;
     conductorCanvas.style.height = `${h}px`;
     conductorCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const waterfallCopy = waterfallCanvas.width && waterfallCanvas.height ? document.createElement('canvas') : null;
-    if (waterfallCopy) {
-      waterfallCopy.width = waterfallCanvas.width;
-      waterfallCopy.height = waterfallCanvas.height;
-      waterfallCopy.getContext('2d').drawImage(waterfallCanvas, 0, 0);
-    }
-    waterfallCanvas.width = w < 760 ? 320 : 520;
-    waterfallCanvas.height = w < 760 ? 180 : 260;
-    waterfallCtx.fillStyle = '#03040a';
-    waterfallCtx.fillRect(0, 0, waterfallCanvas.width, waterfallCanvas.height);
-    if (waterfallCopy && waterfallState.primed) {
-      waterfallCtx.drawImage(waterfallCopy, 0, 0, waterfallCopy.width, waterfallCopy.height, 0, 0, waterfallCanvas.width, waterfallCanvas.height);
-    }
-    originalGlitchRenderer?.resize(w, h);
     glitchWebglRenderer?.resize(w, h, dpr, webglScale);
     syncGlitchRendererState();
     try { betaState.visualizer?.setRendererSize(Math.round(w * dpr), Math.round(h * dpr)); } catch (_) {}
@@ -5714,13 +4465,6 @@
       nowMs: now,
       deltaMs: realtimeProviderFrame?.clock?.deltaMs || 0
     });
-    const sectionFrame = updateRawSectionFrame(now);
-    if (sectionFrame && mappingEngine) {
-      mappingOutput = mappingEngine.update({ ...sectionFrame, playing: audioState.playing }, now);
-      sectionOutput = sectionEngineSuite?.update(sectionFrame, now, mappingOutput) || null;
-      mappingLab?.update(mappingOutput, sectionOutput, now);
-    }
-    updateLiveHarmony(now);
     updateColorEffects(now);
     updateDirector(energy, now);
     const runtime = ensureMaterialRuntime();
@@ -5742,9 +4486,7 @@
         main: Object.freeze([...currentPalette.main]),
         hot: Object.freeze([...currentPalette.hot]),
         dark: Object.freeze([...currentPalette.dark])
-      }),
-      section: sectionFrame,
-      mapping: mappingOutput
+      })
     });
     engineClockFrame = materialClock;
     for (const subscriber of [...engineFrameSubscribers.preMaterial]) {
@@ -5761,8 +4503,7 @@
         contract: 'xin.material-mapping-snapshot/1',
         frameIndex: frame,
         source: 'generator-shared-mapping',
-        values: currentMaterialTargetValues(),
-        legacy: mappingOutput
+        values: currentMaterialTargetValues()
       }),
       target: Object.freeze({
         width: w,
@@ -5789,36 +4530,6 @@
     else if (activeEffect.startsWith('beta-')) drawBetaRhythmPostFx(energy);
     else clearGlitchPostFx();
     if (conductorState.enabled) drawConductorOverlay(energy);
-
-    if (now - qualityState.lastUiAt >= 100) {
-      qualityState.lastUiAt = now;
-      const level = energy.overall;
-      const sectionLabels = {
-        SPARSE: uiText('runtime.energy.sparse', '稀疏编制'),
-        LAYERING: uiText('runtime.energy.layering', '正在加层'),
-        FULL: uiText('runtime.energy.full', '全奏段落'),
-        CLIMAX: uiText('runtime.energy.climax', '编制高潮'),
-        DROP: uiText('runtime.energy.drop', '突然抽空'),
-        AFTERGLOW: uiText('runtime.energy.afterglow', '余波')
-      };
-      const energyText = audioState.playing && mappingOutput
-        ? uiText(
-          'runtime.energy.parts',
-          `${sectionLabels[mappingOutput.section] || mappingOutput.section} · ${mappingOutput.effectiveParts.toFixed(1)} 声部`,
-          { section: sectionLabels[mappingOutput.section] || mappingOutput.section, parts: mappingOutput.effectiveParts.toFixed(1) }
-        )
-        : level > .38
-          ? uiText('runtime.energy.surging', '汹涌')
-          : level > .22
-            ? uiText('runtime.energy.flowing', '流动')
-            : level > .1
-              ? uiText('runtime.energy.rippling', '轻漾')
-              : audioState.playing
-                ? uiText('runtime.energy.waitingMusic', '等待音乐')
-                : uiText('runtime.energy.paused', '暂停监听');
-      energyLabel.textContent = energyText;
-      timelineFill.style.width = audioState.started ? `${Math.min(100, 6 + level * 175)}%` : '0%';
-    }
     updatePerformance(now);
     for (const subscriber of [...engineFrameSubscribers.postMaterial]) {
       try {
@@ -5830,16 +4541,7 @@
     requestAnimationFrame(animate);
   }
 
-  enterButton.addEventListener('click', startCapture);
-  playButton.addEventListener('click', toggleListening);
-  mediaPrevious?.addEventListener('click', () => controlSystemMedia('previous'));
-  mediaPlayPause?.addEventListener('click', () => controlSystemMedia('play-pause'));
-  mediaNext?.addEventListener('click', () => controlSystemMedia('next'));
-  captureButton.addEventListener('click', startCapture);
   intensityInput.addEventListener('input', event => { intensity = Number(event.target.value); });
-  calibrationButton.addEventListener('click', () => setCalibrationPanel(!calibrationPanel.classList.contains('is-open')));
-  calibrationClose.addEventListener('click', () => setCalibrationPanel(false));
-  calibrationReset.addEventListener('click', () => applyCalibrationPreset('open-flat'));
   paletteButton.addEventListener('click', () => setPalettePanel(!palettePanel.classList.contains('is-open')));
   paletteClose.addEventListener('click', () => setPalettePanel(false));
   glitchPowerButton.addEventListener('click', () => setGlitchRackEnabled(!glitchConfig.enabled));
@@ -5885,7 +4587,6 @@
   });
   glitchRackToggle.addEventListener('click', () => setGlitchRackEnabled(!glitchConfig.enabled));
   directorToggle.addEventListener('click', () => setDirectorEnabled(!directorState.enabled));
-  mappingLabButton.addEventListener('click', () => setMappingLabPanel(!mappingLab?.isOpen()));
   qualityButton.addEventListener('click', cycleQualityMode);
   // UI font scale — chrome only (canvas is sized in JS and untouched). A-/A+.
   const UI_SCALES = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 2.0];
@@ -5949,27 +4650,6 @@
     applyPalette('custom');
     showToast(`已载入 ${button.textContent.trim()} 底稿`);
   });
-  calibrationPanel.addEventListener('input', event => {
-    const responseInput = event.target.closest('[data-response-key]');
-    if (responseInput) {
-      applyFrequencyResponse({ [responseInput.dataset.responseKey]: Number(responseInput.value) });
-      return;
-    }
-    const input = event.target.closest('[data-calibration-key]');
-    if (!input) return;
-    const key = input.dataset.calibrationKey;
-    const value = input.type === 'checkbox' ? input.checked : input.tagName === 'SELECT' ? input.value : Number(input.value);
-    applyCalibration({ [key]: value });
-  });
-  calibrationPanel.addEventListener('click', event => {
-    const responseButton = event.target.closest('[data-response-preset]');
-    if (responseButton) {
-      applyResponsePreset(responseButton.dataset.responsePreset);
-      return;
-    }
-    const button = event.target.closest('[data-calibration-preset]');
-    if (button) applyCalibrationPreset(button.dataset.calibrationPreset);
-  });
   $('.swatches').addEventListener('click', event => {
     const button = event.target.closest('.swatch');
     if (!button) return;
@@ -5995,10 +4675,6 @@
   document.addEventListener('visibilitychange', () => resetPerformanceWindow(performance.now()));
   window.addEventListener('keydown', event => {
     const editing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName);
-    if (event.code === 'Space' && !editing) {
-      event.preventDefault();
-      toggleListening();
-    }
     if (!editing && event.key.toLowerCase() === 'h') {
       if (stage.classList.contains('ui-hidden')) exitImmersive();
       else stage.classList.add('ui-hidden');
@@ -6011,35 +4687,15 @@
       toggleAlwaysOnTop();
     }
     if (event.key === 'Escape') {
-      if (calibrationPanel.classList.contains('is-open')) setCalibrationPanel(false);
       if (palettePanel.classList.contains('is-open')) setPalettePanel(false);
       if (conductorPanel.classList.contains('is-open')) setConductorPanel(false);
       if (glitchPanel.classList.contains('is-open')) setGlitchPanel(false);
-      if (mappingLab?.isOpen()) setMappingLabPanel(false);
     }
   });
   window.addEventListener('beforeunload', () => {
-    stopCapture(false);
     glitchWebglRenderer?.dispose();
   });
 
-  try {
-    const savedCalibration = JSON.parse(localStorage.getItem('xins-fusion-calibration'));
-    if (savedCalibration && typeof savedCalibration === 'object') applyCalibration(savedCalibration, 'custom', false);
-    else syncCalibrationControls('open-flat');
-  } catch (_) {
-    syncCalibrationControls('open-flat');
-  }
-  try {
-    const savedResponse = JSON.parse(localStorage.getItem('xins-fusion-frequency-response'));
-    if (savedResponse && typeof savedResponse === 'object') {
-      applyFrequencyResponse(savedResponse, savedResponse.preset || 'custom', false);
-    } else {
-      syncResponseControls('flat');
-    }
-  } catch (_) {
-    syncResponseControls('flat');
-  }
   try {
     const savedPalette = JSON.parse(localStorage.getItem('xins-fusion-palette'));
     if (savedPalette?.custom) {
@@ -6107,11 +4763,6 @@
     setDirectorEnabled(false, false);
   }
   bindUiText(pinButton, 'runtime.pin.off', '置顶');
-  bindUiText(captureButton.querySelector('span'), 'runtime.capture.connect', '连接声音');
-  bindUiText(sourceLabel, 'runtime.audio.system', '系统音频');
-  bindUiText(trackTitle, 'runtime.waiting.title', '等待电脑里的声音');
-  bindUiText(trackMeta, 'runtime.waiting.meta', '连接系统音频后，任何播放器都能驱动这片雾');
-  updatePlayButton();
   if (window.SmokeResonanceDesktop) stage.classList.add('is-desktop');
   resize();
   ensureMaterialRuntime();

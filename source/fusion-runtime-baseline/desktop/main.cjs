@@ -5,21 +5,19 @@ const fs = require('fs/promises');
 const fsSync = require('fs');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
-const { execFile } = require('child_process');
-const { promisify } = require('util');
-const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createService: createXldAnalysisService } = require('./xld-analysis-service.cjs');
 const {readLatestTrack} = require('./refresh-track.cjs');
 const {writeRequest} = require('../../xld-runtime-baseline/core/open-request.cjs');
+// Section names come from XLD's one module; manifests written before segments carried `name` get it in memory.
+const {namedManifest} = require('../../xld-runtime-baseline/core/sections.cjs');
 const xldTimelineProvider = require('../xld-timeline-provider-adapter.js');
 const { createRepository: createGlitchPresetRepository } =
   require('./glitch-preset-repository.cjs');
 const { createMainLocaleController, normalizeLocale } = require('./locale.cjs');
 const { applyGeneratorHostLocale } = require('./generator-locale.cjs');
 
-const execFileAsync = promisify(execFile);
-const mediaKeyCodes = Object.freeze({ previous: 0xB1, 'play-pause': 0xB3, next: 0xB0 });
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 const {defaultUserPaths} = require('../../shared-analysis/user-paths.cjs');
 const DEFAULT_LIBRARY_ROOT = defaultUserPaths(app).libraryRoot;
@@ -39,6 +37,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!gotSingleInstanceLock) app.quit();
 
 function createWindow() {
+  const hiddenTest=process.env.XML_TEST==='1'&&process.env.XML_TEST_VISIBLE!=='1';
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -50,7 +49,7 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
-      offscreen: process.env.XML_TEST === '1',
+      offscreen: hiddenTest,
       backgroundThrottling: process.env.XML_TEST !== '1',
       contextIsolation: true,
       nodeIntegration: false,
@@ -60,7 +59,7 @@ function createWindow() {
   });
 
   const reveal = () => {
-    if(process.env.XML_TEST === '1')return;
+    if(hiddenTest)return;
     if (!win.isDestroyed() && !win.isVisible()) win.show();
   };
   win.once('ready-to-show', reveal);
@@ -117,6 +116,15 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   // the player and visual engine from starting. Repository IPC retries the
   // initialization and reports a clone-safe error to the renderer.
   await glitchPresetRepository.initialize().catch(() => null);
+  const noteModule=require('./score-notes.cjs');
+  const scoreNotes=noteModule.createStore(noteModule.notesRoot(app.getPath('appData'),app.getPath('userData')));
+  const listeningModule=require('./listening-state.cjs');
+  const listeningState=listeningModule.createStore(listeningModule.rootFor(app.getPath('appData'),app.getPath('userData')));
+  const dynamicsModule=require('./score-dynamics.cjs');
+  const dynamics=dynamicsModule.createService({root:dynamicsModule.rootFor(app.getPath('appData'),app.getPath('userData')),readMidi:(track,stem)=>xldAnalysis.readMidi(track,stem),profileForResult:require('../../xld-runtime-baseline/core/derived-assets.cjs').profileForResult});
+  app.on('before-quit',()=>dynamics.shutdown());
+  ipcMain.handle('fusion:listening-read',async()=>{try{return {ok:true,value:await listeningState.read()};}catch(e){return {ok:false,error:String(e.message||e)};}});
+  ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(
     __dirname,
     '..',
@@ -257,7 +265,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
             const manifest = JSON.parse(await fs.readFile(entryPath, 'utf8'));
             const source = manifest?.track?.source;
             if (manifest?.contract === 'xld.music-lab/2' && Number(manifest?.schemaVersion) === 2 && typeof source === 'string') {
-              manifests.set(path.resolve(source).toLowerCase(), { filePath: entryPath, manifest });
+              manifests.set(path.resolve(source).toLowerCase(), { filePath: entryPath, manifest: namedManifest(manifest) });
             }
           } catch (_) {}
         }
@@ -435,7 +443,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if (!indexed || !fsSync.existsSync(indexed.filePath)) return { ok: false, error: 'track-missing' };
     const latest=await readLatestTrack(indexed,existingAnalysisRoots(),xldTimelineProvider.validateManifest);
     if(!latest.ok)return latest;
-    indexed.manifest=latest.manifest;indexed.bridgePath=latest.filePath;
+    indexed.manifest=namedManifest(latest.manifest);indexed.bridgePath=latest.filePath;
     const manifest = indexed.manifest || {
       schemaVersion: 2,
       contract: 'xld.music-lab/2',
@@ -506,7 +514,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           trackId: manifest.track.id,
           sourcePath: source
         },
-        manifest
+        manifest: namedManifest(manifest)
       };
     } catch (error) {
       return { ok: false, error: error?.code === 'ENOENT' ? 'missing-file' : 'read-failed' };
@@ -517,48 +525,41 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle('fusion:refresh-track', async (_event, trackId) => {
     const indexed=fusionTrackIndex.get(String(trackId || ''));
     if(!indexed || !fsSync.existsSync(indexed.filePath))return {ok:false,error:'track-missing'};
-    if(xldAnalysis.task())return {ok:false,error:'analysis-busy'};
+    if(xldAnalysis.task()||dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     await refreshXldSettings();xldAnalysis.setAnalysisRoot(fusionAnalysisRoot);
     return loadFusionTrack(trackId);
   });
   ipcMain.handle('fusion:load-track', (_event, trackId) => loadFusionTrack(trackId));
   ipcMain.handle('fusion:settings', refreshXldSettings);
+  // Where the music is and where the analysis results are. Both live in the settings file this app shares with
+  // XLD, so a folder picked here is the folder XLD uses too. Only the one key is changed; the rest of the file stays.
+  ipcMain.handle('fusion:choose-folder', async (event, payload) => {
+    const key = payload?.kind === 'analysis' ? 'analysisRoot' : 'libraryRoot';
+    if (xldAnalysis.task()||dynamics.isBusy()) return { ok: false, error: 'analysis-busy' };
+    await refreshXldSettings();
+    const current = key === 'analysisRoot' ? fusionAnalysisRoot : fusionLibraryRoot;
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: mainLocale.message(key === 'analysisRoot' ? 'dialog.analysis.chooseTitle' : 'dialog.library.chooseTitle'),
+      defaultPath: fsSync.existsSync(current) ? current : undefined,
+      properties: ['openDirectory']
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+    let settings = {};
+    try { settings = JSON.parse(await fs.readFile(xldSettingsPath, 'utf8')); } catch (_) {}
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) settings = {};
+    settings[key] = path.resolve(result.filePaths[0]);
+    try {
+      await fs.mkdir(path.dirname(xldSettingsPath), { recursive: true });
+      await fs.writeFile(xldSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
+    } catch (error) {
+      return { ok: false, error: 'settings-unwritable', details: String(error?.message || error) };
+    }
+    const roots = await refreshXldSettings();
+    xldAnalysis.setAnalysisRoot(fusionAnalysisRoot);
+    return { ok: true, ...roots };
+  });
   ipcMain.handle('fusion:analysis-engines', () => xldAnalysis.detectEngines());
   ipcMain.handle('fusion:analysis-task', () => xldAnalysis.task());
-  ipcMain.handle('fusion:shadow-telemetry', async () => {
-    // This stable scalar acknowledgement is deliberately evaluated before
-    // collecting optional OS diagnostics. It keeps the renderer's gate from
-    // ever waiting on a platform-specific metrics call.
-    const neutral = {
-      available: false,
-      cpuPercent: null,
-      memoryKb: null,
-      processCount: 0,
-      scope: 'unavailable'
-    };
-    try {
-      // Electron's aggregate ProcessMetric wrappers can neither be cloned nor
-      // reliably resolve across every desktop build.  Use the main-process
-      // diagnostics API and transfer only a JSON scalar snapshot instead.
-      const cpu = process.getCPUUsage?.() || {};
-      const memoryPromise = typeof process.getProcessMemoryInfo === 'function'
-        ? process.getProcessMemoryInfo()
-        : Promise.resolve({});
-      const memory = await Promise.race([
-        memoryPromise,
-        new Promise(resolve => setTimeout(() => resolve({}), 250))
-      ]);
-      return JSON.stringify({
-        available: true,
-        cpuPercent: Math.max(0, Number(cpu.percentCPUUsage) || 0),
-        memoryKb: Math.max(0, Number(memory.private || memory.workingSetSize) || 0),
-        processCount: 1,
-        scope: 'main-process'
-      });
-    } catch (_) {
-      return JSON.stringify(neutral);
-    }
-  });
   ipcMain.handle('fusion:analysis-cancel', () => xldAnalysis.cancel());
   ipcMain.handle('app:locale-get', () => ({ ok: true, ...mainLocale.getState() }));
   ipcMain.handle('app:locale-set', async (_event, payload) => {
@@ -576,6 +577,64 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     return track ? xldAnalysis.readMidi(track, payload?.stem) : { ok: false, error: 'track-missing' };
   });
+  // The listening score's model for one track: its sections and chords from the bridge manifest, its notes from
+  // each stem's active MIDI. Read-only; the adapter lives with the score view (source/scoreview).
+  const scoreModelFor = async payload => {
+    const track = fusionTrackIndex.get(String(payload?.trackId || ''));
+    if (!track) return { ok: false, error: 'track-missing' };
+    const loaded = await loadFusionTrack(track.id);
+    if (!loaded.ok) return loaded;
+    try {
+      const adapter = require('../../scoreview/adapter/track-model.cjs');
+      let manualCaptions=[],notesError=null;
+      try{manualCaptions=await scoreNotes.list(track.id);}catch(error){notesError=String(error.message||error);}
+      let stems=await adapter.readStems(stem => xldAnalysis.readMidi(track, stem));
+      let dynamicsHealth={enabled:payload?.useDynamics===true,state:'original',applied:[]};
+      if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
+      const built=adapter.modelFrom({
+        track: { id: track.id, title: track.title, artist: track.artist, album: track.album },
+        duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
+        stems,
+        layers: await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null),
+        vocalLine: await adapter.readVocalLine(loaded.filePath ? path.dirname(loaded.filePath) : null),manualCaptions,
+        // The renderer says which language it shows (it asks again when that changes); otherwise the app's.
+        lang: normalizeLocale(payload?.lang) || mainLocale.getState().locale
+      });
+      for(const lane of built.model?.lanes||[])if(dynamicsHealth.applied.includes(lane.group||lane.id))lane.meta={...lane.meta,velocity:'stem-energy-relative',dynamicsRunId:dynamicsHealth.runId};
+      return {...built,health:{...built.health,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
+    } catch (error) {
+      return { ok: false, error: 'score-adapter-failed', details: String(error?.message || error) };
+    }
+  };
+  ipcMain.handle('fusion:score-model', (_event, payload) => scoreModelFor(payload));
+  // The score as a video file (source/scoreview/export): desktop/score-export-ipc.cjs. The roots it keeps clear
+  // of are every folder XML takes analysis from (the settings' root and the two default ones), whether or not
+  // it exists yet; tests/score-export-wiring.cjs loads this file with a stand-in Electron and checks them.
+  require('./score-export-ipc.cjs').createScoreExport({
+    app, dialog, shell, BrowserWindow, scoreModelFor,
+    exporter: require('../../scoreview/export/export-main.cjs'),
+    analysisRoots: () => [...new Map(analysisRootCandidates().map(root => [path.resolve(root).toLowerCase(), path.resolve(root)])).values()],
+    locale: () => mainLocale.getState().locale
+  }).register(ipcMain);
+  ipcMain.handle('fusion:score-dynamics',async(event,payload)=>{
+    if(payload?.action==='task')return {ok:true,task:dynamics.task()};
+    if(payload?.action==='cancel'){if(payload.taskId&&dynamics.task()?.id!==payload.taskId)return {ok:false,error:'dynamics-task-stale'};return dynamics.cancel();}
+    const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    try{
+      if(payload.action==='status'){const found=await dynamics.read(track);return {ok:true,state:found.state,eligible:found.eligible,runId:found.cache?.runId||null,damaged:found.damaged};}
+      if(payload.action==='run'){if(xldAnalysis.task())return {ok:false,error:'analysis-busy'};return dynamics.start(track,{force:payload.force===true},task=>{if(!event.sender.isDestroyed())event.sender.send('fusion:score-dynamics-task',task);});}
+      return {ok:false,error:'dynamics-action-invalid'};
+    }catch(error){return {ok:false,error:String(error.message||error)};}
+  });
+  ipcMain.handle('fusion:score-notes',async(_event,payload)=>{
+    const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    try{
+      if(payload.action==='save'){const duration=Number(track.duration)>0?Number(track.duration):86400;return {ok:true,note:await scoreNotes.save(track.id,payload.note,duration)};}
+      if(payload.action==='remove')return await scoreNotes.remove(track.id,payload.id);
+      if(payload.action==='list')return {ok:true,notes:await scoreNotes.list(track.id)};
+      return {ok:false,error:'notes-action-invalid'};
+    }catch(error){return {ok:false,error:String(error.message||error)};}
+  });
   ipcMain.handle('fusion:midi-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!track) return { ok: false, error: 'track-missing' };
@@ -585,6 +644,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     return { ok: !error, error: error || null };
   });
   ipcMain.handle('fusion:midi-run', async (event, payload) => {
+    if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!track) return { ok: false, error: 'track-missing' };
     const core = require('./midi-assets.cjs');
@@ -607,7 +667,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   });
   ipcMain.handle('fusion:stems-read', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
-    return track ? xldAnalysis.readStems(track) : { ok: false, error: 'track-missing' };
+    if(!track)return {ok:false,error:'track-missing'};
+    const base=await xldAnalysis.readStems(track),strings=await xldAnalysis.readMidi(track,'strings');
+    if(base.ok&&strings.ok&&strings.source?.path)return {...base,stems:[...base.stems,{name:'strings',audioUrl:pathToFileURL(strings.source.path).href}]};
+    return base;
   });
   ipcMain.handle('fusion:stems-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
@@ -618,6 +681,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     return { ok: !error, error: error || null };
   });
   ipcMain.handle('fusion:stems-run', async (event, payload) => {
+    if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!track) return { ok: false, error: 'track-missing' };
     const active = await xldAnalysis.readStems(track);
@@ -630,6 +694,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   });
 
   ipcMain.handle('fusion:analysis-run', async (event, payload) => {
+    if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     const indexed = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!indexed) return { ok: false, error: 'track-missing' };
     const publish = snapshot => {
@@ -642,6 +707,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       publish
     );
     if (response?.ok) {
+      if (response.manifest) response.manifest = namedManifest(response.manifest);
       indexed.manifest = response.manifest;
       indexed.bridgePath = response.manifestPath;
     }
@@ -795,31 +861,6 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('app:media-control', async (_event, action) => {
-    const keyCode = mediaKeyCodes[action];
-    if (!keyCode) return { ok: false };
-    const script = [
-      'Add-Type -TypeDefinition @\"',
-      'using System;',
-      'using System.Runtime.InteropServices;',
-      'public static class XinMediaKey {',
-      '  [DllImport(\"user32.dll\")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr info);',
-      '}',
-      '\"@;',
-      `[XinMediaKey]::keybd_event([byte]${keyCode},0,0,[UIntPtr]::Zero);`,
-      `[XinMediaKey]::keybd_event([byte]${keyCode},0,2,[UIntPtr]::Zero);`
-    ].join('\n');
-    try {
-      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-        windowsHide: true,
-        timeout: 5000
-      });
-      return { ok: true };
-    } catch (_) {
-      return { ok: false };
-    }
-  });
-
   ipcMain.handle('app:toggle-always-on-top', event => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return false;
@@ -850,23 +891,6 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media' || permission === 'fullscreen');
-  });
-
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    try {
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width: 0, height: 0 },
-        fetchWindowIcons: false
-      });
-      if (!sources.length) {
-        callback({});
-        return;
-      }
-      callback({ video: sources[0], audio: 'loopback' });
-    } catch (_) {
-      callback({});
-    }
   });
 
   let mainWindow = createWindow();

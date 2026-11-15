@@ -1,5 +1,7 @@
 # 音频反应式 Glitch 可视化器升级设计文档
 
+> 历史记录：本文写于旧架构时期，文中提到的 `original-glitch.js` 等模块已于 2026 年 11 月删除。
+
 借鉴 MilkDrop 2 预设与 glitch-art 研究，重点让 **chord（和弦根音/变化/置信度）+ section（段落状态/climax/drop）** 这两类新信号真正去**控制拓扑、颜色与事件**，而不仅是调节后处理强度。
 
 > 来源：本文档由研究工作流（glitch-visual-research）综合产出，引用 geisswerks MilkDrop 授权指南、projectM 的真实 `.milk` 预设源码、lettier posterization 教程、glitchology RGB-split，以及对本仓库 glitch 管线的实读。

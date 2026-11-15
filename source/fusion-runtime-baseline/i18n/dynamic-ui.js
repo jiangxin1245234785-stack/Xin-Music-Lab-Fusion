@@ -8,9 +8,6 @@
   const runtimeBindings = new Map();
 
   const TEXT_BINDINGS = Object.freeze([
-    ['#fusionPanel > .calibration-head h2', 'fusion.title'],
-    ['#fusionPanel .fusion-state-grid article:first-child small', 'fusion.structure'],
-    ['#fusionPanel .fusion-state-grid article:nth-child(2) small', 'fusion.harmony'],
     ['#fusionReveal', 'fusion.locateFile'],
     ['#fusionLoad', 'fusion.importJson'],
     ['#fusionOpenXldLab', 'fusion.advancedLab'],
@@ -18,17 +15,9 @@
     ['#fusionAnalysisOptions summary', 'fusion.analysisOptions'],
     ['#fusionAnalysisRun', 'fusion.startAnalysis'],
     ['#fusionAnalysisCancel', 'fusion.cancel'],
-    ['#fusionModeInternal', 'fusion.localLibrary'],
-    ['#fusionModeExternal', 'fusion.externalListen'],
     ['#fusionLocateTrack', 'fusion.locateTrack'],
     ['#fusionRefresh', 'fusion.refresh'],
     ['#fusionLibraryAnalyzed + span', 'fusion.analyzedOnly'],
-    ['#fusionExternalView p', 'fusion.externalNote'],
-    ['#fusionMaster + .fusion-master__scale span:first-child', 'fusion.bypass'],
-    ['#fusionMaster + .fusion-master__scale span:nth-child(2)', 'fusion.design'],
-    ['#fusionMaster + .fusion-master__scale span:nth-child(3)', 'fusion.violent'],
-    ['#mappingLabPanel .calibration-head h2', 'mapping.title'],
-    ['#mappingLabReset', 'common.resetAll'],
     ['#conductorPanel .calibration-head h2', 'conductor.title'],
     ['[data-conductor-position="left"]', 'position.left'],
     ['[data-conductor-position="center"]', 'position.center'],
@@ -50,24 +39,9 @@
     ['[data-palette-preset="toxic"]', 'palette.toxic'],
     ['[data-palette-preset="ultraviolet"]', 'palette.ultraviolet'],
     ['[data-palette-preset="solar"]', 'palette.solar'],
-    ['#calibrationPanel .calibration-head h2', 'calibration.title'],
-    ['[data-calibration-preset="open-flat"]', 'calibration.preset.open'],
-    ['[data-calibration-preset="classic"]', 'calibration.preset.classic'],
-    ['[data-calibration-preset="electronic"]', 'calibration.preset.electronic'],
-    ['[data-calibration-preset="vocal"]', 'calibration.preset.vocal'],
-    ['[data-calibration-preset="air"]', 'calibration.preset.air'],
-    ['[data-response-preset="flat"]', 'response.preset.flat'],
-    ['[data-response-preset="warm"]', 'response.preset.warm'],
-    ['[data-response-preset="clarity"]', 'response.preset.clarity'],
-    ['[data-response-preset="air"]', 'response.preset.air'],
-    ['[data-response-preset="a-weighted"]', 'response.preset.aWeighted'],
-    ['[data-response-preset="c-weighted"]', 'response.preset.cWeighted'],
-    ['[data-response-preset="itu468"]', 'response.preset.itu468'],
-    ['#calibrationReset', 'calibration.restoreRecommended']
   ]);
 
   const ATTRIBUTE_BINDINGS = Object.freeze([
-    ['#fusionHud', 'aria-label', 'fusion.hudAria'],
     ['#fusionPanel', 'aria-label', 'fusion.panelAria'],
     ['#fusionClose', 'aria-label', 'fusion.closeAria'],
     ['#fusionReveal', 'title', 'fusion.locateFileTitle'],
@@ -84,9 +58,6 @@
     ['#fusionLibrarySearch', 'aria-label', 'fusion.searchAria'],
     ['#fusionLibraryAnalyzed', 'title', 'fusion.analyzedOnlyTitle'],
     ['#fusionLibraryList', 'aria-label', 'fusion.trackListAria'],
-    ['#mappingLabPanel', 'aria-label', 'mapping.panelAria'],
-    ['#mappingLabClose', 'aria-label', 'mapping.closeAria'],
-    ['#mappingLabCanvas', 'aria-label', 'mapping.canvasAria'],
     ['#conductorPanel', 'aria-label', 'conductor.panelAria'],
     ['#conductorClose', 'aria-label', 'conductor.closeAria'],
     ['#glitchPanel', 'aria-label', 'glitch.panelAria'],
@@ -95,25 +66,12 @@
     ['#glitchPresetName', 'placeholder', 'glitch.presetNamePlaceholder'],
     ['#palettePanel', 'aria-label', 'palette.panelAria'],
     ['#paletteClose', 'aria-label', 'palette.closeAria'],
-    ['#calibrationPanel', 'aria-label', 'calibration.panelAria'],
-    ['#calibrationClose', 'aria-label', 'calibration.closeAria']
   ]);
 
   const CONTROL_LABEL_BINDINGS = Object.freeze([
     ['#fusionSectionEngine', 'fusion.sectionEngine'],
     ['#fusionChordEngine', 'fusion.chordEngine'],
-    ['#fusionMaster', 'fusion.glitchMaster'],
     ['#fusionAutoColor', 'fusion.autoColorInput'],
-    ['[data-mapping-key="sensitivity"]', 'mapping.inputSensitivity'],
-    ['[data-mapping-key="sectionSensitivity"]', 'mapping.sectionSensitivity'],
-    ['[data-mapping-key="sectionHold"]', 'mapping.sectionHold'],
-    ['[data-mapping-key="climaxSensitivity"]', 'mapping.climaxSensitivity'],
-    ['[data-mapping-key="dropSensitivity"]', 'mapping.dropSensitivity'],
-    ['[data-fusion-key="fullnessWeight"]', 'mapping.fullnessWeight'],
-    ['[data-fusion-key="liveWeight"]', 'mapping.liveWeight'],
-    ['[data-fusion-key="boundaryWeight"]', 'mapping.boundaryWeight'],
-    ['[data-fusion-key="harmonyWeight"]', 'mapping.harmonyWeight'],
-    ['[data-fusion-key="confirmMs"]', 'mapping.confirmTime'],
     ['[data-conductor-key="speed"]', 'conductor.speed'],
     ['[data-conductor-key="gesture"]', 'conductor.gesture'],
     ['[data-conductor-key="size"]', 'conductor.size'],
@@ -144,17 +102,6 @@
     ['[data-color-fx-key="cycle"]', 'palette.colorCycle'],
     ['[data-color-fx-key="breath"]', 'palette.breath'],
     ['[data-color-fx-key="strobe"]', 'palette.strobe'],
-    ['[data-response-key="lowGain"]', 'response.low'],
-    ['[data-response-key="midGain"]', 'response.mid'],
-    ['[data-response-key="highGain"]', 'response.high'],
-    ['#frequencyScale', 'calibration.axisScale'],
-    ['#autoGain', 'calibration.autoGain'],
-    ['#minFreq', 'calibration.minFreq'],
-    ['#maxFreq', 'calibration.maxFreq'],
-    ['#minDb', 'calibration.minDb'],
-    ['#maxDb', 'calibration.maxDb'],
-    ['#tilt', 'calibration.tilt'],
-    ['#smoothing', 'calibration.smoothing']
   ]);
 
   function bridge(target) {

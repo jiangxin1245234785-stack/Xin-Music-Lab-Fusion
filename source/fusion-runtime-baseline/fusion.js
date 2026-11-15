@@ -17,10 +17,6 @@
     window.SmokeResonanceXldTimelineProvider?.create() || null;
   const musicFeatureResolver =
     window.SmokeResonanceMusicFeatureResolver?.create() || null;
-  const resolverLegacyShadow =
-    window.SmokeResonanceResolverLegacyShadow?.create({
-      intervalMs: 125
-    }) || null;
   const generatorSourceAdapter =
     window.SmokeResonanceGeneratorSourceAdapter?.create({
       stage: $('.stage'),
@@ -43,9 +39,7 @@
       sourceProvider: () => generatorSourceAdapter?.get() || null,
       qualityProvider: () => ({
         mode: $('#qualityButton')?.dataset.mode || 'auto'
-      }),
-      mappingExtension:
-        window.SmokeResonanceMaterialMappingProfile?.runtimeExtension() || {}
+      })
     }) || null;
   const generatorPresetSelector =
     window.SmokeResonanceGeneratorPresetSelector?.create({
@@ -91,22 +85,6 @@
       translate: uiText,
       subscribeLocale: listener => dynamicI18n?.subscribe(listener) || (() => {})
     }) || null;
-  const targetInspector =
-    window.SmokeResonanceTargetInspector?.create({
-      root: $('#targetInspector'),
-      intervalMs: 125,
-      maxSamples: 96,
-      formalPipeline: 'generator'
-    }) || null;
-  const shadowStabilityMonitor =
-    window.SmokeResonanceShadowStabilityMonitor?.create({
-      root: $('#shadowStabilityGate'),
-      intervalMs: 125,
-      telemetryIntervalMs: 1000,
-      minimumObservationMs: 30_000,
-      rendererExpected: true,
-      formalPipeline: 'generator'
-    }) || null;
   const frameOwnershipMonitor =
     window.SmokeResonanceFrameOwnership?.create({
       owner: 'legacy.animate',
@@ -121,11 +99,6 @@
       requiredBindingCount: 21,
       enabled: true
     }) || null;
-  const sourceInspector =
-    window.SmokeResonanceSourceInspector?.create({
-      root: $('#sourceInspector'),
-      intervalMs: 125
-    }) || null;
   let xldProviderFrame = xldTimelineProvider?.get() || null;
   let unifiedMusicFrame = musicFeatureResolver?.get() || null;
   const dom = {
@@ -135,17 +108,8 @@
     track: $('#fusionTrack'), artist: $('#fusionArtist'), cover: $('#fusionCover'),
     play: $('#fusionPlay'), previous: $('#fusionPrevious'), next: $('#fusionNext'),
     seek: $('#fusionSeek'), time: $('#fusionTime'), duration: $('#fusionDuration'),
-    section: $('#fusionSection'), sectionSource: $('#fusionSectionSource'), chord: $('#fusionChord'),
-    chordSource: $('#fusionChordSource'), votes: $('#fusionVotes'), master: $('#fusionMaster'),
-    masterOutput: $('#fusionMasterOutput'), autoColor: $('#fusionAutoColor'), proof: $('#fusionProof'),
-    liveState: $('#fusionLiveState'), timelineState: $('#fusionTimelineState'), outputState: $('#fusionOutputState'),
-    audio: $('#fusionAudio'), hud: $('#fusionHud'), hudTrack: $('#fusionHudTrack'),
-    hudSection: $('#fusionHudSection'), hudChord: $('#fusionHudChord'),
-    listen: $('#playButton'), welcome: $('#welcome'), enterExternal: $('#enterButton'),
-    trackTitle: $('#trackTitle'), trackMeta: $('#trackMeta'), modeInternal: $('#fusionModeInternal'),
-    topModeInternal: $('#topModeInternal'), topModeExternal: $('#topModeExternal'),
-    modeExternal: $('#fusionModeExternal'), libraryView: $('#fusionLibraryView'),
-    externalView: $('#fusionExternalView'), externalToggle: $('#fusionExternalToggle'),
+    autoColor: $('#fusionAutoColor'), audio: $('#fusionAudio'),
+    welcome: $('#welcome'), libraryView: $('#fusionLibraryView'),
     libraryMeta: $('#fusionLibraryMeta'), libraryRoot: $('#fusionLibraryRoot'),
     librarySearch: $('#fusionLibrarySearch'), libraryList: $('#fusionLibraryList'), refresh: $('#fusionRefresh'),
     libraryAnalyzed: $('#fusionLibraryAnalyzed'), locateTrack: $('#fusionLocateTrack'),
@@ -174,11 +138,7 @@
     lastStableRoot: '',
     lastPaletteRoot: '',
     lastPaletteAt: 0,
-    proofTimer: 0,
-    proofPulseTimer: 0,
-    proofRestore: null,
     master: 1.25,
-    sourceMode: 'internal',
     scanning: false,
     loadingTrack: false,
     loadSequence: 0,
@@ -194,33 +154,48 @@
     seekActive: false,
     xldValidationError: '',
     sectionEngine: localStorage.getItem('xins-fusion-section-engine') || 'auto',
-    chordEngine: localStorage.getItem('xins-fusion-chord-engine') || 'consensus',
-    shadowTelemetryPending: false
+    chordEngine: localStorage.getItem('xins-fusion-chord-engine') || 'consensus'
   };
   let refreshingResults=false, resultsRefreshPending=false;
+  const RESUME_KEY='xins-fusion-resume';
+  let resumeRecord=null,resumeHydrated=false,resumeSavedAt=0,removeResumeMetadata=null;
+  function validResume(value){return value?.schemaVersion===1&&typeof value.trackId==='string'&&Number.isFinite(value.time)&&value.time>=0&&value.time<=86400?{...value,updatedAt:Number(value.updatedAt)||0}:null;}
+  async function hydrateResume(){
+    if(resumeHydrated)return;resumeHydrated=true;
+    try{resumeRecord=validResume(JSON.parse(localStorage.getItem(RESUME_KEY)));}catch(_){}
+    try{const result=await bridge?.loadListeningState?.(),disk=validResume(result?.value);if(disk&&(!resumeRecord||disk.updatedAt>=resumeRecord.updatedAt))resumeRecord=disk;}catch(_){}
+  }
+  function rememberPosition(force=false){
+    if(state.loadingTrack||removeResumeMetadata||!trackById(state.selectedTrackId)||dom.audio.readyState<1||!Number.isFinite(dom.audio.currentTime)||dom.audio.currentTime<0)return;
+    if(!force&&(dom.audio.paused||Date.now()-resumeSavedAt<5000))return;
+    const time=dom.audio.ended||dom.audio.duration-dom.audio.currentTime<1?0:Math.min(86400,dom.audio.currentTime);
+    const value={schemaVersion:1,trackId:state.selectedTrackId,time:Math.round(time*100)/100,updatedAt:Date.now()};resumeRecord=value;resumeSavedAt=Date.now();
+    try{localStorage.setItem(RESUME_KEY,JSON.stringify(value));}catch(_){}
+    Promise.resolve(bridge?.saveListeningState?.(value)).then(result=>{if(result?.ok&&resumeRecord===value)resumeRecord=validResume(result.value)||value;}).catch(()=>{});
+  }
   const stemControls = window.XldStemControls?.create({
     bridge, audio: dom.audio, getTrack: () => trackById(state.selectedTrackId),
     getOriginalUrl: () => state.payload?.audioUrl,
     isBusy: () => ['starting', 'running', 'cancelling'].includes(state.analysisTask?.status),
     onTask: renderAnalysisTask, onSwitch: () => markTransportTransition('seek')
   }) || null;
+  // The listening score (score-scene.js). It is told which track is loaded and nothing else.
+  const scoreScene = window.XinScoreScene?.create({
+    bridge, audio: dom.audio, stage: dom.stage, canvas: document.getElementById('scoreCanvas')
+  }) || null;
+  window.XinScoreSceneView = Object.freeze({
+    status: () => scoreScene?.status() || null,
+    refresh: () => scoreScene?.load(state.selectedTrackId),
+    setLatency: milliseconds => scoreScene?.setLatency(milliseconds),
+    makeLayers: () => scoreScene?.makeLayers(),
+    hold: flag => scoreScene?.hold(flag)
+  });
   const productControlDock =
     window.SmokeResonanceProductControlDock?.create({
       root: $('#productControlDock'),
-      masterSource: dom.master,
+      getMaster: () => Math.round(state.master * 100),
+      setMaster: applyMaster,
       qualitySource: $('#qualityButton'),
-      openInspector: () => {
-        const panel = $('#glitchPanel');
-        if (panel && !panel.classList.contains('is-open')) {
-          $('#glitchSettingsButton')?.click();
-        }
-        const inspector = $('#sourceInspector');
-        if (inspector) {
-          inspector.open = true;
-          inspector.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-        return { ok: Boolean(inspector) };
-      },
       openXld: () => bridge?.analyzeInXld?.(state.selectedTrackId || '', document.documentElement.lang) ||
         Promise.resolve({ ok: false, error: 'desktop-bridge-unavailable' }),
       openGenerator: () => bridge?.openGeneratorEditor?.(document.documentElement.lang) ||
@@ -273,7 +248,6 @@
     stop: 1,
     seek: 2,
     loop: 2,
-    'mode-change': 3,
     'track-change': 4
   });
 
@@ -319,13 +293,11 @@
         ? Math.max(0, Number(timeSeconds)) * 1000
         : null,
       {
-        active: state.sourceMode === 'internal' && Boolean(state.manifest),
+        active: Boolean(state.manifest),
         clock,
         transport: {
-          mode: state.sourceMode === 'external' ? 'external' : 'internal',
-          state: state.sourceMode === 'external'
-            ? 'stopped'
-            : dom.audio.paused ? 'paused' : 'playing',
+          mode: 'internal',
+          state: dom.audio.paused ? 'paused' : 'playing',
           trackId: state.selectedTrackId || null,
           durationMs: actualDurationMs,
           epoch: 0
@@ -337,10 +309,7 @@
     return xldProviderFrame;
   }
 
-  function heuristicMeta(
-    confidence,
-    engineId = 'xml-section-heuristic'
-  ) {
+  function heuristicMeta(confidence, engineId) {
     return {
       sourceProvider: 'realtime.heuristic',
       providerDetail: {
@@ -357,164 +326,63 @@
     };
   }
 
+  // Raw acoustic fields only. Section labels, states and chords come from XLD, never from here.
   function buildRealtimeHeuristicFrame(clock, transport) {
-    if (transport.state !== 'playing') {
-      return {
-        contract: 'xin.music-frame/1',
-        contractVersion: 1,
-        clock,
-        transport,
-        continuous: {},
-        states: {},
-        events: {},
-        labels: {},
-        meta: {}
-      };
-    }
-    const sectionSuite = window.SmokeResonanceSections?.get();
-    const sectionInput = window.SmokeResonanceSections?.input();
-    const harmony = window.SmokeResonanceSections?.harmony();
-    const acoustic = window.SmokeResonanceFeatures?.get() || {};
-    const engines = sectionSuite?.engines || {};
-    const engine = engines.fused?.ready
-      ? engines.fused
-      : engines.our?.ready
-        ? engines.our
-        : null;
-    const sectionLabel = engine?.label || null;
-    const sectionConfidence = Math.min(
-      .55,
-      Math.max(0, Number(engine?.confidence) || 0) * .55
-    );
-    const chord = harmony?.chord &&
-      harmony.chord !== 'N' &&
-      harmony.chord !== 'â€”'
-      ? harmony.chord
-      : null;
-    const chordConfidence = chord
-      ? Math.min(.55, Math.max(0, Number(harmony.confidence) || 0) * .65)
-      : 0;
-    const continuous = {
-      dynamicRange: Math.max(
-        0,
-        Math.min(1, Number(acoustic.dynamicRange) || 0)
-      ),
-      spectralDensity: Math.max(
-        0,
-        Math.min(1, Number(acoustic.density) || 0)
-      ),
-      flatness: Math.max(
-        0,
-        Math.min(1, Number(acoustic.flatness) || 0)
-      ),
-      sharpness: Math.max(
-        0,
-        Math.min(1, Number(acoustic.sharpness) || 0)
-      ),
-      buildEnergy: Math.max(
-        0,
-        Math.min(
-          1,
-          Number(engine?.evidence?.persistence) ||
-            Number(sectionInput?.fullnessPersistence) ||
-            0
-        )
-      ),
-      sectionDrive: Math.max(
-        0,
-        Math.min(
-          1,
-          sectionLabel === 'CLIMAX'
-            ? 1
-            : sectionLabel === 'FULL'
-              ? .75
-              : sectionLabel === 'LAYERING'
-                ? .55
-                : sectionLabel === 'DROP'
-                  ? .2
-                  : .12
-        )
-      ),
-      ...(chord ? { chordConfidence } : {})
-    };
-    const states = engine
-      ? {
-          inBuild: sectionLabel === 'LAYERING' ? 1 : 0,
-          inDrop: sectionLabel === 'DROP' ? 1 : 0,
-          inClimax: sectionLabel === 'CLIMAX' ? 1 : 0
-        }
-      : {};
-    const labels = {
-      ...(sectionLabel
-        ? {
-            sectionId: `realtime:${sectionLabel}`,
-            sectionLabel
-          }
-        : {}),
-      ...(chord ? { chord } : {})
-    };
-    const meta = {};
-    for (const featureId of Object.keys(continuous)) {
-      meta[featureId] = heuristicMeta(
-        featureId === 'chordConfidence'
-          ? chordConfidence
-          : .45,
-        featureId === 'chordConfidence'
-          ? 'xml-live-harmony'
-          : 'xml-realtime-features'
-      );
-    }
-    for (const featureId of Object.keys(states)) {
-      meta[featureId] = heuristicMeta(sectionConfidence);
-    }
-    for (const featureId of ['sectionId', 'sectionLabel']) {
-      if (Object.hasOwn(labels, featureId)) {
-        meta[featureId] = heuristicMeta(sectionConfidence);
-      }
-    }
-    if (chord) {
-      meta.chord = heuristicMeta(
-        chordConfidence,
-        'xml-live-harmony'
-      );
-    }
-    return {
+    const frame = {
       contract: 'xin.music-frame/1',
       contractVersion: 1,
       clock,
       transport,
-      continuous,
-      states,
+      continuous: {},
+      states: {},
       events: {},
-      labels,
-      meta
+      labels: {},
+      meta: {}
     };
+    if (transport.state !== 'playing') return frame;
+    const acoustic = window.SmokeResonanceFeatures?.get() || {};
+    const unit = value => Math.max(0, Math.min(1, Number(value) || 0));
+    frame.continuous = {
+      dynamicRange: unit(acoustic.dynamicRange),
+      spectralDensity: unit(acoustic.density),
+      flatness: unit(acoustic.flatness),
+      sharpness: unit(acoustic.sharpness)
+    };
+    for (const featureId of Object.keys(frame.continuous)) {
+      frame.meta[featureId] = heuristicMeta(.45, 'xml-realtime-features');
+    }
+    // The Generator reads sectionDrive and buildEnergy, which the XLD adapter does not
+    // supply. They follow the XLD section under the playhead; with no section they are
+    // left out and resolve to 0.
+    const structure = structureAt(Number(dom.audio.currentTime) || 0);
+    if (structure) {
+      const section = sectionSignals(structure.segment);
+      frame.continuous.sectionDrive = unit(section.drive);
+      frame.continuous.buildEnergy = unit(section.build);
+      frame.meta.sectionDrive = heuristicMeta(.5, 'xld-section-signals');
+      frame.meta.buildEnergy = heuristicMeta(.5, 'xld-section-signals');
+    }
+    return frame;
   }
 
   function updateResolverShadow(clock = {}) {
     if (!musicFeatureResolver) return null;
-    const internal = state.sourceMode === 'internal';
-    const timeSeconds = internal && Number.isFinite(dom.audio.currentTime)
+    const timeSeconds = Number.isFinite(dom.audio.currentTime)
       ? Math.max(0, Number(dom.audio.currentTime))
       : null;
-    const durationSeconds = internal &&
-      Number.isFinite(dom.audio.duration) &&
+    const durationSeconds = Number.isFinite(dom.audio.duration) &&
       dom.audio.duration > 0
       ? Number(dom.audio.duration)
       : null;
     updateXldProviderFrame(timeSeconds, durationSeconds, clock);
     const transport = {
-      mode: internal ? 'internal' : 'external',
-      state: internal
-        ? dom.audio.seeking
-          ? 'seeking'
-          : dom.audio.paused
-            ? 'paused'
-            : 'playing'
-        : visualAudio?.get()?.playing
-          ? 'playing'
-          : 'stopped',
-      trackId: internal ? state.selectedTrackId || null : null,
+      mode: 'internal',
+      state: dom.audio.seeking
+        ? 'seeking'
+        : dom.audio.paused
+          ? 'paused'
+          : 'playing',
+      trackId: state.selectedTrackId || null,
       mediaTimeMs: timeSeconds === null
         ? null
         : timeSeconds * 1000,
@@ -522,7 +390,7 @@
         ? null
         : durationSeconds * 1000
     };
-    const xldCursor = internal && timeSeconds !== null
+    const xldCursor = timeSeconds !== null
       ? xldTimelineProvider?.cursorAt(
           timeSeconds * 1000,
           {
@@ -543,32 +411,6 @@
       xldCursor,
       heuristicFrame: buildRealtimeHeuristicFrame(clock, transport)
     });
-    const xldStatus = xldTimelineProvider?.status() || {
-      loaded: false,
-      error: 'XLD_NOT_LOADED'
-    };
-    sourceInspector?.update(clock.nowMs, unifiedMusicFrame, {
-      resolverStatus: musicFeatureResolver.status(),
-      xldStatus: state.xldValidationError
-        ? { ...xldStatus, error: state.xldValidationError }
-        : xldStatus
-    });
-    productControlDock?.update(clock.nowMs, unifiedMusicFrame, {
-      sourceMode: state.sourceMode,
-      xldStatus
-    });
-    const legacySnapshot = visualGlitch?.state()?.features || null;
-    resolverLegacyShadow?.update(
-      clock.nowMs,
-      unifiedMusicFrame,
-      legacySnapshot,
-      {
-        sourceMode: state.sourceMode,
-        realtimeFrame,
-        xldStatus,
-        xldValidationError: state.xldValidationError
-      }
-    );
     const generatorReport =
       generatorRuntimeShadow?.evaluate(
         unifiedMusicFrame,
@@ -580,9 +422,7 @@
       generatorReport
     );
     if (transportTransition) {
-      const resetReason = transportTransition.type === 'mode-change'
-        ? 'source-change'
-        : transportTransition.type;
+      const resetReason = transportTransition.type;
       window.SmokeResonanceMaterialView?.reset(resetReason);
     }
     return unifiedMusicFrame;
@@ -593,7 +433,6 @@
     const generatorReport = generatorRuntimeShadow?.get() || null;
     const generatorRuntimeStatus =
       generatorRuntimeShadow?.status() || null;
-    const legacySnapshot = visualGlitch?.state()?.features || null;
     window.SmokeResonanceMaterialView?.observeGlitch(
       clock.frameIndex,
       generatorReport
@@ -606,35 +445,6 @@
       frameOwnershipMonitor?.get() || null,
       visualGlitch?.get()?.enabled !== false
     );
-    targetInspector?.update(
-      clock.nowMs,
-      legacySnapshot,
-      generatorReport
-    );
-    shadowStabilityMonitor?.observe(
-      clock,
-      generatorReport,
-      state.sourceMode,
-      generatorRuntimeStatus
-    );
-    if (
-      shadowStabilityMonitor?.telemetryDue(clock.nowMs) &&
-      !state.shadowTelemetryPending &&
-      typeof bridge?.shadowTelemetry === 'function'
-    ) {
-      state.shadowTelemetryPending = true;
-      const sampledAtMs = clock.nowMs;
-      Promise.resolve(bridge.shadowTelemetry())
-        .then(telemetry => {
-          shadowStabilityMonitor.observeTelemetry(sampledAtMs, telemetry);
-        })
-        .catch(() => {
-          shadowStabilityMonitor.observeTelemetry(sampledAtMs, null);
-        })
-        .finally(() => {
-          state.shadowTelemetryPending = false;
-        });
-    }
   }
 
   function segmentAt(segments, time) {
@@ -650,30 +460,40 @@
     return ({ Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' })[root] || root;
   }
 
-  function sectionSignals(label) {
-    const value = String(label || '').toLowerCase();
-    if (/抽空|留白|breakdown|silence|sparse|empty/.test(value)) {
-      return { drive: .18, climax: 0, drop: 1, build: 0 };
-    }
-    if (/高潮|副歌|全奏|climax|chorus|tutti/.test(value)) {
-      return { drive: 1, climax: 1, drop: 0, build: .2 };
-    }
-    if (/发展|推进|bridge|solo|instrumental|build|pre-chorus/.test(value)) {
-      return { drive: .72, climax: .16, drop: 0, build: 1 };
-    }
-    if (/一般|主歌|主体|verse|full/.test(value)) {
-      return { drive: .5, climax: 0, drop: 0, build: .22 };
-    }
-    if (/安静|稀疏|intro|outro/.test(value)) {
-      return { drive: .22, climax: 0, drop: .28, build: 0 };
-    }
-    return { drive: .36, climax: 0, drop: 0, build: .12 };
+  // --- section signals (start) ---
+  // The section under the playhead drives sectionDrive / buildEnergy. A section is looked up by its name: the
+  // bridge manifest's segments carry `name`, made by XLD's core/sections.cjs (XML's main process fills it in for
+  // manifests written before the field existed), so a mid-song intro reads as the interlude it is shown as.
+  // Manual tags and segments without a name are looked up by their label. Whole words only, a trailing number
+  // ignored (主歌 2 -> 主歌). 间奏 / Interlude stays on the default row, where SongFormer's `inst` has always been.
+  const SECTION_SIGNALS = {
+    drop: { drive: .18, climax: 0, drop: 1, build: 0 },
+    climax: { drive: 1, climax: 1, drop: 0, build: .2 },
+    build: { drive: .72, climax: .16, drop: 0, build: 1 },
+    plain: { drive: .5, climax: 0, drop: 0, build: .22 },
+    quiet: { drive: .22, climax: 0, drop: .28, build: 0 },
+    other: { drive: .36, climax: 0, drop: 0, build: .12 }
+  };
+  const SECTION_WORDS = {
+    drop: ['抽空', '留白', 'breakdown', 'silence', 'sparse', 'empty'],
+    climax: ['副歌', 'chorus', '高潮', '全奏', 'climax', 'tutti'],
+    build: ['导歌', 'pre-chorus', 'prechorus', '桥段', 'bridge', 'solo', 'instrumental', '发展', '推进', 'build'],
+    plain: ['主歌', 'verse', '一般', '主体', 'full'],
+    quiet: ['引子', 'intro', '尾奏', 'outro', 'end', '安静', '稀疏']
+  };
+  const SECTION_KIND = new Map(Object.entries(SECTION_WORDS).flatMap(([kind, words]) => words.map(word => [word, kind])));
+
+  function sectionSignals(segment) {
+    const text = typeof segment === 'string' ? segment : (segment?.name || segment?.label || '');
+    const key = String(text).trim().toLowerCase().replace(/\s+\d+$/, '');
+    return SECTION_SIGNALS[SECTION_KIND.get(key) || 'other'];
   }
+  // --- section signals (end) ---
 
   function structureAt(time) {
     if (!state.manifest) return null;
     const manual = segmentAt(state.manifest.manualTags, time);
-    if (manual) return { segment: manual, source: 'MANUAL TAG', key: `manual:${manual.id || manual.start}` };
+    if (manual) return { segment: manual, key: `manual:${manual.id || manual.start}` };
     const all = Array.isArray(state.manifest.analyses) ? state.manifest.analyses : [];
     let analyses;
     if (state.sectionEngine && state.sectionEngine !== 'auto' && all.some(a => engineId(a) === state.sectionEngine)) {
@@ -688,11 +508,7 @@
     }
     for (const analysis of analyses) {
       const segment = segmentAt(analysis.segments, time);
-      if (segment) return {
-        segment,
-        source: analysis.engine?.name || engineId(analysis),
-        key: `${engineId(analysis)}:${segment.start}:${segment.label}`
-      };
+      if (segment) return { segment, key: `${engineId(analysis)}:${segment.start}:${segment.label}` };
     }
     return null;
   }
@@ -704,7 +520,6 @@
       const segment = segmentAt(result.segments, time);
       return {
         id,
-        name: engineNames[id] || id.toUpperCase(),
         label: segment?.label || '—',
         root: parseRoot(segment?.label),
         confidence: Number(segment?.confidence) || 0
@@ -714,19 +529,12 @@
       const picked = entries.find(entry => entry.id === state.chordEngine);
       if (picked) {
         if (picked.root) state.lastStableRoot = picked.root;
-        return {
-          entries,
-          label: picked.label,
-          root: picked.root,
-          confidence: picked.confidence,
-          status: `${picked.name} 单引擎`
-        };
+        return { label: picked.label, root: picked.root, confidence: picked.confidence };
       }
     }
     let label = '—';
     let root = '';
     let confidence = 0;
-    let status = entries.length ? '等待共识' : '暂无和弦分析';
     // Confidence-weighted reconciliation across ALL engines (incl. BTC). Each
     // engine votes its root weighted by confidence × prior; the winning root's
     // strongest engine supplies the label. BTC's high prior + real posterior
@@ -754,20 +562,18 @@
       root = bestRoot;
       label = lead.label && lead.root ? lead.label : bestRoot;
       confidence = Math.min(0.98, lead.confidence * (0.72 + 0.28 * dominance) + 0.12 * (1 - 1 / Math.max(1, agree)));
-      status = agree > 1 ? `${best.members.map(member => member.name).join('+')} 一致` : `${lead.name} 主导`;
       state.lastStableRoot = root;
     } else if (state.lastStableRoot && entries.length) {
       root = state.lastStableRoot;
       label = `${root} · HOLD`;
       confidence = .22;
-      status = '引擎分歧 · 保持上一根音';
     }
-    return { entries, label, root, confidence, status };
+    return { label, root, confidence };
   }
 
   function setOpen(open) {
     if (open) {
-      ['#calibrationClose', '#mappingLabClose', '#glitchRackClose', '#conductorClose']
+      ['#glitchRackClose', '#conductorClose']
         .map(selector => document.querySelector(selector))
         .filter(Boolean)
         .forEach(button => button.click());
@@ -777,18 +583,12 @@
     dom.button.setAttribute('aria-expanded', String(open));
   }
 
-  function setMonitor(element, value, mode = '') {
-    element.textContent = value;
-    element.dataset.state = mode;
-  }
-
-  function applyMaster() {
-    const percent = Math.max(0, Math.min(200, Number(dom.master.value) || 0));
+  // FX master, 0-200 %. The slider that shows it lives in the settings drawer (product-control-dock.js).
+  function applyMaster(value) {
+    const percent = Math.max(0, Math.min(200, Number(value) || 0));
     state.master = percent / 100;
-    dom.masterOutput.textContent = `${percent}%`;
     localStorage.setItem('xins-fusion-master', String(percent));
-    if (!state.proofTimer) visualGlitch?.set({ enabled: percent > 0, fxStrength: state.master });
-    setMonitor(dom.outputState, percent === 0 ? 'BYPASS' : `${percent}%`, percent >= 150 ? 'hot' : percent > 0 ? 'on' : '');
+    visualGlitch?.set({ enabled: percent > 0, fxStrength: state.master });
   }
 
   function applyChordColor(consensus) {
@@ -976,13 +776,13 @@
   async function refreshCurrentResults(manual=false) {
     if(refreshingResults){resultsRefreshPending=true;return false;}
     const track=trackById(state.selectedTrackId);
-    if(!track || !state.payload || state.loadingTrack || state.sourceMode!=='internal' || !bridge?.refreshTrack ||
+    if(!track || !state.payload || state.loadingTrack || !bridge?.refreshTrack ||
         ['starting','running','cancelling'].includes(state.analysisTask?.status))return false;
     const revision=state.loadSequence;
     refreshingResults=true;updateAnalysisControls();
     try {
       const payload=await bridge.refreshTrack(track.id);
-      if(revision!==state.loadSequence || track.id!==state.selectedTrackId || state.sourceMode!=='internal')return false;
+      if(revision!==state.loadSequence || track.id!==state.selectedTrackId)return false;
       if(!payload?.ok){
         if(manual)bindUiText(dom.analysisStatus,'fusion.resultsFailed','未能更新，当前结果已保留');
         return false;
@@ -1008,6 +808,7 @@
       }
       state.payload={...state.payload,...payload};state.bridgePath=payload.filePath || payload.sourcePath || '';
       await stemControls?.refresh();
+      if(changed || manual)scoreScene?.load(track.id);
       if(revision!==state.loadSequence || track.id!==state.selectedTrackId)return false;
       if(changed || manual)bindUiText(dom.analysisStatus,'fusion.resultsUpdated','已更新 XLD 结果');
       return true;
@@ -1029,42 +830,9 @@
     updateAnalysisControls();
   }
 
-  function updateVotes(entries) {
-    if (!dom.votes) return;
-    if (!Array.isArray(entries) || !entries.length) {
-      dom.votes.innerHTML = `<span>${uiText('fusion.runtime.noChordEngine', '暂无和弦引擎')} <b>—</b></span>`;
-      return;
-    }
-    dom.votes.innerHTML = entries.map(entry => {
-      const confidence = entry.root ? ` · ${Math.round(entry.confidence * 100)}%` : '';
-      const active = entry.id === state.chordEngine ? ' data-active="1"' : '';
-      return `<span${active}>${entry.name} <b>${entry.label || '—'}${confidence}</b></span>`;
-    }).join('');
-  }
-
-  function updateSourceMonitor() {
-    const source = visualAudio?.get() || { kind: 'none', playing: false };
-    if (state.sourceMode === 'external') {
-      const live = source.kind === 'external' && source.playing;
-      setMonitor(dom.liveState, live ? 'LIVE' : 'WAIT', live ? 'on' : '');
-      bindUiText(
-        dom.externalToggle,
-        live ? 'fusion.runtime.externalStop' : 'fusion.runtime.externalStart',
-        live ? '停止外部监听' : '开始监听电脑声音'
-      );
-      dom.externalToggle.classList.toggle('is-active', live);
-    } else {
-      const direct = source.kind === 'internal';
-      setMonitor(dom.liveState, direct ? 'LOCAL' : 'READY', direct ? 'on' : '');
-    }
-  }
-
   function updateTimeline() {
-    updateSourceMonitor();
-    if (state.sourceMode !== 'internal' || !state.manifest) {
-      setMonitor(dom.timelineState, state.sourceMode === 'external' ? 'LIVE ONLY' : 'OFF');
-      return;
-    }
+    rememberPosition();
+    if (!state.manifest) return;
     const time = Number(dom.audio.currentTime) || 0;
     const audioDuration = Number(dom.audio.duration);
     const duration = audioDuration || Number(state.manifest.timing?.duration) || 0;
@@ -1080,8 +848,8 @@
       if (state.chordKey) visualTimeline?.chordPulse(Math.max(.4, consensus.confidence));
       state.chordKey = chordKey;
     }
-    const sectionLabel = structure?.segment?.label || '—';
-    const section = structure ? sectionSignals(sectionLabel) : { drive: 0, climax: 0, drop: 0, build: 0 };
+    const sectionLabel = structure?.segment?.name || structure?.segment?.label || '—';
+    const section = structure ? sectionSignals(structure.segment) : { drive: 0, climax: 0, drop: 0, build: 0 };
     visualTimeline?.set({
       connected: true,
       section: section.drive,
@@ -1097,23 +865,32 @@
     dom.duration.textContent = formatClock(duration);
     dom.seek.max = String(Math.max(.01, duration));
     if (!dom.seek.matches(':active')) dom.seek.value = String(Math.min(duration, time));
-    dom.section.textContent = sectionLabel;
-    if (structure) {
-      clearUiBinding(dom.sectionSource);
-      dom.sectionSource.textContent = `${structure.source} · DRIVE ${Math.round(section.drive * 100)}%`;
-    } else bindUiText(dom.sectionSource, 'fusion.runtime.playableNoStructure', '可播放 · 暂无段落分析');
-    dom.chord.textContent = consensus.label;
-    dom.chordSource.textContent = `${consensus.status} · ${Math.round(consensus.confidence * 100)}%`;
-    updateVotes(consensus.entries);
-    dom.hudTrack.textContent = 'LOCAL';
-    dom.hudSection.textContent = `SECTION ${sectionLabel}`;
-    dom.hudChord.textContent = `CHORD ${consensus.label}${consensus.confidence ? ` · ${Math.round(consensus.confidence * 100)}%` : ''}`;
-    dom.hud.dataset.state = dom.audio.paused ? 'linked' : 'playing';
-    setMonitor(dom.timelineState, structure || consensus.entries.length ? 'LOCKED' : 'EMPTY', structure || consensus.entries.length ? 'on' : '');
   }
 
   function trackById(id) {
     return state.library.find(track => track.id === id) || null;
+  }
+
+  function setHome(open){
+    if(open){rememberPosition(true);setOpen(false);window.XinShell?.setSettings(false);for(const id of ['paletteClose','conductorClose','glitchClose'])document.getElementById(id)?.click();renderHome();}
+    const focused=dom.welcome.contains(document.activeElement);dom.welcome.classList.toggle('is-gone',!open);dom.welcome.inert=!open;
+    document.getElementById('xlHome')?.setAttribute('aria-expanded',String(open));
+    if(!open&&focused)document.getElementById('xlHome')?.focus();
+  }
+  function renderHome(){
+    const resume=document.getElementById('homeResume'),list=document.getElementById('homeAnalyzed');if(!resume||!list)return;
+    resume.replaceChildren();list.replaceChildren();
+    const current=trackById(state.selectedTrackId),saved=trackById(resumeRecord?.trackId),hasCurrent=current&&dom.audio.readyState>0&&dom.audio.currentTime>0;
+    const target=hasCurrent?current:saved,time=hasCurrent?dom.audio.currentTime:resumeRecord?.time||0;
+    const card=(track,detail,action)=>{const button=document.createElement('button');button.type='button';button.className='home-track';button.dataset.homeTrackId=track.id;const title=document.createElement('strong'),meta=document.createElement('span');title.textContent=track.title;meta.textContent=detail;button.append(title,meta);button.addEventListener('click',action);return button;};
+    if(target)resume.append(card(target,`${target.artist} · ${uiText('home.at','从 {time} 继续',{time:formatClock(time)})}`,async()=>{if(state.selectedTrackId===target.id&&dom.audio.readyState>0){setHome(false);if(dom.audio.paused)await togglePlayback();}else await loadTrack(target.id,{autoplay:true,restorePosition:true});}));
+    else{const p=document.createElement('p');p.className='home-note';p.textContent=uiText('home.noResume','还没有续听位置，从曲库选一首开始。');resume.append(p);}
+    const analyzed=state.library.filter(t=>t.hasStructure||t.hasHarmony).slice(0,4);
+    for(const track of analyzed)list.append(card(track,`${track.artist} · ${track.album}`,()=>loadTrack(track.id,{autoplay:true})));
+    if(!analyzed.length){const p=document.createElement('p');p.className='home-note';p.textContent=uiText('home.noAnalysis','暂时没有段落或和弦结果，也可以先从曲库听歌。');list.append(p);}
+    const intro=document.getElementById('homeIntro');intro.textContent=state.scanning?uiText('home.scanning','正在读曲库…'):!state.library.length?uiText('home.empty','先选一个音乐文件夹。没有分析结果也能播放和看频谱。'):uiText('welcome.body','音符、和弦、段落跟着音乐走。');
+    const choose=document.getElementById('homeChooseLibrary');choose.disabled=state.scanning;choose.classList.toggle('home-primary',!state.library.length);
+    dom.welcomeLoad.disabled=state.scanning;dom.welcomeLoad.classList.toggle('home-primary',!!state.library.length);dom.welcomeLoad.textContent=uiText('home.openLibrary','打开曲库');
   }
 
   function trackMatchesQuery(track, query) {
@@ -1127,7 +904,7 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'fusion-library-track__main';
-    dynamicI18n?.bindAttribute(button, 'title', 'fusion.runtime.selectPlayTitle', undefined, '单击选择 · 双击播放');
+    button.title=uiText('fusion.runtime.selectPlayTitle','单击选择 · 双击播放');
     const number = document.createElement('i');
     number.textContent = String(track.number || 0).padStart(2, '0');
     const copy = document.createElement('span');
@@ -1136,37 +913,20 @@
     const meta = document.createElement('small');
     meta.textContent = `${track.artist}`;
     copy.append(title, meta);
-    const badges = document.createElement('em');
-    const structure = document.createElement('b');
-    structure.textContent = 'S';
-    dynamicI18n?.bindAttribute(
-      structure,
-      'title',
-      track.hasStructure ? 'fusion.runtime.structureReady' : 'fusion.runtime.structureMissing',
-      undefined,
-      track.hasStructure ? '已有段落分析' : '暂无段落分析'
-    );
-    structure.classList.toggle('is-ready', track.hasStructure);
-    const harmony = document.createElement('b');
-    harmony.textContent = 'H';
-    dynamicI18n?.bindAttribute(
-      harmony,
-      'title',
-      track.hasHarmony ? 'fusion.runtime.harmonyReady' : 'fusion.runtime.harmonyMissing',
-      undefined,
-      track.hasHarmony ? '已有和弦分析' : '暂无和弦分析'
-    );
-    harmony.classList.toggle('is-ready', track.hasHarmony);
-    badges.append(structure, harmony);
-    const hasChordMini = Array.isArray(track.harmonyEngines) && track.harmonyEngines.includes('chord-chordmini');
-    if (hasChordMini || (Array.isArray(track.harmonyEngines) && track.harmonyEngines.includes('chord-btc'))) {
-      const neural = document.createElement('b');
-      neural.textContent = hasChordMini ? 'M' : 'B';
-      dynamicI18n?.bindAttribute(neural, 'title', hasChordMini ? 'fusion.runtime.chordminiReady' : 'fusion.runtime.btcReady', undefined, hasChordMini ? '已有 ChordMini 和弦' : '已有 BTC 和弦');
-      neural.classList.add('is-ready', 'is-btc');
-      badges.append(neural);
-    }
-    button.append(number, copy, badges);
+    const details = document.createElement('span');
+    details.className = 'fusion-library-track__details';
+    const analysis = document.createElement('span');
+    analysis.className = 'fusion-library-track__state';
+    const kind = track.hasStructure ? (track.hasHarmony ? 'both' : 'sections') : (track.hasHarmony ? 'chords' : 'none');
+    analysis.dataset.analysisState = kind;
+    const states = {both: ['library.both', '段落 · 和弦'], sections: ['library.sections', '有段落'], chords: ['library.chords', '有和弦'], none: ['library.none', '暂无段落/和弦']};
+    analysis.textContent = uiText(...states[kind]);
+    const playing = document.createElement('span');
+    playing.className = 'fusion-library-track__play-state';
+    playing.hidden = track.id !== state.selectedTrackId;
+    playing.textContent = uiText(!dom.audio.paused ? 'library.playing' : 'library.selected', !dom.audio.paused ? '正在播放' : '已选择');
+    details.append(analysis, playing);copy.append(details);
+    button.append(number, copy);
     button.addEventListener('click', () => loadTrack(track.id));
     button.addEventListener('dblclick', async () => { await loadTrack(track.id); await togglePlayback(); });
     row.append(button);
@@ -1174,17 +934,11 @@
       const analyze = document.createElement('button');
       analyze.type = 'button';
       analyze.className = 'fusion-library-track__analyze';
-      dynamicI18n?.bindAttribute(
-        analyze,
-        'title',
-        track.hasStructure || track.hasHarmony ? 'fusion.runtime.reanalyzeTitle' : 'fusion.runtime.analyzeTitle',
-        undefined,
-        track.hasStructure || track.hasHarmony ? '在 XLD 中分析此曲' : '在 XLD 中分析此曲'
-      );
+      analyze.title=uiText('fusion.runtime.analyzeTitle','在 XLD 中分析此曲');
       bindUiText(
         analyze,
-        track.hasStructure || track.hasHarmony ? 'fusion.runtime.reanalyze' : 'fusion.runtime.analyze',
-        'XLD ↗'
+        'library.analyze',
+        '在 XLD 分析 ↗'
       );
       analyze.addEventListener('click', async event => {
         event.stopPropagation();
@@ -1200,13 +954,18 @@
   // selecting a track never resets the scroll position.
   function updateLibraryActive() {
     dom.libraryList.querySelectorAll('.fusion-library-track').forEach(row => {
-      row.classList.toggle('is-active', row.dataset.trackId === state.selectedTrackId);
+      const selected = row.dataset.trackId === state.selectedTrackId;
+      row.classList.toggle('is-active', selected);
+      const label = row.querySelector('.fusion-library-track__play-state');
+      if(label){label.hidden=!selected;label.textContent=uiText(!dom.audio.paused?'library.playing':'library.selected',!dom.audio.paused?'正在播放':'已选择');}
     });
   }
 
   function renderLibrary() {
     const prevScroll = dom.libraryList.scrollTop; // preserve scroll across rebuilds (expand/search/filter)
     const query = dom.librarySearch.value.trim().toLowerCase();
+    // Locale bindings otherwise retain removed album/track rows and their listeners.
+    for(const node of dom.libraryList.querySelectorAll('*'))dynamicI18n?.unbind?.(node);
     dom.libraryList.replaceChildren();
     const albums = Array.isArray(state.albums) ? state.albums : [];
     // Fallback to the legacy flat list if the backend didn't return albums.
@@ -1311,6 +1070,7 @@
   async function scanLibrary({ restore = true } = {}) {
     if (!bridge?.scanLibrary || state.scanning) return false;
     state.scanning = true;
+    renderHome();
     dom.refresh.disabled = true;
     bindUiText(dom.libraryMeta, 'fusion.runtime.libraryScanning', '正在扫描本地唱片…');
     let result;
@@ -1326,8 +1086,9 @@
         result?.error === 'library-not-found' ? `未找到 ${result?.root || 'XLD 曲库目录'}` : '本地曲库读取失败',
         result?.error === 'library-not-found' ? { root: result?.root || 'XLD 曲库目录' } : undefined
       );
-      bindUiText(dom.status, 'fusion.runtime.externalOrImport', '仍可使用外部监听或手动导入 JSON');
+      bindUiText(dom.status, 'fusion.runtime.importStillAvailable', '仍可手动导入 JSON');
       renderLibrary();
+      renderHome();
       return false;
     }
     state.libraryInfo = result;
@@ -1340,16 +1101,16 @@
       `${result.albumCount} 张专辑 · ${result.trackCount} 首 · ${result.analyzedCount} 首已有分析`,
       { albums: result.albumCount, tracks: result.trackCount, analyzed: result.analyzedCount }
     );
-    bindUiText(dom.welcomeLoad, 'fusion.runtime.openLibrary', `打开本地曲库 · ${result.trackCount} 首`, { tracks: result.trackCount });
     renderLibrary();
+    renderHome();
     if (restore && state.library.length && !state.payload) {
       const saved = localStorage.getItem('xins-fusion-last-track');
-      const target = trackById(saved) || state.library[0];
+      const target = trackById(saved) || trackById(resumeRecord?.trackId) || state.library[0];
       // Open the restored track's album once on first load (not a "snap" — the
       // initial state); afterwards expansion is purely user-controlled.
       const album = (state.albums || []).find(item => item.tracks.some(track => track.id === target.id));
       if (album && !state.expandedAlbumId) { state.expandedAlbumId = album.id; renderLibrary(); }
-      await loadTrack(target.id, { openPanel: false });
+      await loadTrack(target.id, { openPanel: false, restorePosition:target.id===resumeRecord?.trackId });
     }
     return true;
   }
@@ -1364,6 +1125,9 @@
     state.lastStableRoot = '';
     state.lastPaletteRoot = '';
     dom.audio.pause();
+    removeResumeMetadata?.();
+    const restore=()=>{removeResumeMetadata?.();if(state.payload!==payload)return;const r=options.restorePosition&&resumeRecord?.trackId===payload.manifest?.track?.id?resumeRecord:null;if(r&&r.time<dom.audio.duration-1)dom.audio.currentTime=Math.max(0,r.time);};
+    dom.audio.addEventListener('loadedmetadata',restore,{once:true});removeResumeMetadata=()=>{dom.audio.removeEventListener('loadedmetadata',restore);removeResumeMetadata=null;};
     visualAudio?.setMediaPlaying(false);
     dom.audio.src = payload.audioUrl;
     dom.audio.load();
@@ -1392,24 +1156,23 @@
     dom.next.disabled = state.library.length < 2;
     dom.seek.disabled = false;
     dom.reveal.disabled = !state.bridgePath;
-    dom.proof.disabled = false;
-    dom.hud.dataset.state = 'linked';
-    clearUiBinding(dom.trackTitle);
-    clearUiBinding(dom.trackMeta);
-    dom.trackTitle.textContent = track.title || "Xin's Music Lab";
-    dom.trackMeta.textContent = `${track.artist || uiText('fusion.runtime.unknownArtist', 'Unknown artist')} · ${track.album || uiText('fusion.runtime.localLibraryFallback', 'Local library')} · ${hasStructure || hasHarmony ? 'XLD OFFLINE TIMELINE' : 'LOCAL PCM'}`;
     updateLibraryActive(); // only move the highlight — never rebuild/scroll on select
+    setHome(false);
     populateEngineSelectors();
     updateAnalysisControls();
     await stemControls?.refresh();
-    if (options.openPanel !== false) setOpen(true);
+    scoreScene?.load(state.selectedTrackId);
+    // The library drawer is opened by the person, not by a track change: skipping to the next song must not pop it open.
+    if (options.openPanel === true) setOpen(true);
     updateTimeline();
     return true;
   }
 
   async function loadTrack(trackId, options = {}) {
     if (!bridge?.loadTrack) return false;
+    rememberPosition(true);
     stemControls?.reset();
+    scoreScene?.reset();
     const request = ++state.loadSequence;
     state.loadingTrack = true;
     const wasPlaying = !dom.audio.paused;
@@ -1458,77 +1221,16 @@
     await acceptPayload(payload);
   }
 
-  async function setSourceMode(mode) {
-    const next = mode === 'external' ? 'external' : 'internal';
-    if (state.sourceMode === next && dom.stage.dataset.fusionSource === next) return;
-    state.sourceMode = next;
-    markTransportTransition('mode-change');
-    localStorage.setItem('xins-fusion-source-mode', next);
-    dom.stage.dataset.fusionSource = next;
-    dom.modeInternal.setAttribute('aria-pressed', String(next === 'internal'));
-    dom.modeExternal.setAttribute('aria-pressed', String(next === 'external'));
-    dom.topModeInternal?.setAttribute('aria-pressed', String(next === 'internal'));
-    dom.topModeExternal?.setAttribute('aria-pressed', String(next === 'external'));
-    dom.libraryView.hidden = next !== 'internal';
-    dom.externalView.classList.toggle('is-open', next === 'external');
-    dom.externalView.setAttribute('aria-hidden', String(next !== 'external'));
-    if (next === 'external') {
-      dom.audio.pause();
-      visualAudio?.setMediaPlaying(false);
-      visualAudio?.detachMediaElement();
-      visualTimeline?.reset();
-      bindUiText(dom.status, 'fusion.runtime.externalMode', '外部监听模式 · 不套用本地时间线');
-      bindUiText(dom.trackTitle, 'runtime.capture.listeningTitle', '正在聆听这台电脑');
-      bindUiText(dom.trackMeta, 'fusion.runtime.externalMeta', 'LIVE 系统音频 · 仅实时声学映射');
-      dom.hudTrack.textContent = 'LIVE';
-      bindUiText(dom.hudSection, 'fusion.runtime.sectionLive', 'SECTION 实时');
-      dom.hudChord.textContent = 'CHORD —';
-      dom.hud.dataset.state = 'live';
-      setMonitor(dom.timelineState, 'LIVE ONLY');
-    } else {
-      visualAudio?.stopExternal();
-      bindUiText(
-        dom.status,
-        state.payload ? 'fusion.runtime.localMode' : 'fusion.runtime.chooseTrack',
-        state.payload ? '本地曲库模式 · 精确播放头' : '选择一首本地曲目'
-      );
-      if (state.manifest) {
-        const track = state.manifest.track || {};
-        clearUiBinding(dom.trackTitle);
-        clearUiBinding(dom.trackMeta);
-        dom.trackTitle.textContent = track.title || "Xin's Music Lab";
-        dom.trackMeta.textContent = `${track.artist || uiText('fusion.runtime.unknownArtist', 'Unknown artist')} · ${track.album || uiText('fusion.runtime.localLibraryFallback', 'Local library')} · LOCAL PCM`;
-        updateTimeline();
-      }
-    }
-    updateSourceMonitor();
-  }
-
   async function enterLocalMode({ openPanel = false } = {}) {
-    await setSourceMode('internal');
+    await hydrateResume();
     if (!state.library.length) await scanLibrary();
     if (!state.payload && state.library.length) await loadTrack(state.library[0].id, { openPanel: false });
-    dom.welcome.classList.add('is-gone');
+    setHome(!state.payload);
     if (openPanel) setOpen(true);
-  }
-
-  async function toggleExternalListening() {
-    await setSourceMode('external');
-    const current = visualAudio?.get();
-    if (current?.kind === 'external' && current.playing) {
-      visualAudio.stopExternal();
-      markTransportTransition('stop');
-    } else {
-      await visualAudio?.startExternal();
-      markTransportTransition('resume');
-    }
-    dom.welcome.classList.add('is-gone');
-    updateSourceMonitor();
   }
 
   async function togglePlayback() {
     if (!state.manifest) return;
-    if (state.sourceMode !== 'internal') await setSourceMode('internal');
     if (dom.audio.paused) {
       const attached = await visualAudio?.attachMediaElement(dom.audio);
       if (attached && attached.ok === false) {
@@ -1539,58 +1241,23 @@
     } else dom.audio.pause();
   }
 
-  function stopProof() {
-    if (!state.proofTimer) return;
-    clearTimeout(state.proofTimer);
-    clearInterval(state.proofPulseTimer);
-    state.proofTimer = 0;
-    state.proofPulseTimer = 0;
-    dom.proof.classList.remove('is-active');
-    dom.proof.textContent = '8s PROOF · 强化证明';
-    const restore = state.proofRestore || visualGlitch?.get() || {};
-    state.proofRestore = null;
-    visualGlitch?.set({ ...restore, enabled: state.master > 0, fxStrength: state.master });
-    applyMaster();
-  }
-
-  async function startProof() {
-    if (state.proofTimer) return stopProof();
-    if (state.sourceMode === 'internal' && state.manifest && dom.audio.paused) await togglePlayback();
-    state.proofRestore = visualGlitch?.get() || {};
-    visualGlitch?.set({
-      enabled: true, fxStrength: 2, ensembleWeight: 2, drumWeight: 2, abrasionWeight: 2,
-      sectionDrive: 2, baseLayer: 1.35, noiseLayer: 1.85, burstLayer: 2,
-      tensionBuild: 2, eventSpacing: .5, rhythmLock: .72
-    });
-    dom.proof.classList.add('is-active');
-    let remaining = 8;
-    dom.proof.textContent = `${remaining}s · PROOF ACTIVE`;
-    visualTimeline?.pulse(1);
-    state.proofPulseTimer = setInterval(() => {
-      remaining--;
-      visualTimeline?.pulse(1);
-      dom.proof.textContent = `${Math.max(0, remaining)}s · PROOF ACTIVE`;
-    }, 1000);
-    state.proofTimer = setTimeout(stopProof, 8000);
-  }
-
   function syncPlaybackButton() {
     visualAudio?.setMediaPlaying(!dom.audio.paused);
     markTransportTransition(dom.audio.paused ? 'pause' : 'resume');
     dom.play.textContent = dom.audio.paused ? '▶' : '❚❚';
+    updateLibraryActive();
+    if(dom.audio.paused)rememberPosition(true);
     updateTimeline();
   }
 
   dom.button.addEventListener('click', () => setOpen(!dom.panel.classList.contains('is-open')));
   dom.close.addEventListener('click', () => setOpen(false));
   dom.load.addEventListener('click', loadBridge);
-  dom.welcomeLoad.addEventListener('click', () => enterLocalMode({ openPanel: true }));
-  dom.enterExternal.addEventListener('click', () => setSourceMode('external'));
-  dom.modeInternal.addEventListener('click', () => setSourceMode('internal'));
-  dom.modeExternal.addEventListener('click', () => setSourceMode('external'));
-  dom.topModeInternal?.addEventListener('click', () => setSourceMode('internal'));
-  dom.topModeExternal?.addEventListener('click', () => setSourceMode('external'));
-  dom.externalToggle.addEventListener('click', toggleExternalListening);
+  dom.welcomeLoad.addEventListener('click', () => {setHome(false);setOpen(true);});
+  document.getElementById('xlHome')?.addEventListener('click',()=>setHome(dom.welcome.classList.contains('is-gone')));
+  document.getElementById('homeClose')?.addEventListener('click',()=>setHome(false));
+  document.getElementById('homeChooseLibrary')?.addEventListener('click',()=>document.getElementById('xlChooseLibrary')?.click());
+  document.querySelectorAll('.scene-button').forEach(button=>button.addEventListener('click',()=>setHome(false)));
   dom.refresh.addEventListener('click', () => scanLibrary({ restore: false }));
   dom.librarySearch.addEventListener('input', renderLibrary);
   dom.libraryAnalyzed?.addEventListener('change', () => {
@@ -1623,6 +1290,7 @@
   });
   dom.audio.addEventListener('seeked', () => {
     state.seekActive = false;
+    rememberPosition(true);
   });
   dom.audio.addEventListener('loadedmetadata', updateTimeline);
   dom.audio.addEventListener('ended', () => loadAdjacent(1, true));
@@ -1630,9 +1298,11 @@
     if (Number.isFinite(dom.audio.duration)) dom.audio.currentTime = Number(dom.seek.value) || 0;
     updateTimeline();
   });
-  dom.master.addEventListener('input', applyMaster);
-  dom.proof.addEventListener('click', startProof);
-  dom.autoColor.addEventListener('change', () => dom.autoColor.checked && applyChordColor(state.consensus));
+  try { const saved=localStorage.getItem('xins-fusion-auto-color');if(saved!==null)dom.autoColor.checked=saved==='true'; } catch (_) {}
+  dom.autoColor.addEventListener('change', () => {
+    try { localStorage.setItem('xins-fusion-auto-color',String(dom.autoColor.checked)); } catch (_) {}
+    if(dom.autoColor.checked)applyChordColor(state.consensus);
+  });
   dom.sectionEngineSelect?.addEventListener('change', () => {
     state.sectionEngine = dom.sectionEngineSelect.value || 'auto';
     localStorage.setItem('xins-fusion-section-engine', state.sectionEngine);
@@ -1647,9 +1317,15 @@
   });
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape' && dom.panel.classList.contains('is-open')) setOpen(false);
+    // Space plays or pauses the local track.
+    if(event.key==='Escape'&&!dom.welcome.classList.contains('is-gone'))setHome(false);
+    if (event.code === 'Space' && !event.repeat && !event.target.isContentEditable && !event.target.closest('input,select,textarea,button,a,summary')) {
+      event.preventDefault();
+      togglePlayback();
+    }
   });
   window.addEventListener('beforeunload', () => {
-    stopProof();
+    rememberPosition(true);removeResumeMetadata?.();
     state.analysisUnsubscribe?.();
     state.resolverUnsubscribe?.();
     state.generatorRenderUnsubscribe?.();
@@ -1663,7 +1339,6 @@
     generatorRuntimeShadow?.dispose();
     dom.audio.pause();
     visualAudio?.detachMediaElement();
-    visualAudio?.stopExternal();
     visualTimeline?.reset();
   });
 
@@ -1680,32 +1355,6 @@
       epoch: 0,
       transition: 'unavailable',
       transport: null
-    }
-  });
-  window.SmokeResonanceSourceInspectorView = Object.freeze({
-    status: () => sourceInspector?.status() || {
-      version: 'unavailable',
-      intervalMs: 0,
-      rateHz: 0,
-      sampleCount: 0,
-      updateCount: 0,
-      domWrites: 0,
-      snapshot: null
-    }
-  });
-  window.SmokeResonancePhaseIIGate = Object.freeze({
-    get: () => resolverLegacyShadow?.get() || null,
-    status: () => resolverLegacyShadow?.status() || {
-      version: 'unavailable',
-      intervalMs: 0,
-      rateHz: 0,
-      sampleCount: 0,
-      scenario: null,
-      scenarioGate: null,
-      formalPipeline: 'legacy',
-      comparatorMode: 'read-only',
-      legacyFrozenShape: false,
-      scenarioCounts: {}
     }
   });
   window.SmokeResonanceGeneratorRuntimeShadowView = Object.freeze({
@@ -1794,16 +1443,9 @@
       version: 'unavailable',
       masterPercent: 0,
       qualityMode: 'auto',
-      source: {
-        label: 'SOURCE UNKNOWN',
-        provider: 'unavailable',
-        confidence: 0,
-        available: false
-      },
       lastTool: '',
       lastError: 'PRODUCT_CONTROLS_UNAVAILABLE',
-      desktopTools: false,
-      updateIntervalMs: 0
+      desktopTools: false
     },
     openXld: () => productControlDock?.launch('xld') || null,
     openGenerator: () => productControlDock?.launch('generator') || null,
@@ -1821,34 +1463,6 @@
       sourceKind: 'unavailable',
       formalPipeline: 'legacy',
       rendererEnabled: true
-    }
-  });
-  window.SmokeResonanceTargetInspectorView = Object.freeze({
-    get: () => targetInspector?.get() || null,
-    status: () => targetInspector?.status() || {
-      version: 'unavailable',
-      intervalMs: 0,
-      rateHz: 0,
-      sampleCount: 0,
-      domWrites: 0,
-      formalPipeline: 'generator',
-      comparatorMode: 'visual-intent-only',
-      snapshot: null
-    }
-  });
-  window.SmokeResonanceShadowStabilityGate = Object.freeze({
-    get: () => shadowStabilityMonitor?.get() || null,
-    status: () => shadowStabilityMonitor?.status() || {
-      version: 'unavailable',
-      intervalMs: 0,
-      rateHz: 0,
-      telemetryIntervalMs: 0,
-      sampleCount: 0,
-      telemetrySamples: 0,
-      domWrites: 0,
-      formalPipeline: 'generator',
-      rendererEnabled: true,
-      snapshot: null
     }
   });
   window.SmokeResonanceFrameOwnershipGate = Object.freeze({
@@ -1885,11 +1499,8 @@
   });
 
   const savedMaster = Math.max(0, Math.min(200, Number(localStorage.getItem('xins-fusion-master')) || 125));
-  dom.master.value = String(savedMaster);
-  dom.proof.disabled = true;
-  dom.stage.dataset.fusionSource = 'internal';
   dom.libraryView.hidden = false;
-  applyMaster();
+  applyMaster(savedMaster);
   productControlDock?.syncMaster();
   productControlDock?.syncQuality();
   Promise.resolve(generatorRuntimeShadow?.load()).then(async () => {
@@ -1916,6 +1527,8 @@
       { phase: 'post-material' }
     ) || null;
   state.localeUnsubscribe = dynamicI18n?.subscribe(() => {
+    renderLibrary();
+    renderHome();
     populateEngineSelectors();
     updateAnalysisControls();
   }) || null;

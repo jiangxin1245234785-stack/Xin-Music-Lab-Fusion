@@ -24,7 +24,6 @@ ipcMain.handle('app:locale-set', (_event, payload) => {
   nativeLocale = payload.locale;
   return { ok: true, locale: nativeLocale, source: 'renderer' };
 });
-ipcMain.handle('fusion:shadow-telemetry', () => JSON.stringify({ available: false }));
 ipcMain.handle('fusion:analysis-task', () => null);
 ipcMain.handle('fusion:analysis-engines', () => []);
 ipcMain.handle('fusion:settings', () => ({ ok: true, root: 'layout-fixture://library' }));
@@ -100,9 +99,18 @@ app.whenReady().then(async () => {
         fxPower: document.querySelector('#glitchPowerButton')?.getAttribute('aria-pressed') || 'false'
       };
       document.querySelector('#welcome')?.remove();
+      // The product dock lives in the settings drawer since the shell re-arrangement.
+      document.querySelector('#xlSettings')?.classList.add('is-open');
+      document.querySelector('#xlSettings')?.setAttribute('aria-hidden', 'false');
       document.querySelector('#glitchPanel')?.classList.add('is-open');
       document.querySelector('#glitchPanel')?.setAttribute('aria-hidden', 'false');
     })()`);
+    // Measure the settled shell, not the drawer's initial 16px entrance translation.
+    await new Promise(resolve => setTimeout(resolve, 350));
+    // Initial library restoration may have closed the settings while the IPC scan settled.
+    // Open it through the shell's actual controller once initialization has finished.
+    await execute('open-settings', `window.XinShell.setSettings(true)`);
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     const scenarios = [];
     for (const locale of ['zh-CN', 'en-US']) {
@@ -131,13 +139,21 @@ app.whenReady().then(async () => {
             node.getAttribute('alt')
           ]).filter(value => /^\\[[\\w.-]+\\]$/.test(String(value || '').trim()));
           const sentinel = window.__step6LocaleSentinel;
-          const lookStyle = getComputedStyle(document.querySelector('.settings-row--look'));
+          // Only the settings body scrolls in this shell. scrollIntoView() also scrolls the
+          // clipped page/stage and used to move the otherwise fixed top bar above the viewport.
+          const body = document.querySelector('.xl-settings__body');
+          const dock = document.querySelector('#productControlDock');
+          if (body && dock) {
+            const container = body.getBoundingClientRect(), item = dock.getBoundingClientRect();
+            body.scrollTop += item.top - container.top - (container.height - item.height) / 2;
+          }
           return {
             locale: document.documentElement.lang,
             viewport: { width: innerWidth, height: innerHeight },
             document: { clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth },
             rects: {
-              mood: rect('.mood-panel'),
+              top: rect('.xl-top'),
+              settings: rect('#xlSettings'),
               locale: rect('#localeControl'),
               product: rect('#productControlDock'),
               xld: rect('[data-product-open-xld]'),
@@ -148,14 +164,10 @@ app.whenReady().then(async () => {
               product: document.querySelector('#productControlDock > .settings-label')?.textContent,
               quality: document.querySelector('[data-product-quality]')?.textContent,
               recipe: document.querySelector('.product-preset-control__head b')?.textContent,
-              repository: document.querySelector('#generatorPresetRepository > summary b')?.textContent,
-              sourceInspector: document.querySelector('#sourceInspector > summary b')?.textContent
+              repository: document.querySelector('#generatorPresetRepository > summary b')?.textContent
             },
             fallbackMarkers,
             styles: {
-              lookFlexWrap: lookStyle.flexWrap,
-              lookWidth: lookStyle.width,
-              lookMinWidth: lookStyle.minWidth,
               loadedSheets: [...document.styleSheets].map(sheet => sheet.href || 'inline')
             },
             stateStable: Boolean(
@@ -194,12 +206,11 @@ app.whenReady().then(async () => {
         assert.equal(inside(rect, scenario.viewport.width, scenario.viewport.height), true, `${name} escaped viewport: ${JSON.stringify(scenario)}`);
       }
       const expected = scenario.locale === 'zh-CN'
-        ? { product: '产品', recipe: '视觉配方 · GENERATOR', repository: '预设仓库', sourceInspector: '音源诊断' }
-        : { product: 'PRODUCT', recipe: 'VISUAL RECIPE · GENERATOR', repository: 'PRESET REPOSITORY', sourceInspector: 'SOURCE INSPECTOR' };
+        ? { product: '产品', recipe: '视觉配方 · GENERATOR', repository: '预设仓库' }
+        : { product: 'PRODUCT', recipe: 'VISUAL RECIPE · GENERATOR', repository: 'PRESET REPOSITORY' };
       assert.equal(scenario.copy.product, expected.product);
       assert.equal(scenario.copy.recipe, expected.recipe);
       assert.equal(scenario.copy.repository, expected.repository);
-      assert.equal(scenario.copy.sourceInspector, expected.sourceInspector);
     }
 
     const report = {

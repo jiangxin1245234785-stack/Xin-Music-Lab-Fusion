@@ -11,7 +11,9 @@ const service = createService({
   analysisRoot: 'D:\\Caches\\Xin Test Analysis'
 });
 
-assert(service.constants.MSAF_ENGINE_IDS.includes('msaf-foote'), 'Foote engine must remain available');
+// The MSAF section engines and the Librosa chord engines left XLD on 2026-11-14 (core/result-engines.cjs).
+assert.strictEqual(service.constants.MSAF_ENGINE_IDS, undefined, 'the MSAF engines are no longer registered');
+assert(!service.constants.RESULT_ENGINE_IDS.some(id => /^msaf|^chord-(cqt|cens|hybrid)$/.test(id)), 'removed engines must not be result engines');
 assert(service.constants.AI_ENGINE_IDS.includes('songformer'), 'SongFormer must remain available');
 assert(service.constants.HARMONY_ENGINE_IDS.includes('chord-btc'), 'BTC harmony engine must remain available');
 assert(service.constants.HARMONY_ENGINE_IDS.includes('chord-chordmini'), 'ChordMini (primary chord engine) must be registered');

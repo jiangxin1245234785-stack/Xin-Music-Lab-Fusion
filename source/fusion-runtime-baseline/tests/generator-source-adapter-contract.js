@@ -41,7 +41,7 @@ assert.equal(adapter.status().rendererEnabled, true);
 
 materialOutput = Object.freeze({
   contract: 'xin.material-output/1',
-  materialId: 'spectral-fabric',
+  materialId: 'pulsar',
   frameIndex: 42,
   color: Object.freeze({
     contract: 'xin.material-surface/1',
@@ -62,7 +62,7 @@ assert.equal(material.contract, 'xin.xml-visual-source/1');
 assert.equal(material.extensionContract, 'xin.xml-material-source/1');
 assert.equal(material.source, materialCanvas);
 assert.equal(material.sourceKind, 'material-canvas');
-assert.equal(material.materialId, 'spectral-fabric');
+assert.equal(material.materialId, 'pulsar');
 assert.equal(material.materialFrameIndex, 42);
 assert.equal(material.materialAvailable, true);
 assert.deepEqual(adapter.status().fieldIds, ['density']);

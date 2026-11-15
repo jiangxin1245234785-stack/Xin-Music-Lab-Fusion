@@ -12,9 +12,6 @@ const referencedIds = [...app.matchAll(/\$\('#([^']+)'\)/g)].map(match => match[
 const uniqueIds = [...new Set(referencedIds)];
 const missing = uniqueIds.filter(id => !html.includes(`id="${id}"`));
 const requiredControls = [
-  'data-response-key="lowGain"',
-  'data-response-key="midGain"',
-  'data-response-key="highGain"',
   'data-color-fx-key="cycle"',
   'data-color-fx-key="breath"',
   'data-color-fx-key="strobe"',
@@ -32,9 +29,6 @@ const requiredControls = [
   'id="glitchPowerButton"',
   'id="glitchPanel" aria-label="Glitch 映射设置" aria-hidden="true"',
   'id="glitchCurveCanvas"',
-  'id="sourceInspector"',
-  'id="targetInspector"',
-  'id="shadowStabilityGate"',
   'id="generatorCanvas"',
   'id="generatorPresetControl"',
   'data-product-preset-state',
@@ -59,54 +53,32 @@ const requiredControls = [
   'data-product-fx-master',
   'data-product-fx-master-output',
   'data-product-quality',
-  'data-product-source',
-  'data-product-source-label',
-  'data-product-source-meta',
   'data-product-open-xld',
   'data-product-open-generator',
   'data-product-tool-state',
-  'data-inspector-state',
-  'data-inspector-transport',
-  'data-inspector-warning',
-  'data-inspector-rows',
-  'data-target-inspector-clock',
-  'data-target-inspector-state',
-  'data-target-inspector-safety',
-  'data-target-inspector-energy',
-  'data-target-inspector-rows',
-  'data-target-inspector-timeline',
-  'data-shadow-gate-duration',
-  'data-shadow-gate-state',
-  'data-shadow-gate-targets',
-  'data-shadow-gate-voices',
-  'data-shadow-gate-system',
-  'data-shadow-gate-reasons',
   'id="glitchPresetSave"',
   'data-glitch-preset="weg"',
-  'data-mapping-key="sectionSensitivity"',
-  'data-mapping-key="sectionHold"',
-  'data-mapping-key="climaxSensitivity"',
-  'data-mapping-key="dropSensitivity"',
-  'data-section-engine-toggle="foote"',
-  'data-section-engine-toggle="recurrence"',
-  'data-section-engine-toggle="fused"',
-  'data-section-chord',
-  'data-mapping-meter="spectralFullness"',
-  'data-fusion-key="fullnessWeight"',
-  'data-fusion-key="harmonyWeight"',
-  'data-fusion-key="confirmMs"',
-  'class="section-input-note"',
   'data-effect="pulsar"',
   'id="pulsarLayoutButton"',
-  'id="pulsarStyleButton"',
-  'id="mediaPlayPause"'
+  'id="pulsarStyleButton"'
 ];
 const missingControls = requiredControls.filter(token => !html.includes(token));
-const forbiddenControls = ['id="glitchShuffle"', '节奏自动换场'];
+const forbiddenControls = [
+  'id="glitchShuffle"', '节奏自动换场',
+  // built-in recognition is gone: the section lab, its controls and its scene must not come back
+  'id="mappingLabPanel"', 'id="mappingLabButton"', 'data-section-engine-toggle', 'data-mapping-key',
+  'data-section-chord', 'original-glitch', 'mapping-lab.js', 'section-engines.js', 'live-harmony.js',
+  // external listening is gone: no capture, listen or other-player controls, no source switch
+  'id="playButton"', 'id="mediaPlayPause"', 'id="captureButton"', 'id="enterButton"',
+  'id="topModeExternal"', 'id="fusionModeExternal"', 'id="fusionExternalView"',
+  // debug-only diagnostics are gone
+  'id="sourceInspector"', 'id="targetInspector"', 'id="shadowStabilityGate"', 'id="fusionProof"',
+  'data-product-source', 'data-inspector-', 'data-target-inspector-', 'data-shadow-gate-'
+];
 const presentForbiddenControls = forbiddenControls.filter(token => html.includes(token));
 const missingFxEntryWiring = [
   "glitchPowerButton.addEventListener('click', () => setGlitchRackEnabled(!glitchConfig.enabled))",
-  "glitchPowerButton.textContent = glitchConfig.enabled ? 'FX ON' : 'FX OFF'",
+  "bindUiText(glitchPowerButton, glitchConfig.enabled ? 'shell.fxOn' : 'shell.fxOff', glitchConfig.enabled ? '特效 开' : '特效 关')",
   "ensurePanelInViewport(glitchPanel)",
   "setPanelPosition(panel, saved.left, saved.top)",
   "glitchSettingsButton.addEventListener('click', () => setGlitchPanel(!glitchPanel.classList.contains('is-open'))"

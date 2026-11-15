@@ -34,7 +34,6 @@ ipcMain.handle('fusion:midi-run', async (event, payload) => service.run(track, '
 ipcMain.handle('fusion:stems-reveal', async () => { assert((await service.readStems(track)).ok); reveals++; return { ok: true }; });
 ipcMain.handle('fusion:stems-run', async (event,payload) => service.run(track, 'demucs-6s', { force: payload.force }, task => event.sender.send('fusion:analysis-task', task)));
 ipcMain.handle('fusion:preset-repository-list', () => ({ ok: true, repository: { categories: { builtIn: [], user: [], recovered: [] }, warnings: [] } }));
-ipcMain.handle('fusion:shadow-telemetry', () => JSON.stringify({ available: false }));
 ipcMain.handle('fusion:settings', () => ({}));
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1440, height: 950, show: false, webPreferences: { offscreen: true, backgroundThrottling: false, contextIsolation: true, sandbox: true, preload: path.resolve(__dirname, '../desktop/preload.cjs') } });

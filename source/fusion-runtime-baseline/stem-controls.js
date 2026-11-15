@@ -50,13 +50,17 @@
       else bind(midiStatus, 'midi.empty', '转谱保留母曲时间位置，可导入外部软件编辑');
       sync();
     }
+    function resetOptions() {
+      for(const option of select.options)i18n?.unbind?.(option);
+      select.replaceChildren(new Option('原曲', 'original'));
+      bind(select.options[0], 'stems.original', '原曲');
+    }
     function reset() {
       sequence++; midiSequence++; midiResult = null;
       if (midiStatus) bind(midiStatus, 'midi.select', '选择 bass / piano / guitar / drums 后转 MIDI');
       removeMediaListeners?.(); removeMediaListeners = null; switching = false;
       result = null;
-      select.replaceChildren(new Option('原曲', 'original'));
-      bind(select.options[0], 'stems.original', '原曲');
+      resetOptions();
       showEmptyStatus();
       sync();
     }
@@ -68,9 +72,8 @@
       if (request !== sequence || track?.id !== getTrack()?.id) return;
       result = response?.ok ? response : null;
       const previous = select.value;
-      select.replaceChildren(new Option('原曲', 'original'));
-      bind(select.options[0], 'stems.original', '原曲');
-      for (const name of ['bass', 'piano', 'guitar', 'drums', 'vocals', 'other']) {
+      resetOptions();
+      for (const name of ['bass', 'piano', 'guitar', 'drums', 'vocals', 'other','strings']) {
         if (result?.stems?.some(stem => stem.name === name)) select.add(new Option(name, name));
       }
       if (Array.from(select.options).some(option => option.value === previous)) select.value = previous;
