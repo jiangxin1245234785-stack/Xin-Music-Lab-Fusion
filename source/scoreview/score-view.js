@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.20.0';
+  const VERSION = '0.21.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -100,6 +100,13 @@
     // A4's), for the lanes of WEIGHT_GROUPS; the bass's own step up is then not added. Off by default: then
     // nothing changes. Independent of showShapes. work/score-shapes-20261114/SPEC-5.md.
     pitchWeight: false,
+    // With the cover as backdrop and its measure handed over (setCover(image, measure), measureCover): the veil
+    // behind the lanes set from how bright and busy the cover is (COVER_ADAPT) instead of the fixed COVER_VEIL.
+    // Off by default: then nothing changes. work/score-shapes-20261114/SPEC-6.md part 3 A.
+    coverAdapt: false,
+    // With the cover as backdrop and its measure: the texture band's light raised so it stands out from the cover
+    // behind it as it does from the plain ground (TEXTURE_ADAPT). Off by default. SPEC-6 part 3 B.
+    textureAdapt: false,
     fxHit: true,          // S1: a note lights up and a short halo opens on the line where it starts
     fxAfterglow: true,      // S2: a played note dims slowly; a held one has light running along it
     fxPlayline: true,       // S3: the line is a soft column that lights notes near it, and jumps a little on a downbeat
@@ -156,9 +163,11 @@
   // the lane sounding anywhere across the bend (from where the earlier note starts to taper to where the later one
   // has swollen: a chord is never joined; so a note joins out once and in once at most). Drawn as one slow S curve,
   // level at both ends, from where the earlier note's core starts to taper to where the later one's core is full;
-  // the two cores stop square where it takes over, so the line runs on through the bend. Its first half is the
-  // earlier note's (light and core thickness), its second half the later note's. Under the notes.
-  const STRANDS = Object.freeze({gap: 0.12, overlap: 0.05, step: 5, minDur: 0.25});
+  // the two cores stop square where it takes over, so the line runs on through the bend. It is cut where the notes
+  // meet (the later one's start where they overlap, else the earlier one's end; found in `halvings` halvings): the
+  // part before is the earlier note's (light and core thickness), the part after the later note's. Under the notes.
+  // Times are kept as 32-bit floats, so every threshold is taken with `slack` seconds (semitones for `step`) to spare.
+  const STRANDS = Object.freeze({gap: 0.12, overlap: 0.05, step: 5, minDur: 0.25, slack: 1e-4, halvings: 24});
   // Note thickness by pitch (pitchWeight): the ear's filter width at the note's frequency (Glasberg & Moore 1990,
   // ERB = 24.7 (4.37 f / 1000 + 1) Hz) in semitones, against A4's, clamped to [`low`, `high`] (where the band
   // reaches 0 Hz, `high`). The lane's thickness times it, never thinner than the lane's own thinnest note can be
@@ -250,6 +259,30 @@
   // Behind the notes the cover is held back further: a veil of the background colour over
   // the lanes takes away this much of it, easing in and out over COVER_SOFT pixels.
   const COVER_VEIL = 0.55, COVER_SOFT = 28;
+  // coverAdapt: the veil from the cover's measure. Lightness is Rec. 709 luma of the 8-bit values, 0..1. Behind the
+  // lanes the cover shows at most `shown` = COVER_FAINT + COVER_SWELL times (1 - veil); its bright end there (its mean
+  // plus `spread` standard deviations, measureCover) over the ground must stay at most `bright`, so a note still to
+  // come (at 0.34 light) of a mid lane colour keeps its contrast against it. The veil that does that, kept within
+  // [`low`, `high`]: a plain or dark cover gets a lighter veil than the fixed one, a bright busy one a darker one.
+  const COVER_ADAPT = Object.freeze({bright: 0.16, spread: 1.5, low: 0.45, high: 0.8});
+  // textureAdapt: the band's light (TEXTURE.alpha) raised by the cover that shows behind it (textureLight); never
+  // above `high` (under a played note's 0.92); with nothing behind it, the plain ground's light.
+  const TEXTURE_ADAPT = Object.freeze({gain: 14, high: 0.8});
+  const lumaOf = rgb => (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+  // How bright and busy a cover is behind the lanes: from its pixels (RGBA, row by row), the middle half of its
+  // height (the cover fills the canvas, cropped; the lanes sit across the middle), luma mean and standard deviation.
+  function measureCover(data, width, height) {
+    if (!data || !(width > 0) || !(height > 0) || data.length < width * height * 4) return null;
+    let sum = 0, sum2 = 0, n = 0;
+    for (let y = Math.floor(height / 4); y < Math.ceil(height * 3 / 4); y++) {
+      for (let x = 0; x < width; x++) {
+        const k = (y * width + x) * 4, value = (0.2126 * data[k] + 0.7152 * data[k + 1] + 0.0722 * data[k + 2]) / 255;
+        sum += value; sum2 += value * value; n++;
+      }
+    }
+    const mean = sum / n, spread = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+    return {mean: Math.round(mean * 1000) / 1000, spread: Math.round(spread * 1000) / 1000};
+  }
   // How much of a lane is taken away while another lane is being listened to alone.
   const FOCUS_VEIL = 0.62;
   const BLEND = 2.0;              // seconds over which the backdrop and the lane heights move from one section to the next
@@ -1042,11 +1075,11 @@
     // sounding across the bend. So every pair that passes is kept, one out and one in per note by construction.
     const kept = [];
     for (let i = 0; i < count; i++) {
-      if (dur[i] < STRANDS.minDur) continue;
+      if (dur[i] < STRANDS.minDur - STRANDS.slack) continue;
       const end = start[i] + dur[i];
-      for (let j = lowerBound(start, count, end - STRANDS.overlap); j < count && start[j] <= end + STRANDS.gap; j++) {
+      for (let j = lowerBound(start, count, end - STRANDS.overlap - STRANDS.slack); j < count && start[j] <= end + STRANDS.gap + STRANDS.slack; j++) {
         const step = Math.abs(pitch[j] - pitch[i]);
-        if (j === i || start[j] <= start[i] || step > STRANDS.step || dur[j] < STRANDS.minDur) continue;
+        if (j === i || start[j] <= start[i] || step > STRANDS.step + STRANDS.slack || dur[j] < STRANDS.minDur - STRANDS.slack) continue;
         if (!alone(i, j, end - ramp(i), start[j] + ramp(j))) continue;
         kept.push([i, j]);
       }
@@ -1122,6 +1155,8 @@
       if ('shapeSet' in patch) next.shapeSet = patch.shapeSet === 'spindle' ? 'spindle' : 'two';
       if (typeof patch.shapeLinks === 'boolean') next.shapeLinks = patch.shapeLinks;
       if (typeof patch.pitchWeight === 'boolean') next.pitchWeight = patch.pitchWeight;
+      if (typeof patch.coverAdapt === 'boolean') next.coverAdapt = patch.coverAdapt;
+      if (typeof patch.textureAdapt === 'boolean') next.textureAdapt = patch.textureAdapt;
       if (EFFECT_LEVELS.includes(patch.effects)) { next.effects = patch.effects; next.fxPreset = LEVEL_PRESET[patch.effects]; }
       // A preset given with a level wins. A preset that is no level reads as 'light' (on).
       if (Object.prototype.hasOwnProperty.call(FX_PRESETS, patch.fxPreset)) {
@@ -1148,11 +1183,31 @@
     // network or the DOM) and hands over anything `drawImage` takes; null takes it away.
     const groupOf = lane => lane.group || lane.id;
 
-    function setCover(image) {
+    // `measure` (optional): measureCover's result for this picture, for coverAdapt and textureAdapt; worked out here
+    // once into the veil and the band's light (they never change frame to frame).
+    function setCover(image, measure) {
       const wide = image && (image.naturalWidth || image.width), tall = image && (image.naturalHeight || image.height);
       cover = finite(wide) && finite(tall) && wide > 0 && tall > 0 ? {image, width: wide, height: tall} : null;
+      if (cover && measure && finite(measure.mean) && finite(measure.spread)) {
+        const ground = lumaOf(BACKGROUND_RGB), most = COVER_FAINT + COVER_SWELL;
+        const brightEnd = clamp(measure.mean + COVER_ADAPT.spread * measure.spread, 0, 1);
+        const allowed = brightEnd > COVER_ADAPT.bright ? (COVER_ADAPT.bright - ground) / (brightEnd - ground) : Infinity;
+        cover.veil = round3(clamp(1 - allowed / most, COVER_ADAPT.low, COVER_ADAPT.high));
+        cover.measure = {mean: measure.mean, spread: measure.spread};
+      }
       return Boolean(cover);
     }
+    // The band's light against this cover with this veil (textureAdapt), or the plain one: raised by how much cover
+    // shows behind it (COVER_FAINT + COVER_SWELL, less the veil) times how much it stands off the ground and how busy it
+    // is (its mean above the ground plus its standard deviation), `gain` to one; never above `high`.
+    function textureLight(veil) {
+      if (!cover || !cover.measure) return TEXTURE.alpha;
+      const shows = (COVER_FAINT + COVER_SWELL) * (1 - veil);
+      const clutter = Math.max(0, cover.measure.mean - lumaOf(BACKGROUND_RGB)) + cover.measure.spread;
+      return round3(Math.min(TEXTURE_ADAPT.high, TEXTURE.alpha * (1 + TEXTURE_ADAPT.gain * shows * clutter)));
+    }
+    // The veil behind the lanes this frame: the cover's own with coverAdapt, else the fixed one.
+    const veilOf = picture => options.coverAdapt && picture && finite(picture.veil) ? picture.veil : COVER_VEIL;
 
     function setModel(next) {
       prepared = prepare(next);
@@ -1326,8 +1381,10 @@
       }
       const strength = (0.12 + 0.3 * level) * weight * (picture ? COVER_WASH : 1);
       const shown = picture ? COVER_FAINT + COVER_SWELL * level : 0;
+      const held = veilOf(picture);
       stats.backdrop = {colour, level: Math.round(level * 1000) / 1000, strength: Math.round(strength * 1000) / 1000,
-                        cover: Math.round(shown * 1000) / 1000, behindNotes: Math.round(shown * (1 - COVER_VEIL) * 1000) / 1000};
+                        cover: Math.round(shown * 1000) / 1000, behindNotes: Math.round(shown * (1 - held) * 1000) / 1000};
+      if (held !== COVER_VEIL) stats.backdrop.veil = held;
       if (picture) {
         const scale = Math.max(size.width / picture.width, size.height / picture.height);
         const wide = picture.width * scale, tall = picture.height * scale;
@@ -1339,8 +1396,8 @@
         if (bottom > top && to > from) {
           const veil = context.createLinearGradient(0, from, 0, to);
           veil.addColorStop(0, rgba(BACKGROUND_RGB, 0));
-          veil.addColorStop((top - from) / (to - from), rgba(BACKGROUND_RGB, COVER_VEIL));
-          veil.addColorStop((bottom - from) / (to - from), rgba(BACKGROUND_RGB, COVER_VEIL));
+          veil.addColorStop((top - from) / (to - from), rgba(BACKGROUND_RGB, held));
+          veil.addColorStop((bottom - from) / (to - from), rgba(BACKGROUND_RGB, held));
           veil.addColorStop(1, rgba(BACKGROUND_RGB, 0));
           context.fillStyle = veil;
           context.fillRect(0, from, size.width, to - from);
@@ -1554,9 +1611,10 @@
     }
 
     // The string links of one lane this frame (shapeLinks): one slow S from where the earlier note's core starts to
-    // taper to where the later one's is full, level at both ends, under the notes. The S is cut at its middle: the
-    // first half is the earlier note's (its light: still to come, played or sounding, and its core's thickness), the
-    // second half the later note's, so the line runs on in each note's own light (strokes grouped by light and width).
+    // taper to where the later one's is full, level at both ends, under the notes. The S is cut where the two notes
+    // meet: the part before is the earlier note's (its light: still to come, played or sounding, and its core's
+    // thickness), the part after the later note's, so each note's light ends where the note does (strokes grouped by
+    // light and width).
     function drawStrands(box, now, line, pps, stats, weighted, thinnest) {
       const {lane} = box, {set} = lane, {links, at, span} = lane.strands;
       const left = now - line / pps, right = now + (size.width - line) / pps;
@@ -1580,11 +1638,21 @@
         const i = links[n * 2], j = links[n * 2 + 1];
         const a = xOf(set.start[i]) + barWidth(i) - ramp(i), b = xOf(set.start[j]) + ramp(j);
         if (b < 0 || a > size.width) continue;
-        // The S (a, ya) → (b, yb) with both controls at the middle x, cut in two at its middle (de Casteljau, t = 0.5):
-        // each half a cubic of its own, [start, control, control, end].
-        const ya = pitchY(box, set.pitch[i]), yb = pitchY(box, set.pitch[j]), m = (a + b) / 2, ym = (ya + yb) / 2;
-        add(i, [a, ya, (a + m) / 2, ya, (a + 3 * m) / 4, (3 * ya + yb) / 4, m, ym]);
-        add(j, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, yb, b, yb]);
+        // The S (a, ya) → (b, yb) with both controls at the middle x, cut in two where the notes meet (the later
+        // one's start where they overlap, else the earlier one's end): the parameter there found by halving (x grows
+        // with it), the curve split there (de Casteljau), each part a cubic of its own [start, control, control, end].
+        const ya = pitchY(box, set.pitch[i]), yb = pitchY(box, set.pitch[j]), m = (a + b) / 2;
+        const meet = xOf(Math.min(set.start[i] + set.dur[i], set.start[j]));
+        const xAt = t => { const u = 1 - t; return u * u * u * a + 3 * u * t * m + t * t * t * b; };
+        let low = 0, high = 1;
+        if (meet <= a) high = 0; else if (meet >= b) low = 1;
+        else for (let k = 0; k < STRANDS.halvings; k++) { const mid = (low + high) / 2; if (xAt(mid) < meet) low = mid; else high = mid; }
+        const t = (low + high) / 2, lerp = (p, q) => p + (q - p) * t;
+        const x01 = lerp(a, m), x12 = m, x23 = lerp(m, b), y12 = lerp(ya, yb);
+        const x012 = lerp(x01, x12), y012 = lerp(ya, y12), x123 = lerp(x12, x23), y123 = lerp(y12, yb);
+        const x = lerp(x012, x123), y = lerp(y012, y123);
+        if (t > 0) add(i, [a, ya, x01, ya, x012, y012, x, y]);
+        if (t < 1) add(j, [x, y, x123, y123, x23, yb, b, yb]);
         drawn++;
       }
       [[0, lane.color, 0.34], [1, lane.color, 0.92], [2, lane.lit, 1]].forEach(([k, colour, light]) => {
@@ -2513,7 +2581,11 @@
       if (!runs.length) return;
       // The light along it: one stop per frame of the levels on screen, dimmer ahead of the line.
       const light = context.createLinearGradient(0, 0, width, 0);
-      const alpha = (a, ahead) => round3(TEXTURE.alpha * (0.35 + 0.65 * a) * swell * (ahead ? TEXTURE.ahead : 1));
+      // textureAdapt, with the cover behind: the band's light from the cover and its veil (else TEXTURE.alpha).
+      const picture = options.showBackdrop && options.backdrop === 'cover' ? cover : null;
+      const top = options.textureAdapt && picture ? textureLight(veilOf(picture)) : TEXTURE.alpha;
+      if (top !== TEXTURE.alpha) stats.texture.light = top;
+      const alpha = (a, ahead) => round3(top * (0.35 + 0.65 * a) * swell * (ahead ? TEXTURE.ahead : 1));
       const from = Math.floor((now - line / pps) / texture.hop), to = Math.ceil((now + (width - line) / pps) / texture.hop);
       const stops = [];
       for (let k = from; k <= to; k++) {
@@ -2694,6 +2766,7 @@
   return Object.freeze({
     create, simplifyNotes, smoothChords, toneNames, noteName, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
+    COVER_ADAPT, TEXTURE_ADAPT, measureCover,
     // Checks a model the way `create` would, without a canvas.
     inspect: model => { const p = prepare(model); return {track: p.track, lanes: p.lanes.length, skipped: p.skipped, ...p.has}; }
   });

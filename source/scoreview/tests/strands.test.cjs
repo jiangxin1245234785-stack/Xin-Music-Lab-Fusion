@@ -77,6 +77,18 @@ test('shapeLinks: off by default, booleans only; nothing drawn unless the spindl
 });
 
 test(`the gap: up to ${S.gap} s after the end, up to ${S.overlap} s before it; both notes at least ${S.minDur} s`, () => {
+  // Exactly on each threshold, late in a song (times are 32-bit floats): still joined.
+  assert.equal(linkCount([[10, 1, 60, 90], [11 - S.overlap, 1, 62, 90]], 'strings', 10.5), 1, '重叠正好 0.05 秒');
+  assert.equal(linkCount([[10, 1, 60, 90], [11 + S.gap, 1, 62, 90]], 'strings', 10.5), 1, '空隙正好 0.12 秒');
+  assert.equal(linkCount([[10, S.minDur, 60, 90], [10 + S.minDur + 0.05, S.minDur, 62, 90]], 'strings', 10.2), 1, '两个音都正好 0.25 秒');
+  assert.equal(linkCount([[300, 1, 60, 90], [301 - S.overlap, 1, 62, 90]], 'strings', 300.5), 1, '五分钟以后也一样');
+  // 10.15 + 1 + 0.12 = 11.27, but in 32 bits 11.27 lands a hair above 10.15 + 1 + 0.12.
+  assert.equal(linkCount([[10.15, 1, 60, 90], [11.27, 1, 62, 90]], 'strings', 10.6), 1, '空隙正好 0.12 秒，32 位舍入往外偏');
+  // A 0.25 s note whose length was worked out in 32 bits from its two ends (16.001 − 15.751) comes out 0.249999.
+  const quarter = Math.fround(Math.fround(16.001) - Math.fround(15.751));
+  assert.ok(quarter < S.minDur, 'the 32-bit length really is under 0.25');
+  assert.equal(linkCount([[15.751, quarter, 60, 90], [16.031, 1, 62, 90]], 'strings', 15.9), 1, '前一个音 32 位算出来差一点点 0.25 秒');
+  assert.equal(linkCount([[15.751, 1, 60, 90], [16.781, quarter, 62, 90]], 'strings', 16.5), 1, '后一个音 32 位算出来差一点点 0.25 秒');
   assert.equal(linkCount([[0, 1, 60, 90], [1 + S.gap - 0.01, 1, 62, 90]]), 1, '空隙在范围内');
   assert.equal(linkCount([[0, 1, 60, 90], [1 + S.gap + 0.03, 1, 62, 90]]), 0, '空隙太大');
   assert.equal(linkCount([[0, 1, 60, 90], [1 - S.overlap + 0.01, 1, 62, 90]]), 1, '略微重叠');
@@ -105,24 +117,50 @@ test('only a single line: any other note of the lane sounding across the bend (n
   assert.equal(linkCount([[0, 1, 60, 90], [1.05, 1, 62, 90], [2.1, 1, 64, 90], [3.15, 1, 65, 90]], 'violin', 2), 3, '一串音连成一条线');
 });
 
-test('the bend: from where the earlier core starts to taper to where the later core is full, a slow S level at both ends, cut at its middle', () => {
-  const model = lane(PAIR);
-  const hs = halves(frame(model, ON).calls);
-  assert.equal(hs.length, 2, '一条连线是前后两半');
-  const bars = frame(model, LOOK).bars.sort((a, b) => a.x - b.x);
-  const rampA = Math.min(bars[0].width * P.share, P.rampMax * 1e9), rampB = Math.min(bars[1].width * P.share, P.rampMax * 1e9);
-  const a = bars[0].x + bars[0].width - rampA, b = bars[1].x + rampB, ya = centre(bars[0]), yb = centre(bars[1]);
-  const [first, second] = hs.sort((p, q) => p.from[0] - q.from[0]);
-  const m = (a + b) / 2, ym = (ya + yb) / 2;
-  assert.ok(near(first.from[0], a) && near(first.from[1], ya), '从前一个音的芯开始收尖处出发');
-  assert.ok(near(second.args[4], b) && near(second.args[5], yb), '到后一个音的芯鼓满处');
-  assert.ok(near(first.args[1], ya), '起点切线水平');
-  assert.ok(near(second.args[3], yb), '终点切线水平');
-  assert.ok(near(first.args[4], m) && near(first.args[5], ym) && near(second.from[0], m) && near(second.from[1], ym), '在正中分成两半，接得上');
-  // Tangent continuity at the middle: the incoming and outgoing directions are the same.
-  const din = [first.args[4] - first.args[2], first.args[5] - first.args[3]], dout = [second.args[0] - second.from[0], second.args[1] - second.from[1]];
-  assert.ok(near(din[0] * dout[1] - din[1] * dout[0], 0, 1e-6) && din[0] * dout[0] >= 0, '中间没有折角');
-  assert.ok(b - a > (bars[1].x - (bars[0].x + bars[0].width)) + 10, '弯占了两个音的收尖段，不是两根条之间搭桥');
+// The full S of a link (a, ya) → (b, yb), both controls at the middle x: its y where its x is `x`.
+function sAt(a, ya, b, yb, x) {
+  const m = (a + b) / 2, xAt = t => { const u = 1 - t; return u * u * u * a + 3 * u * t * m + t * t * t * b; };
+  let low = 0, high = 1;
+  for (let k = 0; k < 40; k++) { const mid = (low + high) / 2; if (xAt(mid) < x) low = mid; else high = mid; }
+  const t = (low + high) / 2, u = 1 - t;
+  return u * u * u * ya + 3 * u * u * t * ya + 3 * u * t * t * yb + t * t * t * yb;
+}
+// Where a link starts and ends and where the notes meet, from the plain bars: [a, ya, b, yb, meet].
+function bend(notes, time = 0.5) {
+  const bars = frame(lane(notes), LOOK, time).bars.sort((p, q) => p.x - q.x);
+  const pps = (bars[1].x - bars[0].x) / (notes[1][0] - notes[0][0]);
+  const ramp = bar => Math.min(bar.width * P.share, P.rampMax * pps);
+  const meetAt = Math.min(notes[0][0] + notes[0][1], notes[1][0]);
+  return {a: bars[0].x + bars[0].width - ramp(bars[0]), ya: centre(bars[0]), b: bars[1].x + ramp(bars[1]), yb: centre(bars[1]),
+          meet: bars[0].x + (meetAt - notes[0][0]) * pps, bars};
+}
+for (const [name, notes] of [['equal ends', PAIR], ['unequal ends (a short note into a long one)', [[0, 0.3, 60, 90], [0.32, 2.5, 64, 90]]],
+                              ['overlapping', [[0, 1, 60, 90], [0.97, 2, 63, 90]]]]) {
+  test(`the bend (${name}): from where the earlier core starts to taper to where the later core is full, a slow S level at both ends, cut where the notes meet`, () => {
+    const hs = halves(frame(lane(notes), ON, 0.1).calls).sort((p, q) => p.from[0] - q.from[0]);
+    assert.equal(hs.length, 2, '一条连线是前后两段');
+    const [first, second] = hs, g = bend(notes, 0.1);
+    assert.ok(near(first.from[0], g.a) && near(first.from[1], g.ya), '从前一个音的芯开始收尖处出发');
+    assert.ok(near(second.args[4], g.b) && near(second.args[5], g.yb), '到后一个音的芯鼓满处');
+    assert.ok(near(first.args[1], g.ya), '起点切线水平');
+    assert.ok(near(second.args[3], g.yb), '终点切线水平');
+    assert.ok(near(first.args[4], g.meet, 0.01), `在两个音的交界处换手：${first.args[4]}，交界 ${g.meet}`);
+    assert.ok(near(second.from[0], first.args[4]) && near(second.from[1], first.args[5]), '两段接得上');
+    assert.ok(near(first.args[5], sAt(g.a, g.ya, g.b, g.yb, g.meet), 0.01), '切开的地方还在原来那条 S 上');
+    const din = [first.args[4] - first.args[2], first.args[5] - first.args[3]], dout = [second.args[0] - second.from[0], second.args[1] - second.from[1]];
+    assert.ok(near(din[0] * dout[1] - din[1] * dout[0], 0, 1e-6) && din[0] * dout[0] >= 0, '切开的地方没有折角');
+    assert.ok(g.b - g.a > (g.bars[1].x - (g.bars[0].x + g.bars[0].width)) + 10, '弯占了两个音的收尖段，不是两根条之间搭桥');
+  });
+}
+
+test('a sounding note handing over to one still to come: its light stops where the notes meet, however unequal the ends', () => {
+  const notes = [[0, 0.3, 60, 90], [0.32, 2.5, 64, 90]];
+  const hs = halves(frame(lane(notes), ON, 0.2).calls).sort((p, q) => p.from[0] - q.from[0]);
+  const g = bend(notes, 0.2);
+  assert.match(hs[0].style, /,1\)$/, '前一段：正在响');
+  assert.match(hs[1].style, /0\.34\)$/, '后一段：还没弹');
+  assert.ok(hs[0].args[4] <= g.meet + 0.01, `亮的一段到 ${hs[0].args[4]} 为止，不伸进后一个音（它从 ${g.meet} 开始）`);
+  assert.ok(g.meet - g.a < (g.b - g.a) / 2 - 5, '这一例里两段收尖确实不一样长（交界离正中远）');
 });
 
 test("the cores stop square where the bend takes over; the halos are unchanged", () => {

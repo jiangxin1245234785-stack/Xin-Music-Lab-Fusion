@@ -232,6 +232,12 @@ summary { cursor: pointer; padding: 10px 12px; font-size: .84rem; font-weight: 6
       <span class="note"><button type="button" class="opt" id="coverPick">选一张图当封面</button>
         <button type="button" class="opt" id="coverDrop" hidden>去掉我选的图</button>
         <input type="file" id="coverFile" accept="image/*" hidden></span></div>
+    <div class="row"><span class="label">试别的封面</span><div class="seg" id="optTestCover"></div>
+      <span class="note">只换背景图，音符还是这首歌的。用来看封面很花、很亮、很暗、很素的时候音符读不读得清；「原来的」是这首歌自己的封面（七里香没有封面）。</span></div>
+    <div class="row"><span class="label">封面压暗</span><div class="seg" id="optCoverAdapt"></div>
+      <span class="note">看封面：载入封面时量一次它多亮、多花，越亮越花，音符后面压得越暗；素的、暗的封面反而压得比原来少一点。只动音符后面那一块，顶上的标题区和底下的段落条照旧。固定：和原来一样。</span></div>
+    <div class="row"><span class="label">「其它」带子</span><div class="seg" id="optTextureAdapt"></div>
+      <span class="note">调亮：封面当背景时，按封面露出来多少、多花，把最下面那条「其它」带子调亮，不会亮过音符；封面压暗之后它就不用提那么多。没有封面时和原来一样。</span></div>
     <div class="row"><span class="label">导赏字幕</span><div class="seg" id="optCaptions"></div>
       <span class="note" id="captionsNote"></span></div>
     <div class="row"><span class="label">提示</span><div class="seg" id="optCaptionStyle"></div>
@@ -390,7 +396,7 @@ function viewOptions() {
           mergeTimbres: prefs.mergeTimbres, hidden: prefs.hidden[song.id] || [], offsetSeconds: -prefs.latencyMs / 1000,
           chordSmoothing: prefs.chordSmoothing, plainSections: prefs.plainSections, showContour: prefs.showContour, showCaptions: prefs.showCaptions,
           showBackdrop: prefs.backdropMode !== 'off', backdrop: prefs.backdropMode === 'cover' ? 'cover' : 'section',
-          laneHeights: prefs.laneHeights, fxPreset: prefs.fxPreset, fxDynamics: prefs.fxDynamics, showTexture: prefs.showTexture, showShapes: shapeMode() !== 'same', shapeSet: shapeMode() === 'spindle' ? 'spindle' : 'two', shapeLinks: prefs.shapeLinks === true, pitchWeight: prefs.pitchWeight === true, laneLabels: prefs.laneLabels, sectionStyle: prefs.sectionStyle, captionStyle: prefs.captionStyle,
+          laneHeights: prefs.laneHeights, fxPreset: prefs.fxPreset, fxDynamics: prefs.fxDynamics, showTexture: prefs.showTexture, showShapes: shapeMode() !== 'same', shapeSet: shapeMode() === 'spindle' ? 'spindle' : 'two', shapeLinks: prefs.shapeLinks === true, pitchWeight: prefs.pitchWeight === true, coverAdapt: prefs.coverAdapt === true, textureAdapt: prefs.textureAdapt === true, laneLabels: prefs.laneLabels, sectionStyle: prefs.sectionStyle, captionStyle: prefs.captionStyle,
           fxHit: prefs.fxHit, fxAfterglow: prefs.fxAfterglow, fxPlayline: prefs.fxPlayline, fxDrums: prefs.fxDrums};
 }
 /* --- album cover ----------------------------------------------------------- */
@@ -398,14 +404,27 @@ function viewOptions() {
 // small in this browser only; it never leaves it). The core is handed the loaded image.
 const COVER_KEY = id => 'scoreview.cover.' + id;
 const ownCover = id => { try { return localStorage.getItem(COVER_KEY(id)); } catch (error) { return null; } };
-const coverOf = item => ownCover(item.id) || (item.model.cover && item.model.cover.src) || null;
+// The self-check covers of SPEC-6 part 3 (covers/*.jpg next to the page): only the picture changes.
+const TEST_COVERS = [["toe","toe · For Long Tomorrow"],["luminescent","青叶市子 · Luminescent Creatures"],["refractions","Cornelius · REFRACTIONS"],["meguri","world's end girlfriend · Resistance & The Blessing"],["fantasma","Cornelius · Fantasma"],["howlong","Black Country, New Road · Forever Howlong"],["enchanted","world's end girlfriend · enchanted landscape escape"],["slowriot","Godspeed You Black Emperor! · Slow Riot for New Zero Kanada"],["adan","青叶市子 · Windswept Adan"],["ice","KASHIWA Daisuke · Ice"]];
+const testCover = () => (TEST_COVERS.some(([key]) => key === prefs.testCover) ? prefs.testCover : '');
+const coverOf = item => (testCover() ? 'covers/' + testCover() + '.jpg' : null) || ownCover(item.id) || (item.model.cover && item.model.cover.src) || null;
+// How bright and busy a cover is, for coverAdapt and textureAdapt: measured once on a 64 px copy.
+function measureOf(image) {
+  try {
+    const small = document.createElement('canvas');
+    small.width = small.height = 64;
+    const g = small.getContext('2d');
+    g.drawImage(image, 0, 0, 64, 64);
+    return XinScoreView.measureCover(g.getImageData(0, 0, 64, 64).data, 64, 64);
+  } catch (error) { return null; }
+}
 let coverTicket = 0;
 function loadCover() {
   const ticket = ++coverTicket, source = coverOf(song);
   view.setCover(null);
   if (!source) return;
   const image = new Image();
-  image.onload = () => { if (ticket === coverTicket) { view.setCover(image); paintControls(); } };
+  image.onload = () => { if (ticket === coverTicket) { view.setCover(image, measureOf(image)); paintControls(); } };
   image.src = source;
 }
 function shrinkCover(file) {
@@ -677,12 +696,16 @@ const painters = [
   options($('optTexture'), [[true, '显示'], [false, '不显示']], () => prefs.showTexture, value => { prefs.showTexture = value; apply(); }),
   // Gate 13: notes shaped by instrument. The same by default; the listener turns it on to compare.
   options($('optShapes'), [['same', '一样'], ['two', '拨击'], ['spindle', '拨击 + 梭状']], shapeMode, value => { prefs.shapeMode = value; apply(); }),
-  // Gate 15: the string links (only with the spindles) and the thickness by pitch, both off by default.
+  // Gate 16: the string links (only with the spindles) and the thickness by pitch, both off by default.
   (() => {
     const paint = options($('optLinks'), [[false, '关'], [true, '开']], () => prefs.shapeLinks === true, value => { prefs.shapeLinks = value; apply(); });
     return () => { paint(); for (const button of $('optLinks').children) button.disabled = shapeMode() !== 'spindle'; };
   })(),
   options($('optWeight'), [[false, '统一'], [true, '按音高']], () => prefs.pitchWeight === true, value => { prefs.pitchWeight = value; apply(); }),
+  // Gate 17: readability over the cover, both off by default; any cover for the check.
+  options($('optTestCover'), [['', '原来的'], ...TEST_COVERS.map(([key, label]) => [key, label.split(' · ')[1]])], testCover, value => { prefs.testCover = value; loadCover(); if (value) prefs.backdropMode = 'cover'; apply(); }),
+  options($('optCoverAdapt'), [[false, '固定'], [true, '看封面']], () => prefs.coverAdapt === true, value => { prefs.coverAdapt = value; apply(); }),
+  options($('optTextureAdapt'), [[false, '原样'], [true, '调亮']], () => prefs.textureAdapt === true, value => { prefs.textureAdapt = value; apply(); }),
   options($('optLabels'), [['icon', '图标'], ['text', '文字']], () => prefs.laneLabels, value => { prefs.laneLabels = value; apply(); }),
   options($('optSections'), [['line', '细线'], ['block', '色块']], () => prefs.sectionStyle, value => { prefs.sectionStyle = value; apply(); }),
   fxButtons($('optFx')),
@@ -1069,7 +1092,7 @@ $('coverFile').addEventListener('change', async event => {
     const small = await shrinkCover(file);
     try { localStorage.setItem(COVER_KEY(song.id), small); } catch (error) { setState('这台设备存不下这张图，这次先用着', true); }
     const ticket = ++coverTicket, image = new Image();
-    image.onload = () => { if (ticket === coverTicket) { view.setCover(image); prefs.backdropMode = 'cover'; apply(); } };
+    image.onload = () => { if (ticket === coverTicket) { view.setCover(image, measureOf(image)); prefs.backdropMode = 'cover'; apply(); } };
     image.src = small;
   } catch (error) { setState(error.message, true); }
 });
