@@ -21,7 +21,7 @@ function mockCanvas(width = 800, height = 400) {
     restore: (...args) => { if (stack.length) Object.assign(state, stack.pop()); record('restore')(...args); }, beginPath: record('beginPath'), fill: record('fill'),
     stroke: record('stroke'), rect: record('rect'), roundRect: record('roundRect'), fillRect: record('fillRect'), strokeRect: record('strokeRect'),
     fillText: record('fillText'), moveTo: record('moveTo'), lineTo: record('lineTo'), arc: record('arc'),
-    quadraticCurveTo: record('quadraticCurveTo'), closePath: record('closePath'),
+    quadraticCurveTo: record('quadraticCurveTo'), bezierCurveTo: record('bezierCurveTo'), closePath: record('closePath'),
     setTransform: record('setTransform'), drawImage: record('drawImage'),
     measureText: text => ({width: String(text).length * 6}),
     createLinearGradient: (...line) => { const stops = []; return {line, stops, addColorStop(at, colour) { stops.push([at, colour]); }}; },

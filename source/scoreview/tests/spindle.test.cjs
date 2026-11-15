@@ -1,8 +1,9 @@
 'use strict';
-// Spindles for bowed strings (shapeSet: 'spindle', work/score-shapes-20261114/SPEC-3.md): strings and violin thin at
-// both ends, full in the middle; struck lanes as in the two-way set; everything else as before. The three-way set is
-// gone: 'three' reads as 'two'. Off, on without a set, 'two', 'three' and unknown values draw exactly what 0.17.0 drew.
-// Each rule has an entry in mutations.cjs.
+// Spindles for bowed strings (shapeSet: 'spindle', work/score-shapes-20261114/SPEC-3.md, SPEC-4.md): strings and
+// violin drawn in two layers, a faint halo (the spindle's outline, thin at both ends, full in the middle) and a thin
+// core of the same outline at the note's own light; struck lanes as in the two-way set; everything else as before.
+// The three-way set is gone: 'three' reads as 'two'. Off, on without a set, 'two', 'three' and unknown values (with
+// or without shapeLinks, pitchWeight off) draw exactly what 0.17.0 drew. Each rule has an entry in mutations.cjs.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -54,10 +55,31 @@ function paths(calls) {
   return out;
 }
 const spindles = frame => paths(frame.surface).filter(p => p.curves.length);
-const fills = frame => frame.surface.filter(call => call.name === 'fill').map(call => [call.fillStyle, call.state.shadowColor, call.state.shadowBlur, call.alpha]);
+const fill = call => [call.fillStyle, call.state.shadowColor, call.state.shadowBlur, call.alpha];
+const fills = frame => frame.surface.filter(call => call.name === 'fill').map(fill);
+// The fills of a frame with the spindles' halos left out: each bucket's spindles are a halo fill, then a core fill.
+function withoutHalos(frame) {
+  const out = [];
+  let curved = false, spindle = 0;
+  for (const call of frame.surface) {
+    if (call.name === 'beginPath') curved = false;
+    else if (call.name === 'quadraticCurveTo') curved = true;
+    else if (call.name === 'fill') {
+      if (curved && spindle++ % 2 === 0) continue;
+      out.push(fill(call));
+    }
+  }
+  return out;
+}
+const alphaOf = style => Number(/,\s*([\d.]+)\)$/.exec(style)[1]);
+const colourOf = style => style.replace(/,\s*[\d.]+\)$/, ')');
+const heights = p => Array.from({length: p.points.length / 8}, (_, k) => {
+  const ys = p.points.slice(k * 8, k * 8 + 8).map(q => q.y);
+  return Math.max(...ys) - Math.min(...ys);
+});
 
 test("shapeSet: 'two' by default; 'spindle' taken; 'three' (withdrawn) and anything else read as 'two'", () => {
-  assert.equal(ScoreView.VERSION, '0.19.0');
+  assert.equal(ScoreView.VERSION, '0.20.0');
   assert.equal(ScoreView.DEFAULTS.shapeSet, 'two');
   const view = ScoreView.create(mockCanvas().canvas, oneLane('strings'), () => 0);
   for (const value of ['three', 'four', 3, null, 'SPINDLE']) { view.setOptions({shapeSet: value}); assert.equal(view.options().shapeSet, 'two', String(value)); }
@@ -66,14 +88,16 @@ test("shapeSet: 'two' by default; 'spindle' taken; 'three' (withdrawn) and anyth
   assert.deepEqual([...ScoreView.SPINDLE_GROUPS], ['strings', 'violin']);
 });
 
-test('the three-way set is gone from the core', () => {
+test('the three-way set is gone from the core, and so is the solid spindle', () => {
   const text = fs.readFileSync(process.env.SCOREVIEW_CORE || path.join(__dirname, '..', 'score-view.js'), 'utf8');
-  for (const word of ['SHAPE_BY_GROUP_3', 'SHAPES_3', 'fillShapes3', "'plucked'", 'wedgeTaper', 'diamondCap']) assert.ok(!text.includes(word), `核心里还有三类的残留：${word}`);
+  for (const word of ['SHAPE_BY_GROUP_3', 'SHAPES_3', 'fillShapes3', "'plucked'", 'wedgeTaper', 'diamondCap', 'SPINDLE.lift', 'SPINDLE.room']) {
+    assert.ok(!text.includes(word), `核心里还有残留：${word}`);
+  }
   assert.equal(ScoreView.SHAPES_3, undefined);
-  assert.equal(ScoreView.SHAPE_BY_GROUP_3, undefined);
+  assert.equal(ScoreView.SPINDLE.lift, undefined);
 });
 
-test("shapes off, on without a set, 'two', 'three' and unknown values draw exactly what 0.17.0 drew", () => {
+test("shapes off, on without a set, 'two', 'three' and unknown values (shapeLinks or not, pitchWeight off) draw exactly what 0.17.0 drew", () => {
   assert.equal(BEFORE.VERSION, '0.17.0');
   let compared = 0;
   for (const model of [fullModel(), oneLane('strings'), oneLane('violin'), oneLane('piano'), pilot('qilixiang'), pilot('meguri')]) {
@@ -81,8 +105,10 @@ test("shapes off, on without a set, 'two', 'three' and unknown values draw exact
     for (const look of [{}, {fxPreset: 'strong'}, {focusGroup: 'strings', simplify: false, mergeTimbres: false}]) {
       for (const shapes of [{}, {showShapes: true}]) {
         const old = frames(BEFORE, model, {...look, ...shapes}, times).list;
-        const givens = shapes.showShapes ? ['two', 'three', 'x', undefined].map(set => ({...look, ...shapes, ...(set ? {shapeSet: set} : {})}))
-          : [{...look}, {...look, shapeSet: 'spindle'}];
+        const givens = shapes.showShapes
+          ? [...['two', 'three', 'x', undefined].map(set => ({...look, ...shapes, ...(set ? {shapeSet: set} : {})})),
+             {...look, ...shapes, shapeSet: 'two', shapeLinks: true, pitchWeight: false}, {...look, ...shapes, shapeLinks: true}]
+          : [{...look}, {...look, shapeSet: 'spindle'}, {...look, shapeSet: 'spindle', shapeLinks: true, pitchWeight: false}];
         for (const given of givens) {
           frames(ScoreView, model, given, times).list.forEach((frame, i) => {
             assert.equal(frame.calls, old[i].calls, `${JSON.stringify(given)} ${times[i]} 秒：和 0.17.0 画的不一样`);
@@ -93,94 +119,89 @@ test("shapes off, on without a set, 'two', 'three' and unknown values draw exact
       }
     }
   }
-  assert.ok(compared > 2000, String(compared));
+  assert.ok(compared > 3000, String(compared));
 });
 
 for (const group of ['strings', 'violin']) {
-  test(`${group}: a spindle — each end ${P.share} of the note (never over ${P.rampMax} s), full in the middle (at least ${P.lift} px over the note; up to ${P.swell} times it within ${P.room} semitones), tips ${P.tip} of full (never under ${P.tipMin} px)`, () => {
+  test(`${group}: two layers — a halo (the spindle, ${P.swell} times the note) and a core on the centre line (${P.core} of the note, never over it); each end ${P.share} of the note (never over ${P.rampMax} s)`, () => {
     const off = frames(ScoreView, oneLane(group), LOOK, [3]).list[0], on = frames(ScoreView, oneLane(group), {...LOOK, ...SPIN}, [3]).list[0];
     const g = geometry(off);
-    const full = Math.max(g.T + P.lift, Math.min(g.T * P.swell, g.semitone * P.room)), tip = Math.min(full, Math.max(P.tipMin, full * P.tip));
-    assert.ok(full >= g.T + P.lift - 1e-9, '中间比原来的条明显粗');
-    assert.ok(tip < full / 3 && tip >= P.tipMin, '两头明显细、不细于 1 像素');
-    const [p] = spindles(on);
-    assert.ok(p, '有梭状的路径');
+    const layers = spindles(on);
+    assert.equal(layers.length, 2, '还没弹的这一桶：晕一次、芯一次');
+    const [halo, core] = layers;
+    const r = v => Math.round(v * 1000) / 1000;
     const c = g.centre(g.long), x = g.long.x, end = x + g.long.width;
     const ramp = Math.min(g.long.width * P.share, P.rampMax * g.pps);
     assert.ok(near(ramp, P.rampMax * g.pps), '4 秒的长音：收放封顶在 rampMax 秒');
-    const at = px => p.points.filter(q => near(q.x, px)).map(q => Math.round(Math.abs(q.y - c) * 1000) / 1000).sort((a, b) => a - b);
-    const r = v => Math.round(v * 1000) / 1000;
-    assert.deepEqual(at(x), [tip / 2, tip / 2].map(r), '起音处收尖');
-    assert.deepEqual(at(end), [tip / 2, tip / 2].map(r), '音尾收尖');
-    assert.deepEqual(at(x + ramp), [full / 2, full / 2].map(r), '起音后鼓到满');
-    assert.deepEqual(at(end - ramp), [full / 2, full / 2].map(r), '音尾前开始收');
-    assert.ok(end - ramp > x + ramp + 1, '长音中间有一段等粗的身子');
-    assert.equal(p.curves.length, 4 * 4, '每个音四段曲线（软的两头），这一帧四个音');
-    assert.equal(p.rects.length, 0, '没有方头');
-    // The curves' control points sit half way along each ramp, at full height: a soft taper, not a corner.
-    const controls = p.curves.filter(cv => cv[2] >= x - 1e-6 && cv[2] <= end + 1e-6 && cv[0] >= x - 1e-6 && cv[0] <= end + 1e-6).map(cv => r(cv[0] - x)).sort((a, b) => a - b);
-    assert.deepEqual(controls, [ramp / 2, ramp / 2, g.long.width - ramp / 2, g.long.width - ramp / 2].map(r), '曲线的控制点在收放段的正中');
-    // The short note (0.3 s): ramps by share, a small olive with only a short flat middle.
+    const fullOf = {halo: g.T * P.swell, core: Math.min(g.T, Math.max(P.coreMin, g.T * P.core))};
+    const tipOf = {halo: Math.min(fullOf.halo, Math.max(P.tipMin, fullOf.halo * P.tip)), core: Math.min(fullOf.core, Math.max(P.coreTipMin, fullOf.core * P.tip))};
+    assert.ok(fullOf.core <= g.T + 1e-9, '芯不粗于原来的等粗条');
+    assert.ok(fullOf.halo > fullOf.core * 2, '晕比芯宽得多');
+    for (const [name, p] of [['halo', halo], ['core', core]]) {
+      const full = fullOf[name], tip = tipOf[name];
+      const at = px => p.points.filter(q => near(q.x, px)).map(q => r(Math.abs(q.y - c))).sort((a, b) => a - b);
+      assert.deepEqual(at(x), [tip / 2, tip / 2].map(r), `${name}：起音处收尖`);
+      assert.deepEqual(at(end), [tip / 2, tip / 2].map(r), `${name}：音尾收尖`);
+      assert.deepEqual(at(x + ramp), [full / 2, full / 2].map(r), `${name}：起音后鼓到满`);
+      assert.deepEqual(at(end - ramp), [full / 2, full / 2].map(r), `${name}：音尾前开始收`);
+      assert.equal(p.curves.length, 4 * 4, `${name}：每个音四段曲线，这一帧四个音`);
+      assert.equal(p.rects.length, 0, '没有方头');
+      const controls = p.curves.filter(cv => cv[0] >= x - 1e-6 && cv[0] <= end + 1e-6 && cv[2] >= x - 1e-6 && cv[2] <= end + 1e-6).map(cv => r(cv[0] - x)).sort((a, b) => a - b);
+      assert.deepEqual(controls, [ramp / 2, ramp / 2, g.long.width - ramp / 2, g.long.width - ramp / 2].map(r), `${name}：曲线的控制点在收放段的正中`);
+      for (const h of heights(p)) assert.ok(near(h, full), `${name}：每个音的满粗 ${h}，应是 ${full}`);
+    }
+    // The short note (0.3 s): ramps by share, a small olive.
     const sx = g.short.x, sw = g.short.width, sr = sw * P.share, sc = g.centre(g.short);
     assert.ok(sr < P.rampMax * g.pps, '短音的收放按比例');
-    const sAt = px => p.points.filter(q => near(q.x, px)).map(q => r(Math.abs(q.y - sc))).sort((a, b) => a - b);
-    assert.deepEqual(sAt(sx + sr), [full / 2, full / 2].map(r), '短音按比例鼓到满');
-    assert.deepEqual(sAt(sx + sw - sr), [full / 2, full / 2].map(r), '短音按比例开始收');
-    assert.deepEqual(sAt(sx), [tip / 2, tip / 2].map(r), '短音起音处收尖');
+    const sAt = px => halo.points.filter(q => near(q.x, px)).map(q => r(Math.abs(q.y - sc))).sort((a, b) => a - b);
+    assert.deepEqual(sAt(sx + sr), [fullOf.halo / 2, fullOf.halo / 2].map(r), '短音按比例鼓到满');
+    assert.deepEqual(sAt(sx), [tipOf.halo / 2, tipOf.halo / 2].map(r), '短音起音处收尖');
   });
 }
 
-test('a squeezed lane: the tips stay at least a pixel, the middle never more than its cap above the note', () => {
-  const model = fullModel();
-  for (const key of ['chords', 'chordTones', 'sections', 'captions', 'bars']) delete model[key];
-  model.lanes = Array.from({length: 8}, (_, k) => ({id: 'strings' + k, label: 's' + k, kind: 'pitched', group: 'strings',
-    notes: [[4, 2, 40 + k, 90], ...Array.from({length: 30}, (_, i) => [20 + i * 0.5, 0.3, 40 + i * 2, 90])]}));
-  const off = frames(ScoreView, model, LOOK, [3]).list[0], on = frames(ScoreView, model, {...LOOK, ...SPIN}, [3]).list[0];
-  const T = off.bars[0].height;
-  const bars = off.bars.slice().sort((a, b) => a.y - b.y);
-  const semitone = Math.min(...bars.slice(1).map((b, i) => b.y - bars[i].y).filter(d => d > 1e-6));
-  for (const p of spindles(on)) {
-    const ys = p.points.map(q => q.y);
-    const tallest = Math.max(...ys) - Math.min(...ys);
-    assert.ok(tallest <= Math.max(T + P.lift, Math.min(T * P.swell, semitone * P.room)) + 1e-6, `中间 ${tallest} 超过上限`);
-    // Each outline's first point and the point after it: the tip, at least tipMin tall.
-    for (let i = 0; i + 7 < p.points.length; i += 8) assert.ok(Math.abs(p.points[i].y - p.points[i + 7].y) >= P.tipMin - 1e-6, '尖端不细于 1 像素');
+test(`the halo is fainter than the core (${P.halo} of its light; never under ${P.haloFloor} for notes to come), and the states keep their order`, () => {
+  const style = {};
+  for (const [t, bucket] of [[3, 'future'], [12, 'past']]) {
+    const [halo, core] = spindles(frames(ScoreView, oneLane('strings'), {...LOOK, ...SPIN}, [t]).list[0]);
+    assert.equal(colourOf(halo.style), colourOf(core.style), '晕和芯同色');
+    style[bucket] = {halo: alphaOf(halo.style), core: alphaOf(core.style)};
   }
+  const lit = spindles(frames(ScoreView, oneLane('strings'), {...LOOK, ...SPIN}, [6]).list[0]).filter(p => p.shadow > 0);
+  assert.equal(lit.length, 2, '正在响的音：晕和芯都带光');
+  style.active = {halo: alphaOf(lit[0].style), core: alphaOf(lit[1].style)};
+  assert.equal(style.future.core, 0.34);
+  assert.equal(style.past.core, 0.92);
+  assert.equal(style.active.core, 1);
+  assert.ok(near(style.future.halo, Math.max(P.haloFloor, 0.34 * P.halo), 0.001), `未弹的晕 ${style.future.halo}`);
+  assert.ok(near(style.past.halo, 0.92 * P.halo, 0.001), `已弹的晕 ${style.past.halo}`);
+  assert.ok(near(style.active.halo, P.halo, 0.001), `正在响的晕 ${style.active.halo}`);
+  for (const bucket of ['future', 'past', 'active']) assert.ok(style[bucket].halo < style[bucket].core / 2, `${bucket}：晕比芯淡得多`);
+  // The order of the states is the cores' order, halos too: still to come < played <= sounding.
+  assert.ok(style.future.halo < style.past.halo && style.past.halo <= style.active.halo, '晕把状态的次序弄反了');
+  assert.ok(style.future.halo >= P.haloFloor - 1e-9, '未弹的晕不能淡到看不见');
 });
 
-// Each note's outline is eight points (move, curve, line, curve, line, curve, line, curve): its height is its full thickness.
-const noteHeights = p => Array.from({length: p.points.length / 8}, (_, k) => {
-  const ys = p.points.slice(k * 8, k * 8 + 8).map(q => q.y);
-  return Math.max(...ys) - Math.min(...ys);
-});
-test(`the full thickness: within ${P.room} semitones where the lane has room, but never less than ${P.lift} px over the note`, () => {
-  // A melody-kind lane: thick notes on roomy semitones, so the semitone cap is what holds the swell back.
-  const wide = oneLane('strings', 'melody');
-  wide.lanes[0].notes.push([60, 1, 40, 90], [60, 1, 76, 90]);   // far out of the frame: they only widen the lane's range
-  const off = frames(ScoreView, wide, LOOK, [3]).list[0], on = frames(ScoreView, wide, {...LOOK, ...SPIN}, [3]).list[0];
-  const g = geometry(off);
-  const capped = Math.max(g.T + P.lift, Math.min(g.T * P.swell, g.semitone * P.room));
-  assert.ok(capped < g.T * P.swell - 0.5 && capped > g.T + P.lift + 0.5, `这条轨里起作用的是半音上限（${capped}，音符 ${g.T}，半音 ${g.semitone}）`);
-  for (const h of noteHeights(spindles(on)[0])) assert.ok(near(h, capped), `满粗 ${h}，应是 ${capped}`);
-  // A squeezed lane (under a pixel and a half a semitone): the cap would leave no swell, the lift keeps it.
+test('a dense lane: cores never thicker than the bars (so they do not merge more than the bars do); tips at least their floor', () => {
   const model = fullModel();
   for (const key of ['chords', 'chordTones', 'sections', 'captions', 'bars']) delete model[key];
   model.lanes = Array.from({length: 8}, (_, k) => ({id: 'strings' + k, label: 's' + k, kind: 'pitched', group: 'strings',
-    notes: [[2, 3, 40, 90], [2, 3, 88, 90], [2.5, 2, 41 + k, 90]]}));
-  const sOff = frames(ScoreView, model, LOOK, [3]).list[0], sOn = frames(ScoreView, model, {...LOOK, ...SPIN}, [3]).list[0];
-  const lane = sOff.bars.slice(0, 3).sort((a, b) => a.y - b.y);   // the first lane's three notes: 88, 41, 40
-  assert.ok(near(lane[2].y - lane[1].y, (lane[2].y - lane[0].y) / 48), '前三个是同一条轨的音');
-  const T = lane[0].height, semitone = (lane[2].y - lane[0].y) / 48;
-  assert.ok(semitone * P.room < T + P.lift, `挤的轨（${semitone} 像素一个半音）：半音上限比底还低`);
-  const heights = spindles(sOn).flatMap(noteHeights);
-  assert.ok(heights.length >= 8);
-  for (const h of heights) assert.ok(near(h, T + P.lift), `满粗 ${h}，应是音符 + ${P.lift} 像素 = ${T + P.lift}`);
+    notes: [[4, 2, 40 + k, 90], ...Array.from({length: 30}, (_, i) => [20 + i * 0.5, 0.3, 40 + i * 2, 90]), [4, 2, 41 + k, 90]]}));
+  const off = frames(ScoreView, model, LOOK, [3]).list[0], on = frames(ScoreView, model, {...LOOK, ...SPIN}, [3]).list[0];
+  const T = off.bars[0].height;
+  const layers = spindles(on);
+  assert.equal(layers.length, 16, '八条轨，每条晕一次、芯一次');
+  layers.forEach((p, n) => {
+    for (const h of heights(p)) assert.ok(n % 2 ? h <= T + 1e-6 : near(h, T * P.swell), n % 2 ? `芯 ${h} 比等粗条 ${T} 粗` : `晕 ${h}`);
+    for (let i = 0; i + 7 < p.points.length; i += 8) {
+      assert.ok(Math.abs(p.points[i].y - p.points[i + 7].y) >= (n % 2 ? P.coreTipMin : P.tipMin) - 1e-6, '尖端不细于下限');
+    }
+  });
 });
 
 test("struck lanes draw exactly as in 'two'; vocals, drums, the texture band and unknown groups exactly as before", () => {
   for (const group of ['piano', 'guitar', 'bass']) {
     const two = frames(ScoreView, oneLane(group), {...LOOK, showShapes: true, shapeSet: 'two'}, [3, 4.1, 10.2]).list;
-    const spin = frames(ScoreView, oneLane(group), {...LOOK, ...SPIN}, [3, 4.1, 10.2]).list;
+    const spin = frames(ScoreView, oneLane(group), {...LOOK, ...SPIN, shapeLinks: true}, [3, 4.1, 10.2]).list;
     spin.forEach((frame, i) => assert.equal(frame.calls, two[i].calls, group));
   }
   for (const model of [oneLane('synth'), oneLane('other')]) {
@@ -196,23 +217,24 @@ test("struck lanes draw exactly as in 'two'; vocals, drums, the texture band and
   }
 });
 
-test('the same colours and light in every state, the same fills in the same order (one path a bucket), the same effects; a sounding note is a spindle too', () => {
+test('the cores keep the colours, light and order of the fills (one path a layer a bucket), the effects stay; a sounding note is a spindle too', () => {
   for (const look of [LOOK, {...LOOK, effects: 'light'}, {...LOOK, fxPreset: 'strong'}, {...LOOK, fxPreset: 'keys'}, {...LOOK, fxPreset: 'ink'}]) {
     for (const t of [3, 4.1, 6, 9.1, 10.2, 12]) {
       const off = frames(ScoreView, oneLane('strings'), look, [t]).list[0], on = frames(ScoreView, oneLane('strings'), {...look, ...SPIN}, [t]).list[0];
-      assert.deepEqual(fills(on), fills(off), `${JSON.stringify(look)} ${t} 秒：颜色、亮度或阴影变了`);
+      assert.deepEqual(withoutHalos(on), fills(off), `${JSON.stringify(look)} ${t} 秒：芯的颜色、亮度或阴影变了`);
+      assert.equal(fills(on).length - fills(off).length, spindles(on).length / 2, '每桶多一次（晕），不多不少');
       assert.deepEqual(on.stats.fx, off.stats.fx, '特效的分量和位置不该变');
     }
   }
   const on = frames(ScoreView, oneLane('strings'), {...LOOK, ...SPIN}, [6]).list[0];
   const lit = paths(on.surface).filter(p => p.shadow > 0);
-  assert.ok(lit.length === 1 && lit[0].curves.length === 4, '正在响的音也是梭状');
+  assert.ok(lit.length === 2 && lit.every(p => p.curves.length === 4), '正在响的音也是梭状（晕和芯）');
 });
 
 test('a lane listened to alone keeps its spindles; notes are shaped after simplifying', () => {
   for (const focusGroup of ['strings', 'piano']) {
     const frame = frames(ScoreView, oneLane('strings'), {...LOOK, ...SPIN, focusGroup}, [3]).list[0];
-    assert.equal(spindles(frame).length, 1, focusGroup);
+    assert.equal(spindles(frame).length, 2, focusGroup);
   }
   const pieces = oneLane('strings');
   pieces.lanes[0].notes = [[4, 0.5, 60, 90], [4.52, 0.5, 60, 90], [9, 0.5, 62, 90]];

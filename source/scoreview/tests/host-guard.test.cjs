@@ -21,7 +21,7 @@ test('XML and the video export pass neither showRoles nor showShapes: both drawi
   for (const [name, file] of HOSTS) {
     assert.ok(fs.existsSync(file), `${name}：${file} 不在，这条守卫读不到`);
     const text = fs.readFileSync(file, 'utf8');
-    for (const option of ['showRoles', 'showShapes', 'shapeSet']) assert.ok(!new RegExp(option).test(text), `${name}（${path.basename(file)}）里出现了 ${option}：XML 和导出都不开它`);
+    for (const option of ['showRoles', 'showShapes', 'shapeSet', 'shapeLinks', 'pitchWeight']) assert.ok(!new RegExp(option).test(text), `${name}（${path.basename(file)}）里出现了 ${option}：XML 和导出都不开它`);
   }
   // The guard reads the files that really build the options: the scene's options and the export's look are there.
   assert.match(fs.readFileSync(HOSTS[0][1], 'utf8'), /showTexture: true/);

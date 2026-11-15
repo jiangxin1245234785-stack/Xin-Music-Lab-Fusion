@@ -214,7 +214,11 @@ summary { cursor: pointer; padding: 10px 12px; font-size: .84rem; font-weight: 6
     <div class="row"><span class="label">其它</span><div class="seg" id="optTexture"></div>
       <span class="note">分离出来的「其它」分轨（没转成音符的铺底、音效、噪声，不含主唱和别的乐器）在鼓下面画成一条很矮的带子：按这首歌自己的轻响变粗变细、变亮变暗，安静时不画。不假装知道是什么音。</span></div>
     <div class="row"><span class="label">音符形状</span><div class="seg" id="optShapes"></div>
-      <span class="note">拨击：钢琴、吉他、贝斯这类弹拨的音起音处一个小方头、后面变细，弦乐这类拉的音还是等粗的条。拨击 + 梭状：弹拨的同上，弦乐的音两头尖、中间鼓（梭子形）。颜色、亮度、位置都不变；人声、鼓不变。</span></div>
+      <span class="note">拨击：钢琴、吉他、贝斯这类弹拨的音起音处一个小方头、后面变细，弦乐这类拉的音还是等粗的条。拨击 + 梭状：弹拨的同上，弦乐的音是一条细亮线，上下带一圈淡淡的梭形光（两头尖、中间鼓）。颜色、亮度、位置都不变；人声、鼓不变。</span></div>
+    <div class="row"><span class="label">弦乐连线</span><div class="seg" id="optLinks"></div>
+      <span class="note">只在「拨击 + 梭状」时能开。开：弦乐只有一条旋律线的地方，一个音刚完、下一个音紧接着开始、音高又差得不远，前一个音就顺着一个缓弯滑进下一个音，慢的旋律读成一条线。有和声的地方不连。</span></div>
+    <div class="row"><span class="label">音符粗细</span><div class="seg" id="optWeight"></div>
+      <span class="note">按音高：低音画得粗一点、高音细一点（低音在耳朵里本来就占得宽），钢琴、吉他、贝斯、弦乐都用同一条规则；人声、鼓不变。统一：每条轨一个粗细，和原来一样。</span></div>
     <div class="row"><span class="label">分开试</span><div class="seg" id="optFx"></div>
       <span class="note" id="fxNote"></span></div>
     <div class="row"><span class="label">左边轨名</span><div class="seg" id="optLabels"></div>
@@ -386,7 +390,7 @@ function viewOptions() {
           mergeTimbres: prefs.mergeTimbres, hidden: prefs.hidden[song.id] || [], offsetSeconds: -prefs.latencyMs / 1000,
           chordSmoothing: prefs.chordSmoothing, plainSections: prefs.plainSections, showContour: prefs.showContour, showCaptions: prefs.showCaptions,
           showBackdrop: prefs.backdropMode !== 'off', backdrop: prefs.backdropMode === 'cover' ? 'cover' : 'section',
-          laneHeights: prefs.laneHeights, fxPreset: prefs.fxPreset, fxDynamics: prefs.fxDynamics, showTexture: prefs.showTexture, showShapes: shapeMode() !== 'same', shapeSet: shapeMode() === 'spindle' ? 'spindle' : 'two', laneLabels: prefs.laneLabels, sectionStyle: prefs.sectionStyle, captionStyle: prefs.captionStyle,
+          laneHeights: prefs.laneHeights, fxPreset: prefs.fxPreset, fxDynamics: prefs.fxDynamics, showTexture: prefs.showTexture, showShapes: shapeMode() !== 'same', shapeSet: shapeMode() === 'spindle' ? 'spindle' : 'two', shapeLinks: prefs.shapeLinks === true, pitchWeight: prefs.pitchWeight === true, laneLabels: prefs.laneLabels, sectionStyle: prefs.sectionStyle, captionStyle: prefs.captionStyle,
           fxHit: prefs.fxHit, fxAfterglow: prefs.fxAfterglow, fxPlayline: prefs.fxPlayline, fxDrums: prefs.fxDrums};
 }
 /* --- album cover ----------------------------------------------------------- */
@@ -673,6 +677,12 @@ const painters = [
   options($('optTexture'), [[true, '显示'], [false, '不显示']], () => prefs.showTexture, value => { prefs.showTexture = value; apply(); }),
   // Gate 13: notes shaped by instrument. The same by default; the listener turns it on to compare.
   options($('optShapes'), [['same', '一样'], ['two', '拨击'], ['spindle', '拨击 + 梭状']], shapeMode, value => { prefs.shapeMode = value; apply(); }),
+  // Gate 15: the string links (only with the spindles) and the thickness by pitch, both off by default.
+  (() => {
+    const paint = options($('optLinks'), [[false, '关'], [true, '开']], () => prefs.shapeLinks === true, value => { prefs.shapeLinks = value; apply(); });
+    return () => { paint(); for (const button of $('optLinks').children) button.disabled = shapeMode() !== 'spindle'; };
+  })(),
+  options($('optWeight'), [[false, '统一'], [true, '按音高']], () => prefs.pitchWeight === true, value => { prefs.pitchWeight = value; apply(); }),
   options($('optLabels'), [['icon', '图标'], ['text', '文字']], () => prefs.laneLabels, value => { prefs.laneLabels = value; apply(); }),
   options($('optSections'), [['line', '细线'], ['block', '色块']], () => prefs.sectionStyle, value => { prefs.sectionStyle = value; apply(); }),
   fxButtons($('optFx')),

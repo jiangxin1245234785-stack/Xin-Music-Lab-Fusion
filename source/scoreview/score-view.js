@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.19.0';
+  const VERSION = '0.20.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -93,6 +93,13 @@
     // value withdrawn in 0.19.0 too) reads as 'two'. One of the two goes once the user has chosen.
     // work/score-shapes-20261114/SPEC-3.md.
     shapeSet: 'two',
+    // With shapeSet 'spindle' (and showShapes): notes of a string lane that follow one another closely and near in
+    // pitch joined by a thin smooth curve (STRANDS). Off by default. work/score-shapes-20261114/SPEC-4.md.
+    shapeLinks: false,
+    // Each note's thickness by its own pitch (PITCH_WEIGHT: the ear's filter width there, in semitones, against
+    // A4's), for the lanes of WEIGHT_GROUPS; the bass's own step up is then not added. Off by default: then
+    // nothing changes. Independent of showShapes. work/score-shapes-20261114/SPEC-5.md.
+    pitchWeight: false,
     fxHit: true,          // S1: a note lights up and a short halo opens on the line where it starts
     fxAfterglow: true,      // S2: a played note dims slowly; a held one has light running along it
     fxPlayline: true,       // S3: the line is a soft column that lights notes near it, and jumps a little on a downbeat
@@ -131,14 +138,40 @@
   const SHAPES = Object.freeze({head: 2, headCap: 2, tail: 0.3, tailMin: 1, taper: 0.6, bass: 1.35, bassCap: 1.1});
 
   // --- the spindle (shapeSet: 'spindle'), kept apart from the two-way set above so it can be deleted whole ---
-  // Groups drawn as spindles (bowed: the sound swells and lets go): thin at the onset, swelling to full, full through
-  // the middle, thinning back to the end. Each end takes `share` of the note's length, never more than `rampMax`
-  // seconds, so a long note reads as one spindle and a short one as an olive. The full thickness is `swell` times the
-  // note's, within `room` semitones of the lane, but always at least `lift` pixels over the note (a whole-screen lane
-  // has about a pixel a semitone, where the semitone cap alone would leave no swell); the ends are `tip` of it (never under `tipMin` pixels). The sides are curves (one
-  // quadratic each way, its control mid-ramp), so it reads soft, not as a cut bar. No change of light along the note.
+  // Groups drawn as spindles (bowed: the sound swells and lets go), each note in two layers of its own colour:
+  // a halo, the spindle's outline (thin at the onset, swelling to `swell` times the note, thinning back to the end)
+  // filled faintly, at `halo` of the note's light (never under `haloFloor` for notes still to come, which are dim
+  // already); and on the centre line a core of the same outline, `core` of the note's thickness (never under
+  // `coreMin` pixels, never over the note), at the note's own light. Halos may overlap in a dense chord; cores do not.
+  // Each end takes `share` of the note's length, never more than `rampMax` seconds: a long note reads as one
+  // spindle, a short one as an olive. The ends are `tip` of the layer's middle (the halo never under `tipMin`
+  // pixels, the core never under `coreTipMin`). The sides are curves (one quadratic each way, its control mid-ramp).
+  // One path a layer a bucket: two fills, no gradient, no per-note light.
   const SPINDLE_GROUPS = Object.freeze(['strings', 'violin']);
-  const SPINDLE = Object.freeze({share: 0.4, rampMax: 1, swell: 2.2, room: 2, lift: 1.5, tip: 0.15, tipMin: 1});
+  const SPINDLE = Object.freeze({share: 0.4, rampMax: 1, swell: 2.2, halo: 0.35, haloFloor: 0.14, core: 0.55, coreMin: 1,
+    tip: 0.15, tipMin: 1, coreTipMin: 0.5});
+  // Links between the notes of a string lane (shapeLinks), found once when the notes are laid out: only where a
+  // single line hands over. A note's end joins the start of a note beginning between `overlap` seconds before and
+  // `gap` seconds after it, at most `step` semitones away, both at least `minDur` seconds long, and no other note of
+  // the lane sounding anywhere across the bend (from where the earlier note starts to taper to where the later one
+  // has swollen: a chord is never joined; so a note joins out once and in once at most). Drawn as one slow S curve,
+  // level at both ends, from where the earlier note's core starts to taper to where the later one's core is full;
+  // the two cores stop square where it takes over, so the line runs on through the bend. Its first half is the
+  // earlier note's (light and core thickness), its second half the later note's. Under the notes.
+  const STRANDS = Object.freeze({gap: 0.12, overlap: 0.05, step: 5, minDur: 0.25});
+  // Note thickness by pitch (pitchWeight): the ear's filter width at the note's frequency (Glasberg & Moore 1990,
+  // ERB = 24.7 (4.37 f / 1000 + 1) Hz) in semitones, against A4's, clamped to [`low`, `high`] (where the band
+  // reaches 0 Hz, `high`). The lane's thickness times it, never thinner than the lane's own thinnest note can be
+  // (2 pixels, 3.5 on a melody lane) nor more than `cap` semitones over the lane's thickness.
+  const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin']);
+  const PITCH_WEIGHT = Object.freeze({low: 0.8, high: 1.7, cap: 0.6});
+  function erbSemitones(midi) {
+    const f = 440 * Math.pow(2, (midi - 69) / 12), erb = 24.7 * (4.37 * f / 1000 + 1);
+    return f - erb / 2 <= 0 ? Infinity : 12 * Math.log2((f + erb / 2) / (f - erb / 2));
+  }
+  const WEIGHT_BY_PITCH = Float32Array.from({length: 128}, (_, midi) =>
+    Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69))));
+  const pitchWeightOf = midi => WEIGHT_BY_PITCH[Math.max(0, Math.min(127, Math.round(midi)))];
 
   const ROLES = Object.freeze({blockMin: 2, gap: 0.1, fill: 0.35, edge: 1, tick: 1, flash: 0.9, flashLife: 0.15, link: 1.3});
 
@@ -378,6 +411,7 @@
       set.start[i] = note[0]; set.dur[i] = note[1]; set.pitch[i] = note[2]; set.vel[i] = note[3];
       if (note[1] > set.maxDur) set.maxDur = note[1];
     }
+    set.weight = Float32Array.from(set.pitch, pitchWeightOf);
     // 1 lead, 0 accompaniment, -1 not known (a lane without roles merged with one that has them).
     if (list.some(note => note.length > 4)) {
       set.role = new Int8Array(count);
@@ -905,6 +939,7 @@
       }
       entry.shown = notes.length;
       entry.set = noteSet(notes);
+      entry.strands = SPINDLE_GROUPS.includes(entry.group) ? strandsOf(entry.set) : null;
       // The shapes showRoles draws, made once here from the notes as shown: blocks, and links between lead notes.
       if (entry.set.role) Object.assign(entry, shapesOf(entry.set, [].concat(...visible.map(lane => lane.leadLines || []))));
       entry.contour = visible.length === 1 ? visible[0].contour : null;
@@ -991,6 +1026,38 @@
     return {blocked, blocks, blockStarts: Float64Array.from(blocks.map(block => block.start)), longestBlock: longest, links};
   }
 
+  // The string links (STRANDS) of a lane's notes: [from, to, ...] note indices, in order of where the bend starts;
+  // `ends`: per note, 1 when a link comes in, 2 when one goes out.
+  function strandsOf(set) {
+    const {count, start, dur, pitch} = set;
+    const ramp = k => Math.min(dur[k] * SPINDLE.share, SPINDLE.rampMax);
+    // Whether a note other than i and j sounds anywhere in [from, to).
+    const alone = (i, j, from, to) => {
+      for (let k = lowerBound(start, count, from - set.maxDur); k < count && start[k] < to; k++) {
+        if (k !== i && k !== j && start[k] + dur[k] > from) return false;
+      }
+      return true;
+    };
+    // A single line can hand over to one note only, and take over from one only: any second candidate would itself be
+    // sounding across the bend. So every pair that passes is kept, one out and one in per note by construction.
+    const kept = [];
+    for (let i = 0; i < count; i++) {
+      if (dur[i] < STRANDS.minDur) continue;
+      const end = start[i] + dur[i];
+      for (let j = lowerBound(start, count, end - STRANDS.overlap); j < count && start[j] <= end + STRANDS.gap; j++) {
+        const step = Math.abs(pitch[j] - pitch[i]);
+        if (j === i || start[j] <= start[i] || step > STRANDS.step || dur[j] < STRANDS.minDur) continue;
+        if (!alone(i, j, end - ramp(i), start[j] + ramp(j))) continue;
+        kept.push([i, j]);
+      }
+    }
+    const from = k => start[k] + dur[k] - ramp(k);
+    kept.sort((a, b) => from(a[0]) - from(b[0]));
+    const links = new Int32Array(kept.length * 2), at = new Float64Array(kept.length), ends = new Uint8Array(count);
+    kept.forEach(([i, j], n) => { links[n * 2] = i; links[n * 2 + 1] = j; at[n] = from(i); ends[i] |= 2; ends[j] |= 1; });
+    return {links, at, ends, span: SPINDLE.rampMax * 2 + STRANDS.gap};
+  }
+
   function lowerBound(array, count, value) {
     let low = 0, high = count;
     while (low < high) {
@@ -1053,6 +1120,8 @@
       if (typeof patch.showRoles === 'boolean') next.showRoles = patch.showRoles;
       if (typeof patch.showShapes === 'boolean') next.showShapes = patch.showShapes;
       if ('shapeSet' in patch) next.shapeSet = patch.shapeSet === 'spindle' ? 'spindle' : 'two';
+      if (typeof patch.shapeLinks === 'boolean') next.shapeLinks = patch.shapeLinks;
+      if (typeof patch.pitchWeight === 'boolean') next.pitchWeight = patch.pitchWeight;
       if (EFFECT_LEVELS.includes(patch.effects)) { next.effects = patch.effects; next.fxPreset = LEVEL_PRESET[patch.effects]; }
       // A preset given with a level wins. A preset that is no level reads as 'light' (on).
       if (Object.prototype.hasOwnProperty.call(FX_PRESETS, patch.fxPreset)) {
@@ -1351,7 +1420,7 @@
       context.beginPath();
       for (let i = 0; i < rects.length; i += 4) {
         const x = rects[i], width = rects[i + 2], base = rects[i + 3], centre = rects[i + 1] + base / 2;
-        const full = shape === 'bass' ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;
+        const full = shape === 'bass' && !options.pitchWeight ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;
         const head = Math.min(full * SHAPES.head, full + box.semitone * SHAPES.headCap);
         const tail = Math.max(SHAPES.tailMin, full * SHAPES.tail);
         context.rect(x, centre - head / 2, head, head);
@@ -1368,17 +1437,36 @@
       context.fill();
     }
 
-    // Spindles (SPINDLE) for a bucket of note rectangles [x, y, width, thickness, ...]: one path, one fill.
-    function fillSpindles(rects, style, box, pps) {
+    // One layer of spindles (SPINDLE) for a bucket of note rectangles [x, y, width, thickness, ...]: one path, one
+    // fill. `layer`: 'halo' (the wide faint outline) or 'core' (the thin line on the centre).
+    // `ends` (with links on): per note, 1 when a link comes in (the core starts square where it is full), 2 when one
+    // goes out (the core stops square where it would start to taper); the link draws the rest.
+    function fillSpindles(rects, style, layer, pps, ends) {
       if (!rects.length) return;
       context.fillStyle = style;
       context.beginPath();
       for (let i = 0; i < rects.length; i += 4) {
         const x = rects[i], width = rects[i + 2], base = rects[i + 3], centre = rects[i + 1] + base / 2;
-        const full = Math.max(base + SPINDLE.lift, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));
-        const tip = Math.min(full, Math.max(SPINDLE.tipMin, full * SPINDLE.tip));
+        const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));
+        const tip = Math.min(full, Math.max(layer === 'halo' ? SPINDLE.tipMin : SPINDLE.coreTipMin, full * SPINDLE.tip));
         const ramp = Math.min(width * SPINDLE.share, SPINDLE.rampMax * pps), end = x + width;
         const top = centre - full / 2, bottom = centre + full / 2;
+        const joined = layer === 'core' && ends ? ends[i / 4] : 0;
+        if (joined) {
+          if (joined & 1) context.moveTo(x + ramp, top);
+          else { context.moveTo(x, centre - tip / 2); context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top); }
+          context.lineTo(end - ramp, top);
+          if (joined & 2) context.lineTo(end - ramp, bottom);
+          else {
+            context.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);
+            context.lineTo(end, centre + tip / 2);
+            context.quadraticCurveTo(end - ramp / 2, bottom, end - ramp, bottom);
+          }
+          context.lineTo(x + ramp, bottom);
+          if (!(joined & 1)) context.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);
+          context.closePath();
+          continue;
+        }
         context.moveTo(x, centre - tip / 2);
         context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top);
         context.lineTo(end - ramp, top);
@@ -1399,6 +1487,11 @@
       const left = now - line / pps, right = now + (size.width - line) / pps;
       const future = [], past = [], active = [], names = [];
       const thickness = box.thickness, half = thickness / 2;
+      const weighted = options.pitchWeight && WEIGHT_GROUPS.includes(lane.group);
+      const thinnest = Math.min(thickness, lane.kind === 'melody' ? 3.5 : 2);
+      const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);
+      const linked = spindle && options.shapeLinks && lane.strands && lane.strands.links.length > 0;
+      const joins = linked ? [[], [], []] : null;
       const extra = frameFx ? {set, thickness, halos: [], glow: [], shimmer: [], near: [], sound: [], burnt: [], burning: []} : null;
       // showRoles: accompaniment notes inside a block are drawn as the block, not one by one; a lane being
       // listened to alone shows every note again. Lead notes, lone accompaniment notes and unknown ones are as ever.
@@ -1419,7 +1512,11 @@
         }
         const y = pitchY(box, set.pitch[i]) - half;
         const bucket = start > now ? future : end <= now ? past : active;
-        bucket.push(x, y, width, thickness);
+        if (weighted) {
+          const own = ownThickness(box, i, thinnest);
+          bucket.push(x, y + half - own / 2, width, own);
+        } else bucket.push(x, y, width, thickness);
+        if (joins) (bucket === future ? joins[0] : bucket === past ? joins[1] : joins[2]).push(lane.strands.ends[i]);
         if (lane.kind === 'melody') names.push(x, y, set.pitch[i], bucket === future ? 0 : bucket === past ? 1 : 2);
         stats.notes++;
         if (bucket === active) stats.active++;
@@ -1429,23 +1526,81 @@
       if (blocked) drawBlocks(box, now, line, pps, stats);
       if (shapes && shapes.links && shapes.links.length) drawLinks(box, now, line, pps, stats);
       // showShapes: a struck lane's notes as head and tapering body, in the same buckets, colours and light.
-      const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);
       const shape = spindle ? 'spindle' : options.showShapes ? SHAPE_BY_GROUP[lane.group] : null;
-      const paint = spindle ? (list, style) => fillSpindles(list, style, box, pps)
-        : shape === 'struck' || shape === 'bass' ? (list, style) => fillShapes(list, style, shape, box, pps) : (list, style) => fillBars(list, style, radius);
-      paint(future, rgba(lane.color, 0.34));
-      paint(past, rgba(lane.color, 0.92));
+      const paint = spindle ? (list, colour, light, floor, ends) => {
+        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);
+        fillSpindles(list, rgba(colour, light), 'core', pps, ends);
+      } : shape === 'struck' || shape === 'bass' ? (list, colour, light) => fillShapes(list, rgba(colour, light), shape, box, pps)
+        : (list, colour, light) => fillBars(list, rgba(colour, light), radius);
+      if (linked) drawStrands(box, now, line, pps, stats, weighted, thinnest);
+      paint(future, lane.color, 0.34, SPINDLE.haloFloor, joins && joins[0]);
+      paint(past, lane.color, 0.92, 0, joins && joins[1]);
       if (active.length) {
         context.save();
         context.shadowColor = rgba(lane.color, 0.9);
         context.shadowBlur = 10;
-        paint(active, rgba(lane.lit, 1));
+        paint(active, lane.lit, 1, 0, joins && joins[2]);
         context.restore();
       }
       if (shape && shape !== 'held') stats.shaped = (stats.shaped || 0) + (future.length + past.length + active.length) / 4;
       if (extra) drawNoteEffects(extra, box, line, now, radius);
       if (lane.contour && options.showContour) drawContour(box, now, line, pps, stats);
       if (names.length) drawNoteNames(names, lane, box);
+    }
+
+    // A note's own thickness with pitchWeight on (the lane's thickness by the note's weight, within its floor and cap).
+    function ownThickness(box, i, thinnest) {
+      return Math.max(thinnest, Math.min(box.thickness * box.lane.set.weight[i], box.thickness + box.semitone * PITCH_WEIGHT.cap));
+    }
+
+    // The string links of one lane this frame (shapeLinks): one slow S from where the earlier note's core starts to
+    // taper to where the later one's is full, level at both ends, under the notes. The S is cut at its middle: the
+    // first half is the earlier note's (its light: still to come, played or sounding, and its core's thickness), the
+    // second half the later note's, so the line runs on in each note's own light (strokes grouped by light and width).
+    function drawStrands(box, now, line, pps, stats, weighted, thinnest) {
+      const {lane} = box, {set} = lane, {links, at, span} = lane.strands;
+      const left = now - line / pps, right = now + (size.width - line) / pps;
+      const xOf = t => line + (t - now) * pps;
+      // The same bar width and ramp the spindles take, and the core's thickness.
+      const barWidth = k => Math.max(2, set.dur[k] * pps - 1.5);
+      const ramp = k => Math.min(barWidth(k) * SPINDLE.share, SPINDLE.rampMax * pps);
+      const core = k => {
+        const base = weighted ? ownThickness(box, k, thinnest) : box.thickness;
+        return Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));
+      };
+      const groups = [new Map(), new Map(), new Map()];
+      const bucketOf = k => set.start[k] > now ? 0 : set.start[k] + set.dur[k] <= now ? 1 : 2;
+      const add = (k, half) => {
+        const width = Math.round(core(k) * 4) / 4, list = groups[bucketOf(k)].get(width) || [];
+        list.push(...half);
+        groups[bucketOf(k)].set(width, list);
+      };
+      let drawn = 0;
+      for (let n = lowerBound(at, at.length, left - span); n < at.length && at[n] <= right; n++) {
+        const i = links[n * 2], j = links[n * 2 + 1];
+        const a = xOf(set.start[i]) + barWidth(i) - ramp(i), b = xOf(set.start[j]) + ramp(j);
+        if (b < 0 || a > size.width) continue;
+        // The S (a, ya) → (b, yb) with both controls at the middle x, cut in two at its middle (de Casteljau, t = 0.5):
+        // each half a cubic of its own, [start, control, control, end].
+        const ya = pitchY(box, set.pitch[i]), yb = pitchY(box, set.pitch[j]), m = (a + b) / 2, ym = (ya + yb) / 2;
+        add(i, [a, ya, (a + m) / 2, ya, (a + 3 * m) / 4, (3 * ya + yb) / 4, m, ym]);
+        add(j, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, yb, b, yb]);
+        drawn++;
+      }
+      [[0, lane.color, 0.34], [1, lane.color, 0.92], [2, lane.lit, 1]].forEach(([k, colour, light]) => {
+        for (const [width, list] of groups[k]) {
+          context.strokeStyle = rgba(colour, light);
+          context.lineWidth = width;
+          context.beginPath();
+          for (let p = 0; p < list.length; p += 8) {
+            context.moveTo(list[p], list[p + 1]);
+            context.bezierCurveTo(list[p + 2], list[p + 3], list[p + 4], list[p + 5], list[p + 6], list[p + 7]);
+          }
+          context.stroke();
+        }
+      });
+      context.lineWidth = 1;
+      if (drawn) stats.strands = (stats.strands || 0) + drawn;
     }
 
     // The blocks of one lane this frame (showRoles): left of the play line in a played note's light, right of it
@@ -2538,7 +2693,7 @@
 
   return Object.freeze({
     create, simplifyNotes, smoothChords, toneNames, noteName, CONTRACT, VERSION,
-    DEFAULTS, SIMPLIFY, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS,
+    DEFAULTS, SIMPLIFY, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
     // Checks a model the way `create` would, without a canvas.
     inspect: model => { const p = prepare(model); return {track: p.track, lanes: p.lanes.length, skipped: p.skipped, ...p.has}; }
   });

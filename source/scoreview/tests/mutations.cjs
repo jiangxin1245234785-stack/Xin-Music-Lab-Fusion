@@ -1,5 +1,7 @@
 'use strict';
-// Do the tests bite?  node source/scoreview/tests/mutations.cjs
+// Do the tests bite?  node source/scoreview/tests/mutations.cjs ["<pattern on the names>"]
+// With a pattern only the entries whose names match run (e.g. "^(形状|梭状|连线|音高)："); the whole table runs
+// once before a look goes into XML.
 //
 // Each entry breaks one rule in a throwaway copy of the core or the clock and runs the
 // suite against that copy. A mutation the suite does not notice means a rule nothing is
@@ -325,9 +327,9 @@ const MUTATIONS = [
   {file: "score-view.js", name: "形状：不渐细", find: "const tail = Math.max(SHAPES.tailMin, full * SHAPES.tail);", put: "const tail = full;"},
   {file: "score-view.js", name: "形状：尾端细到没有", find: "const tail = Math.max(SHAPES.tailMin, full * SHAPES.tail);", put: "const tail = 0;"},
   {file: "score-view.js", name: "形状：整个音才收完（长音一路变细）", find: "const reach = Math.min(width, SHAPES.taper * pps);", put: "const reach = width;"},
-  {file: "score-view.js", name: "形状：贝斯粗得不封顶", find: "        const full = shape === 'bass' ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;\n        const head", put: "        const full = shape === 'bass' ? base * SHAPES.bass * 2 : base;\n        const head"},
-  {file: "score-view.js", name: "形状：正在响的音不按形状", find: "        paint(active, rgba(lane.lit, 1));", put: "        fillBars(active, rgba(lane.lit, 1), radius);"},
-  {file: "score-view.js", name: "形状：已弹的换了颜色", find: "      paint(past, rgba(lane.color, 0.92));", put: "      paint(past, rgba(lane.lit, 0.92));"},
+  {file: "score-view.js", name: "形状：贝斯粗得不封顶", find: "        const full = shape === 'bass' && !options.pitchWeight ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;\n        const head", put: "        const full = shape === 'bass' && !options.pitchWeight ? base * SHAPES.bass * 2 : base;\n        const head"},
+  {file: "score-view.js", name: "形状：正在响的音不按形状", find: "        paint(active, lane.lit, 1, 0, joins && joins[2]);", put: "        fillBars(active, rgba(lane.lit, 1), radius);"},
+  {file: "score-view.js", name: "形状：已弹的换了颜色", find: "      paint(past, lane.color, 0.92, 0, joins && joins[1]);", put: "      paint(past, lane.lit, 0.92, 0, joins && joins[1]);"},
   {file: "score-view.js", name: "形状：逐音单独填充（不成批）", find: "        context.rect(x, centre - head / 2, head, head);", put: "        context.rect(x, centre - head / 2, head, head); context.fill(); context.beginPath();"},
   {file: "score-view.js", name: "形状：聚焦的那条轨不按形状", find: "const shape = spindle ? 'spindle' : options.showShapes ? SHAPE_BY_GROUP[lane.group] : null;", put: "const shape = spindle ? 'spindle' : options.showShapes && lane.group !== options.focusGroup ? SHAPE_BY_GROUP[lane.group] : null;"},
   {file: "../fusion-runtime-baseline/score-scene.js", name: "形状：XML 谱面场景误传 showShapes", find: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,", put: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,showShapes: true,", env: "SCOREVIEW_GUARD_SCENE"},
@@ -340,22 +342,71 @@ const MUTATIONS = [
   {file: "score-view.js", name: "梭状：吉他也画梭状", find: "const SPINDLE_GROUPS = Object.freeze(['strings', 'violin']);", put: "const SPINDLE_GROUPS = Object.freeze(['strings', 'violin', 'guitar']);"},
   {file: "score-view.js", name: "梭状：关着也画梭状", find: "const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);", put: "const spindle = options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);"},
   {file: "score-view.js", name: "梭状：两类也画梭状", find: "const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);", put: "const spindle = options.showShapes && SPINDLE_GROUPS.includes(lane.group);"},
-  {file: "score-view.js", name: "梭状：中间不鼓", find: "const full = Math.max(base + SPINDLE.lift, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));", put: "const full = base;"},
-  {file: "score-view.js", name: "梭状：只多一点点（不加底）", find: "const full = Math.max(base + SPINDLE.lift, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));", put: "const full = Math.max(base, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));"},
-  {file: "score-view.js", name: "梭状：中间鼓得不封顶", find: "const full = Math.max(base + SPINDLE.lift, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));", put: "const full = Math.max(base + SPINDLE.lift, base * SPINDLE.swell * 2);"},
-  {file: "score-view.js", name: "梭状：不按半音封顶", find: "const full = Math.max(base + SPINDLE.lift, Math.min(base * SPINDLE.swell, box.semitone * SPINDLE.room));", put: "const full = Math.max(base + SPINDLE.lift, base * SPINDLE.swell);"},
-  {file: "score-view.js", name: "梭状：两头不收尖", find: "const tip = Math.min(full, Math.max(SPINDLE.tipMin, full * SPINDLE.tip));", put: "const tip = full;"},
-  {file: "score-view.js", name: "梭状：两头收到零", find: "const tip = Math.min(full, Math.max(SPINDLE.tipMin, full * SPINDLE.tip));", put: "const tip = 0;"},
+  {file: "score-view.js", name: "梭状：晕不鼓", find: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));", put: "const full = layer === 'halo' ? base : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));"},
+  {file: "score-view.js", name: "梭状：芯比等粗条粗", find: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));", put: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.max(SPINDLE.coreMin, base * 1.4);"},
+  {file: "score-view.js", name: "梭状：芯和晕一样宽", find: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));", put: "const full = base * SPINDLE.swell;"},
+  {file: "score-view.js", name: "梭状：芯没有下限", find: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));", put: "const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, base * 0.3);"},
+  {file: "score-view.js", name: "梭状：晕和芯一样亮", find: "        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);", put: "        fillSpindles(list, rgba(colour, light), 'halo', pps);"},
+  {file: "score-view.js", name: "梭状：没有晕", find: "        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);", put: ""},
+  {file: "score-view.js", name: "梭状：未弹的晕没有下限", find: "        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);", put: "        fillSpindles(list, rgba(colour, round3(light * SPINDLE.halo)), 'halo', pps);"},
+  {file: "score-view.js", name: "梭状：晕换了颜色", find: "        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);", put: "        fillSpindles(list, rgba('#ffffff', round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);"},
+  {file: "score-view.js", name: "梭状：没有芯", find: "        fillSpindles(list, rgba(colour, light), 'core', pps, ends);", put: ""},
+  {file: "score-view.js", name: "梭状：芯变淡", find: "        fillSpindles(list, rgba(colour, light), 'core', pps, ends);", put: "        fillSpindles(list, rgba(colour, round3(light * SPINDLE.halo)), 'core', pps, ends);"},
+  {file: "score-view.js", name: "梭状：芯画在晕下面", find: "        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);\n        fillSpindles(list, rgba(colour, light), 'core', pps, ends);", put: "        fillSpindles(list, rgba(colour, light), 'core', pps, ends);\n        fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);"},
+  {file: "score-view.js", name: "梭状：已弹的晕比正在响的还亮", find: "paint(past, lane.color, 0.92, 0, joins", put: "paint(past, lane.color, 0.92, 0.5, joins"},
+  {file: "score-view.js", name: "梭状：两头不收尖", find: "const tip = Math.min(full, Math.max(layer === 'halo' ? SPINDLE.tipMin : SPINDLE.coreTipMin, full * SPINDLE.tip));", put: "const tip = full;"},
+  {file: "score-view.js", name: "梭状：两头收到零", find: "const tip = Math.min(full, Math.max(layer === 'halo' ? SPINDLE.tipMin : SPINDLE.coreTipMin, full * SPINDLE.tip));", put: "const tip = 0;"},
   {file: "score-view.js", name: "梭状：收放只有两像素", find: "const ramp = Math.min(width * SPINDLE.share, SPINDLE.rampMax * pps), end = x + width;", put: "const ramp = Math.min(2, width / 2), end = x + width;"},
   {file: "score-view.js", name: "梭状：收放不跟音长（固定秒数）", find: "const ramp = Math.min(width * SPINDLE.share, SPINDLE.rampMax * pps), end = x + width;", put: "const ramp = Math.min(0.35 * pps, width / 2), end = x + width;"},
   {file: "score-view.js", name: "梭状：长音收放不封顶", find: "const ramp = Math.min(width * SPINDLE.share, SPINDLE.rampMax * pps), end = x + width;", put: "const ramp = width * SPINDLE.share, end = x + width;"},
   {file: "score-view.js", name: "梭状：短音收放越过中点", find: "const ramp = Math.min(width * SPINDLE.share, SPINDLE.rampMax * pps), end = x + width;", put: "const ramp = Math.min(width * 0.7, SPINDLE.rampMax * pps), end = x + width;"},
-  {file: "score-view.js", name: "梭状：音尾不收（上边）", find: "        context.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);", put: "        context.lineTo(end, top);"},
+  {file: "score-view.js", name: "梭状：音尾不收（上边）", find: "        context.lineTo(end - ramp, top);\n        context.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);", put: "        context.lineTo(end - ramp, top);\n        context.lineTo(end, top);"},
   {file: "score-view.js", name: "梭状：两头是硬角（直线）", find: "        context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top);", put: "        context.lineTo(x + ramp, top);"},
   {file: "score-view.js", name: "梭状：控制点在角上（像条加圆角）", find: "        context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top);", put: "        context.quadraticCurveTo(x, top, x + ramp, top);"},
   {file: "score-view.js", name: "梭状：逐音单独填充（不成批）", find: "        context.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);\n        context.closePath();", put: "        context.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);\n        context.closePath(); context.fill(); context.beginPath();"},
   {file: "../fusion-runtime-baseline/score-scene.js", name: "梭状：XML 谱面场景误传 shapeSet", find: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,", put: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,shapeSet: 'spindle',", env: "SCOREVIEW_GUARD_SCENE"},
   {file: "export/export-main.cjs", name: "梭状：导出引擎缺省样子误开 shapeSet", find: "captionStyle: 'mark', mergeTimbres: true,", put: "captionStyle: 'mark', shapeSet: 'spindle', mergeTimbres: true,", env: "SCOREVIEW_GUARD_EXPORT_MAIN"},
+  {file: "score-view.js", name: "连线：缺省打开", find: "    shapeLinks: false,\n", put: "    shapeLinks: true,\n"},
+  {file: "score-view.js", name: "连线：开关收非布尔值", find: "if (typeof patch.shapeLinks === 'boolean') next.shapeLinks = patch.shapeLinks;", put: "if ('shapeLinks' in patch) next.shapeLinks = Boolean(patch.shapeLinks);"},
+  {file: "score-view.js", name: "连线：不是梭状档也连", find: "const linked = spindle && options.shapeLinks && lane.strands && lane.strands.links.length > 0;", put: "const linked = options.shapeLinks && lane.strands && lane.strands.links.length > 0;"},
+  {file: "score-view.js", name: "连线：画在音符上面", find: "      if (linked) drawStrands(box, now, line, pps, stats, weighted, thinnest);\n", put: "", and: {find: "      if (shape && shape !== 'held') stats.shaped", put: "      if (linked) drawStrands(box, now, line, pps, stats, weighted, thinnest);\n      if (shape && shape !== 'held') stats.shaped"}},
+  {file: "../fusion-runtime-baseline/score-scene.js", name: "连线：XML 谱面场景误传 shapeLinks", find: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,", put: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,shapeLinks: true,", env: "SCOREVIEW_GUARD_SCENE"},
+  {file: "export/export-main.cjs", name: "连线：导出引擎缺省样子误开 shapeLinks", find: "captionStyle: 'mark', mergeTimbres: true,", put: "captionStyle: 'mark', shapeLinks: true, mergeTimbres: true,", env: "SCOREVIEW_GUARD_EXPORT_MAIN"},
+  {file: "score-view.js", name: "连线：空隙不限", find: "start[j] <= end + STRANDS.gap; j++)", put: "start[j] <= end + 10; j++)"},
+  {file: "score-view.js", name: "连线：重叠不限", find: "for (let j = lowerBound(start, count, end - STRANDS.overlap);", put: "for (let j = lowerBound(start, count, 0);"},
+  {file: "score-view.js", name: "连线：音高差不限", find: "step > STRANDS.step ||", put: "step > 99 ||"},
+  {file: "score-view.js", name: "连线：前一个音太短也连", find: "      if (dur[i] < STRANDS.minDur) continue;\n", put: ""},
+  {file: "score-view.js", name: "连线：后一个音太短也连", find: " || dur[j] < STRANDS.minDur) continue;", put: ") continue;"},
+  {file: "score-view.js", name: "连线：有和声也连", find: "        if (!alone(i, j, end - ramp(i), start[j] + ramp(j))) continue;\n", put: ""},
+  {file: "score-view.js", name: "连线：只看交接那一刻有没有别的音", find: "        if (!alone(i, j, end - ramp(i), start[j] + ramp(j))) continue;", put: "        if (!alone(i, j, end, Math.max(end, start[j]) + 0.001)) continue;"},
+  {file: "score-view.js", name: "连线：弯不进收尖段（两根条之间搭桥）", find: "const a = xOf(set.start[i]) + barWidth(i) - ramp(i), b = xOf(set.start[j]) + ramp(j);", put: "const a = xOf(set.start[i]) + barWidth(i), b = xOf(set.start[j]);"},
+  {file: "score-view.js", name: "连线：芯不在弯处截断", find: "const joined = layer === 'core' && ends ? ends[i / 4] : 0;", put: "const joined = 0;"},
+  {file: "score-view.js", name: "连线：头尾截反", find: "ends[i] |= 2; ends[j] |= 1;", put: "ends[i] |= 1; ends[j] |= 2;"},
+  {file: "score-view.js", name: "连线：折线（不是曲线）", find: "context.bezierCurveTo(list[p + 2], list[p + 3], list[p + 4], list[p + 5], list[p + 6], list[p + 7]);", put: "context.lineTo(list[p + 6], list[p + 7]);"},
+  {file: "score-view.js", name: "连线：起点不水平", find: "add(i, [a, ya, (a + m) / 2, ya, (a + 3 * m) / 4, (3 * ya + yb) / 4, m, ym]);", put: "add(i, [a, ya, (a + m) / 2, ym, (a + 3 * m) / 4, (3 * ya + yb) / 4, m, ym]);"},
+  {file: "score-view.js", name: "连线：终点不水平", find: "add(j, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, yb, b, yb]);", put: "add(j, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, ym, b, yb]);"},
+  {file: "score-view.js", name: "连线：中间有折角", find: "add(i, [a, ya, (a + m) / 2, ya, (a + 3 * m) / 4, (3 * ya + yb) / 4, m, ym]);", put: "add(i, [a, ya, (a + m) / 2, ya, (a + 3 * m) / 4, ya, m, ym]);"},
+  {file: "score-view.js", name: "连线：后一半按前一个音的亮度", find: "add(j, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, yb, b, yb]);", put: "add(i, [m, ym, (3 * m + b) / 4, (ya + 3 * yb) / 4, (m + b) / 2, yb, b, yb]);"},
+  {file: "score-view.js", name: "连线：线比芯粗", find: "const width = Math.round(core(k) * 4) / 4,", put: "const width = Math.round(core(k) * 8) / 4,"},
+  {file: "score-view.js", name: "连线：亮度不跟音的状态", find: "const bucketOf = k => set.start[k] > now ? 0 : set.start[k] + set.dur[k] <= now ? 1 : 2;", put: "const bucketOf = k => 1;"},
+  {file: "score-view.js", name: "音高：缺省打开", find: "    pitchWeight: false,\n", put: "    pitchWeight: true,\n"},
+  {file: "score-view.js", name: "音高：开关收非布尔值", find: "if (typeof patch.pitchWeight === 'boolean') next.pitchWeight = patch.pitchWeight;", put: "if ('pitchWeight' in patch) next.pitchWeight = Boolean(patch.pitchWeight);"},
+  {file: "score-view.js", name: "音高：带宽公式少了常数项", find: "erb = 24.7 * (4.37 * f / 1000 + 1);", put: "erb = 24.7 * (4.37 * f / 1000);"},
+  {file: "score-view.js", name: "音高：不除以 A4 的值", find: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69)))", put: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / 3))"},
+  {file: "score-view.js", name: "音高：反了（高音粗）", find: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69)))", put: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(69) / erbSemitones(midi)))"},
+  {file: "score-view.js", name: "音高：系数不夹上限", find: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69)))", put: "Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69))"},
+  {file: "score-view.js", name: "音高：系数不夹下限", find: "Math.min(PITCH_WEIGHT.high, Math.max(PITCH_WEIGHT.low, erbSemitones(midi) / erbSemitones(69)))", put: "Math.min(PITCH_WEIGHT.high, erbSemitones(midi) / erbSemitones(69))"},
+  {file: "score-view.js", name: "音高：不按最近的半音", find: "Math.round(midi)", put: "Math.ceil(midi)"},
+  {file: "score-view.js", name: "音高：粗细没有下限", find: "return Math.max(thinnest, Math.min(box.thickness * box.lane.set.weight[i], box.thickness + box.semitone * PITCH_WEIGHT.cap));", put: "return Math.min(box.thickness * box.lane.set.weight[i], box.thickness + box.semitone * PITCH_WEIGHT.cap);"},
+  {file: "score-view.js", name: "音高：粗细不封顶", find: "return Math.max(thinnest, Math.min(box.thickness * box.lane.set.weight[i], box.thickness + box.semitone * PITCH_WEIGHT.cap));", put: "return Math.max(thinnest, box.thickness * box.lane.set.weight[i]);"},
+  {file: "score-view.js", name: "音高：下限是 1 像素", find: "const thinnest = Math.min(thickness, lane.kind === 'melody' ? 3.5 : 2);", put: "const thinnest = 1;"},
+  {file: "score-view.js", name: "音高：不在中线上", find: "bucket.push(x, y + half - own / 2, width, own);", put: "bucket.push(x, y, width, own);"},
+  {file: "score-view.js", name: "音高：人声也按音高", find: "const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin']);", put: "const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin', 'vocals', 'synth']);"},
+  {file: "score-view.js", name: "音高：只管钢琴", find: "const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin']);", put: "const WEIGHT_GROUPS = Object.freeze(['piano']);"},
+  {file: "score-view.js", name: "音高：贝斯一档照样叠加", find: "const full = shape === 'bass' && !options.pitchWeight ? Math.min(", put: "const full = shape === 'bass' ? Math.min("},
+  {file: "score-view.js", name: "音高：特效跟着按音高走", find: "if (extra) noteEffects(extra, i, x, y, width, start, end, now, line);", put: "if (extra) noteEffects(extra, i, x, weighted ? y - 2 : y, width, start, end, now, line);"},
+  {file: "../fusion-runtime-baseline/score-scene.js", name: "音高：XML 谱面场景误传 pitchWeight", find: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,", put: "const options = {...reading,fxPreset,fxDynamics,showTexture: true,pitchWeight: true,", env: "SCOREVIEW_GUARD_SCENE"},
+  {file: "export/export-main.cjs", name: "音高：导出引擎缺省样子误开 pitchWeight", find: "captionStyle: 'mark', mergeTimbres: true,", put: "captionStyle: 'mark', pitchWeight: true, mergeTimbres: true,", env: "SCOREVIEW_GUARD_EXPORT_MAIN"},
   {file: 'media-clock.js', name: '把陈旧读数也算进去', find: 'if (media !== lastSeen) {\n        lastSeen = media;\n        const error', put: 'if (true) {\n        lastSeen = media;\n        const error'},
   {file: 'media-clock.js', name: '一播放就开始跑表', find: 'if (Number.isNaN(lastSeen) || media === lastSeen) { lastSeen = media; return media - offset; }', put: ''},
   {file: 'media-clock.js', name: '拖动后慢慢滑过去', find: 'if (Math.abs(error) > JUMP_SECONDS) {', put: 'if (false) {'},
@@ -364,8 +415,11 @@ const MUTATIONS = [
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'scoreview-mutations-'));
 const tests = fs.readdirSync(__dirname).filter(name => name.endsWith('.test.cjs')).map(name => path.join(__dirname, name));
+const want = process.argv[2] ? new RegExp(process.argv[2]) : null;
+const picked = [...MUTATIONS.entries()].filter(([, mutation]) => !want || want.test(mutation.name));
+if (want) console.log(`只跑名字合 ${want} 的 ${picked.length} 条（表里共 ${MUTATIONS.length} 条）`);
 let missed = 0;
-for (const [index, mutation] of MUTATIONS.entries()) {
+for (const [index, mutation] of picked) {
   let source = fs.readFileSync(path.join(ROOT, mutation.file), 'utf8').replace(/\r\n/g, '\n');
   // A mutation may take two steps (`and`): moving a call is taking it out here and putting it in there.
   for (const step of [mutation, mutation.and].filter(Boolean)) {
@@ -388,5 +442,5 @@ for (const [index, mutation] of MUTATIONS.entries()) {
   if (!caught) missed++;
 }
 fs.rmSync(scratch, {recursive: true, force: true});
-console.log(missed ? `\n${missed} 处改坏了没有被发现` : `\n${MUTATIONS.length} 处改坏全部被发现`);
+console.log(missed ? `\n${missed} 处改坏了没有被发现` : `\n${picked.length} 处改坏全部被发现${want ? '（只跑了一部分）' : ''}`);
 process.exitCode = missed ? 1 : 0;
