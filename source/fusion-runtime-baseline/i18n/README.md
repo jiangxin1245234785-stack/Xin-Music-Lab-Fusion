@@ -7,7 +7,7 @@ visual catalog, welcome screen and accessibility labels. The selector updates
 locale state immediately without reloading the page.
 
 Step 4 adds `dynamic-ui.js`, a presentation-only semantic adapter for runtime
-status text and the Fusion, Mapping Lab, FX Rack, Director/Conductor, palette
+status text and the Fusion, Mapping Lab, FX Rack, Director, palette
 and calibration panels. Call sites bind a message key to a specific element;
 locale changes refresh only those registered elements. Track titles, artist and
 album metadata, chord symbols, file paths, engine IDs and unknown errors are

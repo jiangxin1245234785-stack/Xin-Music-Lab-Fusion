@@ -31,7 +31,7 @@ for (const id of ['trackTitle', 'trackMeta', 'sourceLabel', 'energyLabel']) {
 for (const id of [
   'fusionTrack', 'fusionArtist', 'fusionAlbum', 'qualityButton',
   'pulsarLayoutButton', 'pulsarStyleButton', 'glitchPowerButton',
-  'directorToggle', 'conductorToggle', 'pinButton'
+  'directorToggle', 'pinButton'
 ]) {
   const tag = html.match(new RegExp(`<[^>]+id="${id}"[^>]*>`))?.[0] || '';
   assert.ok(tag, `missing protected dynamic element: ${id}`);

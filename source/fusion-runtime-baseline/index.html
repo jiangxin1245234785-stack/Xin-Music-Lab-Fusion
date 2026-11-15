@@ -20,7 +20,6 @@
       <canvas id="glitchCanvas" class="glitch-canvas" aria-label="随节奏撕裂的 Glitch 后处理" data-i18n-aria-label="canvas.glitch"></canvas>
       <canvas id="glitchWebglCanvas" class="glitch-webgl-canvas" aria-label="WebGL2 跨帧反馈 Glitch 渲染" data-i18n-aria-label="canvas.webgl"></canvas>
       <canvas id="generatorCanvas" class="generator-canvas" aria-label="Generator Source-aware WebGL2 输出" data-i18n-aria-label="canvas.generator"></canvas>
-      <canvas id="conductorCanvas" class="conductor-canvas" aria-label="随频响指挥乐团的卡通猫动画" data-i18n-aria-label="canvas.conductor"></canvas>
       <canvas id="scoreCanvas" class="score-canvas" aria-label="跟着音乐滚动的谱面" data-i18n-aria-label="canvas.score"></canvas>
       <div class="aurora" aria-hidden="true"></div>
       <div class="grain" aria-hidden="true"></div>
@@ -235,8 +234,6 @@
             <h3 data-i18n="shell.more">更多</h3>
             <div class="xl-grid">
               <button class="calibration-toggle glitch-settings-toggle" id="glitchSettingsButton" type="button" aria-expanded="false" aria-controls="glitchPanel" title="打开 FX Rack 设置" data-i18n="engine.fxSettings" data-i18n-title="engine.fxSettingsTitle">设置</button>
-              <button class="calibration-toggle conductor-toggle xl-switch" id="conductorToggle" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="猫指挥" data-i18n-aria-label="switch.conductor" title="让卡通猫随频响指挥乐团" data-i18n-title="engine.conductorTitle">猫指挥</button>
-              <button class="calibration-toggle" id="conductorSettingsButton" type="button" aria-expanded="false" aria-controls="conductorPanel" data-i18n="engine.action">动作</button>
               <button class="calibration-toggle" id="snapshotButton" type="button" title="保存当前视觉画面（S）" data-i18n="engine.snapshot" data-i18n-title="engine.snapshotTitle">快照</button>
               <button class="calibration-toggle desktop-only xl-switch" id="pinButton" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="窗口置顶" data-i18n-aria-label="switch.pin" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
               <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 Auto</button>
@@ -245,67 +242,6 @@
             </div>
           </section>
           <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 特效 · <kbd>S</kbd> 保存画面</p>
-        </div>
-      </aside>
-
-      <aside class="conductor-panel" id="conductorPanel" aria-label="指挥猫动作设置" aria-hidden="true">
-        <div class="calibration-head">
-          <div>
-            <p class="eyebrow">CONDUCTOR CONTROL</p>
-            <h2>指挥动作与站位</h2>
-          </div>
-          <button id="conductorClose" class="calibration-close" type="button" aria-label="关闭指挥设置">×</button>
-        </div>
-        <div class="calibration-presets conductor-positions" role="group" aria-label="指挥站位">
-          <button class="preset-button" type="button" data-conductor-position="left">左侧</button>
-          <button class="preset-button is-active" type="button" data-conductor-position="center">中央</button>
-          <button class="preset-button" type="button" data-conductor-position="right">右侧</button>
-        </div>
-        <div class="calibration-grid conductor-grid">
-          <label class="calibration-field">
-            <span>指挥速度 <output data-conductor-output="speed">1.00×</output></span>
-            <input data-conductor-key="speed" type="range" min="0.4" max="2.2" step="0.05" value="1" />
-          </label>
-          <label class="calibration-field">
-            <span>手势幅度 <output data-conductor-output="gesture">100%</output></span>
-            <input data-conductor-key="gesture" type="range" min="0.4" max="1.8" step="0.05" value="1" />
-          </label>
-          <label class="calibration-field">
-            <span>角色大小 <output data-conductor-output="size">100%</output></span>
-            <input data-conductor-key="size" type="range" min="0.55" max="1.5" step="0.05" value="1" />
-          </label>
-          <label class="calibration-field calibration-field--select">
-            <span>面向舞台</span>
-            <select data-conductor-key="facing">
-              <option value="auto">自动</option>
-              <option value="left">向左</option>
-              <option value="right">向右</option>
-            </select>
-          </label>
-          <label class="calibration-field calibration-field--select">
-            <span>声部文字</span>
-            <select data-conductor-key="labels">
-              <option value="auto">显示 5 秒</option>
-              <option value="always">始终显示</option>
-              <option value="hidden">隐藏</option>
-            </select>
-          </label>
-          <label class="calibration-field">
-            <span>横向位置 <output data-conductor-output="x">57%</output></span>
-            <input data-conductor-key="x" type="range" min="0.1" max="0.9" step="0.01" value="0.57" />
-          </label>
-          <label class="calibration-field">
-            <span>纵向位置 <output data-conductor-output="y">87%</output></span>
-            <input data-conductor-key="y" type="range" min="0.58" max="0.96" step="0.01" value="0.87" />
-          </label>
-          <label class="calibration-field conductor-grid__wide">
-            <span>乐团显眼程度 <output data-conductor-output="orchestra">55%</output></span>
-            <input data-conductor-key="orchestra" type="range" min="0" max="1" step="0.05" value="0.55" />
-          </label>
-        </div>
-        <div class="calibration-foot">
-          <p>位置、速度和动作幅度实时生效，并自动保存在本机。</p>
-          <button id="conductorReset" type="button">恢复默认</button>
         </div>
       </aside>
 
@@ -383,27 +319,27 @@
         <canvas id="glitchCurveCanvas" class="postfx-curve" aria-label="编制、鼓点、撕蚀、节奏与最终 Glitch 驱动力曲线"></canvas>
         <div class="postfx-legend" aria-hidden="true"><span class="postfx-legend__ensemble">编制</span><span class="postfx-legend__beat">鼓点</span><span class="postfx-legend__acid">撕蚀</span><span class="postfx-legend__section">段落</span><span class="postfx-legend__rhythm">节奏</span><span class="postfx-legend__tension">张力</span><span class="postfx-legend__burst">释放</span><span class="postfx-legend__drive">输出</span></div>
         <div class="calibration-grid glitch-grid postfx-weight-grid">
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>编制权重 <output data-glitch-output="ensembleWeight">100%</output></span>
             <input data-glitch-key="ensembleWeight" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>鼓组总权重 <output data-glitch-output="drumWeight">100%</output></span>
             <input data-glitch-key="drumWeight" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>撕蚀度总权重 <output data-glitch-output="abrasionWeight">100%</output></span>
             <input data-glitch-key="abrasionWeight" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>段落驱动权重 <output data-glitch-output="sectionDrive">100%</output></span>
             <input data-glitch-key="sectionDrive" type="range" min="0" max="2" step="0.05" value="1" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>效果总强度 <output data-glitch-output="fxStrength">125%</output></span>
             <input data-glitch-key="fxStrength" type="range" min="0.4" max="2" step="0.05" value="1.25" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>节奏锁定 <output data-glitch-output="rhythmLock">65%</output></span>
             <input data-glitch-key="rhythmLock" type="range" min="0" max="1" step="0.05" value="0.65" />
           </label>
@@ -476,15 +412,15 @@
         </div>
         <div class="palette-preview" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="calibration-grid color-fx-grid">
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>色彩循环 <output data-color-fx-output="cycle">关闭</output></span>
             <input data-color-fx-key="cycle" type="range" min="0" max="2" step="0.05" value="0" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>呼吸深度 <output data-color-fx-output="breath">关闭</output></span>
             <input data-color-fx-key="breath" type="range" min="0" max="1" step="0.05" value="0" />
           </label>
-          <label class="calibration-field conductor-grid__wide">
+          <label class="calibration-field calibration-field--wide">
             <span>瞬态频闪 <output data-color-fx-output="strobe">关闭</output></span>
             <input data-color-fx-key="strobe" type="range" min="0" max="1" step="0.05" value="0" />
           </label>
@@ -566,7 +502,6 @@
     <script src="./i18n/static-ui.js"></script>
     <script src="./i18n/dynamic-ui.js"></script>
     <script src="./i18n/desktop-locale-bridge.js"></script>
-    <script src="./conductor-poses.js"></script>
     <script src="./realtime-provider-adapter.js"></script>
     <script src="./xld-timeline-provider-adapter.js"></script>
     <script src="./music-feature-resolver.js"></script>

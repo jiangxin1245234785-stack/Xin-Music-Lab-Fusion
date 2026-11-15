@@ -26,7 +26,8 @@ const manifestKeys = [
   ...dynamicUi.CONTROL_LABEL_BINDINGS.map(binding => binding[1])
 ];
 // 115 before 2026-11-13; the spectrum calibration panel's 27 bindings went with the panel.
-assert.ok(manifestKeys.length >= 88, `expected at least 88 panel bindings, received ${manifestKeys.length}`);
+// 2026-11-14: 88 → 73 with the cat panel's 15 bindings (removed).
+assert.ok(manifestKeys.length >= 73, `expected at least 73 panel bindings, received ${manifestKeys.length}`);
 
 const referencedKeys = new Set(manifestKeys);
 for (const source of [app, fusion]) {

@@ -12,7 +12,7 @@
 - **画面条**：一行：谱面、LED 频谱、霓虹丝带、脉冲星；“更多画面 · 15”里是 Butterchurn（MilkDrop）与 Glitch 的 Beta 预设。频谱的读法固定（对数横轴 20 Hz–20 kHz、响度 −92 到 −18 dB、高频补偿 +2 dB/oct、平滑 68%），没有校准面板。
 - **播放条**：上一首 / 播放 / 下一首、进度、“听”（原曲或某一条分轨）、沉浸模式。
 - **曲库抽屉**：搜索、只看已分析、按专辑展开的曲目列表；底部是 XLD 结果卡片（在 XLD 中分析、更新结果；“更多操作”里有分析选项、打开输出目录、导入 JSON 等）。
-- **设置抽屉**：外观（配色、调色、跟和弦变色、字号、语言、响应）；画面效果（FX 开关、导演、特效强度、画质、打开 XLD 评测台 / 生成器）；用哪个分析结果（段落引擎、和弦引擎）；更多（FX Rack 设置、猫指挥及动作、快照、置顶、脉冲星样式）。
+- **设置抽屉**：外观（配色、调色、跟和弦变色、字号、语言、响应）；画面效果（FX 开关、导演、特效强度、画质、打开 XLD 评测台 / 生成器）；用哪个分析结果（段落引擎、和弦引擎）；更多（FX Rack 设置、快照、置顶、脉冲星样式）。
 
 谱面里：点一条音轨只听那条分轨，再点回到整首；点段落跳到段落开头；双击（或 Shift+点）段落循环播放。
 
@@ -35,7 +35,7 @@
 | 文件 | 作用 |
 |---|---|
 | `index.html`、`style.css`、`shell.css`、`shell.js` | 页面结构；`shell.css` / `shell.js` 是顶栏、播放条和两个抽屉的样式与行为 |
-| `app.js` | 视觉引擎：唯一的 RAF 时钟、音频特征、各画面、配色、导演、猫指挥、FX Rack、快照 |
+| `app.js` | 视觉引擎：唯一的 RAF 时钟、音频特征、各画面、配色、导演、FX Rack、快照 |
 | `fusion.js` | 曲库、播放、读取 XLD 结果并把段落 / 和弦送进画面，装配 Generator 与各控制件 |
 | `score-scene.js` | 谱面场景，渲染核心在 `../scoreview` |
 | `stem-controls.js` | 分轨试听与 MIDI 状态 |
@@ -43,7 +43,6 @@
 | `material-target-registry.js`、`visual-material-runtime.js` | 画面运行时：每个画面都在这里注册，按帧更新与渲染，并把当前画面交给 Generator |
 | `generator-*.js`、`frame-ownership-monitor.js`、`product-control-dock.js` | Glitch Generator 的接入、预设（选择 / JSON 文件 / 仓库）、输出切换，以及设置抽屉里的特效强度与画质 |
 | `glitch-engine.js`、`glitch-feature-bus.js`、`glitch-webgl.js` | FX Rack 的事件引擎、特征总线与 WebGL2 反馈渲染 |
-| `conductor-poses.js` | 猫指挥的姿势骨架 |
 | `i18n/` | 词条目录、翻译器、静态 / 动态绑定 |
 | `desktop/` | Electron 主进程与 preload：曲库扫描、读取 XLD 分析、MIDI 资源、预设仓库、启动 XLD |
 | `vendor/` | Butterchurn 2.6.7、Butterchurn Presets 2.4.7（MIT）与 Glitch Generator 构建产物 |

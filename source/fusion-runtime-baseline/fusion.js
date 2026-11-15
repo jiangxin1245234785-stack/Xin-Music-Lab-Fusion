@@ -573,7 +573,7 @@
 
   function setOpen(open) {
     if (open) {
-      ['#glitchRackClose', '#conductorClose']
+      ['#glitchRackClose']
         .map(selector => document.querySelector(selector))
         .filter(Boolean)
         .forEach(button => button.click());
@@ -872,7 +872,7 @@
   }
 
   function setHome(open){
-    if(open){rememberPosition(true);setOpen(false);window.XinShell?.setSettings(false);for(const id of ['paletteClose','conductorClose','glitchClose'])document.getElementById(id)?.click();renderHome();}
+    if(open){rememberPosition(true);setOpen(false);window.XinShell?.setSettings(false);for(const id of ['paletteClose','glitchClose'])document.getElementById(id)?.click();renderHome();}
     const focused=dom.welcome.contains(document.activeElement);dom.welcome.classList.toggle('is-gone',!open);dom.welcome.inert=!open;
     document.getElementById('xlHome')?.setAttribute('aria-expanded',String(open));
     if(!open&&focused)document.getElementById('xlHome')?.focus();

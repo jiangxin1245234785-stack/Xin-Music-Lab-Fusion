@@ -34,7 +34,7 @@
   // The song in the top bar is the way into the library.
   if (now) now.addEventListener('click', () => { setSettings(false); if (isOpen(library)) closeLibrary(); else libraryButton.click(); });
   // The detail panels open over the picture; the drawer that launched them steps aside.
-  for (const id of ['paletteButton', 'glitchSettingsButton', 'conductorSettingsButton']) {
+  for (const id of ['paletteButton', 'glitchSettingsButton']) {
     const button = find('#' + id);
     if (button) button.addEventListener('click', () => setSettings(false));
   }

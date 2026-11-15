@@ -180,7 +180,7 @@
 .xl-settings .hint { position: static; margin: auto 0 0; padding-top: calc(10px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(10.5px * var(--ui-scale)); letter-spacing: 0; opacity: 1; transform: none; }
 
 /* --- the older floating panels keep their content; they open inside the free area --------- */
-.palette-panel, .conductor-panel, .glitch-panel {
+.palette-panel, .glitch-panel {
   top: calc(var(--xl-top) + 10px); z-index: 13;
   max-height: calc(100% - var(--xl-top) - var(--xl-scenes) - var(--xl-transport) - 20px); overflow-y: auto;
 }

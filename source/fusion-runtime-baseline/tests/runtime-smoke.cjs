@@ -999,7 +999,6 @@ app.whenReady().then(async () => {
           glitch: document.querySelector('#glitchPanel > .calibration-head h2')?.textContent || '',
           quality: document.querySelector('#qualityButton')?.textContent || '',
           director: document.querySelector('#directorToggle')?.textContent || '',
-          conductor: document.querySelector('#conductorToggle')?.textContent || '',
           pin: document.querySelector('#pinButton')?.textContent || ''
         };
         return {
@@ -1009,7 +1008,6 @@ app.whenReady().then(async () => {
             && values.glitch === messages['glitch.title']
             && values.quality === messages['runtime.quality.auto']
             && values.director === messages['runtime.director.off']
-            && values.conductor === messages['runtime.conductor.off']
             && values.pin === messages['runtime.pin.off']
         };
       };
