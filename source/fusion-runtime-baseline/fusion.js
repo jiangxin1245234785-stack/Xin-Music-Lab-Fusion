@@ -584,11 +584,24 @@
   }
 
   // FX master, 0-200 %. The slider that shows it lives in the settings drawer (product-control-dock.js).
-  function applyMaster(value) {
+  // Moving the slider switches FX on above 0 and off at 0. At start-up the saved strength is put
+  // back without touching on / off: app.js has already restored that from the FX settings.
+  function applyMaster(value, restoring = false) {
     const percent = Math.max(0, Math.min(200, Number(value) || 0));
     state.master = percent / 100;
+    if (restoring) {
+      visualGlitch?.set({ fxStrength: state.master });
+      return;
+    }
     localStorage.setItem('xins-fusion-master', String(percent));
     visualGlitch?.set({ enabled: percent > 0, fxStrength: state.master });
+  }
+
+  // A saved 0 is 0; only a profile that never saved a strength starts at 125 %.
+  function savedMasterPercent(raw) {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return 125;
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.max(0, Math.min(200, value)) : 125;
   }
 
   function applyChordColor(consensus) {
@@ -1498,9 +1511,10 @@
       generatorOutputController?.snapshotCanvas() || null
   });
 
-  const savedMaster = Math.max(0, Math.min(200, Number(localStorage.getItem('xins-fusion-master')) || 125));
+  let savedMaster = 125;
+  try { savedMaster = savedMasterPercent(localStorage.getItem('xins-fusion-master')); } catch (_) {}
   dom.libraryView.hidden = false;
-  applyMaster(savedMaster);
+  applyMaster(savedMaster, true);
   productControlDock?.syncMaster();
   productControlDock?.syncQuality();
   Promise.resolve(generatorRuntimeShadow?.load()).then(async () => {

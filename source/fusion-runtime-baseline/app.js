@@ -104,11 +104,7 @@
     'beta-glitch-1': '_Rovastar + Geiss - Hurricane Nightmare (Posterize Mix)',
     'beta-glitch-2': 'Geiss + Flexi + Martin - disconnected',
     'beta-glitch-3': 'An AdamFX n Martin Infusion 2 flexi - Why The Sky Looks Diffrent Today - AdamFx n Martin Infusion - Tack Tile Disfunction B',
-    'beta-glitch-4': 'flexi - what is the matrix',
-    'beta-glitch-5': 'Geiss + Flexi + Martin - disconnected',
-    'beta-glitch-6': '_Rovastar + Geiss - Hurricane Nightmare (Posterize Mix)',
-    'beta-glitch-7': 'An AdamFX n Martin Infusion 2 flexi - Why The Sky Looks Diffrent Today - AdamFx n Martin Infusion - Tack Tile Disfunction B',
-    'beta-glitch-8': 'flexi - what is the matrix'
+    'beta-glitch-4': 'flexi - what is the matrix'
   };
   const betaFallbackPresets = [
     'Aderrasi - Potion of Spirits',
@@ -116,16 +112,6 @@
     'Unchained - Unified Drag 2'
   ];
   const availableEffects = new Set([...Object.keys(effectNames), ...Object.keys(betaPresetNames)]);
-  const glitchProfiles = {
-    'beta-glitch-1': { mode: 'horizontal', burst: 6, hue: 12 },
-    'beta-glitch-2': { mode: 'chroma', burst: 8, hue: 58 },
-    'beta-glitch-3': { mode: 'tiles', burst: 11, hue: 34 },
-    'beta-glitch-4': { mode: 'scan', burst: 9, hue: 82 },
-    'beta-glitch-5': { mode: 'datamosh', burst: 7, hue: 18, persistence: .86 },
-    'beta-glitch-6': { mode: 'rgb', burst: 5, hue: 120, rgb: true },
-    'beta-glitch-7': { mode: 'codec', burst: 14, hue: 42, quantize: true },
-    'beta-glitch-8': { mode: 'loss', burst: 10, hue: 8, dropout: true }
-  };
 
   const directorScenes = [
     { id: 'beta-1', energy: .36, centroid: .64, texture: .56 },
@@ -138,11 +124,7 @@
     { id: 'beta-glitch-1', energy: .62, centroid: .54, texture: .76, glitch: true },
     { id: 'beta-glitch-2', energy: .55, centroid: .67, texture: .8, glitch: true },
     { id: 'beta-glitch-3', energy: .72, centroid: .58, texture: .88, glitch: true },
-    { id: 'beta-glitch-4', energy: .65, centroid: .72, texture: .82, glitch: true },
-    { id: 'beta-glitch-5', energy: .58, centroid: .52, texture: .84, glitch: true },
-    { id: 'beta-glitch-6', energy: .7, centroid: .7, texture: .86, glitch: true },
-    { id: 'beta-glitch-7', energy: .76, centroid: .6, texture: .92, glitch: true },
-    { id: 'beta-glitch-8', energy: .6, centroid: .76, texture: .9, glitch: true }
+    { id: 'beta-glitch-4', energy: .65, centroid: .72, texture: .82, glitch: true }
   ];
 
   let currentPalette = palettes.aurora;
@@ -1317,81 +1299,6 @@
     throw lastError || new Error('没有可用的兼容预设');
   }
 
-  function glitchFrequencyDensity(energy) {
-    const bands = 48;
-    const threshold = .075 + energy.overall * .14;
-    let active = 0;
-    for (let index = 0; index < bands; index++) {
-      if (spectrumValue(index, bands) > threshold) active++;
-    }
-    return active / bands;
-  }
-
-  function spawnGlitchFragments(profile, strength) {
-    const count = Math.max(1, Math.round(profile.burst * (.34 + strength * .9)));
-    for (let index = 0; index < count; index++) {
-      let x = 0;
-      let y = Math.random() * h;
-      let width = w;
-      let height = 4 + Math.random() * (12 + strength * 42);
-      let dx = (Math.random() * 2 - 1) * (12 + strength * w * .11);
-      let dy = 0;
-
-      if (profile.mode === 'chroma') {
-        height = 8 + Math.random() * (30 + strength * 72);
-        dx *= 1.35;
-      } else if (profile.mode === 'tiles') {
-        width = w * (.08 + Math.random() * .24);
-        height = h * (.045 + Math.random() * .16);
-        x = Math.random() * Math.max(1, w - width);
-        y = Math.random() * Math.max(1, h - height);
-        dx *= 1.8;
-        dy = (Math.random() * 2 - 1) * (7 + strength * h * .08);
-      } else if (profile.mode === 'scan') {
-        width = 18 + Math.random() * (38 + strength * 82);
-        height = h * (.18 + Math.random() * .52);
-        x = Math.random() * Math.max(1, w - width);
-        y = Math.random() * Math.max(1, h - height);
-        dx *= .35;
-        dy = (18 + Math.random() * 90) * (Math.random() > .5 ? 1 : -1) * (.3 + strength);
-      } else if (profile.mode === 'datamosh') {
-        width = w * (.28 + Math.random() * .62);
-        height = 10 + Math.random() * (32 + strength * 74);
-        x = Math.random() * Math.max(1, w - width);
-        dx = (Math.random() > .5 ? 1 : -1) * (18 + strength * w * .15);
-      } else if (profile.mode === 'rgb') {
-        height = h * (.08 + Math.random() * .34);
-        y = Math.random() * Math.max(1, h - height);
-        dx *= 2.1;
-      } else if (profile.mode === 'codec') {
-        const cell = Math.max(12, Math.round(Math.min(w, h) / 28));
-        width = cell * (2 + Math.floor(Math.random() * 8));
-        height = cell * (1 + Math.floor(Math.random() * 5));
-        x = Math.floor(Math.random() * Math.max(1, w - width) / cell) * cell;
-        y = Math.floor(Math.random() * Math.max(1, h - height) / cell) * cell;
-        dx = Math.round(dx / cell) * cell;
-        dy = (Math.random() * 2 - 1) * cell * (1 + strength * 2);
-      } else if (profile.mode === 'loss') {
-        width = Math.random() > .45 ? w : 12 + Math.random() * w * .12;
-        height = Math.random() > .45 ? 6 + Math.random() * h * .12 : h * (.25 + Math.random() * .6);
-        x = width === w ? 0 : Math.random() * Math.max(1, w - width);
-        y = height > h * .2 ? Math.random() * Math.max(1, h - height) : Math.random() * h;
-        dx = (Math.random() * 2 - 1) * w * (.04 + strength * .08);
-      }
-
-      const life = profile.persistence
-        ? 10 + Math.floor(Math.random() * 15 + strength * 14)
-        : 4 + Math.floor(Math.random() * 8 + strength * 7);
-      glitchState.fragments.push({
-        x, y, width, height, dx, dy,
-        hue: (Math.random() * 2 - 1) * profile.hue,
-        life,
-        maxLife: life
-      });
-    }
-    if (glitchState.fragments.length > 90) glitchState.fragments.splice(0, glitchState.fragments.length - 90);
-  }
-
   function clearGlitchPostFx() {
     stage.classList.remove('webgl-postfx-on');
     delete stage.dataset.glitchRenderer;
@@ -1838,136 +1745,6 @@
       glitchCtx.fillStyle = glow;
       glitchCtx.fillRect(0, 0, w, h);
     }
-  }
-
-  function drawGlitchPostFx(energy) {
-    const profile = glitchProfiles[activeEffect] || glitchProfiles['beta-glitch-1'];
-    const now = performance.now();
-    const ensembleTarget = audioState.features.richness;
-    const acidTarget = audioState.features.acid;
-    glitchState.ensemble += (ensembleTarget - glitchState.ensemble) * (ensembleTarget > glitchState.ensemble ? .22 : .065);
-    glitchState.acid += (acidTarget - glitchState.acid) * (acidTarget > glitchState.acid ? .31 : .09);
-    glitchState.smoothBass += (energy.bass - glitchState.smoothBass) * .12;
-    const bassRise = Math.max(0, energy.bass - glitchState.prevBass);
-    const bassOnset = Math.max(0, energy.bass - glitchState.smoothBass);
-    const beatStrength = Math.min(1, Math.max(
-      bassRise * 6.2,
-      bassOnset * 4.8,
-      audioState.accents.bass,
-      audioState.accents.mid * .82,
-      audioState.accents.treble * .68,
-      audioState.features.flux * .92,
-      audioState.features.onset * glitchConfig.onset,
-      Math.max(0, energy.bass - .5) * 1.8
-    ));
-    glitchState.beatPulse = Math.max(glitchState.beatPulse * .84, beatStrength);
-    glitchState.prevBass = energy.bass;
-    glitchState.loudness += (energy.overall - glitchState.loudness) * .16;
-    const densityTarget = Math.max(
-      glitchFrequencyDensity(energy),
-      audioState.features.density,
-      glitchState.ensemble * .82 * glitchConfig.ensemble
-    );
-    glitchState.density += (densityTarget - glitchState.density) * .13;
-    const dynamicTarget = Math.min(1, Math.max(audioState.features.dynamicRange, audioState.accents.overall * .72 + Math.max(0, audioState.instant.overall - glitchState.loudness) * 2.8));
-    glitchState.dynamicRange += (dynamicTarget - glitchState.dynamicRange) * (dynamicTarget > glitchState.dynamicRange ? .28 : .09);
-
-    glitchState.rateAccumulator += .003
-      + energy.bass * .02
-      + glitchState.beatPulse * .19 * glitchConfig.onset
-      + glitchState.ensemble * .012 * glitchConfig.ensemble
-      + glitchState.acid * .06 * glitchConfig.acid;
-    const onsetBurst = beatStrength > .085 && now - glitchState.lastBurstAt > 82;
-    if (onsetBurst || glitchState.rateAccumulator >= 1) {
-      const strength = Math.min(1,
-        .13
-        + glitchState.beatPulse * .72 * glitchConfig.onset
-        + energy.bass * .24
-        + glitchState.ensemble * .22 * glitchConfig.ensemble
-        + glitchState.acid * .3 * glitchConfig.acid
-      );
-      spawnGlitchFragments(profile, strength);
-      glitchState.lastBurstAt = now;
-      glitchState.rateAccumulator = onsetBurst ? Math.min(.45, glitchState.rateAccumulator) : glitchState.rateAccumulator - 1;
-    }
-
-    const brightness = .52 + (glitchState.loudness * 1.5 + glitchState.beatPulse * .24) * glitchConfig.brightness;
-    const contrast = .94 + glitchState.dynamicRange * 1.12 * glitchConfig.contrast;
-    const saturation = .62 + (glitchState.density * 2.15 + glitchState.ensemble * .48 + glitchState.acid * .34) * glitchConfig.saturation;
-    const filter = `brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)}) saturate(${saturation.toFixed(2)})`;
-    if (filter !== glitchState.filter) {
-      betaCanvas.style.filter = filter;
-      glitchCanvas.style.filter = `contrast(${(1 + glitchState.loudness * .36).toFixed(2)})`;
-      glitchState.filter = filter;
-    }
-
-    if (profile.mode === 'datamosh') {
-      glitchCtx.save();
-      glitchCtx.globalCompositeOperation = 'destination-out';
-      glitchCtx.fillStyle = `rgba(0,0,0,${Math.max(.08, 1 - profile.persistence).toFixed(2)})`;
-      glitchCtx.fillRect(0, 0, w, h);
-      glitchCtx.restore();
-    } else {
-      glitchCtx.clearRect(0, 0, w, h);
-    }
-    const sourceScaleX = betaCanvas.width / Math.max(1, w);
-    const sourceScaleY = betaCanvas.height / Math.max(1, h);
-    glitchCtx.save();
-    glitchCtx.globalCompositeOperation = ['chroma', 'rgb'].includes(profile.mode) ? 'screen' : 'source-over';
-
-    if ((profile.rgb || glitchState.acid * glitchConfig.acid > .26) && (audioState.features.flux > .025 || glitchState.beatPulse > .08 || glitchState.acid > .18)) {
-      const split = 2 + audioState.features.flux * 22 + glitchState.beatPulse * 10 + glitchState.acid * 18 * glitchConfig.acid;
-      glitchCtx.globalAlpha = .055 + audioState.features.flux * .13 + glitchState.acid * .075;
-      glitchCtx.filter = 'sepia(1) saturate(8) hue-rotate(285deg)';
-      glitchCtx.drawImage(betaCanvas, -split, 0, w, h);
-      glitchCtx.filter = 'sepia(1) saturate(8) hue-rotate(90deg)';
-      glitchCtx.drawImage(betaCanvas, split, 0, w, h);
-      glitchCtx.filter = 'none';
-    }
-
-    for (let index = glitchState.fragments.length - 1; index >= 0; index--) {
-      const fragment = glitchState.fragments[index];
-      const life = fragment.life / fragment.maxLife;
-      const motion = .3 + glitchState.beatPulse * .82 + glitchState.acid * .48 * glitchConfig.acid;
-      glitchCtx.globalAlpha = life * (.3 + glitchState.loudness * .56 + glitchState.beatPulse * .12);
-      const codecFilter = profile.quantize ? ` contrast(${(1.15 + glitchState.dynamicRange * 1.8).toFixed(2)})` : '';
-      const lossFilter = profile.dropout && glitchState.beatPulse > .2 ? ' grayscale(1) invert(.08)' : '';
-      glitchCtx.filter = `hue-rotate(${fragment.hue + glitchState.acid * 48 * glitchConfig.acid}deg) saturate(${(1 + glitchState.density * 1.9 + glitchState.acid * .8).toFixed(2)})${codecFilter}${lossFilter}`;
-      try {
-        glitchCtx.drawImage(
-          betaCanvas,
-          fragment.x * sourceScaleX,
-          fragment.y * sourceScaleY,
-          fragment.width * sourceScaleX,
-          fragment.height * sourceScaleY,
-          fragment.x + fragment.dx * motion,
-          fragment.y + fragment.dy * motion,
-          fragment.width,
-          fragment.height
-        );
-      } catch (_) {}
-      fragment.life--;
-      if (fragment.life <= 0) glitchState.fragments.splice(index, 1);
-    }
-    glitchCtx.filter = 'none';
-    if (profile.dropout && glitchState.beatPulse > .18) {
-      const bars = 1 + Math.floor(glitchState.beatPulse * 5);
-      glitchCtx.globalCompositeOperation = 'source-over';
-      for (let i = 0; i < bars; i++) {
-        const y = Math.random() * h;
-        const height = 2 + Math.random() * (6 + glitchState.beatPulse * 28);
-        glitchCtx.globalAlpha = .12 + glitchState.beatPulse * .28;
-        glitchCtx.fillStyle = i % 2 ? '#04050a' : paletteRgba(currentPalette.hot, .34);
-        glitchCtx.fillRect(0, y, w, height);
-      }
-    }
-    if (glitchState.beatPulse > .08) {
-      glitchCtx.globalCompositeOperation = 'screen';
-      glitchCtx.globalAlpha = glitchState.beatPulse * (.035 + glitchState.loudness * .07);
-      glitchCtx.fillStyle = paletteRgba(currentPalette.hot, 1);
-      glitchCtx.fillRect(0, 0, w, h);
-    }
-    glitchCtx.restore();
   }
 
   function resetLegacyMaterialState(id, reason) {

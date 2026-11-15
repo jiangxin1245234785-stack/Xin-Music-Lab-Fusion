@@ -1,6 +1,6 @@
 'use strict';
 // 2026-11-13 prune: the basic scenes are LED spectrum, neon ribbons and pulsar; the listening
-// score and the 15 scenes under "more scenes" stay. Deleted scenes must not come back by name.
+// score and the 11 scenes under "more scenes" stay (15 until 2026-11-15, when beta-glitch-5..8 went). Deleted scenes must not come back by name.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,10 +15,10 @@ const deletedScenes = ['mirror', 'waveform', 'radial', 'waterfall', 'vu', 'tunne
 const keptBasic = ['spectrum', 'ribbons', 'pulsar'];
 const more = [
   ...Array.from({ length: 7 }, (_, i) => `beta-${i + 1}`),
-  ...Array.from({ length: 8 }, (_, i) => `beta-glitch-${i + 1}`)
+  ...Array.from({ length: 4 }, (_, i) => `beta-glitch-${i + 1}`)
 ];
 
-// The scene strip: score, the three basic scenes, then the "more scenes" drawer with 15.
+// The scene strip: score, the three basic scenes, then the "more scenes" drawer with 11.
 const effects = [...html.matchAll(/data-effect="([^"]+)"/g)].map(match => match[1]);
 for (const id of ['score', ...keptBasic, ...more]) {
   assert.ok(effects.includes(id), `scene button kept: ${id}`);
@@ -54,7 +54,7 @@ for (const key of ['classic', 'modern', 'mirror', 'waveform', 'radial', 'waterfa
   assert.equal(catalogs.includes(`'catalog.${key}'`), false, `catalog key removed: catalog.${key}`);
 }
 
-// The automatic director only ever chose among the 15 "more scenes"; it still does.
+// The automatic director only ever chose among the "more scenes"; it still does (now 11).
 const directorIds = [...directorBlock.matchAll(/id: '([^']+)'/g)].map(match => match[1]);
 assert.deepEqual(directorIds, more);
 
@@ -120,5 +120,20 @@ assert.equal((app.match(/const center = Math\.sqrt\(from \* to\);/g) || []).leng
 for (const key of ['xins-fusion-calibration', 'xins-fusion-frequency-response']) {
   assert.equal(rendererSources.includes(key), false, `old saved key no longer read or written: ${key}`);
 }
+
+// 2026-11-15: Datamosh / RGB Split / Codec Rain / Signal Loss (beta-glitch-5..8) reused the first four
+// Glitch presets under other names; they are gone, and so is the Glitch renderer nothing ever called.
+for (const n of [5, 6, 7, 8]) {
+  assert.equal(effects.includes(`beta-glitch-${n}`), false, `scene removed: beta-glitch-${n}`);
+  assert.equal(app.includes(`'beta-glitch-${n}'`), false, `app.js no longer names beta-glitch-${n}`);
+}
+assert.equal(effects.filter(id => id.startsWith('beta-')).length, 11, 'more scenes: 7 MilkDrop + 4 Glitch');
+assert.match(catalogs, /'catalog\.archive': 'More scenes · 11'/);
+assert.match(catalogs, /'catalog\.archive': '更多画面 · 11'/);
+for (const gone of ['drawGlitchPostFx', 'glitchProfiles', 'spawnGlitchFragments', 'glitchFrequencyDensity',
+  'catalog.datamoshTitle', 'catalog.rgbSplitTitle', 'catalog.codecRainTitle', 'catalog.signalLossTitle']) {
+  assert.equal(app.includes(gone) || html.includes(gone) || catalogs.includes(gone), false, `gone: ${gone}`);
+}
+assert.match(app, /function drawUniversalGlitchPostFx\(/, 'the FX Rack renderer stays');
 
 console.log('scene prune contract ok');
