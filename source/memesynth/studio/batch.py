@@ -27,6 +27,7 @@ from memesynth.kit import KitError, load_kit        # noqa: E402
 from memesynth.render import peak_factor, render    # noqa: E402
 from memesynth.score import MIN_DURATION, read_score  # noqa: E402
 from studio import effects                          # noqa: E402
+from studio import xld_stems                        # noqa: E402
 
 SAMPLE_RATE = 48000
 
@@ -232,6 +233,9 @@ def window_48k(path, start, span):
             count, offset = max(0, last - first), a - block * up
         handle.seek(min(first, length))
         audio = handle.read(count, dtype='float32', always_2d=True)
+    gain = xld_stems.gain_of(path)                     # an XLD FLAC stem is stored at half level
+    if gain != 1:
+        audio = audio * gain
     out = to_48k(audio, rate)
     return out[offset:offset + n] if rate != SAMPLE_RATE else out
 
@@ -253,7 +257,7 @@ def file_rms(path):
     for block in soundfile.blocks(str(path), blocksize=1 << 18, dtype='float32', always_2d=True):
         energy += float(np.sum(np.square(block, dtype=np.float64)))
         count += block.size
-    return (energy / count) ** 0.5 if count else 0.0
+    return xld_stems.gain_of(path) * (energy / count) ** 0.5 if count else 0.0
 
 
 def levels_from(by_track, stems):
@@ -674,7 +678,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     originals = {}
     for index, name in enumerate(kept):
         say(0.6 + 0.2 * index / max(1, len(kept)), f'{name} · 读原声')
-        audio, rate = soundfile.read(stems[name], dtype='float32', always_2d=True)
+        audio, rate = xld_stems.read(stems[name], dtype='float32', always_2d=True)
         originals[name] = to_48k(audio, rate)
     # The same numbers the page auditions with: every stem of the song against the preset.
     factors, spare, level_notes = levels_from(rendered[preset], stems) if kept else ({}, 1.0, {'empty': [], 'capped': []})

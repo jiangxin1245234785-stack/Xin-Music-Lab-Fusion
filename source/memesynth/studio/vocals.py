@@ -121,13 +121,22 @@ def store(data: bytes):
 
 
 def known(path):
-    """The vocal id this stem file was stored under, if it has not changed since; else None."""
+    """The vocal id this stem file was stored under, if it has not changed since; else None.
+
+    A `vocals.flac` that XLD migrated from a `vocals.wav` in the same run folder (2026-11-15) is the same stem: it
+    keeps the id the WAV was stored under, so the voices already converted for it are still found."""
+    path, wav = Path(path), Path(path).with_suffix('.wav')
     try:
-        size, stamp, vocal_id = json.loads(MEMO.read_text(encoding='utf-8'))[str(path)]
-        stat = Path(path).stat()
+        memo = json.loads(MEMO.read_text(encoding='utf-8'))
+        if str(path) in memo or path.suffix.lower() != '.flac':
+            size, stamp, vocal_id = memo[str(path)]
+            stat = path.stat()
+        else:                                                # the WAV it came from; gone once XLD deleted it
+            size, stamp, vocal_id = memo[str(wav)]
+            stat = wav.stat() if wav.is_file() else None
     except (OSError, ValueError, KeyError):
         return None
-    if (size, stamp) != (stat.st_size, stat.st_mtime_ns):
+    if stat is not None and (size, stamp) != (stat.st_size, stat.st_mtime_ns):
         return None
     info = CACHE / vocal_id / 'info.json'
     try:
@@ -151,7 +160,11 @@ def store_file(path):
         return vocal_id, status(vocal_id)
     path = Path(path)
     stat = path.stat()
-    vocal_id, state = store(path.read_bytes())
+    data = path.read_bytes()
+    if path.suffix.lower() == '.flac':                       # XLD's FLAC stem: the bridge reads a float WAV, at full level
+        from studio import xld_stems
+        data = xld_stems.flac_to_wav_bytes(data)
+    vocal_id, state = store(data)
     with LOCK:
         try:
             memo = json.loads(MEMO.read_text(encoding='utf-8'))

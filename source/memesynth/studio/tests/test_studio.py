@@ -1229,6 +1229,184 @@ def test_server_saves_a_clip_only_into_the_folder():
             httpd.shutdown()
 
 
+# ------------------------------------------------------------- XLD's FLAC stems (2026-11-15)
+STEM_FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'stem-audio'   # copied from XLD's tests (git ignores audio)
+LIMIT = 2.0 ** -23
+
+
+def stem_signal(rate=RATE):
+    """Half a second like XLD's fixture: silence, a constant, a tone, noise, bursts above full scale (peak 1.9)."""
+    rng = np.random.default_rng(20261115)
+    n = rate // 2
+    data = np.zeros((n, 2), np.float32)
+    data[int(0.05 * rate):int(0.10 * rate)] = 0.25
+    t = np.arange(n) / rate
+    data[int(0.1 * rate):int(0.2 * rate), :] = (0.6 * np.sin(2 * np.pi * 440 * t[int(0.1 * rate):int(0.2 * rate)]))[:, None]
+    data[int(0.2 * rate):int(0.3 * rate)] = 0.3 * rng.standard_normal((int(0.3 * rate) - int(0.2 * rate), 2))
+    data[int(0.3 * rate):int(0.4 * rate)] = 2.5 * rng.standard_normal((int(0.4 * rate) - int(0.3 * rate), 2))
+    return np.clip(data, -1.9, 1.9).astype(np.float32)
+
+
+def write_marked_flac(path, data, rate):
+    """What XLD's stem_audio.write_stem writes: 24-bit FLAC at half level, comment xld-gain=2."""
+    with sf.SoundFile(str(path), 'w', rate, data.shape[1], 'PCM_24', format='FLAC') as handle:
+        handle.comment = 'xld-gain=2'
+        handle.write(data * np.float32(0.5))
+
+
+def stem_pairs(scratch):
+    """(float WAV, marked FLAC of the same audio) pairs: XLD's own fixture when it is here, and one made now."""
+    pairs = []
+    if (STEM_FIXTURES / 'marked.flac').is_file():
+        pairs.append((STEM_FIXTURES / 'source.wav', STEM_FIXTURES / 'marked.flac'))
+    data = stem_signal()
+    sf.write(str(scratch / 'made.wav'), data, RATE, subtype='FLOAT')
+    write_marked_flac(scratch / 'made.flac', data, RATE)
+    pairs.append((scratch / 'made.wav', scratch / 'made.flac'))
+    return pairs
+
+
+def flac_song(root, title='FLAC 曲', stems=('drums', 'bass', 'piano', 'vocals')):
+    """make_song, then its stems as XLD's migration leaves them: FLAC only, listed in stems.json by `file`."""
+    folder = make_song(root, title, stems=stems)
+    run = folder / 'stems' / 'run-1'
+    entries = []
+    for name in stems:
+        audio, rate = sf.read(str(run / f'{name}.wav'), dtype='float32', always_2d=True)
+        write_marked_flac(run / f'{name}.flac', audio, rate)
+        (run / f'{name}.wav').unlink()
+        entries.append({'name': name, 'file': f'stems/run-1/{name}.flac', 'sampleRate': rate, 'channels': 2,
+                        'frames': len(audio), 'encoding': 'flac-24', 'gain': 2})
+    (folder / 'stems.json').write_text(json.dumps({'runId': 'run-1', 'stems': entries}), encoding='utf-8')
+    return folder
+
+
+def test_flac_stem_reads_as_the_wav_it_came_from():
+    """Same audio as float WAV and as XLD's marked FLAC: the same samples within 2**-23, peaks over 1.0 included;
+    an unmarked FLAC has gain 1. The excerpt the page plays and the level measure agree too."""
+    from studio import xld_stems
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        for wav, flac in stem_pairs(scratch):
+            want, rate = sf.read(str(wav), dtype='float32', always_2d=True)
+            got, got_rate = xld_stems.read(flac, dtype='float32', always_2d=True)
+            assert float(np.abs(want).max()) > 1.0, 'the fixture must go over full scale'
+            assert got_rate == rate and got.shape == want.shape and float(np.abs(got - want).max()) <= LIMIT, flac
+            assert xld_stems.gain_of(flac) == 2 and xld_stems.gain_of(wav) == 1
+            assert abs(batch.file_rms(flac) - batch.file_rms(wav)) <= LIMIT
+            # through the 48 kHz resampler: the 2**-23 per sample, summed by the filter, plus float32 rounding
+            assert float(np.abs(batch.window_48k(flac, 0.1, 0.3) - batch.window_48k(wav, 0.1, 0.3)).max()) <= 1e-6
+            back, back_rate = sf.read(io_bytes(xld_stems.flac_to_wav_bytes(flac.read_bytes())), dtype='float32', always_2d=True)
+            assert back_rate == rate and float(np.abs(back - want).max()) <= LIMIT
+            assert xld_stems.is_marked_flac(flac.read_bytes()) and not xld_stems.is_marked_flac(wav.read_bytes())
+        plain = scratch / 'plain.flac'
+        sf.write(str(plain), stem_signal()[:2205] * 0.4, RATE, subtype='PCM_16', format='FLAC')
+        for path in [plain] + ([STEM_FIXTURES / 'plain.flac'] if (STEM_FIXTURES / 'plain.flac').is_file() else []):
+            raw, _ = sf.read(str(path), dtype='float32')
+            assert xld_stems.gain_of(path) == 1 and np.array_equal(xld_stems.read(path, dtype='float32')[0], raw)
+            assert not xld_stems.is_marked_flac(path.read_bytes())
+
+
+def io_bytes(data):
+    import io
+    return io.BytesIO(data)
+
+
+def test_library_finds_flac_stems_by_the_manifest_file():
+    """A migrated song (FLAC only, stems.json `file`) lists every stem and its vocal, plays and rebuilds at the WAV's level;
+    a song with no stems still has none, and the vocals command still says so."""
+    from studio import cli
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        wav_song = library.read_song(make_song(scratch / 'a', '原样'), 'x')
+        migrated = flac_song(scratch / 'b')
+        song = library.read_song(migrated, 'x')
+        assert sorted(song['stems']) == ['bass', 'drums', 'piano', 'vocals'], song['stems']
+        assert all(p.endswith('.flac') for p in song['stems'].values()) and song['vocal'].endswith('vocals.flac')
+        for name in song['stems']:
+            want = batch.window_48k(wav_song['stems'][name], 1.0, 1.0)
+            got = sf.read(io_bytes(server.stem_excerpt(song, name, 1.0, 1.0)), dtype='float32')[0]
+            assert float(np.abs(got - want).max()) <= 1e-5, name                    # not 6 dB low
+        assert batch.stem_levels(song['midi'], server.KITS_DIR / 'pluck' / 'kit.json', song['stems'])[0] == \
+            approx_dict(batch.stem_levels(wav_song['midi'], server.KITS_DIR / 'pluck' / 'kit.json', wav_song['stems'])[0])
+        assert cli.find_vocals(migrated) == migrated / 'stems' / 'run-1' / 'vocals.flac'
+        # without a manifest `file` (an older stems.json), the run folder's FLAC is found by name
+        folder = flac_song(scratch / 'c', '旧清单')
+        (folder / 'stems.json').write_text(json.dumps({'runId': 'run-1'}), encoding='utf-8')
+        assert sorted(library.read_song(folder, 'x')['stems']) == ['bass', 'drums', 'piano', 'vocals']
+        (folder / 'stems.json').unlink()
+        assert library.read_song(folder, 'x')['vocal'].endswith('vocals.flac')
+        # no stems at all: listed without stems, and the vocals command refuses as before
+        bare = make_song(scratch / 'd', '没分轨', stems=())
+        song = library.read_song(bare, 'x')
+        assert song is not None and song['stems'] == {} and song['vocal'] is None
+        try:
+            cli.find_vocals(bare)
+        except SystemExit as error:
+            assert '没找到' in str(error)
+        else:
+            raise AssertionError('a song without stems must be refused')
+
+
+def approx_dict(want, tolerance=1e-4):
+    class Near(dict):
+        def __eq__(self, got):
+            return set(got) == set(want) and all(abs(got[k] - want[k]) <= tolerance * max(1.0, abs(want[k])) for k in want)
+    return Near(want)
+
+
+def test_vocal_drop_takes_a_marked_flac_and_a_migrated_stem_keeps_its_voices():
+    """POST /api/vocal: XLD's marked FLAC goes to the cache as the float WAV it decodes to; a plain FLAC is still refused.
+    vocals.known finds a migrated vocals.flac under the id its vocals.wav was stored with."""
+    import urllib.request
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        (wav, flac), stored = stem_pairs(scratch)[-1], []
+        original_store = vocals.store
+        vocals.store = lambda data: (stored.append(data), ('0' * 16, {'id': '0' * 16}))[1]
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+        httpd.opened_midi, httpd.library_extra = None, []
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            def post(body):
+                request = urllib.request.Request(f'http://127.0.0.1:{httpd.server_address[1]}/api/vocal', data=body,
+                                                 method='POST', headers={'Content-Type': 'application/octet-stream'})
+                try:
+                    with urllib.request.urlopen(request, timeout=30) as response:
+                        return response.status
+                except urllib.error.HTTPError as error:
+                    return error.code
+            assert post(flac.read_bytes()) == 200 and stored[-1][:4] == b'RIFF'
+            got, _ = sf.read(io_bytes(stored[-1]), dtype='float32', always_2d=True)
+            assert float(np.abs(got - sf.read(str(wav), dtype='float32', always_2d=True)[0]).max()) <= LIMIT
+            assert post(wav.read_bytes()) == 200 and stored[-1] == wav.read_bytes()       # a WAV as before, byte for byte
+            plain = scratch / 'plain.flac'
+            sf.write(str(plain), stem_signal()[:4410] * 0.4, RATE, subtype='PCM_16', format='FLAC')
+            assert post(plain.read_bytes()) == 400 and len(stored) == 2
+        finally:
+            vocals.store = original_store
+            httpd.shutdown()
+        kept_memo, kept_cache = vocals.MEMO, vocals.CACHE
+        try:
+            vocals.CACHE, vocals.MEMO = scratch / 'voices', scratch / 'library.json'
+            (vocals.CACHE / 'abcdefabcdefabcd').mkdir(parents=True)
+            (vocals.CACHE / 'abcdefabcdefabcd' / 'info.json').write_text(json.dumps({'pipeline': vocals.PIPELINE}), encoding='utf-8')
+            run = scratch / 'song' / 'stems' / 'run-1'
+            run.mkdir(parents=True)
+            sf.write(str(run / 'vocals.wav'), stem_signal(), RATE, subtype='FLOAT')
+            write_marked_flac(run / 'vocals.flac', stem_signal(), RATE)
+            stat = (run / 'vocals.wav').stat()
+            vocals.MEMO.write_text(json.dumps({str(run / 'vocals.wav'): [stat.st_size, stat.st_mtime_ns, 'abcdefabcdefabcd']}), encoding='utf-8')
+            assert vocals.known(run / 'vocals.wav') == 'abcdefabcdefabcd'
+            assert vocals.known(run / 'vocals.flac') == 'abcdefabcdefabcd'       # WAV still beside it, unchanged
+            (run / 'vocals.wav').unlink()
+            assert vocals.known(run / 'vocals.flac') == 'abcdefabcdefabcd'       # WAV deleted after the migration
+            assert vocals.known(run / 'vocals.wav') is None
+            assert vocals.known(scratch / 'elsewhere' / 'vocals.flac') is None
+        finally:
+            vocals.MEMO, vocals.CACHE = kept_memo, kept_cache
+
+
 TESTS = [value for name, value in sorted(globals().items()) if name.startswith('test_') and callable(value)]
 
 

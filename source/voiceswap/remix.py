@@ -43,6 +43,8 @@ sys.path.insert(0, str(HERE))
 import numpy as np
 import soundfile as sf
 
+import xld_stems
+
 #: The window for "is the original singing here", and how far under the loudest window
 #: still counts. Level is matched over those windows only, so the instrumental stretches
 #: (where the stem holds only separation residue) do not drag the match down.
@@ -88,8 +90,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     stems, out = args.stems.resolve(), args.out.resolve()
-    vocal_path = stems / 'vocals.wav'
-    backing_paths = sorted(p for p in stems.glob('*.wav') if p.name != 'vocals.wav')
+    # Each stem is a float WAV or XLD's half-level 24-bit FLAC (2026-11-15); xld_stems.read puts the gain back.
+    found = xld_stems.run_stems(stems)
+    vocal_path = found.pop('vocals', stems / 'vocals.wav')
+    backing_paths = sorted(found.values())
     if not vocal_path.is_file() or not backing_paths:
         raise SystemExit(f'{stems} 里要有 vocals.wav 和至少一条其余分轨')
     if not (args.voice or args.rvc):
@@ -97,10 +101,10 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
 
-    vocal, rate = sf.read(str(vocal_path), dtype='float32', always_2d=True)
+    vocal, rate = xld_stems.read(vocal_path, dtype='float32', always_2d=True)
     backing = np.zeros_like(vocal)
     for path in backing_paths:
-        stem, stem_rate = sf.read(str(path), dtype='float32', always_2d=True)
+        stem, stem_rate = xld_stems.read(path, dtype='float32', always_2d=True)
         if stem_rate != rate or stem.shape != vocal.shape:
             raise SystemExit(f'{path.name} 和 vocals.wav 的长度或采样率不一致')
         backing += stem

@@ -129,7 +129,12 @@ def find_vocals(target: Path):
     if target.is_file():
         return target
     if target.is_dir():
-        found = sorted(target.glob('stems/*/vocals.wav'))
+        # The one stems.json points at (a WAV or XLD's 24-bit FLAC), else the newest of either; XLD's runner reads both.
+        from studio import xld_stems
+        listed = xld_stems.listed(target).get('vocals')
+        if listed is not None:
+            return listed
+        found = sorted(p for suffix in xld_stems.SUFFIXES for p in target.glob(f'stems/*/vocals{suffix}'))
         if found:
             return max(found, key=lambda p: p.stat().st_mtime)
         raise SystemExit(f'{target} 里没找到 stems/*/vocals.wav')

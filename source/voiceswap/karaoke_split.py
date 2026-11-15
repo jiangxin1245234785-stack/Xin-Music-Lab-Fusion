@@ -34,10 +34,12 @@ def main(argv=None):
     from ml_collections import ConfigDict
 
     import roformer
+    sys.path.insert(0, str(HERE))
+    import xld_stems
 
     stem, out = Path(argv[0]), Path(argv[1])
     out.mkdir(parents=True, exist_ok=True)
-    audio, rate = sf.read(str(stem), dtype='float32', always_2d=True)
+    audio, rate = xld_stems.read(stem, dtype='float32', always_2d=True)    # XLD's FLAC stem: gain put back
     config = ConfigDict(yaml.load((MODEL / 'config.yaml').read_text(encoding='utf-8'), Loader=SafeLoaderWithTuple))
     model = get_model_from_config('bs_roformer', config)
     model.load_state_dict(load_checkpoint_state(MODEL / 'model.ckpt', map_location='cpu'), strict=True)

@@ -42,6 +42,7 @@ if sys.stderr is None or sys.stdout is None:
 
 from studio import library, vocals  # noqa: E402
 from studio import batch, effects, samples  # noqa: E402
+from studio import xld_stems  # noqa: E402
 from studio.batch import export, rebuild, stem_levels  # noqa: E402
 
 KITS_DIR = ROOT / 'kits'
@@ -695,10 +696,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({'error': f'人声分轨处理失败：{error}'}, 500)
             # The stem comes as the raw body: base64 inside JSON would add a third to 50 MB.
             data = self.rfile.read(length)
-            if data[:4] != b'RIFF' or data[8:12] != b'WAVE':
+            marked = xld_stems.is_marked_flac(data)          # XLD's FLAC stem (half level, comment xld-gain=2)
+            if not marked and (data[:4] != b'RIFF' or data[8:12] != b'WAVE'):
                 return self.send_json({'error': '这不是 WAV 文件（要 XLD 分离出的 vocals.wav）'}, 400)
             try:
-                vocal_id, state = vocals.store(data)
+                vocal_id, state = vocals.store(xld_stems.flac_to_wav_bytes(data) if marked else data)
             except Exception as error:  # noqa: BLE001 — the page has to be told, not the console
                 traceback.print_exc()
                 return self.send_json({'error': f'人声分轨处理失败：{error}'}, 500)

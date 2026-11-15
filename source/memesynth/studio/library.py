@@ -17,6 +17,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
+if str(HERE.parent) not in sys.path:            # run as a script, `studio` is not importable yet
+    sys.path.insert(0, str(HERE.parent))
+
+from studio import xld_stems  # noqa: E402
 #: XLD's own default (core/analysis-service.cjs); XLD_ANALYSIS_ROOT overrides it.
 DEFAULT_ROOT = Path(r"D:\Caches\Xin's Local Deck\Analysis")
 #: The separated stems XLD writes for one run, by the name the studio's tracks use.
@@ -44,18 +48,23 @@ def read_song(folder: Path, where: str):
     if midi is None:
         return None
     # The separation run XLD points at, or failing that the newest folder that holds a stem.
-    run_dir = None
+    # A stem is a float WAV or (since 2026-11-15) a marked 24-bit FLAC: the manifest's `file` says which.
+    run_dir, listed = None, {}
     manifest = folder / 'stems.json'
     if manifest.is_file():
         run = json.loads(manifest.read_text(encoding='utf-8')).get('runId') or ''
         if run and (folder / 'stems' / run).is_dir():
             run_dir = folder / 'stems' / run
+        listed = xld_stems.listed(folder)
     if run_dir is None:
-        found = newest(p for name in STEMS for p in folder.glob(f'stems/*/{name}.wav'))
+        found = newest(p for name in STEMS for suffix in xld_stems.SUFFIXES for p in folder.glob(f'stems/*/{name}{suffix}'))
         run_dir = found.parent if found else None
     # Its stems are the tracks the studio can keep as they are; the vocal is one of them.
-    stems = {name: str(run_dir / f'{name}.wav') for name in STEMS
-             if run_dir is not None and (run_dir / f'{name}.wav').is_file()}
+    stems = {}
+    for name in STEMS:
+        path = listed.get(name) or (xld_stems.find(run_dir, name) if run_dir is not None else None)
+        if path is not None:
+            stems[name] = str(path)
     vocal = Path(stems['vocals']) if 'vocals' in stems else None
     return {
         'key': hashlib.sha1(str(folder.resolve()).encode('utf-8')).hexdigest()[:12],
