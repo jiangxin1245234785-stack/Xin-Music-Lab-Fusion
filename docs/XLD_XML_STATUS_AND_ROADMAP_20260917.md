@@ -18,8 +18,8 @@ XML 是音乐可视化产品，XLD 是本地音乐分析与工作台。XLD 已�
 
 | 项目 | 当前状态 / 位置 |
 |---|---|
-| 最新可运行开发包 | `releases/0.5.0-dev.history.1`，含 XLD.exe、XML.exe（P0 轮次 A，2026-09-17）；`releases/0.5.0-dev.muscriptor.4` 保留 |
-| XLD 源码版本 | `source/xld-runtime-baseline`，0.5.0-dev.core.25 |
+| 最新可运行开发包 | `releases/0.5.0-dev.drums.1`，含 XLD.exe、XML.exe（模型迭代 R3：鼓备选引擎 ADTOF · DrumSep 7 类，2026-09-18）；`0.5.0-dev.chords.2`（R2 完成：ChordMini 为和弦主引擎）、`0.5.0-dev.chords.1`、`0.5.0-dev.piano.2`（Transkun V2 钢琴默认）、`0.5.0-dev.piano.1`、`0.5.0-dev.history.1`（P0 轮次 A）、`0.5.0-preview.paths.1`（相对路径预览）与 `0.5.0-dev.muscriptor.4` 保留 |
+| XLD 源码版本 | `source/xld-runtime-baseline`，0.5.0-dev.core.31（XML 0.5.0-dev.stems.12） |
 | XML 源码版本 | `source/fusion-runtime-baseline`，0.5.0-dev.stems.10 |
 | 兼容与运行时配置 | `source/shared-analysis` |
 | 可视化 Generator 源码 | `source/glitch-generator-typescript`，保留原有材料 / Glitch 工作，不纳入本轮模型改造 |
@@ -29,7 +29,7 @@ XML 是音乐可视化产品，XLD 是本地音乐分析与工作台。XLD 已�
 | 附加环境 | `runtime/addons/{muscriptor-v1,yourmt3-v1,refine-roformer-v1,audiosep-v1}` |
 | 本机曲库 | `D:/Download/bandcamp` |
 | 正在使用的结果 | `artifacts/refinement-three-20260915/analysis` |
-| 最新工作与证据 | `work/midi-history-20260917`、`artifacts/midi-history-20260917`（P0 轮次 A）；toe 鼓对照见 `work/toe-drums-20260917`、`artifacts/toe-drums-20260917` |
+| 最新工作与证据 | `work/piano-transkun-20260918`、`artifacts/piano-transkun-20260918`（R1 Transkun 钢琴）；P0 轮次 A 见 `work/midi-history-20260917`；相对路径预览见 `work/portable-paths-20260918`；模型迭代范围见 `docs/MODEL_INTEGRATION_FREEZE_20260918.md` |
 | 本机 GPU | RTX 5070 Ti Laptop，12 GB 显存 |
 | Node | `C:/Program Files/nodejs/node.exe` |
 | 开发 Electron | `D:/Program Files/smoke-resonance/node_modules/electron/dist/electron.exe` |
@@ -75,7 +75,7 @@ XML 是音乐可视化产品，XLD 是本地音乐分析与工作台。XLD 已�
 |---|---|---|
 | 工作台 / 曲库 | 已实现 | 工作台默认，曲库侧栏；概览、段落、和弦、分轨、MIDI；双语、紧凑布局 |
 | 段落识别 | 已实现 | SongFormer 与 MSAF；保留机器结果与人工标注边界 |
-| 和弦识别 | 已实现 | BTC、CQT、CENS、Hybrid 与已有展示 / 共识逻辑 |
+| 和弦识别 | 已实现 | ChordMini · BTC-CL 主引擎（chords.2 起），BTC、consonance-ACE、CQT、CENS、Hybrid 备选；XML 共识先验 ChordMini 1.5 / BTC 1.35 / 其余 1；runner 在 source/xld-runtime-baseline/analysis-harmony |
 | 六轨分离 | 已实现 | BS-RoFormer SW / Demucs；缓存、取消、试听、目录 |
 | Mega53 细分 | 已实现 | 原曲 / 六轨输入，全目标、整曲 / 预览；目标与残差独立保存 |
 | MIDI 单轨 | 已实现 | piano、bass、guitar、drums、strings；按模型 / 来源保存与选择 |
@@ -93,13 +93,13 @@ XML 是音乐可视化产品，XLD 是本地音乐分析与工作台。XLD 已�
 |---|---|---|
 | 基础分轨 | BS-RoFormer SW 六轨 | Demucs htdemucs_6s 备用；不是所有 BS-RoFormer 权重都输出六轨 |
 | 细分 | Mega53 | Bowed Strings v2、AudioSep 只做 30 秒预览备选；用户偏好 Mega |
-| 钢琴 MIDI | HiRes Piano | Basic Pitch；当前够用，不优先更换 |
+| 钢琴 MIDI | Transkun V2（2026-09-18 piano.2 起；预测力度与踏板） | HiRes Piano（用户在 BCNR Nancy 上听评有共鸣音造成的杂糅根音）、Basic Pitch |
 | 贝斯 MIDI | HiRes Bass / FiloBass checkpoint | Basic Pitch；当前够用 |
 | 吉他 MIDI | MuScriptor Medium | Large 用于复杂失真 / 后摇，用户已接受；不自动根据曲名判难度 |
 | 弦乐 MIDI | MuScriptor Large | Medium 快速；YourMT3+ 和 Basic Pitch 备选；YourMT3+ 比 Basic Pitch 连贯，但 Large 又有改善 |
-| 鼓 MIDI | ADTOF | MuScriptor Medium、Large。toe 整体相近，ADTOF 镲片尾音略逊；WEG 变音鼓仍困难 |
+| 鼓 MIDI | ADTOF（drums.1 起备选 ADTOF · DrumSep 7 类：crash / ride 拆分 + 相对力度，待听评） | MuScriptor Medium、Large。toe 整体相近，ADTOF 镲片尾音略逊；WEG 变音鼓仍困难 |
 | 段落 | SongFormer / MSAF 可选 | SongFormer 提供结构标签；MSAF 同字母主要表示算法内相似，不等于人工段落名 |
-| 和弦 | BTC + 现有特征方案 | CQT / CENS / Hybrid 是信号特征与模板 / 时序处理方案，不是三个同规模大模型 |
+| 和弦 | ChordMini · BTC-CL（chords.2 起） | BTC 备选与对照基准；consonance-ACE 提供转位与 Harte 原标签；CQT / CENS / Hybrid 是信号特征与模板 / 时序处理方案，不是同规模大模型 |
 
 ### 5.1 配置入口与不可随意变化的参数
 
@@ -257,7 +257,7 @@ trackId：`185c26ddfa52bc04f027409331b9b912b43458dd`，约 568.75 秒。
 
 范围控制：先对 MIDI 链实施，不同时迁移 SongFormer、全部和弦、所有细分历史文件。先用隔离夹具与真实只读样本验证，再发布兼容开发版。
 
-轮次 A 完成情况（2026-09-17，`releases/0.5.0-dev.history.1`，core.25）：任务 1（复用既有字段推导身份，新增可选 `digests` 与 notes.json 来源字段）、任务 2（`ok` / `matches` 拆分，旧清单按原样读取）完成；任务 3 的并存落盘（`runs/` 记录）完成，按 runId 激活与切换未做；任务 4 的“不同版本保留、同版本替换”完成，有限保留策略未做；任务 5 的融合 provenance 完成，单轨 / 一键 / 融合按活跃指针读同一结果。验收项：现有 MEGURI MIDI 可读 ✓；A 可预览 ✓；B 不误命中 A ✓；取消 B 保留 A ✓；删除 B 不损坏 A / WAV ✓；XML 读取活跃结果 ✓；切回 A 无需重跑 ✗（轮次 B）。证据：`work/midi-history-20260917`、`artifacts/midi-history-20260917`。
+轮次 A 完成情况（2026-09-17，`releases/0.5.0-dev.history.1`，core.25）：任务 1（复用既有字段推导身份，新增可选 `digests` 与 notes.json 来源字段）、任务 2（`ok` / `matches` 拆分，旧清单按原样读取）完成；任务 3 的并存落盘（`runs/` 记录）完成，按 runId 激活与切换未做；任务 4 的“不同版本保留、同版本替换”完成，有限保留策略未做；任务 5 的融合 provenance 完成，单轨 / 一键 / 融合按活跃指针读同一结果。验收项：现有 MEGURI MIDI 可读 ✓；A 可预览 ✓；B 不误命中 A ✓；取消 B 保留 A ✓；删除 B 不损坏 A / WAV ✓；XML 读取活跃结果 ✓；切回 A 无需重跑 ✗（已由轮次 B 于 2026-09-19 完成，`0.5.0-dev.history.2`：在「模型版本」里按「切换」即可，不起推理）。证据：`work/midi-history-20260917`、`artifacts/midi-history-20260917`。
 
 ### P1：轻量模型管理页
 
@@ -294,13 +294,48 @@ BeatThis：独立输出 beats / downbeats 秒级事件与来源版本；先为 M
 
 ### P4：MIDI 可视化与轻量微调
 
-第一轮只读钢琴卷帘、声部开关、原 WAV / 合成 MIDI 对照、缩放与定位，显示真实秒时间；可选拍点网格另层叠加。第二轮加入音符起止 / 音高 / 力度、删除、合并碎音、拆分、撤销和导出。
+**第一轮已交付（2026-09-18，timeline.1）**，但落点与原计划不同：不是"钢琴卷帘 + 原 WAV / 合成 MIDI 对照"，而是**段落、和弦与五个声部音符共用一根时间轴**的只读视图（XLD 新增「时间轴」页签，原「MIDI」页签改名「转谱」）。原因是用户明确核心需求为"直观看到结构化分析的结果，后续可以直接在图上标和弦、标段落变化"，播放对照不重要。显示真实秒时间、缩放 1×–8×、任意轨拖动跳转；不量化、不画网格（拍点网格前提是节拍检测，R4 已否决）。见 work/timeline-20260918/HANDOFF.md。
+
+**第二轮已交付（2026-09-18，timeline.2）**：按用户反馈补上单轨查看（点轨头把一个声部铺满视图高度，旋律轨画钢琴卷帘、鼓轨按 GM 键分行，段落与和弦轨保留作参照）与播放光标跟随。见 work/timeline-focus-20260918/HANDOFF.md。
+
+**第三轮已交付（2026-09-18，timeline.3）：图上标注。** 页签头的「标注」开关打开后，在任意轨上拖动划区间、或点某一块把它的区间与标签抄进标记。标注层增加 `kind`（section / chord），旧标注读回即 section，无需迁移；`music-lab.json` 的 `manualTags` 只导出 section 标记，XML 契约未动。**模型结果永不被改写**。见 work/timeline-annotate-20260918/HANDOFF.md。人工和弦如何进入 XML 共识尚未设计。
+
+横向深缩放（上限 8× → 32×+）是独立的一轮：整条轨现在是一张与缩放同宽的画布，超过 16384 会降 dpr 变糊，要改成只渲染可视区。用户尚未提出这个需求。
+
+**第四 / 五轮已交付（2026-09-18，timeline.4 / timeline.5）：导航。** 定位光标（单次动作，播放不自动滚动画面）、拖刻度条 / Shift 拖轨 / 中键拖轨平移、缩放保持画面中心、轨头钉在左边缘。平移修饰键从 Alt 换成 Shift——Alt 是 Windows 菜单栏保留键。见 work/timeline-nav-20260918/HANDOFF.md 与 work/timeline-locate-20260918/HANDOFF.md。
+
+第五轮（原第二轮）加入音符起止 / 音高 / 力度、删除、合并碎音、拆分、撤销和导出，明确押后。
 
 机器原始音符不覆盖；人工修改作为 edit layer，绑定 sourceRunId。新模型结果另建版本，人工修改不能无提示套到另一套事件上。鼓用鼓键行和 onset 展示，不把人为 100 ms 当真实延音。
 
 节奏分析逐步加入 onset density、IOI 分布、拍内位置、反复模式与局部速度；和声视图区分音频和弦预测与 MIDI 音高集合推断。不要因 MIDI 漏音把唯一推断标签当真值。
 
 验收：编辑后重开仍在、撤销有效、重新转谱不抹去手工稿、原始与编辑导出可区分。暂不做 FL Studio 完整替代、混音器或复杂 DAW 插件。
+
+### P4.5：身份与角色 —— 声部拆分到哪里为止（2026-09-18 决定，追加需求）
+
+用户提出的问题:guitar 里节奏吉他与主音吉他结构功能完全不同,strings 里 cello 与 violin 职责也完全不同,凭什么归为一轨。
+
+**结论:这是两类问题,用两种办法。**
+
+| | 性质 | 分离层能不能做 | 落点 |
+|---|---|---|---|
+| cello / violin / viola / double-bass | 声源身份 | **能** —— Mega53 已有独立目标 | 存储契约:给 stem 加子键 |
+| 节奏吉他 / 主音吉他 | 角色 | **不能** —— 同一声源的两种写法 | 音符之上的角色层 |
+
+**弦乐:模型已经给了,卡在记账。** Mega53 的 53 个目标里 `violin` / `viola` / `cello` / `double-bass` 各自独立,`core/string-source.cjs` 的 `TARGETS` 表也已按各自的 GM program（40 / 41 / 42 / 43）解析。今天即可分别跑,但**只能二选一作为转谱来源**:`midi/strings-source.json` 是单指针,MIDI 记录按 stem 单键存（`readMidi(track,'strings')`）,且 `derived-assets.cjs` 的 `sourceMismatch` 在 `result.sourceTarget !== current.target` 时判 stale——换目标等于作废上一个的 MIDI。
+
+要并存需引入 stem 子键（形如 `strings:cello`）,牵动 `readMidi`、`midi-delete`（每个运行目录恰好两个文件）、`midi-merge` 的 parts（现按 `STEMS` 循环）、时间轴轨组合。**存储契约变更,量级与 P0 轮次 B 相当。** 可做,单独排一轮,不要和标注混在一起。
+
+**吉他:分离救不了。** 两把电吉他在 BS-RoFormer 下是同一条 guitar stem;Mega53 的细分是 electric / acoustic / banjo / dobro / mandolin —— **音色身份**,不存在也不会有"节奏 / 主音",因为它们不是两个声源。只有音色确实不同（木吉他扫弦 + 电吉他 solo）时细分才帮得上。其余情况只能从 MIDI 推断,信号是干净的:同一 onset 簇内 ≥3 个不同音高 → 和弦性;单音连续行进 → 线性;叠加与和弦轨标签的吻合度、onset 是否压在和弦变化点上。规则实现,不需要模型,判错时依据可见。
+
+**架构决定:角色是音符之上的一层,不是新的 stem。** 同一轨内两种角色经常时间重叠（主歌扫弦、副歌同一把琴弹 riff）,拆成两条轨是在撒谎。落地形式:时间轴单轨模式下按角色给音符上色（和弦性 / 线性 / 不确定）+ 轨下方一条角色区间条。此结论对弦乐同样成立——即使 cello / violin 将来并存,"铺底 vs 主题"仍是角色问题。这与 P5 的 "Role 随区间变化" 是同一件事,只是提前落到可视层。
+
+**前提:角色推断继承转谱的错误。** MuScriptor 把扫弦压成两三个音、把滑音断成碎音,角色判断就跟着错。因此这一层必须让依据可见（上色 + 区间条）,不得只给一个不可核对的标签。
+
+**追加（2026-09-18，用户提出后置）:单轨和声与全局和弦的协调。** 现状:和弦引擎喂的是混音去掉人声与鼓之后的和声层（htdemucs bass+other），是**伴奏的和声**，一条全局标签序列。用户指出单轨可以有不同的和弦。结论:**不给每条轨再跑一遍和弦模型**——那些模型在混音上训练，分离轨带残差；更要命的是单个乐器经常不足以定和弦（power chord 没三音、贝斯线本身不定和弦）。而每条轨已经有 MIDI，读音符比跑音频模型直接得多。该建的对象是**每轨与全局和弦的关系**:一致 / 补充（加了七九音、sus）/ 冲突（持续发出非和弦内且非经过音的音级）/ 未发声，按全局和弦的区间切分，落在轨下方的区间条里（与角色层同一套渲染）。两个特例:bass 轨的最低音 vs 根音直接给出**转位**（consonance-ACE 的 `rawLabel` / `bass` 已有自己的判断可对照）；**冲突段落顺便是和弦模型的错误定位器**，而 timeline.3 的人工和弦轨已经能在那里直接改。代价:继承转谱误差，且音级集合不等于和弦，所以默认**不给单轨和弦名**，只给关系与音级。**已于 2026-09-19 以 timeline.7 交付**：轨下条带可切换「演奏方式 / 和声关系」，一次只读一种；一致 / 补充 / 冲突 / 难以判定，另附转位；以全局和弦轨为参照系，不给单轨和弦名。见 work/timeline-harmony-20260919/HANDOFF.md。
+
+**顺序:图上标注先行。** 角色区间条与手工标注是同一种东西——时间区间加标签。标注的存储契约开出来后,角色层只是它的一个自动来源,而不是另起一套。
 
 ### P5：结构化 corpus 与比较（长期）
 
@@ -316,12 +351,14 @@ BeatThis：独立输出 beats / downbeats 秒级事件与来源版本；先为 M
 
 ## 10. 上游候选与来源
 
+2026-09-18 补充：完整的模型选型调研（基线维护状态、各任务候选对照表、同比数值、许可证、试验顺序建议与参考文献）见 [MODEL_LANDSCAPE_20260917.md](MODEL_LANDSCAPE_20260917.md)；本节下表是交接时的旧入口，以该文档为准。
+
 以下是截至交接时讨论 / 查证过的研究入口。除“当前模型”列出的已接入模型外，下列更新候选均不代表已安装或已跑本机；接入前复核当时仓库、权重许可与硬件要求。
 
 | 候选 | 用途与优先级 | 原始来源 |
 |---|---|---|
 | ChordFormer | 和弦候选，P2；研究代码需本地设备与统一结果适配 | [GitHub](https://github.com/mwaseemrandhawa/ChordFormer)、[论文](https://arxiv.org/abs/2502.11840) |
-| BeatThis | beat / downbeat，P2；可先不启用额外 DBN 依赖 | [GitHub](https://github.com/CPJKU/beat_this) |
+| BeatThis | **已试验并放弃（2026-09-18）**：接入完整、速度快，但本曲库上倍频错误与强拍漂移严重，仅 MEGURI 可用；代码已回滚，证据在 work/beats-20260918。若重启需先解决这两类失败（DBN 后处理、倍频校验） | [GitHub](https://github.com/CPJKU/beat_this) |
 | Transkun V2 系列 | 钢琴候选，低优先；注意踏板延音定义影响比较 | [GitHub](https://github.com/Yujia-Yan/Transkun) |
 | Separate-and-Detect | 鼓分离辅助检测研究候选；环境和耗时需要实测，不能宣称胜出现有模型 | [GitHub](https://github.com/ddman1101/Separate-and-detect)、[权重](https://huggingface.co/ddman1101/Separate-and-Detect) |
 | SCNet | 四轨分离候选，不是六轨 / 53 目标等价替代 | [GitHub](https://github.com/starrytong/SCNet) |
@@ -334,11 +371,13 @@ BeatThis：独立输出 beats / downbeats 秒级事件与来源版本；先为 M
 | 轮次 | 范围 | 明确完成条件 |
 |---|---|---|
 | A | P0 历史读取 / 缓存拆分，兼容元信息 | 已完成 2026-09-17（`0.5.0-dev.history.1`）：不换任何模型；旧结果继续显示，新版本不误命中缓存 |
-| B | P0 同引擎双版本与激活 / 回退 / 删除 | 新旧可比较，单轨 / 一键 / 融合一致 |
+| B | P0 同引擎双版本与激活 / 回退 / 删除 | 已完成 2026-09-19（`0.5.0-dev.history.2`，core.44）：按 runId 读取 / 切换 / 保留 / 删除，生成后有限回收（只回收无指针指向的版本，重复版硬删、其余进回收站，音源已变 / 文件已删除 / 记录损坏永不回收，保留标记永久豁免）。缓存行为未改，回退后"生成 MIDI"仍会重跑，文案如实说明并指向切换。见 `work/midi-versions-20260919/HANDOFF.md` |
 | C | P1 模型页最小版本 | 看版本、选默认、看体积、移除闲置模型；共享依赖不损坏 |
 | D | P2 ChordFormer + P3 小样本 | BTC 保留；真实同源对照，人工决定是否晋升 |
-| E | P2 BeatThis + P4 只读卷帘 | 正确秒时轴、可开关网格，不自动量化 |
-| F | 正式版整理 / P4 微调按用户选择 | 清晰入口、升级兼容、诊断；编辑另层存储 |
+| E | ~~P2 BeatThis~~ + P4 只读时间轴 | 只读时间轴已交付（timeline.1，正确秒时轴、不自动量化）；BeatThis 已试验否决，网格无前提 |
+| F | P4.5 角色层 **已交付（timeline.6）** | 柱式 / 分解和弦 / 线性三类，判据为 onset 间距而非复音度；每段带依据；不新增 stem；渲染端计算 |
+| G | P4.5 弦乐分件 **已试验、已撤回（2026-09-19）** | strings.1–.3 曾把 violin / cello / double-bass 做成正式 stem，用户指出层级不对：`strings` 是容器不是乐器，摘一件出来不等于拆分，跳过组轨还会静默丢掉中提琴。已全部撤回（revert.1）。**正确做法是链式残差**：other → violin + 剩余 → cello + 剩余 → …「其余弦乐」，靠每次细分产出的 `residual.wav` 保证加起来等于原组；前提是 `refinement.context()` 能接受上一次细分的残差作为输入。可行性门结论保留：分得开的是音区两端，viola 分不开 |
+| H | 正式版整理 / P4 微调按用户选择 | 清晰入口、升级兼容、诊断；编辑另层存储 |
 
 每轮只解决一个可验收问题，避免同时换环境、换模型、改时轴、重写 UI。新模型依赖 / 下载 / GPU 实测的不确定性大，不承诺固定几天交付。优先让 A、B 成为可独立回退的小版本。
 
