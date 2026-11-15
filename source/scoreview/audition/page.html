@@ -1,0 +1,1072 @@
+<title>谱面视图试听台</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* One column. The score sits in a dark stage that stays pinned while everything that
+   changes it (song, zoom, play line, drawing, lanes) scrolls underneath, so a switch is
+   judged with the notes still moving. Same panel language as 强拍对照台 and 人声替换台;
+   the stage itself is always dark, in both themes, because it is a screen, not a page. */
+:root {
+  --bg: #13161a; --panel: #1b1f25; --panel-lit: #232931; --edge: #2d343d;
+  --fg: #e8e6e1; --dim: #8b9099; --faint: #5c636d;
+  --signal: #f0a830; --signal-soft: rgba(240,168,48,.14);
+  --live: #5fd3a6; --live-soft: rgba(95,211,166,.14);
+  --warn: #e8705a; --warn-soft: rgba(232,112,90,.15);
+  --stage: #0d1016; --stage-edge: #262c36; --stage-fg: #e8e6e1; --stage-dim: #8b9099;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 2px 10px rgba(0,0,0,.35);
+  color-scheme: dark;
+  --ui: "Archivo", system-ui, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #eceae5; --panel: #f7f6f3; --panel-lit: #fff; --edge: #d5d2cb;
+  --fg: #1d2024; --dim: #5d636b; --faint: #8d939b;
+  --signal: #b8691a; --signal-soft: rgba(184,105,26,.12);
+  --live: #1f8a66; --live-soft: rgba(31,138,102,.12);
+  --warn: #b23c25; --warn-soft: rgba(178,60,37,.12);
+  --shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 4px rgba(0,0,0,.08);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--ui); line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 28px; max-width: 1080px; margin-inline: auto;
+}
+h1 { font-size: 1.3rem; font-weight: 700; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.sub { color: var(--dim); font-size: .84rem; margin: 5px 0 0; max-width: 62ch; }
+.store { font-family: var(--mono); font-size: .74rem; color: var(--faint); margin: 7px 0 0; }
+.store.bad { color: var(--warn); }
+h2 { font-size: .72rem; font-weight: 600; margin: 24px 0 8px; letter-spacing: .09em; color: var(--dim); }
+.hint { color: var(--dim); font-size: .8rem; margin: -2px 0 10px; max-width: 68ch; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* --- song switch ----------------------------------------------------------- */
+.songs { display: flex; gap: 6px; margin: 14px 0 10px; flex-wrap: wrap; }
+.song {
+  flex: 1 1 150px; text-align: left; cursor: pointer; padding: 8px 12px; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 9px; min-width: 0;
+}
+.song:hover { background: var(--panel-lit); }
+.song[aria-pressed="true"] { border-color: var(--signal); background: var(--signal-soft); }
+.song b { display: block; font-size: .95rem; font-weight: 600; }
+.song span { display: block; font-size: .74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- stage ----------------------------------------------------------------- */
+.stage { position: relative; background: var(--stage); border: 1px solid var(--stage-edge); border-radius: 12px; overflow: hidden;
+  box-shadow: var(--shadow); }
+@media (min-height: 640px) {
+  .stage { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 6px); z-index: 5; }
+}
+#score { display: block; width: 100%; height: clamp(290px, 56vh, 660px); touch-action: pan-y; cursor: pointer; }
+@media (max-height: 520px) { #score { height: calc(100vh - 96px); min-height: 190px; } }
+.transport { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--stage-edge); }
+#play { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--stage-edge);
+  background: #1a1f28; color: var(--stage-fg); cursor: pointer; display: grid; place-items: center; }
+#play:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+#play:disabled { opacity: .45; cursor: progress; }
+#play .glyph { display: block; width: 0; height: 0; }
+#play.paused .glyph { border-left: 12px solid currentColor; border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent; margin-left: 4px; }
+#play.playing .glyph { width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+.meter { flex: 1 1 auto; min-width: 0; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.state { font-size: .76rem; color: var(--stage-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state.bad { color: var(--warn); }
+.clock { font-family: var(--mono); font-size: .76rem; color: var(--stage-dim); font-variant-numeric: tabular-nums; flex: none; }
+.track { position: relative; height: 22px; cursor: pointer; touch-action: none; }
+.track::before { content: ""; position: absolute; inset: 9px 0 auto; height: 4px; border-radius: 2px; background: #2a313c; }
+.fill { position: absolute; left: 0; top: 9px; height: 4px; border-radius: 2px; background: var(--signal); width: 0; }
+
+/* --- controls -------------------------------------------------------------- */
+.rows { display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 12px; align-items: center;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 11px; }
+.row > label, .row > .label { font-size: .8rem; font-weight: 600; color: var(--dim); }
+.row .note { grid-column: 2; font-size: .74rem; color: var(--faint); }
+.seg { display: flex; flex-wrap: wrap; gap: 5px; }
+.opt {
+  font: 600 .8rem var(--ui); padding: 6px 11px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--dim);
+}
+.opt:hover:not(:disabled) { color: var(--fg); border-color: var(--faint); }
+.opt:disabled { opacity: .4; cursor: not-allowed; }
+.opt[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
+.opt.yes[aria-pressed="true"] { color: var(--live); border-color: var(--live); background: var(--live-soft); }
+.opt.no[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.slide { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.slide input[type="range"] { flex: 1 1 160px; min-width: 0; accent-color: var(--signal); }
+.slide output { font-family: var(--mono); font-size: .76rem; color: var(--fg); font-variant-numeric: tabular-nums; min-width: 9.5em; }
+
+.lanes { display: flex; flex-wrap: wrap; gap: 6px; }
+.lane {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; padding: 6px 10px 6px 8px;
+  font: 600 .8rem var(--ui); color: var(--faint); background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 8px;
+}
+.lane .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--faint); flex: none; }
+.lane .n { font: 400 .7rem var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.lane[aria-pressed="true"] { color: var(--fg); background: var(--panel-lit); border-color: var(--faint); }
+.lane[aria-pressed="true"] .dot { background: var(--lane); }
+.lane[aria-pressed="true"] .n { color: var(--dim); }
+
+.write { display: flex; gap: 6px; flex-wrap: wrap; }
+.write input { flex: 1 1 200px; min-width: 0; font: inherit; font-size: .88rem; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--edge); background: var(--panel-lit); color: var(--fg); }
+.own { display: grid; gap: 5px; margin-top: 8px; }
+.own > div { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; padding: 5px 9px; font-size: .84rem; }
+.own .at { font: 500 .8rem var(--mono); color: var(--signal); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.spots { display: grid; gap: 6px; }
+.spot { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: baseline; text-align: left;
+  cursor: pointer; padding: 8px 11px; color: var(--fg); background: var(--panel); border: 1px solid var(--edge); border-radius: 9px; }
+.spot:hover { background: var(--panel-lit); }
+.spot .when { font: 500 .82rem var(--mono); color: var(--signal); font-variant-numeric: tabular-nums; }
+.spot .why { font-size: .82rem; color: var(--dim); }
+
+/* --- gate ------------------------------------------------------------------ */
+.qs { display: grid; gap: 8px; }
+.q { background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; display: grid; gap: 7px; }
+.q h3 { margin: 0; font-size: .92rem; font-weight: 600; }
+.q p { margin: 0; font-size: .8rem; color: var(--dim); max-width: 68ch; }
+.q .kept { font: 400 .74rem var(--mono); color: var(--live); min-height: 1.2em; }
+.q .kept.none { color: var(--faint); }
+.per { display: grid; gap: 6px; }
+.per > div { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; align-items: center; }
+.per .who { font-size: .78rem; color: var(--dim); font-weight: 600; }
+textarea {
+  width: 100%; min-height: 70px; resize: vertical; font-family: var(--ui); font-size: .86rem;
+  padding: 9px 11px; border-radius: 9px; border: 1px solid var(--edge);
+  background: var(--panel-lit); color: var(--fg); line-height: 1.5;
+}
+textarea:disabled { opacity: .5; }
+.saved { font-family: var(--mono); font-size: .71rem; color: var(--faint); margin-top: 5px; min-height: 1.1em; }
+.saved.on { color: var(--live); }
+
+details { margin-top: 22px; background: var(--panel); border: 1px solid var(--edge); border-radius: 10px; }
+.decided { padding: 0 12px 12px; display: grid; gap: 10px; }
+.decided ul { margin: 0; padding-left: 1.2em; font-size: .82rem; color: var(--dim); }
+.decided .row { background: var(--panel-lit); }
+summary { cursor: pointer; padding: 10px 12px; font-size: .84rem; font-weight: 600; color: var(--dim); }
+.health { overflow-x: auto; padding: 0 12px 12px; }
+.health table { border-collapse: collapse; width: 100%; font-size: .78rem; min-width: 560px; }
+.health th { text-align: left; font-weight: 600; color: var(--dim); padding: 6px 8px; border-bottom: 1px solid var(--edge); }
+.health td { padding: 6px 8px; border-bottom: 1px solid var(--edge); vertical-align: top; color: var(--dim); }
+.health td:first-child { color: var(--fg); white-space: nowrap; }
+.pill { display: inline-block; font: 600 .68rem var(--ui); padding: 1px 7px; border-radius: 99px; margin-right: 6px; }
+.pill.has { color: var(--live); background: var(--live-soft); }
+.pill.lacks { color: var(--warn); background: var(--warn-soft); }
+.foot { color: var(--faint); font-size: .76rem; margin: 20px 0 0; padding-top: 12px; border-top: 1px solid var(--edge); display: grid; gap: 6px; }
+.foot kbd { font-family: var(--mono); font-size: .7rem; background: var(--panel-lit); border: 1px solid var(--edge);
+  border-radius: 4px; padding: 0 5px; color: var(--dim); }
+
+@media (max-width: 520px) {
+  .row { grid-template-columns: 1fr; }
+  .row .note { grid-column: 1; }
+  .per > div { grid-template-columns: 1fr; }
+}
+</style>
+
+<header>
+  <h1>谱面视图试听台</h1>
+  <p class="sub" id="sub"></p>
+  <p class="store" id="store">正在连接存储…</p>
+</header>
+
+<div class="songs" id="songs" role="group" aria-label="试点曲目"></div>
+
+<section class="stage" aria-label="谱面">
+  <canvas id="score" aria-label="滚动的多轨谱面。点一下播放或暂停，左右拖动可以前后挪。"></canvas>
+  <div class="transport">
+    <button id="play" class="paused" type="button" disabled aria-label="播放"><span class="glyph"></span></button>
+    <div class="meter">
+      <div class="meter-top">
+        <div class="state" id="state">正在载入…</div>
+        <div class="clock" id="clock">0:00 / 0:00</div>
+      </div>
+      <div class="track" id="track" role="slider" tabindex="0" aria-label="播放位置"
+           aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><div class="fill" id="fill"></div></div>
+    </div>
+  </div>
+</section>
+<audio id="audio" preload="auto"></audio>
+
+<main>
+  <h2 id="view-h">画面</h2>
+  <div class="rows" role="group" aria-labelledby="view-h">
+    <div class="row"><span class="label">特效搭配</span><div class="seg" id="optPreset"></div>
+      <span class="note" id="presetNote"></span></div>
+    <div class="row"><span class="label">跟随起伏</span><div class="seg" id="optFollow"></div>
+      <span class="note">开：特效跟着整首歌的起伏走。这首歌平常的响度就是这套搭配原来的样子；比平常安静就收着（光晕、火花少，余晖淡），比平常响就放开（最多到「浓」那么足）；每一下的反馈都还在，时长不变。关：全曲一个强度，和上一版一样。</span></div>
+    <div class="row"><span class="label">其它</span><div class="seg" id="optTexture"></div>
+      <span class="note">分离出来的「其它」分轨（没转成音符的铺底、音效、噪声，不含主唱和别的乐器）在鼓下面画成一条很矮的带子：按这首歌自己的轻响变粗变细、变亮变暗，安静时不画。不假装知道是什么音。</span></div>
+    <div class="row"><span class="label">音符形状</span><div class="seg" id="optShapes"></div>
+      <span class="note">拨击：钢琴、吉他、贝斯这类弹拨的音起音处一个小方头、后面变细，弦乐这类拉的音还是等粗的条。拨击 + 梭状：弹拨的同上，弦乐的音两头尖、中间鼓（梭子形）。颜色、亮度、位置都不变；人声、鼓不变。</span></div>
+    <div class="row"><span class="label">分开试</span><div class="seg" id="optFx"></div>
+      <span class="note" id="fxNote"></span></div>
+    <div class="row"><span class="label">左边轨名</span><div class="seg" id="optLabels"></div>
+      <span class="note">图标：每条轨画一个乐器的小图，都一样大、排在一条线上；这条轨响的时候图标亮，轻的时候暗。鼠标停在图标上（手机上点一下）显示名字。同一个分轨拆成几条时还写字。</span></div>
+    <div class="row"><span class="label">段落条</span><div class="seg" id="optSections"></div>
+      <span class="note">细线：每段一条细色线，名字写在线下面，放不下就不写（不再截成半个字）；正在播的那段线粗、名字亮。色块：上一版的样子。</span></div>
+    <div class="row"><span class="label">轨高</span><div class="seg" id="optHeights"></div>
+      <span class="note" id="heightsNote"></span></div>
+    <div class="row"><span class="label">背景</span><div class="seg" id="optBackdrop"></div>
+      <span class="note" id="backdropNote"></span>
+      <span class="note"><button type="button" class="opt" id="coverPick">选一张图当封面</button>
+        <button type="button" class="opt" id="coverDrop" hidden>去掉我选的图</button>
+        <input type="file" id="coverFile" accept="image/*" hidden></span></div>
+    <div class="row"><span class="label">导赏字幕</span><div class="seg" id="optCaptions"></div>
+      <span class="note" id="captionsNote"></span></div>
+    <div class="row"><span class="label">提示</span><div class="seg" id="optCaptionStyle"></div>
+      <span class="note">标注：「对象 · 事件」，只在最抓耳朵的时刻出现。要来的事提前 2 秒暗着出现，下面一条细线走完正好到点；突然的事到点直接亮。被点名的那条轨，左边的图标会跟着亮一下。句子：上一版的说法。</span></div>
+    <div class="row"><span class="label">音高曲线</span><div class="seg" id="optContour"></div>
+      <span class="note">人声音符上那条细线：每 10 毫秒一个音高。滑音、颤音、唱在两个音之间的地方，音符块说不出来，它能。</span></div>
+    <div class="row"><span class="label">和弦防抖</span><div class="seg" id="optChords"></div>
+      <span class="note" id="chordsNote"></span></div>
+    <div class="row"><span class="label">段落来源</span><div class="seg" id="optSource"></div>
+      <span class="note">库里大多数歌没有跑过能起名字的段落分析，只有按相似度聚出来的字母。切到「只有字母」，看这样的歌会是什么样子。</span></div>
+    <div class="row"><span class="label">没名字的段</span><div class="seg" id="optPlain"></div>
+      <span class="note" id="plainNote"></span></div>
+    <div class="row"><span class="label">一屏</span><div class="seg" id="optWindow"></div></div>
+    <div class="row"><span class="label">播放线</span><div class="seg" id="optPlayhead"></div>
+      <span class="note">线左边是已经响过的（亮），右边是还没到的（暗）。</span></div>
+    <div class="row"><label for="latency">延迟补偿</label>
+      <div class="slide">
+        <input id="latency" type="range" min="-250" max="250" step="5" value="0">
+        <output id="latencyOut" for="latency">不补偿</output>
+        <button class="opt" id="latencyZero" type="button">归零</button>
+      </div>
+      <span class="note">音符过线比声音早，就往右拖（画面推迟）；比声音晚，往左拖。蓝牙耳机通常要推迟 100–250 ms。这台设备会记住。</span></div>
+  </div>
+
+  <h2 id="spots-h">建议先看这几处</h2>
+  <div class="spots" id="spots" role="group" aria-labelledby="spots-h"></div>
+
+  <h2 id="own-h">自己写一句</h2>
+  <p class="hint">播到想写的地方（可以先暂停），写一句。它从那一刻起显示 6 秒，并盖掉这段时间里规则生成的那句。</p>
+  <div class="write">
+    <input id="ownText" type="text" maxlength="60" aria-labelledby="own-h" placeholder="比如：这里贝斯换了走法">
+    <button class="opt" id="ownAdd" type="button">加在现在</button>
+  </div>
+  <div class="own" id="ownList"></div>
+
+  <h2 id="gate-h"></h2>
+  <p class="hint">点了就自动保存，再点一次取消；也可以直接在对话里说。</p>
+  <div class="qs" id="qs"></div>
+
+  <h2 id="note-h">别的感受</h2>
+  <textarea id="overall" aria-labelledby="note-h" disabled
+    placeholder="比如：哪个和弦明显不对、哪一段的名字错了、和弦的位置或大小不舒服、段落条想要什么……（可空）"></textarea>
+  <div class="saved" id="overallSaved"></div>
+
+  <h2 id="lanes-h">上屏的轨</h2>
+  <p class="hint">点一下关掉或打开。数字是简化后剩下的 / 原来的音符数。</p>
+  <div class="lanes" id="lanes" role="group" aria-labelledby="lanes-h"></div>
+
+  <details>
+    <summary>前面几关定下的（想再看可以切）</summary>
+    <div class="decided">
+      <ul id="decided"></ul>
+      <div class="rows">
+        <div class="row"><span class="label">音符</span><div class="seg" id="optSimplify"></div>
+          <span class="note" id="simplifyNote"></span></div>
+        <div class="row"><span class="label">音色轨</span><div class="seg" id="optMerge"></div>
+          <span class="note">「合并」把同一个分轨拆出来的几条音色轨并成一条。</span></div>
+      </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>这两首歌现在有哪些数据</summary>
+    <div class="health" id="health"></div>
+  </details>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<script>
+/*@CORE@*/
+</script>
+<script>
+/*@CLOCK@*/
+</script>
+<script>
+const M = /*@MANIFEST@*/null;
+const $ = id => document.getElementById(id);
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+};
+const clockText = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
+
+if (!M) {
+  $('sub').textContent = '这是模板，还没有清单。用 tools/build_page.py 生成页面。';
+  throw new Error('page.html opened without a manifest');
+}
+
+/* --- settings this device remembers ---------------------------------------- */
+// The drawing starts from what gate one decided (the core's own defaults). Only the
+// latency is carried over from the gate-one page: it belongs to the device, not to a gate.
+const PREFS_KEY = 'scoreview.prefs.6';
+const SONGS = M.songs;
+const prefs = {...XinScoreView.DEFAULTS, latencyMs: 0, source: 'named', backdropMode: 'cover',
+               hidden: Object.fromEntries(SONGS.map(item => [item.id, item.hidden || []]))};
+delete prefs.offsetSeconds;
+try {
+  const kept = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
+  if (kept) Object.assign(prefs, kept, {hidden: {...prefs.hidden, ...(kept.hidden || {})}});
+  // Kept before the presets existed: the level picked then names its preset (轻 = 清亮, 强 = 浓, 关 = 素).
+  if (kept && !kept.fxPreset) prefs.fxPreset = {off: 'off', strong: 'strong'}[kept.effects] || 'clear';
+  // Gate 10 shows the marks first (it asks about them); the sentences are one switch away.
+  if (!kept || !kept.captionStyle) prefs.captionStyle = 'mark';
+  // Gate 11 shows the effects following the song first (it asks about them); off is one switch away.
+  if (!kept || !kept.fxDynamics) prefs.fxDynamics = 'song';
+  // The band for the stems without notes is shown first too (gate 11 asks about it).
+  if (!kept || typeof kept.showTexture !== 'boolean') prefs.showTexture = true;
+  // This gate shows the new look first: icons at the left, the section bar as lines (gate 9 asks which).
+  if (!kept || !kept.laneLabels) prefs.laneLabels = 'icon';
+  if (!kept || !kept.sectionStyle) prefs.sectionStyle = 'line';
+  else for (const old of ['scoreview.prefs.5', 'scoreview.prefs.4', 'scoreview.prefs.3', 'scoreview.prefs.2', 'scoreview.gate1']) {
+    const before = JSON.parse(localStorage.getItem(old) || 'null');
+    if (before) { prefs.latencyMs = Number(before.latencyMs) || 0; break; }
+  }
+} catch (error) { prefs.showTexture = prefs.showTexture !== false; prefs.fxDynamics = prefs.fxDynamics === 'off' ? 'off' : 'song'; prefs.laneLabels = prefs.laneLabels === 'text' ? 'text' : 'icon'; prefs.sectionStyle = prefs.sectionStyle === 'block' ? 'block' : 'line'; prefs.captionStyle = prefs.captionStyle === 'sentence' ? 'sentence' : 'mark'; }
+const keepPrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (error) { /* not remembered */ } };
+
+/* --- stage ----------------------------------------------------------------- */
+const audio = $('audio');
+const canvas = $('score');
+// Each song as two models: with the sections that have names, and with the ones that
+// only have a cluster letter, which is what most of the library would give.
+for (const item of SONGS) {
+  item.models = {named: item.model, plain: item.plainSections ? {...item.model, sections: item.plainSections} : null};
+}
+let song = SONGS[0];
+// Lines the listener wrote on this page, per song. Each shows for OWN_SECONDS from the
+// moment it was written at and replaces any rule-made caption it overlaps.
+const OWN_SECONDS = 6;
+const own = {};
+function modelOf(item) {
+  const shown = (prefs.source === 'plain' && item.models.plain) || item.models.named;
+  const base = prefs.captionStyle === 'mark' && item.marks ? {...shown, captions: item.marks} : shown;
+  const mine = own[item.id] || [];
+  if (!mine.length) return base;
+  const added = mine.map(line => [line.at, line.at + OWN_SECONDS, line.text, 'manual']);
+  const kept = (base.captions || []).filter(caption => !added.some(line => caption[0] < line[1] && line[0] < caption[1]));
+  return {...base, captions: [...kept, ...added].sort((a, b) => a[0] - b[0])};
+}
+let clock = XinMediaClock.create(audio, {offset: song.model.audio.offset || 0});
+const view = XinScoreView.create(canvas, modelOf(song), () => clock.now(), viewOptions());
+window.scoreview = {view, audio, clock: () => clock, songs: SONGS};
+
+// The notes' shapes: 'same' | 'two' (拨击) | 'spindle' (拨击 + 梭状). Kept before: 'three' (三类) reads as 'spindle', the old
+// on / off preference (showShapes true, 按乐器) as 'two'.
+function shapeMode() {
+  if (prefs.shapeMode === 'same' || prefs.shapeMode === 'two' || prefs.shapeMode === 'spindle') return prefs.shapeMode;
+  if (prefs.shapeMode === 'three') return 'spindle';
+  return prefs.showShapes === true ? 'two' : 'same';
+}
+function viewOptions() {
+  return {windowSeconds: prefs.windowSeconds, playhead: prefs.playhead, simplify: prefs.simplify,
+          mergeTimbres: prefs.mergeTimbres, hidden: prefs.hidden[song.id] || [], offsetSeconds: -prefs.latencyMs / 1000,
+          chordSmoothing: prefs.chordSmoothing, plainSections: prefs.plainSections, showContour: prefs.showContour, showCaptions: prefs.showCaptions,
+          showBackdrop: prefs.backdropMode !== 'off', backdrop: prefs.backdropMode === 'cover' ? 'cover' : 'section',
+          laneHeights: prefs.laneHeights, fxPreset: prefs.fxPreset, fxDynamics: prefs.fxDynamics, showTexture: prefs.showTexture, showShapes: shapeMode() !== 'same', shapeSet: shapeMode() === 'spindle' ? 'spindle' : 'two', laneLabels: prefs.laneLabels, sectionStyle: prefs.sectionStyle, captionStyle: prefs.captionStyle,
+          fxHit: prefs.fxHit, fxAfterglow: prefs.fxAfterglow, fxPlayline: prefs.fxPlayline, fxDrums: prefs.fxDrums};
+}
+/* --- album cover ----------------------------------------------------------- */
+// The picture comes with the model, or is one the listener picked on this device (kept
+// small in this browser only; it never leaves it). The core is handed the loaded image.
+const COVER_KEY = id => 'scoreview.cover.' + id;
+const ownCover = id => { try { return localStorage.getItem(COVER_KEY(id)); } catch (error) { return null; } };
+const coverOf = item => ownCover(item.id) || (item.model.cover && item.model.cover.src) || null;
+let coverTicket = 0;
+function loadCover() {
+  const ticket = ++coverTicket, source = coverOf(song);
+  view.setCover(null);
+  if (!source) return;
+  const image = new Image();
+  image.onload = () => { if (ticket === coverTicket) { view.setCover(image); paintControls(); } };
+  image.src = source;
+}
+function shrinkCover(file) {
+  return new Promise((resolve, reject) => {
+    const address = URL.createObjectURL(file), image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, 480 / Math.max(image.naturalWidth, image.naturalHeight));
+      const small = document.createElement('canvas');
+      small.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      small.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      small.getContext('2d').drawImage(image, 0, 0, small.width, small.height);
+      URL.revokeObjectURL(address);
+      resolve(small.toDataURL('image/jpeg', 0.72));
+    };
+    image.onerror = () => { URL.revokeObjectURL(address); reject(new Error('读不出这张图')); };
+    image.src = address;
+  });
+}
+
+const apply = () => { view.setOptions(viewOptions()); keepPrefs(); paintControls(); paintLanes(); };
+
+function setState(text, bad) {
+  $('state').textContent = text;
+  $('state').classList.toggle('bad', !!bad);
+}
+
+function selectSong(id) {
+  const next = SONGS.find(item => item.id === id) || SONGS[0];
+  const changed = next !== song || !audio.getAttribute('src');
+  song = next;
+  if (changed) {
+    audio.pause();
+    $('play').disabled = true;
+    setState('正在载入 ' + song.model.track.title + '…');
+    clock.destroy();
+    clock = XinMediaClock.create(audio, {offset: song.model.audio.offset || 0});
+    loadAudio();
+    view.setModel(modelOf(song));
+    loadCover();
+  }
+  for (const button of $('songs').children) button.setAttribute('aria-pressed', String(button.dataset.id === song.id));
+  $('track').setAttribute('aria-valuemax', song.model.track.duration.toFixed(1));
+  apply();
+  paintSpots();
+  paintAnswers();
+  paintOwn();
+}
+
+for (const item of SONGS) {
+  const button = el('button', 'song');
+  button.type = 'button';
+  button.dataset.id = item.id;
+  button.append(el('b', null, item.model.track.title), el('span', null, item.blurb));
+  button.addEventListener('click', () => selectSong(item.id));
+  $('songs').appendChild(button);
+}
+
+/* --- transport ------------------------------------------------------------- */
+const duration = () => Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : song.model.track.duration;
+function setRunning(running) {
+  $('play').className = running ? 'playing' : 'paused';
+  $('play').setAttribute('aria-label', running ? '暂停' : '播放');
+}
+async function toggle() {
+  if ($('play').disabled) return;
+  if (audio.paused) {
+    try { await audio.play(); } catch (error) { setState('没能开始播放（' + (error && error.name || error) + '），再点一次。', true); }
+  } else audio.pause();
+}
+function seek(seconds) {
+  audio.currentTime = Math.max(0, Math.min(duration() - 0.05, seconds));
+  paintClock();
+}
+async function playFrom(seconds) {
+  seek(seconds);
+  if (audio.paused && !$('play').disabled) { try { await audio.play(); } catch (error) { /* the button still works */ } }
+}
+audio.addEventListener('canplay', () => { $('play').disabled = false; if (audio.paused) setState(readyText()); });
+audio.addEventListener('playing', () => { setRunning(true); setState(readyText()); });
+audio.addEventListener('pause', () => setRunning(false));
+audio.addEventListener('ended', () => setRunning(false));
+audio.addEventListener('waiting', () => setState('缓冲中…'));
+
+// The song is streamed straight from its file. Where a frame will not stream a media file
+// but will let the page fetch it, the whole file is fetched once and played from memory.
+let held = null, fetched = false;
+function loadAudio() {
+  fetched = false;
+  if (held) { URL.revokeObjectURL(held); held = null; }
+  audio.src = song.model.audio.src;
+  audio.load();
+}
+audio.addEventListener('error', async () => {
+  const wanted = song;
+  if (fetched) { $('play').disabled = true; setState('音频没载入，刷新再试。', true); return; }
+  fetched = true;
+  $('play').disabled = true;
+  setState('正在整首载入 ' + wanted.model.track.title + '…');
+  try {
+    const response = await fetch(wanted.model.audio.src);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const blob = await response.blob();
+    if (wanted !== song) return;
+    held = URL.createObjectURL(blob);
+    audio.src = held;
+    audio.load();
+  } catch (error) {
+    if (wanted === song) setState('音频没载入（' + (error && error.message || error) + '），刷新再试。', true);
+  }
+});
+const readyText = () => `${song.model.track.title} · ${[song.model.track.artist, song.model.track.album].filter(Boolean).join(' · ')}`;
+$('play').addEventListener('click', toggle);
+
+const track = $('track');
+const seekFromPointer = event => {
+  const box = track.getBoundingClientRect();
+  seek((event.clientX - box.left) / box.width * duration());
+};
+track.addEventListener('pointerdown', event => { track.setPointerCapture(event.pointerId); seekFromPointer(event); });
+track.addEventListener('pointermove', event => { if (track.hasPointerCapture(event.pointerId)) seekFromPointer(event); });
+track.addEventListener('keydown', event => {
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault(); event.stopPropagation();
+    seek(audio.currentTime + (event.key === 'ArrowLeft' ? -5 : 5));
+  }
+});
+document.addEventListener('keydown', event => {
+  if (event.target.closest('textarea, input, button, summary')) return;
+  if (event.key === ' ') { event.preventDefault(); toggle(); }
+  else if (event.key === 'ArrowLeft') seek(audio.currentTime - 5);
+  else if (event.key === 'ArrowRight') seek(audio.currentTime + 5);
+});
+
+// The score itself: a tap plays or pauses, a sideways drag moves the song under the line.
+let drag = null;
+canvas.addEventListener('pointerdown', event => {
+  drag = {id: event.pointerId, x: event.clientX, at: audio.currentTime, moved: false, wasPlaying: !audio.paused};
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener('pointermove', event => {
+  if (!drag || drag.id !== event.pointerId) return;
+  const dx = event.clientX - drag.x;
+  if (!drag.moved && Math.abs(dx) < 8) return;
+  if (!drag.moved) { drag.moved = true; if (drag.wasPlaying) audio.pause(); }
+  seek(drag.at - dx / (canvas.clientWidth / prefs.windowSeconds));
+});
+const endDrag = event => {
+  if (!drag || drag.id !== event.pointerId) return;
+  const finished = drag;
+  drag = null;
+  if (finished.moved) { if (finished.wasPlaying) audio.play().catch(() => {}); return; }
+  if (event.type !== 'pointerup') return;
+  // A tap on the section bar goes to that section (or that spot, between sections);
+  // a tap anywhere else plays or pauses.
+  const box = canvas.getBoundingClientRect();
+  const x = event.clientX - box.left, y = event.clientY - box.top;
+  const target = view.hit(x, y);
+  // A tap on a lane's icon or name says its name (and stays a while); elsewhere on a lane it plays or pauses.
+  if (target && target.kind === 'lane') { if (inNameColumn(x)) showName(target.label, x, y, 1800); else toggle(); }
+  else if (target) seek(target.time); else toggle();
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+// The lane names at the left, when they are drawn as icons: a pointer resting on one shows the name.
+const nameTip = el('div');
+nameTip.style.cssText = 'position:absolute;pointer-events:none;padding:3px 8px;border-radius:6px;font:600 .78rem var(--ui);' +
+  'background:rgba(13,16,22,.92);color:var(--stage-fg);border:1px solid var(--stage-edge);white-space:nowrap;z-index:2';
+nameTip.hidden = true;
+document.querySelector('.stage').appendChild(nameTip);
+const inNameColumn = x => x <= (canvas.clientWidth < 520 ? 58 : 84);
+let nameTimer = null;
+function showName(text, x, y, holdMs) {
+  clearTimeout(nameTimer);
+  nameTip.textContent = text;
+  nameTip.style.left = Math.round(x + 14) + 'px';
+  nameTip.style.top = Math.round(canvas.offsetTop + y - 12) + 'px';
+  nameTip.hidden = false;
+  if (holdMs) nameTimer = setTimeout(() => { nameTip.hidden = true; }, holdMs);
+}
+canvas.addEventListener('pointermove', event => {
+  if (drag || event.pointerType === 'touch') return;
+  const box = canvas.getBoundingClientRect();
+  const x = event.clientX - box.left, y = event.clientY - box.top;
+  const target = inNameColumn(x) ? view.hit(x, y) : null;
+  if (target && target.kind === 'lane') showName(target.label, x, y, 0);
+  else if (!nameTimer || nameTip.hidden) nameTip.hidden = true;
+});
+canvas.addEventListener('pointerleave', () => { nameTip.hidden = true; });
+
+// While the stage is pinned, anything scrolled or focused into view must stop below it,
+// not underneath it: otherwise a tap meant for a button lands on the score.
+const stage = document.querySelector('.stage');
+function clearStage() {
+  const pinned = getComputedStyle(stage).position === 'sticky';
+  document.documentElement.style.scrollPaddingTop = pinned ? (stage.offsetHeight + 18) + 'px' : '';
+}
+addEventListener('resize', clearStage);
+clearStage();
+
+function paintClock() {
+  const t = audio.currentTime || 0;
+  $('clock').textContent = `${clockText(t)} / ${clockText(duration())}`;
+  $('fill').style.width = (t / duration() * 100).toFixed(2) + '%';
+  track.setAttribute('aria-valuenow', t.toFixed(1));
+}
+(function tick() { paintClock(); requestAnimationFrame(tick); })();
+
+/* --- view controls --------------------------------------------------------- */
+function options(host, items, current, choose) {
+  for (const [value, label] of items) {
+    const button = el('button', 'opt', label);
+    button.type = 'button';
+    button.dataset.v = String(value);
+    button.addEventListener('click', () => choose(value));
+    host.appendChild(button);
+  }
+  return () => { for (const button of host.children) button.setAttribute('aria-pressed', String(button.dataset.v === String(current()))); };
+}
+const SMOOTHING = [['raw', '原样'], ['half', '0.5 秒'], ['beat', '一拍'], ['second', '1 秒']];
+const PLAIN = [['letters', '显示字母'], ['numbered', '改成第几段'], ['hidden', '藏起来']];
+function setSource(value) {
+  prefs.source = value;
+  view.setModel(modelOf(song));
+  apply();
+}
+// The four effects of this step, each its own switch: pressed = on.
+const FX_SWITCHES = [['fxHit', '光晕'], ['fxAfterglow', '余晖与流光'], ['fxPlayline', '光柱'], ['fxDrums', '鼓']];
+const FX_NOTES = {
+  fxHit: '光晕：音符的头碰到播放线，音符一亮，线上在它的音高处冒一圈光，0.15 秒内散掉；越响越亮。',
+  fxAfterglow: '余晖：弹过的音符不立刻暗下去，约 0.6 秒慢慢退；长音响着的时候，有一道光沿着音符慢慢走（1.2 秒一趟）。',
+  fxPlayline: '光柱：播放线两侧各 24 像素一道柔光，快到线的音符只在光柱里的那一小段被照亮，离线越远越暗（上一版是整条音符一起亮，长音会亮一大片）；有稳定小节线的歌（七里香）在每小节的强拍上轻跳一下，MEGURI 没有小节线，所以不跳。',
+  fxDrums: '鼓：底鼓让背景轻轻一亮（最多 6%，0.12 秒落回），军鼓一次短闪，踩镲和镲片溅出细碎的小火花；鼓轨上原来的小点不变。'
+};
+function fxButtons(host) {
+  for (const [key, label] of FX_SWITCHES) {
+    const button = el('button', 'opt', label);
+    button.type = 'button';
+    button.dataset.v = key;
+    button.addEventListener('click', () => { prefs[key] = !prefs[key]; apply(); });
+    host.appendChild(button);
+  }
+  return () => {
+    for (const button of host.children) {
+      button.setAttribute('aria-pressed', String(Boolean(prefs[button.dataset.v])));
+      button.disabled = prefs.fxPreset === 'off';
+    }
+    $('fxNote').textContent = prefs.fxPreset === 'off'
+      ? '特效关着。'
+      : FX_SWITCHES.filter(([key]) => prefs[key]).map(([key]) => FX_NOTES[key]).join(' ') || '四样都关了，画面和「素」一样。';
+  };
+}
+// The presets: the core's table, by name. What each one looks like, in a sentence.
+const PRESETS = [['clear', '清亮'], ['keys', '琴键灯'], ['ink', '墨迹'], ['stage', '舞台'], ['strong', '浓'], ['off', '素']];
+const PRESET_NOTES = {
+  clear: '清亮：就是上一版的「轻」，缺省。',
+  keys: '琴键灯：播放线是主角，光柱更窄更亮；音符碰线时光晕更大、溅出几颗火星；弹过去的音符明显暗下去，像烧过。',
+  ink: '墨迹：安静，适合看谱。没有光晕和火花；正在响的音符变亮，响完慢慢褪回去（最长 1.2 秒）；光柱很淡，不跳；鼓只留底鼓很轻的一下。',
+  stage: '舞台：节奏是主角。底鼓、军鼓、强拍跳动都加强，镲片火花更多；旋律音符的光晕和余晖减弱。',
+  strong: '浓：就是上一版的「强」。',
+  off: '素：特效全关，就是加特效之前的画面，一像素不差。'
+};
+function presetButtons(host) {
+  const paint = options(host, PRESETS, () => prefs.fxPreset, value => { prefs.fxPreset = value; apply(); });
+  return () => { paint(); $('presetNote').textContent = PRESET_NOTES[prefs.fxPreset] || ''; };
+}
+const painters = [
+  presetButtons($('optPreset')),
+  options($('optFollow'), [['song', '开'], ['off', '关']], () => prefs.fxDynamics, value => { prefs.fxDynamics = value; apply(); }),
+  options($('optTexture'), [[true, '显示'], [false, '不显示']], () => prefs.showTexture, value => { prefs.showTexture = value; apply(); }),
+  // Gate 13: notes shaped by instrument. The same by default; the listener turns it on to compare.
+  options($('optShapes'), [['same', '一样'], ['two', '拨击'], ['spindle', '拨击 + 梭状']], shapeMode, value => { prefs.shapeMode = value; apply(); }),
+  options($('optLabels'), [['icon', '图标'], ['text', '文字']], () => prefs.laneLabels, value => { prefs.laneLabels = value; apply(); }),
+  options($('optSections'), [['line', '细线'], ['block', '色块']], () => prefs.sectionStyle, value => { prefs.sectionStyle = value; apply(); }),
+  fxButtons($('optFx')),
+  options($('optHeights'), [['fixed', '固定'], ['loudness', '跟响度']], () => prefs.laneHeights, value => { prefs.laneHeights = value; apply(); }),
+  options($('optBackdrop'), [['cover', '专辑封面'], ['section', '段落色'], ['off', '不显示']], () => prefs.backdropMode, value => { prefs.backdropMode = value; apply(); }),
+  options($('optCaptions'), [[true, '显示'], [false, '不显示']], () => prefs.showCaptions, value => { prefs.showCaptions = value; apply(); }),
+  options($('optCaptionStyle'), [['mark', '标注'], ['sentence', '句子']], () => prefs.captionStyle, value => { prefs.captionStyle = value; view.setModel(modelOf(song)); apply(); paintOwn(); }),
+  options($('optContour'), [[true, '显示'], [false, '不显示']], () => prefs.showContour, value => { prefs.showContour = value; apply(); }),
+  options($('optChords'), SMOOTHING, () => prefs.chordSmoothing, value => { prefs.chordSmoothing = value; apply(); }),
+  options($('optSource'), [['named', '有名字'], ['plain', '只有字母']], () => prefs.source, setSource),
+  options($('optPlain'), PLAIN, () => prefs.plainSections, value => { prefs.plainSections = value; apply(); }),
+  options($('optWindow'), [[6, '6 秒'], [10, '10 秒'], [16, '16 秒']], () => prefs.windowSeconds, value => { prefs.windowSeconds = value; apply(); }),
+  options($('optPlayhead'), [[0.35, '35%'], [0.62, '62%']], () => prefs.playhead, value => { prefs.playhead = value; apply(); }),
+  options($('optSimplify'), [[false, '原始'], [true, '简化']], () => prefs.simplify, value => { prefs.simplify = value; apply(); }),
+  options($('optMerge'), [[false, '分开'], [true, '合并']], () => prefs.mergeTimbres, value => { prefs.mergeTimbres = value; apply(); })
+];
+function latencyText(ms) {
+  return ms === 0 ? '不补偿' : ms > 0 ? `画面推迟 ${ms} ms` : `画面提前 ${-ms} ms`;
+}
+function paintControls() {
+  painters.forEach(paint => paint());
+  // What each smoothing setting does on this song, said in numbers before anyone picks one.
+  const counts = view.chordCounts(), beat = view.layers().beatSeconds;
+  const beatButton = [...$('optChords').children].find(button => button.dataset.v === 'beat');
+  beatButton.disabled = !beat;
+  $('chordsNote').textContent = !view.layers().chords ? '这首歌没有和弦数据。'
+    : `和弦短于这个长度就并进旁边的。这首歌：原样 ${counts.raw} 段，0.5 秒 ${counts.half} 段，`
+      + (beat ? `一拍（${beat.toFixed(2)} 秒）${counts.beat} 段，` : '一拍（没有节拍数据，不可用），') + `1 秒 ${counts.second} 段。`
+      + (counts.half >= counts.raw - 3 ? '和弦引擎自己已经并掉了 0.5 秒以下的，所以「0.5 秒」和「原样」几乎一样。' : '');
+  const picture = coverOf(song), mine = Boolean(ownCover(song.id));
+  for (const button of $('optBackdrop').children) if (button.dataset.v === 'cover') button.disabled = !picture;
+  $('coverDrop').hidden = !mine;
+  $('backdropNote').textContent = (picture
+    ? '「专辑封面」：封面铺满整个画面、调淡，歌越响越清楚；上面再盖一层淡淡的段落色。' + (mine ? '现在用的是你选的图，只存在这台设备上。' : '')
+    : '这首歌的文件里和文件旁边都没有封面，所以现在是段落色。可以自己选一张图，只存在这台设备上，不会上传。')
+    + '「段落色」比上一版加深了。';
+  const levels = view.layers().levels;
+  for (const button of $('optHeights').children) if (button.dataset.v === 'loudness') button.disabled = !levels;
+  $('heightsNote').textContent = levels
+    ? '「跟响度」：每条轨占多少屏幕，看它的分轨在这一段里有多响（按人耳对频段的敏感度计权）。一段定一次，换段时用两秒滑过去；不响的轨收成一条细带。'
+    : '这首歌没有分轨响度数据。';
+  const plain = view.layers().plainSections;
+  for (const button of $('optPlain').children) button.disabled = !plain;
+  for (const button of $('optSource').children) if (button.dataset.v === 'plain') button.disabled = !song.models.plain;
+  $('plainNote').textContent = plain
+    ? '字母只表示「这两段听起来像」，没有主歌、副歌的含义。'
+    : '现在的段落都有名字，这三种样子只在「只有字母」时起作用。';
+  $('latency').value = String(prefs.latencyMs);
+  $('latencyOut').textContent = latencyText(prefs.latencyMs);
+  const lanes = view.lanes().filter(lane => lane.visible && lane.removed);
+  const sum = key => lanes.reduce((total, lane) => total + lane.removed[key], 0);
+  $('simplifyNote').textContent = !prefs.simplify
+    ? '转谱给出的每一个音符，一个不少。'
+    : `现在显示的轨里：${sum('input')} 个音符并掉 ${sum('joined')} 个碎片，去掉 ${sum('short')} 个太短的、${sum('quiet')} 个力度太低的，剩 ${sum('output')} 个。鼓不动。`;
+}
+$('latency').addEventListener('input', () => { prefs.latencyMs = Number($('latency').value); apply(); });
+$('latencyZero').addEventListener('click', () => { prefs.latencyMs = 0; apply(); });
+
+function paintLanes() {
+  const host = $('lanes');
+  host.textContent = '';
+  for (const lane of view.lanes()) {
+    const button = el('button', 'lane');
+    button.type = 'button';
+    button.style.setProperty('--lane', lane.color);
+    button.setAttribute('aria-pressed', String(lane.visible));
+    const count = prefs.simplify && lane.kind !== 'drums' && lane.visible ? `${lane.shown} / ${lane.count}` : String(lane.count);
+    button.append(el('span', 'dot'), el('span', null, lane.label), el('span', 'n', count));
+    button.addEventListener('click', () => {
+      const hidden = new Set(prefs.hidden[song.id] || []);
+      const show = !lane.visible;
+      for (const member of lane.members) { if (show) hidden.delete(member); else hidden.add(member); }
+      prefs.hidden[song.id] = [...hidden];
+      apply();
+    });
+    host.appendChild(button);
+  }
+}
+
+function paintSpots() {
+  const host = $('spots');
+  host.textContent = '';
+  for (const spot of song.spots || []) {
+    const button = el('button', 'spot');
+    button.type = 'button';
+    button.append(el('span', 'when', clockText(spot.at)), el('span', 'why', spot.label));
+    button.setAttribute('aria-label', `从 ${clockText(spot.at)} 播放：${spot.label}`);
+    button.addEventListener('click', () => playFrom(spot.at));
+    host.appendChild(button);
+  }
+  $('spots-h').hidden = host.hidden = !host.childElementCount;
+}
+
+/* --- gate answers ---------------------------------------------------------- */
+const GATE = 'gate' + M.gate;             // this gate's answers live in their own collection
+// The gates whose questions this page asks: this one first, then earlier ones still open.
+const GATES = [{gate: M.gate, title: M.gateTitle, questions: M.questions}, ...(M.earlierGates || [])];
+const answers = {};                       // doc id under that collection -> body
+const inputs = [];                        // every control that writes an answer
+let db = null, writable = false;
+const use = name => (window.claude && typeof window.claude.use === 'function') ? window.claude.use(name) : Promise.resolve(null);
+const stamp = iso => new Date(iso).toLocaleString();
+
+function setStore(text, bad) {
+  $('store').textContent = text;
+  $('store').classList.toggle('bad', !!bad);
+}
+function setInputs(enabled) {
+  inputs.forEach(node => { node.disabled = !enabled; });
+  $('overall').disabled = !enabled;
+}
+function refreshStore() {
+  if (!db || !writable) return;
+  const wanted = questions.map(item => item.id);
+  const done = wanted.filter(id => answers[id]).length;
+  setStore(`已记 ${done} / ${wanted.length} 项 · 自动保存`);
+}
+// One write at a time per document, in click order; the last click is what stays.
+const chains = {};
+function persist(path, body) {
+  if (!db || !writable) return;
+  chains[path] = (chains[path] || Promise.resolve()).then(async () => {
+    try {
+      if (body) await db.doc(path).set(body); else await db.doc(path).delete();
+    } catch (error) {
+      if (error && error.code === 'invalid_argument') {
+        writable = false;
+        setInputs(false);
+        setStore('这个视图不能写入，结论没保存。用拥有者身份打开这页，或者直接在对话里说。', true);
+      } else {
+        setStore('没保存上（' + (error && error.code || error) + '），再点一次试试。', true);
+      }
+    }
+  });
+}
+// `id` is the document's path: `gate<N>/<question>`.
+function answer(id, body) {
+  if (body) answers[id] = body; else delete answers[id];
+  paintAnswers();
+  refreshStore();
+  persist(id, body ? {...body, at: new Date().toISOString()} : null);
+}
+function pickButton(host, label, className, onClick) {
+  const button = el('button', 'opt' + (className ? ' ' + className : ''), label);
+  button.type = 'button';
+  button.disabled = true;
+  button.addEventListener('click', onClick);
+  inputs.push(button);
+  host.appendChild(button);
+  return button;
+}
+
+// One question = one document holding `{pick}`; a row of buttons, the pressed one is the
+// answer, pressing it again takes the answer back.
+// A `multi` question holds `{picks: [...]}`: each button toggles its own value, none is fine.
+// A `text` question is one line, `{text}`, saved a moment after typing stops.
+const questions = [];
+const picksOf = id => (answers[id] && Array.isArray(answers[id].picks) ? answers[id].picks : []);
+function question(host, id, choices, multi) {
+  const buttons = {};
+  for (const [value, label, className] of choices) {
+    buttons[value] = pickButton(host, label, className, () => {
+      if (!multi) { answer(id, answers[id] && answers[id].pick === value ? null : {pick: value}); return; }
+      const picks = picksOf(id).includes(value) ? picksOf(id).filter(item => item !== value) : picksOf(id).concat(value);
+      answer(id, picks.length ? {picks} : null);
+    });
+  }
+  questions.push({id, buttons, multi});
+}
+const textTimers = {};
+function textQuestion(host, id, placeholder) {
+  const input = el('input');
+  input.type = 'text';
+  input.maxLength = 200;
+  input.placeholder = placeholder || '';
+  input.disabled = true;
+  input.style.cssText = 'width:100%;font:inherit;font-size:.88rem;padding:7px 10px;border-radius:8px;border:1px solid var(--edge);background:var(--panel-lit);color:var(--fg)';
+  input.addEventListener('input', () => {
+    clearTimeout(textTimers[id]);
+    textTimers[id] = setTimeout(() => {
+      textTimers[id] = null;
+      const text = input.value.trim();
+      answer(id, text ? {text} : null);
+    }, 700);
+  });
+  inputs.push(input);
+  host.appendChild(input);
+  questions.push({id, input});
+}
+// The gate's questions come from page.json. A question asked `perSong` gets one row of
+// buttons per song (its documents are `<id>-<song>`); `songs` narrows that to the songs
+// the question is about.
+$('gate-h').textContent = M.gateTitle;
+GATES.forEach(({gate, title, questions: asked}, which) => {
+ if (which) $('qs').appendChild(el('h2', null, title));
+ asked.forEach((item, index) => {
+  const card = el('div', 'q');
+  const path = 'gate' + gate + '/' + item.id;
+  card.append(el('h3', null, `${'一二三四五六'[index]} · ${item.title}`), el('p', null, item.hint));
+  if (item.kind === 'text') {
+    textQuestion(card, path, item.placeholder);
+  } else if (!item.perSong) {
+    const picks = el('div', 'seg');
+    question(picks, path, item.choices, item.kind === 'multi');
+    card.appendChild(picks);
+  } else {
+    const rows = el('div', 'per');
+    for (const one of SONGS.filter(candidate => !item.songs || item.songs.includes(candidate.id))) {
+      const row = el('div'), picks = el('div', 'seg');
+      question(picks, path + '-' + one.id, item.choices);
+      row.append(el('div', 'who', one.model.track.title), picks);
+      rows.appendChild(row);
+    }
+    card.appendChild(rows);
+  }
+  $('qs').appendChild(card);
+ });
+});
+// A gate that asks for its own one-line note has no separate "别的感受" box.
+if (M.questions.some(item => item.kind === 'text')) $('note-h').hidden = $('overall').hidden = $('overallSaved').hidden = true;
+
+function paintAnswers() {
+  for (const {id, buttons, multi, input} of questions) {
+    if (input) {
+      if (document.activeElement !== input && !textTimers[id]) input.value = (answers[id] && answers[id].text) || '';
+      continue;
+    }
+    for (const [value, button] of Object.entries(buttons)) {
+      const on = multi ? picksOf(id).includes(value) : Boolean(answers[id] && answers[id].pick === value);
+      button.setAttribute('aria-pressed', String(on));
+    }
+  }
+}
+
+let noteTimer = null;
+$('overall').addEventListener('input', () => {
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => {
+    noteTimer = null;
+    const note = $('overall').value.trim();
+    persist('notes/' + GATE, note ? {note, at: new Date().toISOString()} : null);
+    $('overallSaved').textContent = note ? '已记下 ' + new Date().toLocaleTimeString() : '';
+    $('overallSaved').className = note ? 'saved on' : 'saved';
+  }, 700);
+});
+
+function onDbError(error) {
+  writable = false;
+  setInputs(false);
+  setStore('存储出错（' + (error && error.code) + '），照常看和听，结论直接在对话里说。', true);
+}
+
+(async function connect() {
+  db = await use('db');
+  if (!db) {
+    setStore('这里存不了结论。照常看和听，直接在对话里告诉我。', true);
+    return;
+  }
+  const user = await use('user');
+  const may = user ? await user.can('data.write') : null;
+  if (may === false) {
+    setStore('你在这一页只能看和听，不能记结论。');
+    return;
+  }
+  writable = true;
+  setInputs(true);
+  refreshStore();
+  // If the store has not answered in ten seconds, say so; the listener stays and will catch up.
+  const slow = setTimeout(() => setStore('存储还没连上，先照常看和听；连上后会自动显示已记的结论。', true), 10000);
+  for (const {gate} of GATES) {
+    const name = 'gate' + gate;
+    db.collection(name).onSnapshot(snapshot => {
+      if (!snapshot.metadata.fromCache) { clearTimeout(slow); }
+      for (const key of Object.keys(answers)) if (key.startsWith(name + '/')) delete answers[key];
+      for (const doc of snapshot.docs) answers[name + '/' + doc.id] = doc.data() || {};
+      paintAnswers();
+      if (writable) refreshStore();
+    }, error => { clearTimeout(slow); onDbError(error); });
+  }
+  db.collection('captions').onSnapshot(snapshot => {
+    for (const key of Object.keys(own)) delete own[key];
+    for (const doc of snapshot.docs) {
+      const body = doc.data() || {};
+      if (typeof body.text !== 'string' || !Number.isFinite(body.at) || !SONGS.some(item => item.id === body.song)) continue;
+      own[body.song] = (own[body.song] || []).concat({id: doc.id, song: body.song, at: body.at, text: body.text});
+    }
+    showOwn();
+  }, onDbError);
+  db.doc('notes/' + GATE).onSnapshot(doc => {
+    const body = doc.exists ? doc.data() : null;
+    if (document.activeElement !== $('overall') && !noteTimer) $('overall').value = (body && body.note) || '';
+    if (body && body.at) {
+      $('overallSaved').textContent = '已记下 ' + stamp(body.at);
+      $('overallSaved').className = 'saved on';
+    }
+  }, onDbError);
+})();
+
+/* --- the listener's own captions -------------------------------------------- */
+function paintOwn() {
+  const host = $('ownList');
+  host.textContent = '';
+  for (const line of (own[song.id] || []).slice().sort((a, b) => a.at - b.at)) {
+    const row = el('div');
+    const jump = el('button', 'at', clockText(line.at));
+    jump.type = 'button';
+    jump.setAttribute('aria-label', `从 ${clockText(line.at)} 播放这一句`);
+    jump.addEventListener('click', () => playFrom(Math.max(0, line.at - 2)));
+    const remove = el('button', 'opt', '删掉');
+    remove.type = 'button';
+    remove.addEventListener('click', () => {
+      own[song.id] = own[song.id].filter(other => other.id !== line.id);
+      persist('captions/' + line.id, null);
+      showOwn();
+    });
+    row.append(jump, el('span', null, line.text), remove);
+    host.appendChild(row);
+  }
+  const marking = prefs.captionStyle === 'mark' && song.marks;
+  const rule = ((marking ? song.marks : song.model.captions) || []).length;
+  $('captionsNote').textContent = marking
+    ? `左上角的标注。这首歌 ${rule} 条，每分钟 ${(rule / (song.model.track.duration / 60)).toFixed(1)} 条，你自己写了 ${(own[song.id] || []).length} 条。`
+    : `左上角那句话。这首歌规则生成了 ${rule} 条，平均 ${Math.round(song.model.track.duration / Math.max(1, rule))} 秒一条，`
+      + `你自己写了 ${(own[song.id] || []).length} 条。规则只会说「谁进来了、谁退出了、到了哪一段」。`;
+}
+function showOwn() {
+  view.setModel(modelOf(song));
+  apply();
+  paintOwn();
+}
+function addOwn() {
+  const text = $('ownText').value.trim();
+  if (!text) return;
+  const line = {id: 'c' + Date.now().toString(36), song: song.id, at: Math.round(audio.currentTime * 100) / 100, text};
+  own[song.id] = (own[song.id] || []).concat(line);
+  persist('captions/' + line.id, {song: line.song, at: line.at, text: line.text, written: new Date().toISOString()});
+  $('ownText').value = '';
+  showOwn();
+}
+$('ownAdd').addEventListener('click', addOwn);
+$('ownText').addEventListener('keydown', event => { if (event.key === 'Enter') addOwn(); });
+
+/* --- what the songs have --------------------------------------------------- */
+(function paintHealth() {
+  const table = el('table');
+  const head = el('tr');
+  head.append(el('th', null, '层'), ...SONGS.map(item => el('th', null, item.model.track.title)));
+  table.appendChild(head);
+  const layers = SONGS[0].health.map(row => row.layer);
+  layers.forEach((layer, index) => {
+    const row = el('tr');
+    row.appendChild(el('td', null, layer));
+    for (const item of SONGS) {
+      const entry = item.health[index] || {};
+      const cell = el('td');
+      cell.append(el('span', 'pill ' + (entry.ok ? 'has' : 'lacks'), entry.ok ? '有' : '缺'), document.createTextNode(entry.detail || ''));
+      row.appendChild(cell);
+    }
+    table.appendChild(row);
+  });
+  $('health').appendChild(table);
+})();
+
+$('sub').textContent = M.about;
+for (const line of M.decided || []) $('decided').appendChild(el('li', null, line));
+
+for (const line of [
+  '时间全部以秒计，零点是分轨的音频零点。压缩文件和原曲逐采样对过，没有偏移。',
+  '键盘：<kbd>空格</kbd> 播放 / 暂停，<kbd>←</kbd> <kbd>→</kbd> 前后 5 秒。谱面上点一下播放或暂停，左右拖动前后挪，点底部的段落条跳到那一段。',
+  `第 ${M.version} 版 · 生成于 ${M.generated} · 渲染核心 ${XinScoreView.VERSION}`
+]) {
+  const p = el('div');
+  p.innerHTML = line;
+  $('foot').appendChild(p);
+}
+
+view.start();
+$('coverPick').addEventListener('click', () => $('coverFile').click());
+$('coverFile').addEventListener('change', async event => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const small = await shrinkCover(file);
+    try { localStorage.setItem(COVER_KEY(song.id), small); } catch (error) { setState('这台设备存不下这张图，这次先用着', true); }
+    const ticket = ++coverTicket, image = new Image();
+    image.onload = () => { if (ticket === coverTicket) { view.setCover(image); prefs.backdropMode = 'cover'; apply(); } };
+    image.src = small;
+  } catch (error) { setState(error.message, true); }
+});
+$('coverDrop').addEventListener('click', () => {
+  try { localStorage.removeItem(COVER_KEY(song.id)); } catch (error) { /* nothing kept */ }
+  loadCover();
+  apply();
+});
+selectSong(SONGS[0].id);
+</script>

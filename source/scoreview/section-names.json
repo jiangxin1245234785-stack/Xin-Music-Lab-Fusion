@@ -1,0 +1,23 @@
+{
+  "comment": "Frozen for stage one's bench builder only (tools/build_bundle.py name_sections). Since 2026-11-13 the section names XLD, XML and the score view show are made by ../xld-runtime-baseline/core/sections.cjs with its table core/section-names.cjs (see `see`); the adapter no longer reads this file. Nothing here is kept in step with that module: the bench builder's names may differ from XLD's on purpose.",
+  "see": "../xld-runtime-baseline/core/section-names.cjs",
+  "semantic": {
+    "songformer": {
+      "intro": "引子",
+      "verse": "主歌",
+      "pre-chorus": "导歌",
+      "prechorus": "导歌",
+      "chorus": "副歌",
+      "bridge": "桥段",
+      "inst": "器乐段",
+      "instrumental": "器乐段",
+      "interlude": "间奏",
+      "solo": "独奏",
+      "break": "停顿",
+      "outro": "尾奏",
+      "end": "尾奏",
+      "silence": null
+    }
+  },
+  "minimumSeconds": 1.0
+}

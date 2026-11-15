@@ -1,0 +1,23 @@
+{
+  "comment": "Stage-one pilots (plan decision D2). Paths are relative to the repo unless absolute. `track` overrides what track.json says, because 七里香 was imported as a loose single with no tags. `layers` lists what make_layers.py has to produce for this song; anything not listed is read from the analysis root as it is.",
+  "analysisRoot": "D:\\Caches\\Xin's Local Deck\\Analysis",
+  "dataRoot": "work/scoreview-20261110/data",
+  "pageRoot": "work/scoreview-20261110/page",
+  "pilots": {
+    "qilixiang": {
+      "trackDir": "Unknown Artist - single/01 周杰伦 - 七里香__0774d037b1",
+      "track": {"title": "七里香", "artist": "周杰伦", "album": "七里香"},
+      "layers": ["sections", "chords", "beats", "vocals", "energy", "audio"],
+      "vocals": {
+        "f0": "artifacts/voiceswap-20261107/fullsong-harmony/harmony/lead-mono.f0.npy",
+        "audio": "artifacts/voiceswap-20261107/fullsong-harmony/harmony/lead-mono.wav"
+      },
+      "chordEngines": ["chord-chordmini"]
+    },
+    "meguri": {
+      "trackDir": "world's end girlfriend - Resistance & The Blessing/04 MEGURI__185c26ddfa",
+      "track": {},
+      "layers": ["beats", "energy", "audio"]
+    }
+  }
+}

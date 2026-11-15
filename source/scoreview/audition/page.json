@@ -1,0 +1,579 @@
+{
+  "comment": "What the listening page says at the current gate: its version, which gate's questions it asks, what earlier gates decided (shown as a list), and per pilot the line under its name, the lanes it starts with hidden, and the places worth going to first. Times are seconds; a spot starts playing a little before the thing it points at. A question with `perSong` is asked once per song (`songs` narrows which); its answer is stored as `<id>-<song>`. `earlierGates` lists earlier gates whose questions the page still asks, each stored in its own `gate<N>` collection.",
+  "version": 16,
+  "gate": 15,
+  "gateTitle": "音符形状：拨击和梭状 · 两个问题",
+  "about": "「音符形状」三档：一样（原来的样子）；拨击（钢琴、吉他、贝斯起音处有小头、后面变细，弦乐是等粗条）；拨击 + 梭状（弹拨的同上，弦乐两头尖、中间鼓）。颜色和亮度都不变。建议看三处：MEGURI 2:40 弦乐和吉他同时在；MEGURI 5:35 弦乐快速音群；七里香 1:02 扫弦。下面两问只问这个。 特效现在跟着整首歌的起伏走：这首歌平常的响度就是这套搭配原来的样子，比平常安静就收着，比平常响就放开。起伏是从整首的响度慢慢算出来的，跟的是乐句和段落，不是鼓点。压得很满的歌（像七里香，副歌只比平常响 1 dB 左右）也放开，但不放到头。这一版：安静处每一下的光留四成、其余几乎全收，最响处放到「浓」；大部分时间在中间走，只有真正安静和高潮的地方才到两头。在「画面 · 跟随起伏」里可以关掉对比。下面先看两首各自最安静和最响的地方。 另外，没转成音符的声音（「其它」分轨）现在在最下面画成一条很矮的带子，越响越粗越亮。",
+  "decided": [
+    "音符用简化画法，同一个分轨的音色轨合并成一条。",
+    "一屏 16 秒，播放线在 35%。",
+    "七里香六条轨都上屏；MEGURI 不上单独分离的那条小提琴。",
+    "音画：你的电脑上画面推迟 70 ms 时对得上。这个数跟着设备走，手机上要另调。",
+    "和弦照引擎给的原样显示，不再防抖。",
+    "段落名两首都是「大体对」。",
+    "只有字母的段落就显示字母。",
+    "小节线在强拍上（七里香）；音高曲线和旋律大体一致，没有整段错八度的地方。",
+    "导赏字幕有帮助，数量正好，语气对。",
+    "轨高跟着响度走（两首都要）。",
+    "和参考视频够接近了。",
+    "最后进 XML（决策 D1）。",
+    "背景用专辑封面。",
+    "音符后面的封面压暗 55%：正好。",
+    "特效要；强度「轻」正好；不碍事。",
+    "缺省：清亮、图标、细线、标注（第 9、10 关）。"
+  ],
+  "questions": [
+    {
+      "id": "pluck-bow",
+      "title": "弹的和拉的分得开吗",
+      "hint": "在「画面 · 音符形状」里切到「拨击 + 梭状」：弹拨的音有小头、后面变细，弦乐的音两头尖、中间鼓。",
+      "choices": [
+        [
+          "apart",
+          "分得开",
+          "yes"
+        ],
+        [
+          "together",
+          "分不开",
+          "no"
+        ],
+        [
+          "unsure",
+          "拿不准",
+          ""
+        ]
+      ]
+    },
+    {
+      "id": "which",
+      "title": "用哪一种",
+      "hint": "一样 / 拨击 / 拨击 + 梭状来回切着看。",
+      "choices": [
+        [
+          "same",
+          "一样",
+          ""
+        ],
+        [
+          "two",
+          "拨击",
+          ""
+        ],
+        [
+          "spindle",
+          "拨击 + 梭状",
+          ""
+        ],
+        [
+          "unsure",
+          "拿不准",
+          ""
+        ]
+      ]
+    },
+    {
+      "id": "spindle-note",
+      "kind": "text",
+      "title": "一行备注",
+      "hint": "可空。",
+      "placeholder": "比如：弦乐快的地方太碎"
+    }
+  ],
+  "earlierGates": [
+    {
+      "gate": 14,
+      "title": "音符形状：两类还是三类 · 两个问题",
+      "questions": [
+        {
+          "id": "piano-guitar",
+          "title": "钢琴和吉他分得开吗",
+          "hint": "在「画面 · 音符形状」里切到「三类」：钢琴是楔形，吉他是菱形加细线。",
+          "choices": [
+            [
+              "apart",
+              "分得开",
+              "yes"
+            ],
+            [
+              "together",
+              "分不开",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "keep",
+          "title": "留哪一种",
+          "hint": "一样 / 两类 / 三类来回切着看。",
+          "choices": [
+            [
+              "two",
+              "两类",
+              ""
+            ],
+            [
+              "three",
+              "三类",
+              ""
+            ],
+            [
+              "neither",
+              "都不要",
+              ""
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "shapes3-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：钢琴的楔太长"
+        }
+      ]
+    },
+    {
+      "gate": 13,
+      "title": "音符形状 · 两个问题",
+      "questions": [
+        {
+          "id": "shapes-tell",
+          "title": "看得出哪些是弹的、哪些是拉的吗",
+          "hint": "在「画面 · 音符形状」里切到「按乐器」：弹拨的音有个小头、后面变细，拉的音是等粗的条。",
+          "choices": [
+            [
+              "tell",
+              "看得出",
+              "yes"
+            ],
+            [
+              "cannot",
+              "看不出",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "shapes-overall",
+          "title": "画面整体",
+          "hint": "和「一样」比。",
+          "choices": [
+            [
+              "clearer",
+              "更清楚",
+              "yes"
+            ],
+            [
+              "messier",
+              "更乱",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "shapes-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：扫弦那里头太密"
+        }
+      ]
+    },
+    {
+      "gate": 12,
+      "title": "主 / 伴 · 两个问题",
+      "questions": [
+        {
+          "id": "roles-clear",
+          "title": "分开以后",
+          "hint": "在「画面 · 主 / 伴」里切「分 / 不分」对比：同一条轨里的旋律线是不是更容易看出来？",
+          "choices": [
+            [
+              "clearer",
+              "更清楚",
+              "yes"
+            ],
+            [
+              "messier",
+              "更乱",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "roles-faint",
+          "title": "伴奏淡的程度",
+          "hint": "淡下去的那些音符。",
+          "choices": [
+            [
+              "too-faint",
+              "太淡",
+              ""
+            ],
+            [
+              "right",
+              "正好",
+              ""
+            ],
+            [
+              "not-enough",
+              "不够淡",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "roles-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：MEGURI 的过载吉他分得不对"
+        }
+      ]
+    },
+    {
+      "gate": 11,
+      "title": "特效跟随起伏、其它带子 · 四个问题",
+      "questions": [
+        {
+          "id": "swell-match",
+          "title": "画面的起伏和耳朵里的对得上吗？",
+          "hint": "安静处收着、高潮放开，跟你听到的情绪走得一样吗？可以在「跟随起伏」里开关对比。",
+          "choices": [
+            [
+              "match",
+              "对得上",
+              "yes"
+            ],
+            [
+              "off",
+              "对不上",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "swell-size",
+          "title": "幅度",
+          "hint": "安静处和高潮处差多少。",
+          "choices": [
+            [
+              "big",
+              "太大",
+              ""
+            ],
+            [
+              "right",
+              "正好",
+              ""
+            ],
+            [
+              "small",
+              "太小",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "texture-use",
+          "title": "最下面那条「其它」带子",
+          "hint": "没转成音符的声音画成的矮带子，在「画面 · 其它」里可以关掉对比。",
+          "choices": [
+            [
+              "useful",
+              "有用",
+              "yes"
+            ],
+            [
+              "useless",
+              "没用",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "swell-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：七里香主歌就已经太亮了"
+        }
+      ]
+    },
+    {
+      "gate": 10,
+      "title": "提示标注 · 四个问题（上一关，仍可答）",
+      "questions": [
+        {
+          "id": "marks-help",
+          "title": "这些标注有没有帮你听？",
+          "hint": "可以边播边看，也可以切回「句子」对比。",
+          "choices": [
+            [
+              "yes",
+              "有",
+              "yes"
+            ],
+            [
+              "no",
+              "没有",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "marks-count",
+          "title": "数量",
+          "hint": "七里香 11 条，MEGURI 8 条（9 分半）。",
+          "choices": [
+            [
+              "more",
+              "多了",
+              ""
+            ],
+            [
+              "right",
+              "正好",
+              ""
+            ],
+            [
+              "fewer",
+              "少了",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "marks-preview",
+          "title": "提前预告（暗着先出现、细线走到点）",
+          "hint": "突然的事（退出、休止、骤强、骤弱、仅）本来就不预告。",
+          "choices": [
+            [
+              "want",
+              "要",
+              "yes"
+            ],
+            [
+              "dont",
+              "不要",
+              "no"
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "marks-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：4:00 那条该说鼓退出"
+        }
+      ]
+    },
+    {
+      "gate": 9,
+      "title": "特效搭配、图标、段落条 · 五个问题（上一关，仍可答）",
+      "questions": [
+        {
+          "id": "preset-pick",
+          "title": "平时听歌想用哪一套？",
+          "hint": "选中的这套以后当缺省。",
+          "choices": [
+            [
+              "clear",
+              "清亮",
+              ""
+            ],
+            [
+              "keys",
+              "琴键灯",
+              ""
+            ],
+            [
+              "ink",
+              "墨迹",
+              ""
+            ],
+            [
+              "stage",
+              "舞台",
+              ""
+            ],
+            [
+              "strong",
+              "浓",
+              ""
+            ],
+            [
+              "off",
+              "素",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "preset-drop",
+          "kind": "multi",
+          "title": "有没有哪一套完全不要？",
+          "hint": "可以点几个，也可以都不点。",
+          "choices": [
+            [
+              "clear",
+              "清亮",
+              "no"
+            ],
+            [
+              "keys",
+              "琴键灯",
+              "no"
+            ],
+            [
+              "ink",
+              "墨迹",
+              "no"
+            ],
+            [
+              "stage",
+              "舞台",
+              "no"
+            ],
+            [
+              "strong",
+              "浓",
+              "no"
+            ],
+            [
+              "off",
+              "素",
+              "no"
+            ]
+          ]
+        },
+        {
+          "id": "labels-pick",
+          "title": "左边用图标还是文字？",
+          "hint": "在「画面 · 左边轨名」里切。",
+          "choices": [
+            [
+              "icon",
+              "图标",
+              ""
+            ],
+            [
+              "text",
+              "文字",
+              ""
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "sections-pick",
+          "title": "段落条用哪种？",
+          "hint": "在「画面 · 段落条」里切。",
+          "choices": [
+            [
+              "line",
+              "细线",
+              ""
+            ],
+            [
+              "block",
+              "色块",
+              ""
+            ],
+            [
+              "unsure",
+              "拿不准",
+              ""
+            ]
+          ]
+        },
+        {
+          "id": "preset-note",
+          "kind": "text",
+          "title": "一行备注",
+          "hint": "可空。",
+          "placeholder": "比如：琴键灯的火星再少点"
+        }
+      ]
+    }
+  ],
+  "songs": {
+    "qilixiang": {
+      "blurb": "有人声 · 六条轨",
+      "hidden": [],
+      "spots": [
+        {
+          "at": 62,
+          "label": "1:02 主歌扫弦：吉他最密的地方。"
+        }
+      ]
+    },
+    "meguri": {
+      "blurb": "纯器乐 · 五条轨",
+      "hidden": [
+        "violin"
+      ],
+      "spots": [
+        {
+          "at": 160,
+          "label": "2:40 弦乐和吉他同时在：弹的有头，拉的是梭子。"
+        },
+        {
+          "at": 335,
+          "label": "5:35 弦乐快速音群：看会不会碎得比「一样」乱。"
+        }
+      ]
+    }
+  }
+}
