@@ -138,9 +138,9 @@ const makeNode = (tag = 'div') => {
   };
   return node;
 };
-const drawn = [], labels = [];
+const drawn = [], labels = [], stroked = [];
 const ctx = {
-  setTransform() {}, clearRect() {}, fillRect(...args) { drawn.push(args); },
+  setTransform() {}, clearRect() {}, fillRect(...args) { drawn.push(args); }, strokeRect(...args) { stroked.push(args); },
   fillText(text, x, y) { labels.push({ text, x, y }); },
   measureText(text) { return { width: String(text).length * 6 }; },
   set fillStyle(v) {}, get fillStyle() { return ''; }, set globalAlpha(v) {}, get globalAlpha() { return 1; },
@@ -170,12 +170,14 @@ const sandbox = {
     createElement: tag => makeNode(tag)
   },
   requestAnimationFrame: fn => fn(),
+  setTimeout: () => 0,   // the jumped-to note's outline fades on a timer; the test does not wait for it
   console
 };
 sandbox.window.devicePixelRatio = 2;
 const windowListeners = {};
 sandbox.window.addEventListener = (type, fn) => { (windowListeners[type] ||= []).push(fn); };
 vm.runInNewContext(read('track-layout.js'), sandbox);sandbox.window.XldTrackLayout=sandbox.XldTrackLayout;
+vm.runInNewContext(read('lane-page.js'), sandbox);
 vm.runInNewContext(read('timeline-controls.js'), sandbox);
 assert(sandbox.window.XldTimelineControls, 'controller registered on window');
 
@@ -667,7 +669,9 @@ const controls = sandbox.window.XldTimelineControls.create({
 
     const clears=base.clears,overlayClears=overlay.clears;
     const body=host.querySelectorAll('.tl-notes-row')[0].querySelector('.tl-row-body');
-    for(const type of ['pointerdown','pointerup'])body.dispatch(type,{type,button:0,pointerId:88,clientX:30,clientY:98});
+    // The lane page draws from the part's pitch window (lane-page.js), so find pitch 64's row from the layout.
+    const row64=(controls.pitchLayout().high-64)*controls.rowHeight()+9-(controls.pitchTop()||0);
+    for(const type of ['pointerdown','pointerup'])body.dispatch(type,{type,button:0,pointerId:88,clientX:30,clientY:row64});
     assert.equal(controls.selection().notes[0].noteIndex,3,'hit test after pan still uses whole-lane coordinates');
     assert.equal(base.clears,clears,'selecting does not repaint the note layer');
     assert(overlay.clears>overlayClears,'selection repaints only overlay');
@@ -720,7 +724,10 @@ const controls = sandbox.window.XldTimelineControls.create({
     await controls.refresh();controls.setFocus('piano');nodes.get('noteTimelineZoomLabel').dispatch('click');controls.setNoteSelecting(true);
     const body=host.querySelectorAll('.tl-notes-row')[0].querySelector('.tl-row-body');
     let bar=host.querySelector('.tl-pitch-scroll');
-    assert.equal(bar.scrollTop,908,'first focus centres a wide pitch range');
+    // Lane page: the first view opens at the top of the part's 2–98 % pitch window (1..126 here, two notes far out
+    // at 0 and 127 stay reachable), not at the middle of the whole range.
+    assert.equal(bar.scrollTop,18,'first focus opens at the top of the pitch window');
+    bar.scrollTop=908;bar.dispatch('scroll');assert.equal(bar.scrollTop,908);
     const base=host.querySelector('.tl-notes'),beforeWidths=base.widthWrites,beforeHeights=base.heightWrites;
     const position=audio.currentTime;
     body.dispatch('wheel',{deltaY:18,deltaX:0,deltaMode:0});
@@ -770,5 +777,79 @@ const controls = sandbox.window.XldTimelineControls.create({
     assert.equal(controls.selection().notes[0].pitch,36,'GM kick is the third fixed row, regardless of pitch intervals');
   }
 
-  console.log('timeline-view: ok (selection, viewport buffers, fixed pitch rows, vertical scrolling, deep zoom and drums)');
+  {
+    // The lane page (2026-11-14): default pitch window, vertical zoom around the pointer, problem notes, the
+    // pointer readout, ‹ › between lanes and Esc back. Geometry is the same laneLayout the editor and hit tests use.
+    host._clientWidth=1000;host.scrollLeft=0;deepGeometry=false;
+    state.analysisResults=new Map();state.annotations=[];audio.duration=130;
+    const bassNotes=Array.from({length:60},(_,i)=>[i*2,i*2+0.5,40+(i%5),80,0,i]);
+    bassNotes.push([125,126,90,64,0,60]);   // one stray note two octaves up
+    const bass={stem:'bass',runId:'bass-run',engine:'bass-highres',engineName:'HiRes Bass',duration:130,noteCount:61,editable:true,notes:bassNotes};
+    const kit={stem:'drums',runId:'drum-run',engine:'drums-adtof',engineName:'ADTOF',duration:100,noteCount:3,editable:true,notes:[[1,1.1,36,90,0,0],[2,2.1,38,90,0,1],[3,3.1,42,90,0,2]]};
+    const verdicts=new Array(61).fill(0);verdicts[3]=3;verdicts[10]=1;verdicts[20]=3;
+    bridge.readMidiNotes=async()=>({ok:true,lanes:[bass,kit]});
+    bridge.readMidiEvidence=async({stem})=>stem==='bass'?{ok:true,flat:{verdicts,extend:{'7':15.2}},totals:{silent:2,short:1,weak:1}}:{ok:false};
+    state.selectedTrack={id:'lp-track',title:'Mirrors'};state.currentTrack=state.selectedTrack;
+    await controls.refresh();await new Promise(resolve=>setImmediate(resolve));
+    controls.setFocus('bass');nodes.get('noteTimelineZoomLabel').dispatch('click');host.scrollLeft=0;
+    const lp=controls.pitchLayout();
+    assert.equal(JSON.stringify(lp.window),JSON.stringify({low:38,high:46}),'default window: 2–98 % of the pitches plus two semitones: '+JSON.stringify(lp.window));
+    assert(lp.high>=92,'the stray note stays in the drawn range, reachable by scrolling');
+    const onScreen=()=>{const l=controls.pitchLayout(),r=controls.rowHeight(),t=controls.pitchTop();return t<=(l.high-46)*r&&t+body0().clientHeight>=(l.high-38+1)*r;};
+    const body0=()=>host.querySelectorAll('.tl-notes-row')[0].querySelector('.tl-row-body');
+    assert(onScreen(),'the page opens with the whole window on screen: '+controls.pitchTop());
+    assert(labels.some(label=>label.text==='C3'),'the keyboard names every C: '+JSON.stringify(labels.slice(-6).map(l=>l.text)));
+    // problem notes: silent (3) and short (an extend entry), not weak (1), in time order
+    assert.equal(JSON.stringify(controls.issues().map(item=>[item.start,item.kinds.join('+')])),JSON.stringify([[6,'silent'],[14,'short'],[40,'silent']]));
+    controls.jumpIssue(1);assert.equal(controls.issueAt(),0,'] goes to the first');
+    assert(stroked.length>0,'the note jumped to is outlined');
+    controls.jumpIssue(-1);assert.equal(controls.issueAt(),2,'and [ wraps to the last');
+    for(const fn of windowListeners.keydown||[])fn({key:']',preventDefault(){}});
+    assert.equal(controls.issueAt(),0,'] on the keyboard');
+    for(const fn of windowListeners.keydown||[])fn({key:']',target:{tagName:'INPUT'},preventDefault(){}});
+    assert.equal(controls.issueAt(),0,'not while typing in a field');
+    // vertical zoom: Ctrl + wheel keeps the pitch under the pointer where it was
+    const body=host.querySelectorAll('.tl-notes-row')[0].querySelector('.tl-row-body');
+    const pitchAt=y=>{const l=controls.pitchLayout();return l.high+1-(controls.pitchTop()+y)/controls.rowHeight();};
+    const row0=controls.rowHeight(),anchor=pitchAt(60);
+    body.dispatch('wheel',{ctrlKey:true,deltaY:-100,deltaX:0,clientY:60});
+    assert(controls.rowHeight()>row0&&controls.rowZoomed(),'Ctrl + wheel up makes the rows taller');
+    assert(Math.abs(pitchAt(60)-anchor)<0.1,'around the pitch under the pointer: '+anchor+' → '+pitchAt(60));
+    for(let i=0;i<20;i++)controls.stepPitch(1);
+    assert.equal(controls.rowHeight(),40,'+ stops at 40 px a semitone');
+    for(let i=0;i<20;i++)controls.stepPitch(-1);
+    assert.equal(controls.rowHeight(),6,'− stops at 6');
+    controls.stepPitch(0);
+    assert.equal(controls.rowZoomed(),false,'适应 goes back to the default');
+    assert(onScreen(),'and to the window');
+    // the pointer readout
+    const yOf=pitch=>(controls.pitchLayout().high-pitch)*controls.rowHeight()+controls.rowHeight()/2-controls.pitchTop();
+    body.dispatch('pointermove',{clientX:6.2/130*1000-host.scrollLeft,clientY:yOf(43),buttons:0});   // the note at 6 s
+    const said=nodes.get('timelineReadout').textContent;
+    assert(said.startsWith('G2'),'pitch name first: '+said);
+    assert(said.includes('runtime.lanePage.velocity:{"value":80}')&&said.includes('runtime.lanePage.verdict.silent'),'velocity and what the check said: '+said);
+    body.dispatch('pointerleave',{});
+    assert(!nodes.get('timelineReadout').textContent.includes('G2'),'moving off gives the line back');
+    // the stem loudness strip under the notes: asked for with the run, drawn when it comes, absent when it does not
+    const asked=[];
+    bridge.readStemEnvelope=async payload=>{asked.push(payload.stem+':'+payload.runId);return payload.stem==='bass'?{ok:true,hop:0.01,duration:130,values:new Uint8Array(13000).fill(200)}:{ok:false,error:'envelope-missing'};};
+    controls.render();for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(asked.join(),'bass:bass-run','the envelope of the run being looked at');
+    assert.equal(host.querySelectorAll('.tl-wave-row').length,1,'a strip under the notes');
+    assert(host.querySelector('.tl-wave'),'drawn on its own canvas');
+    // ‹ › walks the whole-song order and wraps; Esc leaves the page
+    assert.equal(controls.pageLaneIds().join(),'bass,drums');
+    controls.stepLane(1);assert.equal(controls.focus(),'drums');
+    assert.equal(controls.pitchLayout().kind,'keys','drums: one row per kit piece');
+    for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));
+    controls.render();
+    assert.equal(host.querySelectorAll('.tl-wave-row').length,0,'no envelope (no stem, no file): no strip, no message');
+    delete bridge.readStemEnvelope;
+    controls.stepLane(1);assert.equal(controls.focus(),'bass','wraps');
+    for(const fn of windowListeners.keydown||[])fn({key:'Escape'});
+    assert.equal(controls.focus(),null,'Esc leaves the lane page');
+    delete bridge.readMidiEvidence;
+  }
+
+  console.log('timeline-view: ok (selection, viewport buffers, fixed pitch rows, vertical scrolling, deep zoom and drums, lane page)');
 })().catch(error => { console.error(error); process.exitCode = 1; });

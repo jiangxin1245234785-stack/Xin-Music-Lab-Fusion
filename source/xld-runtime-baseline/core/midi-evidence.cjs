@@ -241,7 +241,16 @@ function createMidiEvidence({assets, revision, python = null, script = null, run
       instruments: planned.edits.map(edit => edit.instrument), active: active.ok && active.runId === finalRunId, evidenceCarried: carried};
   }
 
-  return {check, read, plan, apply, file};
+  // The stem WAV a check of this run reads (the lane page draws its loudness under the notes). Same lookup as
+  // check(): the run's recorded source, and only while it is still bound to the current stem.
+  async function sourceWav(track, {stem, runId} = {}) {
+    const parent = await parentOf(track, stem, runId);
+    if (!parent.ok) return parent;
+    const wav = parent.record.source?.path;
+    return wav ? {ok: true, path: wav} : {ok: false, error: 'evidence-no-source'};
+  }
+
+  return {check, read, plan, apply, file, sourceWav};
 }
 
 module.exports = {createMidiEvidence, SILENT};

@@ -36,7 +36,7 @@
       $('workbenchPanelTitle').textContent=current==='properties'?(en?'Properties':'属性'):copy(current==='timeline'?'workbench':current);
       $('workbenchExpand').setAttribute('aria-pressed',String(expanded));
     }
-    function layout(){const anchor=getTimeline?.()?.centreTime();aside.hidden=!opened;body.classList.toggle('with-panel',opened);body.classList.toggle('panel-expanded',expanded&&opened);$('workbenchAnalysis').setAttribute('aria-pressed',String(opened&&['section','harmony','stems','midi'].includes(current)));$('workbenchResults').setAttribute('aria-pressed',String(opened&&current==='overview'));render();resize(anchor);}
+    function layout(){const anchor=getTimeline?.()?.centreTime();aside.hidden=!opened;aside.dataset.panel=current;body.classList.toggle('with-panel',opened);body.classList.toggle('panel-expanded',expanded&&opened);$('workbenchAnalysis').setAttribute('aria-pressed',String(opened&&['section','harmony','stems','midi'].includes(current)));$('workbenchResults').setAttribute('aria-pressed',String(opened&&current==='overview'));render();resize(anchor);}
     function display(next){if(next==='timeline')return;current=next;opened=true;if(['section','harmony','stems','midi'].includes(next))lastAnalysis=next;save();layout();}
     function close(){opened=false;save();layout();}
     $('workbenchLibrary').onclick=()=>setLibrary(!libraryHidden);

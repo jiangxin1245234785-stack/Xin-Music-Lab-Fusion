@@ -145,6 +145,8 @@ const derivedAssets = createDerivedAssets({analysisRoot});
 const midiRevision = require('../core/midi-revision.cjs').createMidiRevision({analysisRoot, assets: derivedAssets});
 const midiDrafts=require('../core/midi-drafts.cjs').createMidiDrafts({assets:derivedAssets});
 const midiEvidence = require('../core/midi-evidence.cjs').createMidiEvidence({assets: derivedAssets, revision: midiRevision});
+// The lane page's loudness strip: computed here from the stem WAV, cached in memory only, never written anywhere.
+const stemEnvelopes = require('../core/stem-envelope.cjs').createStemEnvelopes();
 const analysisService = createService({
   xldRoot: ANALYSIS_RUNTIME_ROOT,
   // Surplus MIDI versions go to the Recycle Bin, never to fs.rm. Without this callback retention only reports.
@@ -1040,6 +1042,17 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
       // The interface needs the flat arrays and the counts, not the stored document.
       if(result?.evidence)result.evidence=true;
       return result;
+    }catch(error){return {ok:false,error:error.message};}
+  });
+  // Read only: the envelope of the stem WAV that 核对原声 reads for this run (same lookup), or a quiet failure.
+  ipcMain.handle('assets:stem-envelope',async(_event,payload)=>{
+    const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    analysisService.setAnalysisRoot(analysisRoot());
+    try{
+      const source=await midiEvidence.sourceWav(track,{stem:payload?.stem,runId:payload?.runId});
+      if(!source?.ok)return source||{ok:false,error:'envelope-no-source'};
+      const result=await stemEnvelopes.envelope(source.path);
+      return result.ok?{ok:true,hop:result.hop,duration:result.duration,floorDb:result.floorDb,values:result.values}:result;
     }catch(error){return {ok:false,error:error.message};}
   });
   ipcMain.handle('assets:keep-midi-run',async(_event,payload)=>{

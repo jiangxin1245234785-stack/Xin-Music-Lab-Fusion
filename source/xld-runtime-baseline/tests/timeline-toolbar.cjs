@@ -93,7 +93,9 @@ const rt = (key, params) => ({
   'runtime.timeline.more': '更多', 'runtime.timeline.moreAnnotating': '标注中', 'runtime.timeline.moreSelecting': '选择音符中'
 }[key] || key) + (params ? JSON.stringify(params) : '');
 let checkedAll = 0, appliedAll = 0;
-const toolbar = api.create({document: doc, rt, onCheckAll: () => { checkedAll += 1; }, onApplyAll: () => { appliedAll += 1; }});
+const pageCalls = [];
+const toolbar = api.create({document: doc, rt, onCheckAll: () => { checkedAll += 1; }, onApplyAll: () => { appliedAll += 1; },
+  onLaneStep: d => pageCalls.push(['lane', d]), onPitch: d => pageCalls.push(['pitch', d]), onIssue: d => pageCalls.push(['issue', d])});
 assert(toolbar, 'built once');
 assert.equal(api.create({document: doc, rt}), null, 'a second call does not build a second toolbar');
 
@@ -115,27 +117,56 @@ assert.equal(extendLabel.getAttribute('style'), null, 'the lengthen label loses 
 toolbar.render({focused: false, targets: 3});
 assert.equal(row2.hidden, true, 'no focused lane: row 2 is hidden');
 assert.equal(doc.getElementById('timelineEvidenceCheckAll').disabled, false, 'check every part is offered without a focus');
-toolbar.render({focused: true, targets: 1});
+// --- the lane page: a lane open rearranges the same nodes into two rows (look / change) -------------------------------
+const row1Overview = ids(bar), row2Overview = ids(row2), menuOverview = ids(menu);
+const shown = parent => parent.children.filter(n => !n.hidden).map(n => n.id || n.className);
+toolbar.render({focused: true, targets: 1, page: {lanes: 3, title: 'Mirrors · bass · HiRes Bass · 1539', pitch: {row: 18, min: 6, max: 40, zoomed: false}, issues: {count: 0, at: -1, checked: false}}});
 assert.equal(row2.hidden, false, 'a focused lane shows row 2');
-assert.equal(doc.getElementById('timelineEvidenceCheckAll').disabled, true, 'check every part is not offered while one part is open');
+assert.deepEqual(ids(bar), ['timelineFocusExit', 'timelineLanePrev', 'timelineLaneNext', 'lanePageTitle', 'lanePageTrack', 'timelineAudition', 'timelineOriginal',
+  'timelineZoomOut', 'noteTimelineZoomLabel', 'timelineZoomIn', 'lanePagePitch', 'timelineLocate', 'timelineLoopChoose', 'timelineAuditionStatus'],
+  'lane page row 1 (look): back, other lanes, title, the lane controls, play, compare, time zoom, pitch zoom, locate, range, status');
+assert.deepEqual(ids(row2), ['midiEditToggle', 'timelineSelectNotes', 'timelineEvidenceCheck', 'timelineEvidenceApply', 'lanePageIssues', 'midiExport', 'timeline-more', 'timelineEvidenceStatus'],
+  'lane page row 2 (change): edit, select, check, refine, problem notes, export, more, status');
+assert.deepEqual(shown(menu), ['timeline-strip', 'timelineAnnotate'],
+  'the lane page menu: strip, annotate (and 属性 once it exists); no whole-song actions');
+assert.equal(doc.getElementById('timelineEvidenceCheckAll').hidden, true, 'check every part is a whole-song action');
+assert.equal(doc.getElementById('timelineLanePrev').disabled, false, 'three lanes: ‹ › usable');
+assert.equal(doc.getElementById('lanePageTitle').textContent, 'Mirrors · bass · HiRes Bass · 1539');
+assert.equal(doc.getElementById('timelinePitchFit').disabled, true, 'fit is idle until the rows were zoomed by hand');
+assert.equal(doc.getElementById('timelineIssuePrev').disabled, true, 'no check, no problem notes to walk');
+assert.equal(doc.getElementById('timelineIssueCount').hidden, true);
 assert.equal(doc.getElementById('timelineEvidenceApply').hidden, false, 'refine is always in row 2 (disabled by its own rule), so nothing shifts');
 assert.equal(extendLabel.hidden, true, 'lengthen (n) only when n > 0');
 assert.equal(extendLabel.parentElement, menu, 'n = 0: the lengthen box stays in the menu');
 const row2Before = ids(row2).slice(0, 4);
-toolbar.render({focused: true, targets: 1, fixable: true, short: 3});
+toolbar.render({focused: true, targets: 1, fixable: true, short: 3, page: {lanes: 1, pitch: {row: 40, min: 6, max: 40, zoomed: true}, issues: {count: 17, at: 2, checked: true}}});
 assert.equal(doc.getElementById('timelineEvidenceApply').hidden, false);
 assert.equal(extendLabel.hidden, false);
 assert.equal(extendLabel.parentElement, row2, 'focused and n > 0: lengthen moves into row 2');
-assert.deepEqual(ids(row2), ['timelineFocusExit', 'midiEditToggle', 'timelineEvidenceCheck', 'timelineEvidenceApply', 'timeline-more-check', 'midiExport', 'timelineEvidenceStatus'], 'right after refine');
+assert.deepEqual(ids(row2), ['midiEditToggle', 'timelineSelectNotes', 'timelineEvidenceCheck', 'timelineEvidenceApply', 'timeline-more-check', 'lanePageIssues', 'midiExport', 'timeline-more', 'timelineEvidenceStatus'], 'right after refine');
 assert.deepEqual(ids(row2).slice(0, 4), row2Before, 'the buttons up to refine keep their places after a check');
 assert.equal(doc.getElementById('timelineEvidenceExtend'), before.get('timelineEvidenceExtend'), 'one node, moved, not a copy');
 assert.equal(doc.getElementById('timelineEvidenceApplyAll').hidden, true, 'refine every part is a no-focus action');
+assert.equal(doc.getElementById('timelineLaneNext').disabled, true, 'one lane: nowhere to step');
+assert.equal(doc.getElementById('timelinePitchIn').disabled, true, 'at 40 px the rows cannot grow');
+assert.equal(doc.getElementById('timelinePitchFit').disabled, false, 'zoomed by hand: fit is offered');
+assert.equal(doc.getElementById('timelineIssueCount').textContent, '3 / 17', 'which problem note, of how many');
+assert.equal(doc.getElementById('timelineIssueNext').disabled, false);
 toolbar.render({focused: false, targets: 3, fixable: true, short: 3});
+assert.deepEqual(ids(bar), row1Overview, 'leaving the lane page puts row 1 back exactly');
 assert.equal(doc.getElementById('timelineEvidenceApplyAll').hidden, false);
 assert.equal(extendLabel.parentElement, menu, 'no focus: lengthen goes back to the menu');
 assert.equal(menu.children[menu.children.indexOf(doc.getElementById('timelineEvidenceApplyAll')) + 1], extendLabel, 'next to refine every part');
+assert.deepEqual(ids(menu), menuOverview, 'and the menu, 选择音符 included');
 toolbar.render({focused: true, targets: 1, short: 0});
 assert.equal(extendLabel.parentElement, menu, 'focused with n = 0: not in row 2');
+toolbar.render({focused: false, targets: 3, fixable: true});
+assert.deepEqual(ids(row2), row2Overview, 'row 2 holds the lane controls again between visits');
+assert.equal(doc.getElementById('timelineLanePrev'), null, 'the lane page controls are off the page without a lane');
+toolbar.render({focused: true, targets: 1, page: {lanes: 2, pitch: {row: 18, min: 6, max: 40, zoomed: true}, issues: {count: 4, at: -1, checked: true}}});
+for (const id of ['timelineLanePrev', 'timelineLaneNext', 'timelinePitchOut', 'timelinePitchFit', 'timelinePitchIn', 'timelineIssuePrev', 'timelineIssueNext']) doc.getElementById(id).click();
+assert.deepEqual(pageCalls, [['lane', -1], ['lane', 1], ['pitch', -1], ['pitch', 0], ['pitch', 1], ['issue', -1], ['issue', 1]], 'the lane page buttons call back into the timeline');
+assert.equal(doc.getElementById('timelineIssueCount').textContent, '– / 4', 'before the first jump: which one is not known yet');
 toolbar.render({focused: false, targets: 3, fixable: true});
 
 // --- the menu opens and closes ----------------------------------------------------------------------------------------
@@ -173,6 +204,7 @@ assert.equal(more.textContent, '更多 · 选择音符中 ▾', 'selecting notes
 assert.equal(api.moreLabel({annotating: true, selecting: true}, rt).mode, 'annotating', 'the modes are exclusive; annotate wins if both are reported');
 
 // --- 属性 takes its slot ------------------------------------------------------------------------------------------------
+toolbar.render({focused: false});
 {
   const props = read('workbench-properties.js');
   assert(/\$\('timelineMoreProperties'\)[\s\S]{0,40}replaceWith\(launch\)/.test(props), '属性 replaces the menu slot');

@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('XLD', Object.freeze({
   readMidiEvidence: payload => ipcRenderer.invoke('assets:midi-evidence-read',payload),
   checkMidiEvidence: payload => ipcRenderer.invoke('assets:midi-evidence-check',payload),
   applyMidiEvidence: payload => ipcRenderer.invoke('assets:midi-evidence-apply',payload),
+  readStemEnvelope: payload => ipcRenderer.invoke('assets:stem-envelope',payload),
   readDerived: trackId => ipcRenderer.invoke('assets:read', { trackId }),
   revealDerived: (trackId, kind, stem = null, engine = null, runId = null) => ipcRenderer.invoke('assets:reveal', { trackId, kind, stem, engine, runId }),
   scanLibrary: () => ipcRenderer.invoke('library:scan'),

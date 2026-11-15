@@ -580,3 +580,43 @@
 .oneclick-step.running .oneclick-step-state { color:var(--text); }
 .oneclick-step.failed .oneclick-step-state, .oneclick-step.failed .oneclick-step-note { color:#ff9cab; }
 .oneclick-step.unavailable, .oneclick-step.skipped { opacity:.6; }
+
+/* 单轨页 (lane page, 2026-11-14): one open lane fills the window above the player. timeline-controls.js puts
+   xld-lane-page on <html>; nothing is moved, the rest of the app is folded away and comes back as it was. The tool
+   panel stays out of the way unless it is showing 属性 (editing and annotating need it). */
+html.xld-lane-page body.workspace-app :is(.topbar, .workspace-library, .workspace-topline, #workbenchPanel .workspace-tabs, #workbenchPanel:not([data-panel="properties"])),
+html.xld-lane-page body.workspace-app #workspaceTimeline :is(.timeline-head, #timelineSummary, #timelineReference),
+html.xld-lane-page body.workspace-app #workbenchEmptyActions { display:none!important; }
+html.xld-lane-page body.workspace-app .app-shell { height:calc(100dvh - var(--dock-height))!important; grid-template-columns:minmax(0,1fr)!important; }
+html.xld-lane-page body.workspace-app .workbench-body > #workspaceContent { padding:8px 10px 4px; }
+html.xld-lane-page body.workspace-app #workspaceTimeline { gap:6px; }
+/* the page header: two rows that wrap on a narrow window instead of scrolling sideways */
+html.xld-lane-page body.workspace-app :is(.timeline-main-bar, .timeline-lane-bar) { flex-wrap:wrap; row-gap:6px; }
+.lane-page-title { flex:0 1 auto; min-width:0; max-width:min(520px, 42vw); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; color:var(--text); }
+.lane-page-track, .lane-page-group { display:inline-flex; align-items:center; gap:4px; flex-wrap:nowrap; }
+.lane-page-track:empty { display:none; }
+.lane-page-track .tl-parent-mix, .lane-page-track .tl-lane-mix { display:inline-flex; align-items:center; gap:4px; }
+.lane-page-track .tl-track-options { left:auto; right:0; }
+.lane-page-track .tl-edit-target { width:auto; max-width:140px; }
+.lane-page-track select { width:auto; min-width:84px; max-width:200px; }
+.lane-page-count { color:var(--muted); font-variant-numeric:tabular-nums; min-width:4.5em; text-align:center; }
+#lanePageIssues[hidden], .lane-page-count[hidden] { display:none!important; }
+/* the lanes: a 56 px keyboard column instead of the 180 px heads; section and chord rows as thin strips */
+html.xld-lane-page body.workspace-app .tl-row { grid-template-columns:56px minmax(0,1fr); gap:6px; padding:2px 8px; }
+html.xld-lane-page body.workspace-app .tl-scale { margin:0 8px 4px calc(8px + 56px + 6px); }
+html.xld-lane-page body.workspace-app .timeline-lanes { padding:6px 0; }
+html.xld-lane-page body.workspace-app .tl-row:not(.tl-notes-row) .tl-row-body { height:22px; }
+html.xld-lane-page body.workspace-app .tl-row:not(.tl-notes-row) .tl-seg { line-height:22px; }
+html.xld-lane-page body.workspace-app .tl-row:not(.tl-notes-row) > .tl-row-head { padding:0; align-items:center; }
+html.xld-lane-page body.workspace-app .tl-row:not(.tl-notes-row) > .tl-row-head > * { display:none; }
+html.xld-lane-page body.workspace-app .tl-row:not(.tl-notes-row) > .tl-row-head::before { content:attr(data-mark); color:var(--muted); font-size:calc(11px * var(--font-scale)); }
+html.xld-lane-page body.workspace-app .tl-row-focused > .tl-row-head { padding:0!important; display:block; overflow:hidden; border-radius:5px; }
+html.xld-lane-page body.workspace-app .tl-row-focused .tl-track-tools,
+html.xld-lane-page body.workspace-app .tl-row-focused .tl-keys-head > :not(canvas) { display:none!important; }
+html.xld-lane-page body.workspace-app .tl-row-focused .tl-keys-head { display:block; width:100%; height:100%; padding:0; cursor:default; background:var(--x-lane-head, var(--panel-strong)); }
+/* out of the flow: the keyboard keeps the height of its last paint, and must never be what sizes the row
+   (the page fit measures the row; a stale keyboard taller than the notes made the page stop short of the player) */
+.tl-keys { display:block; position:absolute; left:0; top:0; }
+/* the stem's loudness under the notes (core/stem-envelope.cjs), on the same time axis */
+html.xld-lane-page body.workspace-app .tl-row.tl-wave-row .tl-row-body { height:56px; }
+.tl-wave { position:absolute; top:0; display:block; pointer-events:none; }

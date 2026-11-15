@@ -18,8 +18,11 @@
   const EVIDENCE_SILENT = '#cfcbc2';
   const GM_DRUM_KEYS = { 35: 'kick', 36: 'kick', 38: 'snare', 40: 'snare', 42: 'hihat', 44: 'hihat', 46: 'hihat', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 49: 'crash', 51: 'ride', 57: 'crash', 59: 'ride' };
   const MAX_CANVAS = 16384;   // Chromium's per-dimension canvas limit; the device pixel ratio is capped against it.
-  const PITCH_ROW_HEIGHT = 18;   // the tallest a focused semitone row gets; the focused lane shrinks rows to fit
-  const FOCUS_MIN_ROW = 6;       // below this a part scrolls vertically instead of shrinking further
+  // A focused (lane page) semitone row before the page has measured itself. After that the row comes from the
+  // part's pitch window and the room on screen (lane-page.js: 8–28 px by default, 6–40 px zoomed by hand).
+  const PITCH_ROW_HEIGHT = 18;
+  const KEYS_WIDTH = 56;         // the keyboard column on the lane page
+  const ACCENT = '#f0a830';      // the family accent (xld-studio.css): what is selected, here the lit key and the jumped-to note
   const FOCUS_NOTE_PX = 6;       // a focused part opens zoomed until its typical note is this wide ...
   const FOCUS_SCREEN = [15, 45]; // ... while one screen still holds this many seconds of the song
   const MAX_ZOOM = 128;
@@ -180,6 +183,13 @@
     // The focused lane's semitone height (set by fitFocus), and the zoom focusing chose by itself, so leaving the
     // lane can undo it when nobody has zoomed since.
     let focusRow = PITCH_ROW_HEIGHT, autoZoom = null;
+    // The lane page (lane-page.js has the arithmetic): whether the row height was zoomed by hand, the pixels the
+    // rows have to fill, the note and pitch under the pointer, the problem note last jumped to, and its outline.
+    const LP = globalThis.XldLanePage || window.XldLanePage;
+    let rowZoomed = false, focusAvail = 0, hoverNote = null, hoverPitch = null, issueAt = -1, flash = null, pageOpen = false, pageScroll = [], pagePanel = null;
+    const windowCache = new WeakMap(), issueCache = {lane: null, evidence: null, list: []};
+    const envelopes = new Map();   // trackId:stem:runId -> {state, value}: the stem loudness strip's data
+    let waveSurface = null, waveCanvas = null;
     // When the audition is sounding a part, it owns the clock: WebAudio has no `timeupdate`, and the <audio>
     // element it would come from is paused (or loaded with a different track entirely). R6 swaps the same seam.
     let timeSource = null, midiEditor = null;
@@ -368,11 +378,11 @@
       if (!pitches.length) return {kind:'pitch',low:48,high:72,span:25};
       let low = Math.min(...pitches), high = Math.max(...pitches);
       if (detailed) {
-        low=Math.max(0,Math.floor(low)-2);high=Math.min(127,Math.ceil(high)+2);
-        const missing=Math.max(0,13-(high-low+1));
-        low=Math.max(0,low-Math.floor(missing/2));high=Math.min(127,Math.max(high,low+12));
-        low=Math.max(0,Math.min(low,high-12));
-        return {kind:'pitch',low,high,span:high-low+1,row:focusRow};
+        // Every note stays reachable; the window most of the part lives in decides the default view, and the range
+        // is padded out so the rows fill the page when the part is narrow.
+        const most = pitchWindowOf(lane);
+        const range = LP.drawnRange({notesLow: low, notesHigh: high, window: most, row: focusRow, avail: focusAvail});
+        return {kind:'pitch',low:range.low,high:range.high,span:range.span,row:focusRow,window:most};
       }
       if (high - low < MIN_SEMITONES) {
         const pad = (MIN_SEMITONES - (high - low)) / 2;
@@ -381,6 +391,21 @@
       return { kind: 'pitch', low, high, span: Math.max(1, high - low + 1) };
     }
 
+
+    // The 2–98 % pitch window, once per note array (the editor asks for the layout on every pointer move).
+    function pitchWindowOf(lane) {
+      let found = windowCache.get(lane.notes);
+      if (!found) { found = LP.pitchWindow(lane.notes.map(note => note[2])); windowCache.set(lane.notes, found); }
+      return found;
+    }
+    // How many rows the default view has to show: the window's semitones, or every drum key.
+    const windowRows = layout => layout.kind === 'keys' ? layout.span : (layout.window ? layout.window.high - layout.window.low + 1 : layout.span);
+    // The window in the middle of the screen, or its top at the top when it is taller than the screen.
+    function defaultTop(layout, height) {
+      if (layout.kind !== 'pitch' || !layout.window) return 0;
+      const row = layout.row || focusRow, top = LP.windowTop(layout, layout.window, row), tall = windowRows(layout) * row;
+      return tall >= height ? top : Math.max(0, Math.round(top - (height - tall) / 2));
+    }
 
     // Shared CSS-pixel geometry for painting and pointer hit tests. No vertical hit halo crosses a semitone.
     const noteKey = note => Number.isInteger(note[4]) && Number.isInteger(note[5]) && note[4] >= 0 && note[5] >= 0
@@ -553,6 +578,11 @@
     }
     function drawSelection(surface,view) {
       const ctx=contextFor(surface.overlay,view);
+      if(ctx && flash && surface.lane.laneId===focusStem && surface.lane.notes.includes(flash.note)){
+        // The problem note just jumped to: a short outline, so the eye finds it after the view moved.
+        const r=noteRect(flash.note,surface.layout,surface.total,view.width,view.height,surface.detailed);
+        ctx.globalAlpha=1;ctx.strokeStyle=ACCENT;ctx.lineWidth=2;ctx.strokeRect(r.x-2,r.y-2,r.width+4,r.height+4);
+      }
       if(!ctx || !noteSelecting || surface.lane.laneId!==focusStem)return;
       const preview=midiEditor?.preview?.();
       if(preview?.laneId===surface.lane.laneId){
@@ -588,7 +618,14 @@
       for(const type of ['pointerdown','pointermove','pointerup','click'])bar.addEventListener(type,event=>event.stopPropagation());
       surface.body.append(bar);
       surface.body.addEventListener('wheel',event=>{
-        if(event.ctrlKey || event.metaKey)return;
+        if(event.ctrlKey || event.metaKey){
+          // Ctrl + wheel on the lane page zooms the pitch rows around the pitch under the pointer.
+          if(!LP || surface.lane.laneId!==focusStem || surface.lane.wavOnly || !event.deltaY)return;
+          event.preventDefault();
+          const r=surface.body.getBoundingClientRect();
+          setRowHeight(LP.zoomStep(focusRow,event.deltaY<0?1:-1,rowMax()),event.clientY-r.top);
+          return;
+        }
         const scale=event.deltaMode===1?(surface.layout?.row||PITCH_ROW_HEIGHT):event.deltaMode===2?surface.body.clientHeight:1;
         const dx=(event.deltaX||0)*scale,dy=(event.deltaY||0)*scale;
         const across=event.shiftKey || Math.abs(dx)>Math.abs(dy);
@@ -613,7 +650,8 @@
       const dpr=Math.min(window.devicePixelRatio||1,MAX_CANVAS/Math.max(visibleWidth,height,1));
       prepareSurface(surface);
       const maxPitch=surface.detailed?Math.max(0,pitchExtent(surface)-height):0;
-      surface.pitchTop=Math.max(0,Math.min(maxPitch,surface.pitchTop??Math.round(maxPitch/2)));
+      // First paint of a lane page: the top of the part's pitch window at the top of the screen.
+      surface.pitchTop=Math.max(0,Math.min(maxPitch,surface.pitchTop??(surface.detailed?defaultTop(surface.layout,height):0)));
       if(surface.scroller){
         const bar=surface.scroller;
         bar.hidden=!surface.detailed || maxPitch===0;
@@ -632,7 +670,8 @@
         drawLane(surface,view);
       }
       if(changed || surface.overlayDirty)drawSelection(surface,view);
-      surface.last=view; surface.overlayDirty=false;
+      if(surface.keys && (changed || surface.keysDirty))drawKeys(surface,view);
+      surface.last=view; surface.overlayDirty=false; surface.keysDirty=false;
     }
     function queuePaint() {
       if(paintQueued)return;
@@ -640,6 +679,7 @@
       requestAnimationFrame(()=>{
         paintQueued=false;
         for(const surface of surfaces.values())paintSurface(surface);
+        paintWave();
         pinLabels();
       });
     }
@@ -722,7 +762,44 @@
       ctx.globalAlpha = 1;
       // Only once the row is opened: folded, the curve is a dense scribble over the notes it was cut into.
       if (detailed && lane.contour && layout.kind === 'pitch') drawContour(ctx, lane.contour, layout, rowHeight, surface.total, width, offset, visibleWidth, color);
-      if (detailed) drawPitchNames(ctx, layout, rowHeight, pitchTop, height, view.labelX);
+      // The lane page has a keyboard column for the names; without it they sit on the notes' left edge.
+      if (detailed && !surface.keys) drawPitchNames(ctx, layout, rowHeight, pitchTop, height, view.labelX);
+    }
+
+    // The keyboard column of the lane page: one key per semitone row, aligned with the notes and moving with the
+    // vertical scroll (never with the horizontal one: it sits in the sticky head). Every C is named; the row under
+    // the pointer is lit and named. Drums name each row's kit piece instead. Nothing here makes a sound.
+    function drawKeys(surface, view) {
+      const canvas = surface.keys, layout = surface.layout;
+      if (!canvas || !layout) return;
+      const width = Math.max(1, Math.round(canvas.parentElement?.clientWidth || KEYS_WIDTH)), height = view.height, dpr = view.dpr;
+      const w = Math.max(1, Math.round(width * dpr)), h = Math.max(1, Math.round(height * dpr));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, -view.pitchTop * dpr);
+      ctx.clearRect(0, view.pitchTop, width, height);
+      const row = layout.row || focusRow, first = Math.max(0, Math.floor(view.pitchTop / row)), last = Math.min(layout.span, Math.ceil((view.pitchTop + height) / row));
+      ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      for (let index = first; index < last; index += 1) {
+        const y = index * row, pitch = layout.kind === 'keys' ? layout.keys[index] : layout.high - index;
+        const lit = pitch === hoverPitch;
+        const black = layout.kind === 'pitch' && LP.isBlack(pitch);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = lit ? ACCENT : layout.kind === 'keys' ? (index % 2 ? '#2a2f3a' : '#323845') : black ? '#14161c' : '#d9dbe0';
+        ctx.fillRect(0, y, black && !lit ? width * 0.62 : width, Math.max(1, row - (layout.kind === 'keys' ? 1 : 0)));
+        if (black && !lit) { ctx.fillStyle = '#d9dbe0'; ctx.fillRect(width * 0.62, y, width * 0.38, row); }
+        if (layout.kind === 'pitch' && !black && (pitch % 12 === 0 || pitch % 12 === 5)) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, y + row - 1, width, 1); }
+        const label = layout.kind === 'keys' ? (GM_DRUM_KEYS[pitch] || String(pitch)) : (pitch % 12 === 0 || lit) ? LP.pitchName(pitch) : '';
+        if (label && row >= 8) {
+          ctx.fillStyle = layout.kind === 'keys' ? (lit ? '#14161c' : 'rgba(232,236,245,.9)') : (black && !lit ? '#d9dbe0' : '#14161c');
+          ctx.fillText(label, 5, y + row / 2);
+        }
+      }
+      ctx.globalAlpha = 1;
     }
 
     // The vocal line's pitch curve (score-vocals.json), over its notes in the part's own colour. Gaps (unvoiced
@@ -873,14 +950,58 @@
       // Measured against the scroller's unscrolled content, so the fit does not change with where the page is.
       const room = scroller.clientHeight - (b.top - s.top + scroller.scrollTop) - (h.bottom - b.bottom) - below - pad(card) - pad(scroller) - 6;
       const avail = Math.max(240, Math.floor(room));
-      const span = surface.lane.wavOnly ? 0 : laneLayout(surface.lane, true).span;
-      const row = span ? Math.max(FOCUS_MIN_ROW, Math.min(PITCH_ROW_HEIGHT, Math.floor((avail - 12) / span))) : PITCH_ROW_HEIGHT;
-      body.style.height = Math.max(180, span ? Math.min(avail, span * row + 12) : Math.min(avail, 240)) + 'px';
-      if (row !== focusRow) {
-        if (surface.pitchTop) surface.pitchTop = Math.round(surface.pitchTop * row / focusRow);
-        focusRow = row;
+      if (surface.lane.wavOnly) { body.style.height = Math.max(180, Math.min(avail, 240)) + 'px'; return; }
+      // The lane page fills the window. Its rows: the part's pitch window (or every drum key) over the room there
+      // is, held to 8–28 px, unless the rows were zoomed by hand; a new size recomputes the default, a hand zoom stays.
+      body.style.height = Math.max(180, avail) + 'px';
+      const rows = avail - 12;
+      if (rowZoomed) {
+        if (rows !== focusAvail) relayout(surface, () => { focusAvail = rows; }, 0);
+        return;
+      }
+      const now = laneLayout(surface.lane, true);
+      const row = LP.defaultRow(windowRows(now), rows, now.kind === 'keys' ? LP.KEYS_ROW : LP.DEFAULT_ROW);
+      if (row !== focusRow || rows !== focusAvail) {
+        focusRow = row; focusAvail = rows;
+        surface.pitchTop = null;      // back to the window's top on the next paint
         surface.indexedLane = null;   // re-index with the new geometry on the next paint
       }
+    }
+
+    // Changes the row height or the room (`change`), keeping the pitch that was `y` pixels below the top of the lane
+    // at the same place on screen.
+    function relayout(surface, change, y) {
+      const before = laneLayout(surface.lane, true), rowBefore = before.row || focusRow;
+      const at = ((surface.pitchTop || 0) + y) / rowBefore;
+      const anchor = before.kind === 'keys' ? at : before.high + 1 - at;
+      change();
+      const after = laneLayout(surface.lane, true), rowAfter = after.row || focusRow;
+      const index = after.kind === 'keys' ? anchor : after.high + 1 - anchor;
+      surface.pitchTop = Math.max(0, Math.round(index * rowAfter - y));
+      surface.indexedLane = null; surface.last = null;
+    }
+
+    // − / + / 适应 and Ctrl + wheel. `y` is the anchor below the top of the lane; the middle when not given.
+    function setRowHeight(next, y) {
+      const surface = focusStem ? surfaces.get(focusStem) : null;
+      if (!surface?.detailed || surface.lane.wavOnly) return;
+      const value = LP.clampRow(next, rowMax());
+      rowZoomed = true;
+      if (value !== focusRow) relayout(surface, () => { focusRow = value; }, Number.isFinite(y) ? y : (surface.body.clientHeight || 0) / 2);
+      render();
+    }
+    function fitPitch() {
+      const surface = focusStem ? surfaces.get(focusStem) : null;
+      rowZoomed = false;
+      if (surface) { surface.pitchTop = null; surface.indexedLane = null; surface.last = null; }
+      focusAvail = -1;   // makes fitFocus() recompute the default even when nothing else changed
+      render();
+    }
+    // The tallest a row may be zoomed: 40 px for semitone rows, more for drum rows (a handful of kit pieces).
+    const rowMax = () => lookup(focusStem)?.stem === 'drums' ? LP.KEYS_ROW.max : LP.ZOOM_ROW.max;
+    function stepPitch(direction) {
+      if (!LP) return;
+      if (direction === 0) fitPitch(); else setRowHeight(LP.zoomStep(focusRow, direction, rowMax()));
     }
 
     // How far focusing zooms in by itself: until the part's typical note is FOCUS_NOTE_PX wide, but never so far that
@@ -934,6 +1055,204 @@
       element.addEventListener('pointercancel', stop);
     }
 
+    // --- the lane page ---------------------------------------------------------------------------
+    // One lane open = the lane page: a class on the root element folds the app bar, library, track title and the tool
+    // panel away (workspace.css), nothing is moved. Scroll positions inside what folds away are put back on leaving.
+    function syncPage() {
+      // Only while the timeline itself is showing: a hidden timeline must never leave the app folded away.
+      const open = Boolean(focusStem) && !$('workspaceTimeline')?.hidden;
+      if (open === pageOpen) return;
+      pageOpen = open;
+      const rootNode = document.documentElement;
+      if (open) {
+        try { pageScroll = [...document.querySelectorAll('.workspace-library, .workspace-library *, #workspaceContent, #workbenchPanelBody')]
+          .filter(node => node.scrollTop > 0).map(node => [node, node.scrollTop]); } catch (_) { pageScroll = []; }
+        // The tool panel as it was: 编辑音符 and 标注 open 属性 beside the notes, and leaving puts the panel back.
+        const panel = $('workbenchPanel');
+        pagePanel = panel ? {open: !panel.hidden, kind: panel.dataset?.panel || null} : null;
+      }
+      rootNode?.classList?.toggle('xld-lane-page', open);
+      if (!open) {
+        const saved = pageScroll; pageScroll = [];
+        const panel = $('workbenchPanel'), was = pagePanel; pagePanel = null;
+        // After this render, not inside it: closing the panel lays the workbench out again, which renders the timeline.
+        requestAnimationFrame(() => {
+          if (panel && was && !panel.hidden && !focusStem) {
+            if (!was.open) $('workbenchClose')?.click?.();
+            else if (was.kind && was.kind !== panel.dataset?.panel) $('workspace-tab-' + was.kind)?.click?.();
+          }
+          for (const [node, top] of saved) node.scrollTop = top;
+        });
+        toolbar?.slots?.track?.replaceChildren?.();
+      }
+      hoverNote = null; hoverPitch = null;
+    }
+    // The page keeps one section row and the reference chord row (plus your own marks), each a thin strip.
+    function pageRows(rows) {
+      if (!focusStem) return rows;
+      const section = rows.find(row => row.kind === 'section');
+      const chords = rows.filter(row => row.kind === 'harmony');
+      const chord = ['chord-chordmini', 'chord-btc'].map(id => chords.find(row => row.result.engine?.id === id)).find(Boolean) || chords[0];
+      return rows.filter(row => row === section || row === chord || row.kind === 'manual');
+    }
+    // The lanes ‹ › walks through: the note lanes of the whole-song view, in the order they are shown there.
+    function pageLaneIds() {
+      const order = layout.ordered(rootKeys(), key => key).filter(key => key.startsWith('stem:')).map(key => key.slice(5));
+      return order.flatMap(stem => {
+        const parts = partsFor(stem);
+        if (parts.length < 2) return parts;
+        return layout.collapsed(stem) ? [groupLane(stem)] : parts;
+      }).filter(lane => lane && !lane.wavOnly && lane.status !== 'none').map(lane => lane.laneId);
+    }
+    function stepLane(direction) {
+      const next = LP?.laneStep(pageLaneIds(), focusStem, direction);
+      if (next && next !== focusStem) setFocus(next);
+    }
+    function engineLabelOf(lane) {
+      return lane.engine === 'manual-revision' ? rt(evidenceFor(lane)?.appliedFrom ? 'runtime.evidence.refined' : 'runtime.assets.runStatus.manual')
+        : lane.engine === 'score-vocals' ? rt('runtime.timeline.vocalsEngine')
+        : lane.stem === 'vocals / backing' ? rt('runtime.timeline.splitEngine') : lane.engineName || lane.engine;
+    }
+    // The problem notes of the open lane after a check (silent or short; weak evidence is not a problem to fix).
+    function issueList() {
+      const lane = lookup(focusStem);
+      const found = lane && !lane.isDraft ? evidenceFor(lane) : null;
+      if (!found) return [];
+      if (issueCache.lane !== lane || issueCache.evidence !== found) Object.assign(issueCache, {lane, evidence: found, list: LP.issues(lane.notes, found)});
+      return issueCache.list;
+    }
+    function jumpIssue(direction) {
+      const list = issueList(), surface = surfaces.get(focusStem);
+      if (!list.length || !surface) return;
+      issueAt = LP.issueStep(list.length, issueAt, direction);
+      const item = list[issueAt];
+      // Across: the note a little left of the middle of what is visible, right of the keyboard.
+      const v = viewport();
+      if (v) {
+        const head = v.host.querySelector('.tl-row-head'), left = head ? head.getBoundingClientRect().right : v.view.left;
+        v.host.scrollLeft += v.xOf(item.start) - (left + (v.view.right - left) * 0.35);
+      }
+      // Up and down: only if the note is not on screen already.
+      const layoutNow = laneLayout(surface.lane, true), r = surface.body.getBoundingClientRect();
+      const rect = noteRect(item.note, layoutNow, surface.total, r.width, r.height, true), height = surface.body.clientHeight;
+      if (rect.y < (surface.pitchTop || 0) || rect.y + rect.height > (surface.pitchTop || 0) + height) setPitchTop(surface, rect.y + rect.height / 2 - height / 2);
+      flash = {note: item.note};
+      const shown = flash;
+      surface.overlayDirty = true;
+      setTimeout(() => { if (flash === shown) { flash = null; const s = surfaces.get(focusStem); if (s) { s.overlayDirty = true; queuePaint(); } } }, 1400);
+      queuePaint();
+      renderToolbar();
+    }
+    // What the pointer is over on the lane page: the note (for the readout) and the pitch row (for the keyboard).
+    function hover(surface, event) {
+      let note = null, pitch = null;
+      if (event && surface.layout) {
+        const r = surface.body.getBoundingClientRect(), row = surface.layout.row || focusRow;
+        const x = event.clientX - r.left, y = event.clientY - r.top + (surface.pitchTop || 0);
+        const index = Math.floor(y / row);
+        if (index >= 0 && index < surface.layout.span) pitch = surface.layout.kind === 'keys' ? surface.layout.keys[index] : surface.layout.high - index;
+        if (event.onNotes !== false) for (const item of surface.visible || []) {
+          const b = item.rect;
+          if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) note = item.note;
+        }
+      }
+      if (pitch !== hoverPitch) { hoverPitch = pitch; surface.keysDirty = true; queuePaint(); }
+      if (note !== hoverNote) { hoverNote = note; updatePlayhead(); }
+    }
+    function hoverText() {
+      const lane = lookup(focusStem);
+      if (!hoverNote || !lane || !LP) return '';
+      return LP.readout(hoverNote, {rt, drumName: lane.stem === 'drums' ? (GM_DRUM_KEYS[hoverNote[2]] || 'GM') : null, evidence: lane.isDraft ? null : evidenceFor(lane)});
+    }
+    function pageView() {
+      const lane = lookup(focusStem);
+      if (!lane) return {};
+      const state = getState(), list = issueList();
+      const count = lane.wavOnly ? 'WAV' : rt('runtime.timeline.notes', {count: lane.noteCount});
+      return {lanes: pageLaneIds().length,
+        title: [state.selectedTrack?.title, laneName(lane) + ' · ' + engineLabelOf(lane) + (lane.isDraft ? ' *' : ''), count].filter(Boolean).join(' · '),
+        pitch: {row: focusRow, min: LP?.ZOOM_ROW.min, max: LP ? rowMax() : undefined, zoomed: rowZoomed, off: Boolean(lane.wavOnly || !LP)},
+        issues: {count: list.length, at: list.length ? Math.min(issueAt, list.length - 1) : -1, checked: Boolean(!lane.isDraft && evidenceFor(lane))}};
+    }
+
+    // --- the stem's loudness under the notes (lane page) -----------------------------------------
+    // The envelope of the WAV 核对原声 reads for this run (main process, core/stem-envelope.cjs), on the same time
+    // axis as the notes. No stem, no file, an error: no strip, and nothing said.
+    function envelopeFor(lane) {
+      if (!bridge.readStemEnvelope || !lane?.runId || lane.wavOnly || !trackId) return null;
+      const key = trackId + ':' + lane.stem + ':' + lane.runId;
+      let found = envelopes.get(key);
+      if (!found) {
+        found = {state: 'loading', value: null};
+        envelopes.set(key, found);
+        const asked = trackId;
+        Promise.resolve().then(() => bridge.readStemEnvelope({trackId: asked, stem: lane.stem, runId: lane.runId})).then(value => {
+          found.state = value?.ok && value.values?.length && value.hop > 0 ? 'ok' : 'none';
+          found.value = found.state === 'ok' ? value : null;
+          if (found.state === 'ok' && asked === trackId && focusStem) render();
+        }, () => { found.state = 'none'; });
+      }
+      return found.state === 'ok' ? found.value : null;
+    }
+    function waveRow(lane, total) {
+      const value = envelopeFor(lane);
+      if (!value) return null;
+      const element = document.createElement('section');
+      element.className = 'tl-row tl-wave-row';
+      element.dataset.stem = lane.stem;
+      const head = document.createElement('div');
+      head.className = 'tl-row-head';
+      head.dataset.mark = rt('runtime.lanePage.markWave');
+      head.title = rt('runtime.lanePage.wave');
+      head.innerHTML = `<strong>${escapeHtml(rt('runtime.lanePage.wave'))}</strong>`;
+      const body = document.createElement('div');
+      body.className = 'tl-row-body';
+      if (!waveCanvas) { waveCanvas = document.createElement('canvas'); waveCanvas.className = 'tl-wave'; }
+      body.append(waveCanvas);
+      attachLane(body, total, 'section');
+      attachPan(body);
+      element.append(head, body);
+      waveSurface = {body, canvas: waveCanvas, value, total, color: STEM_COLORS[lane.stem] || '#9aa0b4', last: null};
+      return element;
+    }
+    function paintWave() {
+      const wave = waveSurface, host = $('timelineLanes');
+      if (!wave || !host || !(wave.total > 0)) return;
+      const body = wave.body, laneRect = body.getBoundingClientRect(), hostRect = host.getBoundingClientRect();
+      const width = body.clientWidth, height = body.clientHeight;
+      if (!(width > 0 && height > 0 && host.clientWidth > 0)) return;
+      const visibleWidth = Math.min(width, host.clientWidth);
+      const offset = Math.max(0, Math.min(width - visibleWidth, Math.floor(hostRect.left - laneRect.left)));
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS / Math.max(visibleWidth, height, 1));
+      const key = [width, height, visibleWidth, offset, dpr].join(',');
+      if (key === wave.last) return;
+      wave.last = key;
+      const canvas = wave.canvas, w = Math.max(1, Math.round(visibleWidth * dpr)), h = Math.max(1, Math.round(height * dpr));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      canvas.style.left = offset + 'px'; canvas.style.width = visibleWidth + 'px'; canvas.style.height = height + 'px';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, -offset * dpr, 0);
+      ctx.clearRect(offset, 0, visibleWidth, height);
+      ctx.fillStyle = 'rgba(255,255,255,.08)';
+      ctx.fillRect(offset, Math.round(height / 2), visibleWidth, 1);
+      ctx.fillStyle = wave.color; ctx.globalAlpha = .8;
+      const values = wave.value.values, hop = wave.value.hop, perPixel = wave.total / width;
+      // One column per CSS pixel, the loudest 10 ms inside it, drawn about the middle, in linear amplitude against
+      // the loudest 10 ms of the stem (lane-page.js waveScale).
+      const scale = wave.scale || (wave.scale = LP.waveScale(values));
+      for (let x = Math.floor(offset); x < offset + visibleWidth; x += 1) {
+        const from = Math.floor(x * perPixel / hop), to = Math.min(values.length, Math.max(from + 1, Math.ceil((x + 1) * perPixel / hop)));
+        let peak = 0;
+        for (let i = from; i < to; i += 1) if (values[i] > peak) peak = values[i];
+        if (!peak) continue;
+        const bar = Math.max(1, scale[peak] * (height - 4));
+        ctx.fillRect(x, (height - bar) / 2, 1, bar);
+      }
+      ctx.globalAlpha = 1;
+    }
+
     // --- rendering ----------------------------------------------------------------------------
     function render() {
       const host = $('timelineLanes');
@@ -972,9 +1291,10 @@
       $('noteTimelineZoomLabel').title = rt('runtime.timeline.fit');
       $('noteTimelineZoomLabel').disabled = !selected || zoom === 1;
       $('timelineZoomOut').disabled = !selected || zoom === 1;
-      const rows = selected ? segmentRows() : [];
       // A focused stem that disappeared (different track, different MIDI) silently falls back to showing every lane.
       if (focusStem && !lookup(focusStem)) focusStem = null;
+      syncPage();
+      const rows = selected ? pageRows(segmentRows()) : [];
       const noteLanes = selected ? visibleLanes() : [];
       host.classList.toggle('tl-focused', Boolean(focusStem));
       const exit = $('timelineFocusExit');
@@ -1017,6 +1337,7 @@
         return `<span style="left:${ratio * 100}%">${scaleClock(total * ratio,total/ticks)}</span>`;
       }).join('');
       canvas.append(scale);
+      waveSurface = null;
       const rootNodes=new Map();
       const collect=(key,element)=>{if(!rootNodes.has(key))rootNodes.set(key,[]);rootNodes.get(key).push(element);};
 
@@ -1030,6 +1351,9 @@
         head.className = 'tl-row-head';
         const shown = shownSegments(result);
         head.innerHTML = `<strong>${escapeHtml(result.engine?.name || result.engine?.id || '')}</strong><span>${escapeHtml(rt('runtime.timeline.segments', { count: shown.length }))}</span>`;
+        // The lane page's narrow column shows one character for the row instead (workspace.css).
+        head.dataset.mark = rt(row.kind === 'manual' ? 'runtime.lanePage.markManual' : row.axis === 'chord' ? 'runtime.lanePage.markChord' : 'runtime.lanePage.markSection');
+        head.title = result.engine?.name || result.engine?.id || '';
         const body = document.createElement('div');
         body.className = 'tl-row-body';
         for (const segment of shown) {
@@ -1070,13 +1394,13 @@
         head.className = 'tl-row-head tl-row-toggle';
         head.title = rt(detailed ? 'runtime.timeline.focusExit' : 'runtime.timeline.focus');
         const subtitle = lane.status === 'none' ? rt('runtime.timeline.vocalsNone') : lane.wavOnly ? rt('runtime.hybrid.waveform') : laneSubtitle(lane);
-        const engineLabel = lane.engine === 'manual-revision' ? rt(evidenceFor(lane)?.appliedFrom ? 'runtime.evidence.refined' : 'runtime.assets.runStatus.manual')
-          : lane.engine === 'score-vocals' ? rt('runtime.timeline.vocalsEngine')
-          : lane.stem === 'vocals / backing' ? rt('runtime.timeline.splitEngine') : lane.engineName || lane.engine;
+        const engineLabel = engineLabelOf(lane);
         head.innerHTML = `<strong>${escapeHtml(laneName(lane))} · ${escapeHtml(engineLabel)}${lane.isDraft ? ' *' : ''}</strong>`
           + `<span>${escapeHtml(lane.wavOnly?'WAV':rt('runtime.timeline.notes', { count: lane.noteCount }))}${subtitle ? ' · ' + escapeHtml(subtitle) : ''}`
           + `${detailed && spans ? ' · ' + escapeHtml(roleMix(spans, total)) : ''}</span>`;
-        head.addEventListener('click', () => setFocus(detailed ? null : lane.laneId));
+        // On the lane page this head is the keyboard: clicking it does nothing (← 返回 and Esc leave the page).
+        head.addEventListener('click', () => { if (!detailed) setFocus(lane.laneId); });
+        if (detailed) head.title = '';
         const body = document.createElement('div');
         body.className = 'tl-row-body';
         if(lane.groupHeader){
@@ -1124,8 +1448,25 @@
         attachNoteSelection(body,lane,total);
         attachLane(body, total, 'section');
         attachPan(body);
-        element.append(decorateTrack(lane,head,element), body);
+        const box = decorateTrack(lane,head,element);
+        if (detailed) {
+          // The lane page: the version / M / S / ⋯ controls go up into the page header (row 1), the head becomes
+          // the keyboard column, and the pointer is read for the readout and the lit key.
+          const tools = box === head ? [] : [...box.children].filter(child => child !== head && !child.classList?.contains?.('tl-track-tools'));
+          toolbar?.slots?.track?.replaceChildren?.(...tools);
+          if (!surface.keys) { surface.keys = document.createElement('canvas'); surface.keys.className = 'tl-keys'; }
+          head.classList?.add?.('tl-keys-head');
+          head.append(surface.keys);
+          surface.keysDirty = true;
+          const pointerOver = event => { if (!event.buttons) hover(surface, event); };
+          body.addEventListener('pointermove', pointerOver);
+          body.addEventListener('pointerleave', () => hover(surface, null));
+          head.addEventListener('pointermove', event => hover(surface, {clientX: -1e9, clientY: event.clientY, onNotes: false}));
+          head.addEventListener('pointerleave', () => hover(surface, null));
+        } else surface.keys = null;
+        element.append(box, body);
         collect('stem:'+lane.stem,element);
+        if (detailed && !lane.wavOnly) { const wave = waveRow(lane, total); if (wave) collect('stem:'+lane.stem, wave); }
 
       }
       for(const [key,elements] of layout.ordered([...rootNodes],pair=>pair[0]))for(const element of elements)canvas.append(element);
@@ -1341,7 +1682,9 @@
         if (block) details.push(`${row.querySelector('.tl-row-head strong')?.textContent || ''}: ${block.textContent}`);
       }
       const readout = $('timelineReadout');
-      if (readout) readout.textContent = same ? `${clock(current)}${details.length ? '  ·  ' + details.join('   |   ') : ''}` : rt('runtime.timeline.sync');
+      // On the lane page a note under the pointer takes the line over until the pointer moves off it.
+      const pointed = focusStem ? hoverText() : '';
+      if (readout) readout.textContent = pointed ? pointed : same ? `${clock(current)}${details.length ? '  ·  ' + details.join('   |   ') : ''}` : rt('runtime.timeline.sync');
       const locate = $('timelineLocate');
       if (locate) { locate.disabled = !same; locate.title = rt(same ? 'runtime.timeline.locateHint' : 'runtime.timeline.locateIdle'); }
     }
@@ -1448,7 +1791,7 @@
     // The toolbar shows rows and the 更多 menu from the same state the buttons above were drawn from.
     function renderToolbar() {
       toolbar?.render({focused: Boolean(focusStem), annotating, selecting: noteSelecting && !midiEditor?.active(),
-        busy: evidenceBusy, loading, armed: evidenceArmed, ...evidenceView});
+        busy: evidenceBusy, loading, armed: evidenceArmed, ...evidenceView, page: focusStem ? pageView() : null});
     }
     async function checkEvidence() {
       if (evidenceBusy || !bridge.checkMidiEvidence) return;
@@ -1513,6 +1856,8 @@
       if (focusStem === stem) return;
       const entering = !focusStem && Boolean(stem);
       cancelNoteGesture?.(); selectionKeys.clear(); noteSelecting = false;
+      // Every lane page opens at its default pitch view, also when ‹ › switches from another lane.
+      rowZoomed = false; focusAvail = -1; issueAt = -1; flash = null; hoverNote = null; hoverPitch = null;
       // Opening a part from the whole-song view zooms in to where its notes can be read; leaving it undoes that,
       // unless the zoom was changed in between. A zoom someone chose before focusing is left alone.
       const next = entering && zoom === 1 ? focusZoom(lookup(stem)) : 1;
@@ -1557,7 +1902,8 @@
       // 核对全部轨 is the old unfocused 核对原声; it lives in the 更多 menu because the 本轨 row is gone without a focus.
       toolbar = globalThis.XldTimelineToolbar?.create({document, rt,
         onCheckAll: () => { if (!focusStem) checkEvidence(); },
-        onApplyAll: () => { if (!focusStem) applyEvidence(); }}) || null;
+        onApplyAll: () => { if (!focusStem) applyEvidence(); },
+        onLaneStep: direction => stepLane(direction), onPitch: direction => stepPitch(direction), onIssue: direction => jumpIssue(direction)}) || null;
       $('timelineSelectionClear')?.addEventListener('click', clearSelection);
       $('timelineAnnotate')?.addEventListener('click', () => setAnnotating(!annotating));
       $('timelineLocate')?.addEventListener('click', () => locatePlayhead());
@@ -1567,6 +1913,14 @@
       $('timelineEditorCancel')?.addEventListener('click', () => { draft = null; renderEditor(); });
       window.addEventListener('resize', () => { if (!$('workspaceTimeline')?.hidden) render(); });
       window.addEventListener('keydown', event => {
+        // [ and ] walk the problem notes of the open lane, unless a field has the keyboard.
+        if ((event.key === '[' || event.key === ']') && focusStem && !$('workspaceTimeline')?.hidden && !event.ctrlKey && !event.metaKey) {
+          const target = event.target;
+          if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(String(target.tagName || '').toUpperCase()))) return;
+          event.preventDefault?.();
+          jumpIssue(event.key === ']' ? 1 : -1);
+          return;
+        }
         if (event.key !== 'Escape' || $('workspaceTimeline')?.hidden) return;
         if (toolbar?.close(true)) return;   // an open 更多 menu takes the first Esc
         if (cancelNoteGesture) { cancelNoteGesture(); return; }
@@ -1595,6 +1949,10 @@
       setStripMode, stripMode: () => stripMode,
       zoom: () => zoom, focus: () => focusStem, annotating: () => annotating, draft: () => draft && { ...draft },
       laneCount: () => lanes.length,
+      // The lane page, for the steps that drive a real window and for tests.
+      stepPitch, rowHeight: () => focusRow, rowZoomed: () => rowZoomed, pageLaneIds, stepLane, jumpIssue,
+      issues: () => issueList().map(item => ({start: item.start, pitch: item.pitch, kinds: item.kinds})), issueAt: () => issueAt,
+      pitchTop: () => surfaces.get(focusStem)?.pitchTop ?? null, pitchLayout: () => { const lane = lookup(focusStem); return lane && !lane.wavOnly ? laneLayout(lane, true) : null; },
       // The audition needs the notes of one lane. It reads them from here rather than fetching them again,
       // because the split into per-instrument lanes and the sort that follows it should exist in one place only.
       laneFor: id => lookup(id),
