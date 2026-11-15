@@ -200,7 +200,7 @@
         const copy=document.createElement('span');copy.className='engine-copy';
         const title=document.createElement('strong');
         const guitar=midiStem()==='guitar' && ['muscriptor-medium','muscriptor-large'].includes(model.id);
-        const trial=/^(strings|drums)-muscriptor-/.test(model.id),size=model.id.includes('muscriptor-large')?'large':'medium';
+        const trial=/^(strings|drums|piano|bass)-muscriptor-/.test(model.id),size=model.id.includes('muscriptor-large')?'large':'medium';
         const stringsMode=midiStem()==='strings'?(model.id==='strings-muscriptor-large-v04'?'tempo':model.id==='strings-muscriptor-large'?'legato':model.id==='strings-muscriptor-large-raw'?'raw':null):null;
         title.textContent=stringsMode?rt('runtime.assets.stringsUse.'+stringsMode):guitar?rt('runtime.assets.guitarUse.'+model.id):trial?rt('runtime.assets.'+(midiStem()==='strings'?'stringsUse.':'muscriptorTrial.')+size):model.name;
         if(guitar||trial){const name=document.createElement('span');name.className='model-engine-name';name.textContent=model.name;copy.append(title,name);}else copy.append(title);
@@ -214,7 +214,7 @@
       }
       document.getElementById('derivedMidiScope').textContent=manualActive()?rt('runtime.assets.runStatus.manual'):selected?rt('runtime.assets.modelScope',{stem:midiStem()}):'';
       document.getElementById('derivedMidiHint').textContent=!candidates().length?rt('runtime.assets.modelChoose'):
-        !models?rt('runtime.assets.modelLoading'):selectedModel()?.id==='strings-muscriptor-large-v04'?rt('runtime.assets.stringsHint.tempo'):selectedModel()?.id==='strings-muscriptor-large'?rt('runtime.assets.stringsHint.legato'):selectedModel()?.id==='strings-muscriptor-large-raw'?rt('runtime.assets.stringsHint.raw'):/^(strings|drums)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):selectedModel()?.id==='piano-transkun'?rt('runtime.assets.transkunHint'):selectedModel()?.id==='drums-adtof-stems'?rt('runtime.assets.drumStemsHint'):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':midiStem()==='vocals'?'runtime.assets.vocalsHint':'runtime.assets.modelHint');
+        !models?rt('runtime.assets.modelLoading'):selectedModel()?.id==='strings-muscriptor-large-v04'?rt('runtime.assets.stringsHint.tempo'):selectedModel()?.id==='strings-muscriptor-large'?rt('runtime.assets.stringsHint.legato'):selectedModel()?.id==='strings-muscriptor-large-raw'?rt('runtime.assets.stringsHint.raw'):/^(strings|drums|piano|bass)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):selectedModel()?.id==='piano-transkun'?rt('runtime.assets.transkunHint'):selectedModel()?.id==='drums-adtof-stems'?rt('runtime.assets.drumStemsHint'):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':midiStem()==='vocals'?'runtime.assets.vocalsHint':'runtime.assets.modelHint');
     }
     // Which runs exist is scoped exactly like the rest of this panel: track, source, stem, engine. Values are
     // {state:'loading'|'ready'|'error', runs}. render() only ever reads it; the fetch writes it and re-renders once.

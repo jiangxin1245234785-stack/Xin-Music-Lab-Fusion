@@ -340,6 +340,80 @@
     }
   },
   {
+    "id": "piano-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "piano"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-keys-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_piano,electric_piano,organ,synth_lead,synth_pad",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
+    "id": "bass-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "bass"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-bass-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_bass,electric_bass",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
     "id": "strings-muscriptor-medium",
     "name": "MuScriptor Medium",
     "stems": [
