@@ -39,6 +39,8 @@ function createScoreExport(deps) {
     if (payload?.fxDynamics === 'song' || payload?.fxDynamics === 'off') look.fxDynamics = payload.fxDynamics;
     // The scene always shows the stems without notes as a band (SPEC-REST.md), so the video does too.
     look.showTexture = true;
+    // 按乐器画音符 (SPEC-B4): the video draws the shapes when the scene does, the spindle set; off, nothing is passed.
+    if (payload?.shapes === true) { look.showShapes = true; look.shapeSet = 'spindle'; }
     for (const key of ['mergeTimbres', 'simplify']) if (typeof payload?.[key] === 'boolean') look[key] = payload[key];
     const controller = new AbortController();
     running = {controller, file: picked.filePath};

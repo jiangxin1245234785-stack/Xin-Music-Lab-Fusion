@@ -63,7 +63,7 @@
       let result;
       try {
         result = await bridge.scoreExport({
-          trackId: s.trackId, tier, fxPreset: s.fxPreset, fxDynamics: s.fxDynamics, mergeTimbres: s.reading?.mergeTimbres, simplify: s.reading?.simplify,
+          trackId: s.trackId, tier, fxPreset: s.fxPreset, fxDynamics: s.fxDynamics, shapes: s.shapes === true, mergeTimbres: s.reading?.mergeTimbres, simplify: s.reading?.simplify,
           useDynamics: root.XinScoreDynamicsControls?.enabled?.() === true, lang: doc.documentElement.lang || undefined
         });
       } catch (error) {

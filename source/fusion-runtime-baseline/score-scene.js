@@ -28,6 +28,14 @@
   // Whether the effects follow the song's rise and fall (the core's `fxDynamics`): on unless turned off here.
   const FOLLOW_KEY = 'xin-score-fx-dynamics';
   const storedFollow = kept => (kept === 'off' ? 'off' : 'song');
+  // 按乐器画音符 (SPEC-B4): the user's pick from gate15, struck / plucked notes with a head and string notes as a
+  // spindle (the core's shapes, the spindle set). On unless turned off on this device. Off, nothing about shapes
+  // goes into the scene's options, so it draws as before; turning it off on a shown score hands the core the off
+  // value. String links, pitch weight and the cover adaptations stay off (the core's defaults). The two option
+  // names appear in this file only in the two literals below: source/scoreview/tests/host-guard.test.cjs holds that.
+  const SHAPES_KEY = 'xin-score-shapes';
+  const storedShapes = kept => kept !== 'off';
+  const shapeOptions = on => (on ? {showShapes: true, shapeSet: 'spindle'} : {});
   function storedPreset(kept) {
     if (PRESETS.includes(kept)) return kept;
     return Object.prototype.hasOwnProperty.call(OLD_LEVELS, kept) ? OLD_LEVELS[kept] : 'clear';
@@ -98,6 +106,18 @@
         fxDynamics = followInput.checked ? 'song' : 'off';
         try { root.localStorage.setItem(FOLLOW_KEY, fxDynamics); } catch (_) {}
         view?.setOptions({fxDynamics});
+      });
+    }
+
+    let shapes = true;
+    try { shapes = storedShapes(root.localStorage.getItem(SHAPES_KEY)); } catch (_) {}
+    const shapesInput = root.document.getElementById('scoreShapes');
+    if (shapesInput) {
+      shapesInput.checked = shapes;
+      shapesInput.addEventListener('change', () => {
+        shapes = shapesInput.checked;
+        try { root.localStorage.setItem(SHAPES_KEY, shapes ? 'on' : 'off'); } catch (_) {}
+        view?.setOptions(shapes ? shapeOptions(true) : {showShapes: false});
       });
     }
 
@@ -326,7 +346,7 @@
         return false;
       }
       // The stems without notes as a low band at the foot (work/score-dynamics-20261114/SPEC-REST.md): always on here.
-      const options = {...reading,fxPreset,fxDynamics,showTexture: true,offsetSeconds: -latency() / 1000};
+      const options = {...reading,fxPreset,fxDynamics,showTexture: true,...shapeOptions(shapes),offsetSeconds: -latency() / 1000};
       if (view) { view.setModel(result.model); view.setOptions(options); }
       else view = core.create(canvas, result.model, () => clock.now(), options);
       shownModel = result.model;
@@ -509,7 +529,7 @@
       // The background queue, shared with the library drawer's "prepare the score" batch.
       prepare,
       laneTip: under => laneName(under),
-      status: () => ({status, trackId, active: active(), held, latencyMs: latency(), health, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
+      status: () => ({status, trackId, active: active(), held, latencyMs: latency(), health, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,shapes,tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
                       prep: {auto: autoLayers, plan: prepPlan, phase: prepare && trackId ? prepare.phase(trackId) : 'idle',
                              error: prepare && trackId ? prepare.error(trackId) : null, attempts: prepare && trackId ? prepare.attempts(trackId) : 0,
                              // What is drawn now: no status line while the help line is up (L6).
@@ -521,5 +541,5 @@
     });
   }
 
-  root.XinScoreScene = Object.freeze({create, EFFECT, storedPreset, storedFollow, PRESETS, laneModels});
+  root.XinScoreScene = Object.freeze({create, EFFECT, storedPreset, storedFollow, storedShapes, shapeOptions, PRESETS, laneModels});
 })(globalThis);
