@@ -439,6 +439,17 @@
 .tl-loop-range { position:absolute; top:0; bottom:0; border-left:1px dashed var(--muted); border-right:1px dashed var(--muted); background:rgba(166,151,242,.06); pointer-events:none; z-index:2; }
 .tl-loop-range.enabled { border-color:var(--mint); background:rgba(145,223,204,.10); }
 .timeline-zoom { flex-wrap:wrap; justify-content:flex-end; }
+/* Toolbar (2026-11-14, timeline-toolbar.js): row 1 always, row 2 「本轨」 only while a lane is focused, the rest in 更多. */
+#workspaceTimeline :is(.timeline-zoom, .timeline-audition, .timeline-more-menu, .timeline-more-check, .timeline-more-status, button)[hidden] { display:none!important; }
+.timeline-main-bar > #timelineAuditionStatus, .timeline-lane-bar > #timelineEvidenceStatus { flex:1 1 160px; min-width:0; margin-left:auto; text-align:right; }
+.timeline-more { position:relative; display:inline-flex; }
+.timeline-more-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:40; display:flex; flex-direction:column; align-items:stretch; gap:6px;
+  width:max-content; min-width:220px; max-width:min(340px, calc(100vw - 32px)); padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); box-shadow:0 18px 50px rgba(0,0,0,.45); }
+.timeline-more-menu > button { justify-content:flex-start; text-align:left; }
+.timeline-more-menu .timeline-strip { justify-content:space-between; }
+.timeline-more-check { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:calc(11px * var(--font-scale)); }
+.timeline-more-check input { width:16px; height:16px!important; min-height:0!important; padding:0!important; }
+.timeline-more-status { margin:0; color:var(--muted); font-size:calc(10px * var(--font-scale)); line-height:1.5; white-space:normal; }
 
 .timeline-selection { display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px; padding:6px 10px; background:rgba(149,219,203,.04); border:1px solid var(--line); border-radius:8px; font-size:calc(11px * var(--font-scale)); }
 .timeline-selection[hidden], .timeline-selection-properties[hidden] { display:none; }
@@ -541,3 +552,31 @@
 /* Keep source labels readable in a narrow workbench as well. */
 .tl-parent-mix select {flex:0 0 56px;min-width:56px;}
 @media(max-width:1280px){.tl-row {grid-template-columns:180px 1fr;}.tl-scale {margin-left:calc(180px + 12px);}}
+
+/* 一键分析 (overview tab, oneclick-controls.js). Existing tokens only: the accent marks the chosen preset. */
+.oneclick-card { display:grid; gap:10px; margin:0 0 16px; padding:12px; border:1px solid var(--line); border-radius:10px; }
+.oneclick-head { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:8px 12px; }
+.oneclick-head > div:first-child { display:grid; gap:3px; min-width:180px; flex:1; }
+.oneclick-head strong { font-size:calc(14px * var(--font-scale)); }
+.oneclick-preset { display:flex; align-items:center; gap:6px; }
+.oneclick-preset .quiet-button.selected { border-color:var(--mint); color:var(--text); background:rgba(114,232,206,.12); }
+.oneclick-custom { color:var(--muted); font-size:calc(10px * var(--font-scale)); }
+.oneclick-choices > summary { cursor:pointer; color:var(--muted); font-size:calc(10px * var(--font-scale)); overflow-wrap:anywhere; }
+.oneclick-choice-list { display:grid; gap:8px; margin-top:8px; }
+.oneclick-choice { display:grid; gap:2px; padding:6px 0; border-top:1px solid var(--line); }
+.oneclick-choice label { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+.oneclick-choice-name { min-width:120px; font-size:calc(11px * var(--font-scale)); }
+.oneclick-choice select { max-width:100%; }
+.oneclick-fixed { color:var(--muted); font-size:calc(11px * var(--font-scale)); }
+.oneclick-advice { color:var(--muted); font-size:calc(9.5px * var(--font-scale)); line-height:1.5; }
+.oneclick-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.oneclick-steps { display:grid; gap:3px; margin:0; padding:0; list-style:none; }
+.oneclick-step { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0 10px; padding:4px 7px; border-radius:6px; background:rgba(255,255,255,.025); font-size:calc(10px * var(--font-scale)); }
+.oneclick-step-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oneclick-step-state { color:var(--muted); }
+.oneclick-step-note { grid-column:1 / -1; color:var(--muted); overflow-wrap:anywhere; }
+.oneclick-step.ready .oneclick-step-state { color:var(--mint); }
+.oneclick-step.running { outline:1px solid var(--mint); }
+.oneclick-step.running .oneclick-step-state { color:var(--text); }
+.oneclick-step.failed .oneclick-step-state, .oneclick-step.failed .oneclick-step-note { color:#ff9cab; }
+.oneclick-step.unavailable, .oneclick-step.skipped { opacity:.6; }

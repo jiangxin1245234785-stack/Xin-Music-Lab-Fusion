@@ -3,7 +3,12 @@
 // actually separates a noisy segmentation from a clean one, and that nothing it cannot read disappears from view.
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {createResultSweep,measure,FRAGMENT_SECONDS,fragmentSecondsFor}=require('../core/result-sweep.cjs');
-const KINDS={msaf:'section','msaf-sf':'section',songformer:'section','chord-chordmini':'harmony'};
+// The noisy segmentations this list was built for came from the clustering engines that are now removed; their
+// leftovers are listed as kind 'removed' and still measured as what they were (main.cjs builds the same kinds).
+const registry=require('../core/result-engines.cjs');
+const R=registry.REMOVED_RESULT_ENGINE_IDS.find(id=>registry.REMOVED_RESULT_ENGINES[id]==='section');
+const RC=registry.REMOVED_RESULT_ENGINE_IDS.find(id=>registry.REMOVED_RESULT_ENGINES[id]==='harmony');
+const KINDS={[R]:'removed',[RC]:'removed',songformer:'section','chord-chordmini':'harmony'};
 (async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'xld-result-sweep-'));
  try{
@@ -49,12 +54,13 @@ const KINDS={msaf:'section','msaf-sf':'section',songformer:'section','chord-chor
 
   // --- the scan ---------------------------------------------------------------------------------------------
   const tracks=[
-   await track('noisy',{'msaf.json':spans([[0,0.04],[0.04,1],[1,1.5],[1.5,60],[60,100]]),'songformer.json':spans([[0,50],[50,100]])}),
-   await track('tidy',{'msaf.json':spans([[0,40],[40,100]])}),
-   await track('failed',{'msaf.error.json':{error:'boom'}}),
-   await track('corrupt',{'msaf.json':'{not json'}),
+   await track('noisy',{[R+'.json']:spans([[0,0.04],[0.04,1],[1,1.5],[1.5,60],[60,100]]),'songformer.json':spans([[0,50],[50,100]])}),
+   await track('tidy',{[R+'.json']:spans([[0,40],[40,100]])}),
+   await track('failed',{[R+'.error.json']:{error:'boom'}}),
+   await track('corrupt',{[R+'.json']:'{not json'}),
    await track('empty',{}),
-   await track('other',{'chord-chordmini.json':{duration:10,chords:[{start:0,end:10,label:'C'}]},'unrelated.json':{x:1}})
+   await track('other',{'chord-chordmini.json':{duration:10,chords:[{start:0,end:10,label:'C'}]},'unrelated.json':{x:1}}),
+   await track('oldchords',{[RC+'.json']:chordLike})
   ];
   tracks.push({trackId:'gone',title:'gone',album:'Album',directory:path.join(root,'does-not-exist')});
   const {rows,warnings}=await sweep.scan(tracks);
@@ -62,20 +68,26 @@ const KINDS={msaf:'section','msaf-sf':'section',songformer:'section','chord-chor
   const key=row=>row.trackId+'/'+row.engine;
   // Worst first.
   assert.equal(rows[0].trackId,'noisy','the noisiest segmentation sorts to the top: '+JSON.stringify(rows.map(r=>[key(r),r.fragments])));
-  assert.equal(rows[0].engine,'msaf');
+  assert.equal(rows[0].engine,R);
   assert.equal(rows[0].fragments,3);
   assert(rows.findIndex(r=>r.trackId==='tidy')>0);
   // Everything present is listed, including what could not be parsed and what failed.
-  assert.deepEqual(new Set(rows.map(key)),new Set(['noisy/msaf','noisy/songformer','tidy/msaf','failed/msaf','corrupt/msaf','other/chord-chordmini']));
+  assert.deepEqual(new Set(rows.map(key)),new Set(['noisy/'+R,'noisy/songformer','tidy/'+R,'failed/'+R,'corrupt/'+R,'other/chord-chordmini','oldchords/'+RC]));
   assert.equal(rows.find(r=>r.trackId==='failed').state,'failed');
   assert(rows.find(r=>r.trackId==='corrupt').unreadable,'an unreadable result stays visible: being unreadable is a reason to delete it');
   assert.equal(rows.find(r=>r.trackId==='other').kind,'harmony');
+  assert.equal(rows.find(r=>r.trackId==='other').family,'harmony');
+  // A removed engine's leftovers are their own kind, and measured as what they were.
+  const removedSection=rows.find(r=>r.trackId==='noisy'&&r.engine===R),removedChord=rows.find(r=>r.trackId==='oldchords');
+  assert.equal(removedSection.kind,'removed');assert.equal(removedSection.family,'section');
+  assert.equal(removedChord.kind,'removed');assert.equal(removedChord.family,'harmony');
+  assert.equal(removedChord.fragments,0,'a removed chord result is measured on the chord scale');
   // An engine that is not in the registry is never listed, whatever files exist beside it.
   assert(!rows.some(r=>r.engine==='unrelated'));
-  // Filtering to one engine is what the "show me every MSAF segmentation" view does.
-  const onlyMsaf=await sweep.scan(tracks,{engines:['msaf']});
-  assert.deepEqual(new Set(onlyMsaf.rows.map(r=>r.trackId)),new Set(['noisy','tidy','failed','corrupt']));
-  assert(onlyMsaf.rows.every(r=>r.engine==='msaf'));
+  // Filtering to one engine is what the per-engine filter does.
+  const onlyR=await sweep.scan(tracks,{engines:[R]});
+  assert.deepEqual(new Set(onlyR.rows.map(r=>r.trackId)),new Set(['noisy','tidy','failed','corrupt']));
+  assert(onlyR.rows.every(r=>r.engine===R));
   // Rows carry what a person needs to decide, and what the deletion needs to act.
   for(const row of rows) {
    assert(row.trackId&&row.engine&&row.kind&&row.state,JSON.stringify(row));
@@ -87,7 +99,7 @@ const KINDS={msaf:'section','msaf-sf':'section',songformer:'section','chord-chor
   // --- a directory that cannot be listed is reported, not silently emptied ------------------------------------
   const realReaddir=fs.readdir;
   fs.readdir=async(...args)=>{if(String(args[0]).endsWith('tidy')){const error=Error('EPERM');error.code='EPERM';throw error;}return realReaddir(...args);};
-  const guarded=await sweep.scan(tracks,{engines:['msaf']});
+  const guarded=await sweep.scan(tracks,{engines:[R]});
   fs.readdir=realReaddir;
   assert.deepEqual(guarded.warnings.map(w=>w.trackId),['tidy'],'an unreadable directory is a warning: '+JSON.stringify(guarded.warnings));
   assert(!guarded.rows.some(r=>r.trackId==='tidy'),'and its rows are absent rather than invented');

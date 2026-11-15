@@ -5,9 +5,12 @@
   //
   // The row has to carry the thing being judged, not a path and a date: a storage row cannot tell a noisy
   // segmentation from a clean one. So each row draws the segmentation itself and states the number that actually
-  // separates them — segments shorter than two seconds. Measured over the real library: MSAF has a median of 3 of
-  // those and goes up to 12, SongFormer has a median of 0 and never exceeds 2, and every result with three or more
-  // is MSAF. Sorting by it puts what you came to delete at the top.
+  // separates them — segments shorter than two seconds. Measured over the real library (2026-09): the clustering
+  // engines of the time had a median of 3 of those and went up to 12, SongFormer has a median of 0 and never exceeds
+  // 2. Sorting by it puts what you came to delete at the top.
+  //
+  // Leftovers of engines removed from the app (kind 'removed') have their own filter, 已移除的引擎, so they never
+  // become files nothing can clear.
   function create({bridge, rt, getBusy, onChanged, localizeError = value => value}) {
     const dialog = document.getElementById('resultSweepDialog');
     const open = document.getElementById('resultSweepButton');
@@ -33,7 +36,7 @@
     const seconds = value => (value == null ? '—' : (value < 10 ? value.toFixed(2) : Math.round(value)) + 's');
 
     function visible() {
-      return rows.filter(row => want === 'all' ? true : want === 'section' || want === 'harmony' ? row.kind === want : row.engine === want);
+      return rows.filter(row => want === 'all' ? true : want === 'section' || want === 'harmony' || want === 'removed' ? row.kind === want : row.engine === want);
     }
 
     // The segmentation drawn to scale, so the eye catches a cluster of slivers before the numbers are read.
@@ -65,6 +68,7 @@
       // Options come from what is actually stored, so the engine the owner came to clear is one click away.
       want = filter.value || want;
       const options = [['all', text('filter.all')], ['section', text('filter.section')], ['harmony', text('filter.harmony')],
+        ...(rows.some(row => row.kind === 'removed') ? [['removed', text('filter.removed')]] : []),
         ...[...new Set(rows.map(row => row.engine))].sort().map(engine => [engine, engine])];
       if (options.map(([value]) => value).join() !== [...filter.options].map(option => option.value).join()) {
         filter.replaceChildren();
@@ -102,7 +106,7 @@
             : text('meta', {engine: row.engine, segments: row.segments ?? 0, fragments: row.fragments ?? 0, shortest: seconds(row.shortest)});
         const engine = document.createElement('span');
         engine.className = 'model-engine-name';
-        engine.textContent = row.engine;
+        engine.textContent = row.kind === 'removed' ? row.engine + ' · ' + text('removed') : row.engine;
         copy.append(title, engine, meta);
         if (row.state === 'complete' && !row.unreadable) copy.append(bar(row));
         node.append(box, copy);

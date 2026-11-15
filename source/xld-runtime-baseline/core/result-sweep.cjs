@@ -1,17 +1,19 @@
 'use strict';
 // A read-only inventory of stored section and chord results across the whole library, with enough measured in
-// each row to tell a good segmentation from a bad one without opening the track.
+// each row to tell a good segmentation from a bad one without opening the track. Leftover files of the removed
+// engines (core/result-engines.cjs REMOVED_RESULT_ENGINES) are listed too, as kind 'removed', so they can be cleared.
 //
 // The measure that discriminates is FRAGMENTS — segments shorter than a couple of seconds. Measured over the
-// owner's 132 stored section results, coverage sits between 93% and 100% for every engine and segment count
-// barely separates them (msaf median 18, songformer 16), while fragments do: msaf median 2 and up to 12,
-// songformer median 0 and never above 2. The decisive case is a result with only 7 segments — the cleanest in the
+// owner's 132 stored section results (2026-09), coverage sits between 93% and 100% for every engine and segment
+// count barely separates them, while fragments do: the clustering engines of the time had a median of 2 and up to
+// 12, songformer median 0 and never above 2. The decisive case is a result with only 7 segments — the cleanest in the
 // library by count — whose shortest segment is 0.04s and which has 5 under two seconds. Counting boundaries says
 // it is tidy; counting fragments says it is noise.
 //
 // Nothing here deletes. It produces the list a person judges from; core/result-delete.cjs does the deleting.
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {REMOVED_RESULT_ENGINES} = require('./result-engines.cjs');
 
 // A "fragment" only means a defect for the kind it is measured on. A section boundary 0.04s from the previous
 // one is noise; a chord that lasts half a second is a chord. Measured on the real library, chord results run
@@ -70,14 +72,16 @@ function createResultSweep({engineKinds}) {
             : names.has(`${engine}.cancelled.json`) ? 'cancelled' : null;
         if (!state) continue;
         const file = path.join(track.directory, `${engine}.json`);
+        // A removed engine's row is still measured as what it was (section or chord), so its bar reads right.
+        const family = kind === 'removed' ? (REMOVED_RESULT_ENGINES[engine] || 'section') : kind;
         const row = {trackId: track.trackId, title: track.title || track.trackId, album: track.album || '',
-          engine, kind, state, bytes: 0, modifiedMs: null, unreadable: null};
+          engine, kind, family, state, bytes: 0, modifiedMs: null, unreadable: null};
         if (state === 'complete') {
           try {
             const stat = await fs.stat(file);
             row.bytes = stat.size;
             row.modifiedMs = stat.mtimeMs;
-            const measured = measure(JSON.parse(await fs.readFile(file, 'utf8')), kind);
+            const measured = measure(JSON.parse(await fs.readFile(file, 'utf8')), family);
             // A result whose body cannot be measured is still listed and still deletable — being unreadable is a
             // reason to want it gone, not a reason to hide it.
             if (measured) Object.assign(row, measured); else row.unreadable = 'no-segments';

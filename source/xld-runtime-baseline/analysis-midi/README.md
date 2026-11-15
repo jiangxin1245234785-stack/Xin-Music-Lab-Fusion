@@ -9,6 +9,11 @@ runner.py 将已有单声部 WAV 转为 MIDI 和 notes.json。models.json 是 Py
 | bass | HiRes Bass | Basic Pitch |
 | strings | MuScriptor Large | MuScriptor Medium、YourMT3+、Basic Pitch |
 | drums | ADTOF | ADTOF · DrumSep 7 类（drums.1 起，见下）、MuScriptor Medium / Large |
+| vocals | RMVPE 主唱（`vocals-rmvpe`，见下） | pYIN 仅保留历史结果 |
+
+## 人声（2026-11-14 起）
+
+`vocals-rmvpe`（`backend: score-vocals`，`score_vocals_backend.py`）不做推理：人声线只识别一次，由 `analysis-score/vocals_runner.py`（主唱 / 和声分离 → RMVPE → 八度保护 → 切音符）写进 `<曲目>/score-vocals.json`；这个后端把其中 lane 的音符原样写成一次普通的 MIDI 运行（`midi/vocals/<runId>/vocals.mid` + `notes.json`，program 53）。是否是当前人声分轨的结果由 Node 侧 `core/score-vocals.cjs` 判断（分析服务在启动前判断，不是当前的就拒绝），runner 只接受被判断过的那份文件（`--score-vocals` + `--score-vocals-sha256`），`backend.scoreVocals.sha256` 记录来源，人声曲线换了之后旧的转换不再算缓存命中。没有人声的歌（lane 为空）不产生运行。XML 谱面读的仍是 `score-vocals.json`：在 XLD 里改人声 MIDI，谱面不跟着变。`vocals-pyin` 已退役（`retiredFor`），旧结果照旧可读。
 
 默认沿用用户试听后的验收结论（见 docs/XLD_XML_STATUS_AND_ROADMAP_20260917.md §5）；精确 ID、选项与 checkpoint 以 models.json 为准。Basic Pitch 保持原模型和参数，用于对照。
 

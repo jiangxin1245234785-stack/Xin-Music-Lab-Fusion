@@ -6,10 +6,11 @@
 
 | id | 名称 | 解释器 | 权重 | 词表 |
 |---|---|---|---|---|
-| chord-cqt / chord-cens / chord-hybrid | Librosa 模板 + Viterbi | `XLD_HARMONY_PYTHON`（ai 环境） | 无 | maj-min / extended |
 | chord-btc | BTC · Transformer（ISMIR19） | `XLD_HARMONY_PYTHON` | `XLD_RUNTIME_ROOT/analysis-harmony/btc/weights/btc_model_large_voca.pt`（回退：本目录 `btc/weights`，源码树中不存在） | 170 类 |
 | chord-chordmini | ChordMini · BTC-CL（Phan 等，DAFx26 预印本，MIT） | `XLD_HARMONY_PYTHON` | `XLD_CHORDS_ROOT/models/chordmini/btc_model_best.pth` | 170 类，同 BTC |
 | chord-consonance | consonance-ACE · Conformer（Poltronieri / Serra / Rocamora，ISMIR 2025，MIT） | `XLD_CHORDS_PYTHON`（`runtime/addons/chords-v1`） | `XLD_CHORDS_ROOT/models/consonance-ace/conformer_decomposed_smooth.ckpt` | Harte，根音 / 低音 / 音级分解 |
+
+2026-11-14 起三种 Librosa 模板引擎（CQT / CENS / Hybrid）连同它们的逐曲色度缓存 `features-harmony/` 一起删除；runner 不再往工作目录写任何东西，服务也不再为和弦建 `features-harmony/`。旧结果文件只由「全库结果清理」的「已移除的引擎」列出和删除（id 清单见 `core/result-engines.cjs`）。
 
 `--engines` 按环境变量与权重文件是否存在给出 `available`。自 chords.2 起 **ChordMini 为主引擎**：XLD 专辑批量与和弦页默认选中 `chord-chordmini`（`app.js` 的 `PRIMARY_HARMONY_ENGINE`，不可用时退回 `chord-btc`）；XML 加权共识先验 `chord-chordmini 1.5 / chord-btc 1.35 / 其余 1`（`fusion.js` 的 `CHORD_ENGINE_PRIOR` 与 `xld-timeline-provider-adapter.js` 的 `HARMONY_PRIOR` 必须同值），未知引擎 id 先验 1。runner 本身没有默认概念。
 
@@ -30,4 +31,4 @@
 
 ## 性能（RTX 本机，整曲）
 
-BTC / ChordMini 约 8–10 s（含模型加载），consonance-ACE 约 35–50 s（5–9.5 分钟曲目），显存峰值约 0.1 GiB。四个旧引擎在源码 runner 与 runtime runner 下输出逐字节一致（`work/chords-20260918/verify.cjs`）。
+BTC / ChordMini 约 8–10 s（含模型加载），consonance-ACE 约 35–50 s（5–9.5 分钟曲目），显存峰值约 0.1 GiB。

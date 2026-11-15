@@ -37,7 +37,8 @@ assert(main.includes("contract: 'xld.music-lab/2'"), 'Music Lab harmony contract
 // The ids have one definition now (core/result-engines.cjs); these two used to carry their own copy.
 assert(main.includes("require('../core/result-engines.cjs')"), 'main must take the engine ids from the registry');
 assert(core.includes("require('./result-engines.cjs')"), 'the service must take the engine ids from the registry');
-assert(core.includes("'features-harmony'"), 'shared harmony feature cache is missing');
+// The chord engines that kept a per-track chroma cache were removed (2026-11-14): nothing makes features-harmony/.
+assert(!core.includes("'features-harmony'"), 'no engine keeps a feature cache in the track folder any more');
 assert(main.includes('harmony: harmonyAnalyses.map(normalizeTimeline)'), 'Music Lab harmony lane export is missing');
 assert(app.includes("activeLab: 'section'"), 'lab isolation state is missing');
 assert(app.includes("'harmony-all'"), 'lab-scoped deletion is missing');

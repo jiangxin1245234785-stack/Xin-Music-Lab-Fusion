@@ -19,8 +19,8 @@ for (const key of enKeys) {
 assert.equal(runtime.translateRuntime('en-US', 'runtime.library.summary', { albums: 4, tracks: 25, root: 'D:\\Music' }), '4 albums · 25 tracks · D:\\Music');
 assert.equal(runtime.translateRuntime('zh-CN', 'runtime.library.summary', { albums: 4, tracks: 25, root: 'D:\\Music' }), '4 张专辑 · 25 首 · D:\\Music');
 assert.equal(runtime.localizeBackendMessage('正在启动分析器', 'en-US'), 'Starting analyzer');
-assert.equal(runtime.localizeBackendMessage('MSAF · SF 正在准备音频特征', 'en-US'), 'MSAF · SF preparing audio features');
-assert.equal(runtime.localizeBackendMessage('Harmony 运行时缺少 Librosa', 'en-US'), 'Harmony runtime is missing Librosa');
+assert.equal(runtime.localizeBackendMessage('SongFormer · AI 正在准备音频特征', 'en-US'), 'SongFormer · AI preparing audio features');
+assert.equal(runtime.localizeBackendMessage('和弦运行时未找到', 'en-US'), 'Chord runtime not found');
 assert.equal(runtime.localizeBackendMessage('raw-error-code-17', 'en-US'), 'raw-error-code-17');
 assert.equal(runtime.localizeBackendMessage('正在启动分析器', 'zh-CN'), '正在启动分析器');
 

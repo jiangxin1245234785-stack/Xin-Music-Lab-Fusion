@@ -13,7 +13,12 @@ async function main() {
   const source = require.resolve('../core/analysis-service.cjs');
   const realRequire = createRequire(source), children = [];
   const python = path.join(root,'python.exe'); await fs.writeFile(python,'fixture');
-  const sandbox = { module:{exports:{}}, __dirname:path.dirname(source),
+  // The service parses the runner's result inside this context; profileMismatch then compares those
+  // options with the registry's using isDeepStrictEqual, which also compares prototypes. A fresh vm
+  // context has its own Object.prototype, so any option whose value is an object (drumMap, kit,
+  // instrumentsByTarget, velocityFromStem) would compare unequal here and only here. Sharing this
+  // realm's JSON makes the parsed result the same shape the real single-realm app produces.
+  const sandbox = { module:{exports:{}}, __dirname:path.dirname(source), JSON,
     process:{...process, env:{...process.env, XLD_MIDI_PYTHON:python, XLD_HIGHRES_PYTHON:python, XLD_YOURMT3_PYTHON:python,XLD_MUSCRIPTOR_PYTHON:python}}, require(name) {
       if(name !== 'child_process') return realRequire(name);
       return {spawn(_python,args) {

@@ -33,7 +33,7 @@ function createMidiRevision({analysisRoot, assets, python = null, script = null,
   const directoryFor = track => assets.directory(track);
   // pythonFor() cannot serve this. Every MIDI branch in it keys off ENGINE_IDS, and 'manual-revision' is
   // deliberately not in ENGINE_IDS — that is what keeps it out of the model menu and unstartable — so asking
-  // pythonFor for it falls all the way through to the MSAF interpreter, which has no pretty_midi. The writer
+  // pythonFor for it falls all the way through to the base analysis interpreter, which has no pretty_midi. The writer
   // names its interpreter explicitly.
   const interpreter = () => python || process.env.XLD_MIDI_PYTHON || null;
   const writer = () => script || path.join(__dirname, '..', 'analysis-midi', 'revise.py');

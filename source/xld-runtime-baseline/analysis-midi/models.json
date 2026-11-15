@@ -128,7 +128,7 @@
     "stems": [
       "drums"
     ],
-    "model": "adtof-5class-1bc986e596ec-v1",
+    "model": "adtof-5class-1bc986e596ec-v1-stemvel1",
     "backend": "adtof",
     "checkpoint": {
       "file": "adtof_frame_rnn_pytorch_weights.pth",
@@ -146,7 +146,18 @@
       "chunkFrames": 3000,
       "contextFrames": 500,
       "velocity": 100,
-      "midiTempo": 120
+      "midiTempo": 120,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
     }
   },
   {
@@ -222,7 +233,7 @@
       "strings",
       "guitar"
     ],
-    "model": "yourmt3-plus-moe-nops-5e66c1e",
+    "model": "yourmt3-plus-moe-nops-5e66c1e-stemvel1",
     "backend": "yourmt3",
     "checkpoint": {
       "file": "last.ckpt",
@@ -236,7 +247,18 @@
       "precision": "float32",
       "midiTempo": 120,
       "decoder": "upstream-ties",
-      "adapterVersion": 1
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.1,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
     },
     "retiredFor": [
       "guitar"
@@ -249,7 +271,7 @@
       "guitar"
     ],
     "defaultFor": "guitar",
-    "model": "muscriptor-medium-f3223696-no-prelude-v1",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-stemvel1",
     "backend": "muscriptor",
     "checkpoint": {
       "file": "model.safetensors",
@@ -266,7 +288,18 @@
       "instruments": "acoustic_guitar,clean_electric_guitar,distorted_electric_guitar",
       "midiTempo": 120,
       "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
-      "adapterVersion": 1
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
     }
   },
   {
@@ -275,7 +308,7 @@
     "stems": [
       "guitar"
     ],
-    "model": "muscriptor-large-8809fdfb-no-prelude-v1",
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-stemvel1",
     "backend": "muscriptor",
     "checkpoint": {
       "file": "large/model.safetensors",
@@ -292,7 +325,18 @@
       "instruments": "acoustic_guitar,clean_electric_guitar,distorted_electric_guitar",
       "midiTempo": 120,
       "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
-      "adapterVersion": 1
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
     }
   },
   {
@@ -301,7 +345,7 @@
     "stems": [
       "strings"
     ],
-    "model": "muscriptor-medium-f3223696-no-prelude-v1-strings-v1",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-strings-v1-stemvel1",
     "backend": "muscriptor",
     "checkpoint": {
       "file": "model.safetensors",
@@ -312,40 +356,6 @@
     },
     "options": {
       "batchSize": 4,
-      "cfg": 1,
-      "preludeForcing": false,
-      "sampling": false,
-      "instruments": "violin,viola,cello,contrabass,string_ensemble",
-      "midiTempo": 120,
-      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
-      "adapterVersion": 2,
-      "instrumentsByTarget": {
-        "violin": "violin",
-        "viola": "viola",
-        "cello": "cello",
-        "double-bass": "contrabass",
-        "strings": "violin,viola,cello,contrabass,string_ensemble",
-        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
-      }
-    }
-  },
-  {
-    "id": "strings-muscriptor-large",
-    "name": "MuScriptor Large",
-    "stems": [
-      "strings"
-    ],
-    "model": "muscriptor-large-8809fdfb-no-prelude-v1-strings-v1-fp16",
-    "backend": "muscriptor",
-    "checkpoint": {
-      "file": "large/model.safetensors",
-      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
-      "size": 5465642136,
-      "repository": "MuScriptor/muscriptor-large",
-      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
-    },
-    "options": {
-      "batchSize": 1,
       "cfg": 1,
       "preludeForcing": false,
       "sampling": false,
@@ -361,9 +371,172 @@
         "strings": "violin,viola,cello,contrabass,string_ensemble",
         "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
       },
-      "weightDtype": "float16"
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
+    "id": "strings-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "strings"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-strings-fp16-4c03cafc-fill50-v1-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "violin,viola,cello,contrabass,string_ensemble",
+      "midiTempo": 120,
+      "codeRevision": "4c03cafce703b95a52c3d158af74c076e5d1b608",
+      "adapterVersion": 3,
+      "instrumentsByTarget": {
+        "violin": "violin",
+        "viola": "viola",
+        "cello": "cello",
+        "double-bass": "contrabass",
+        "strings": "violin,viola,cello,contrabass,string_ensemble",
+        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
+      },
+      "weightDtype": "float16",
+      "codeDirectory": "upstream-4c03cafc",
+      "gapFillMs": 50,
+      "checkpointDevice": "cpu",
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
     },
     "defaultFor": "strings"
+  },
+  {
+    "id": "strings-muscriptor-large-v04",
+    "name": "MuScriptor Large v0.4",
+    "stems": [
+      "strings"
+    ],
+    "model": "muscriptor-large-8809fdfb-v04-tempo-fill50-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "violin,viola,cello,contrabass,string_ensemble",
+      "midiTempo": 120,
+      "codeRevision": "8a1ef88672cc23c26619adaff37ec48d82c0b906",
+      "adapterVersion": 4,
+      "instrumentsByTarget": {
+        "violin": "violin",
+        "viola": "viola",
+        "cello": "cello",
+        "double-bass": "contrabass",
+        "strings": "violin,viola,cello,contrabass,string_ensemble",
+        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
+      },
+      "weightDtype": "float16",
+      "codeDirectory": "upstream-8a1ef886",
+      "gapFillMs": 50,
+      "checkpointDevice": "cpu",
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      },
+      "tempoAnalysis": {
+        "depsDirectory": "v04-deps",
+        "checkpoint": "beats/final0.ckpt",
+        "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331",
+        "device": "cpu"
+      }
+    }
+  },
+  {
+    "id": "strings-muscriptor-large-raw",
+    "name": "MuScriptor Large · Raw timing",
+    "stems": [
+      "strings"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-strings-fp16-4c03cafc-raw-v1-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "violin,viola,cello,contrabass,string_ensemble",
+      "midiTempo": 120,
+      "codeRevision": "4c03cafce703b95a52c3d158af74c076e5d1b608",
+      "adapterVersion": 3,
+      "instrumentsByTarget": {
+        "violin": "violin",
+        "viola": "viola",
+        "cello": "cello",
+        "double-bass": "contrabass",
+        "strings": "violin,viola,cello,contrabass,string_ensemble",
+        "strings-all": "violin,viola,cello,contrabass,orchestral_harp,string_ensemble"
+      },
+      "weightDtype": "float16",
+      "codeDirectory": "upstream-4c03cafc",
+      "gapFillMs": 0,
+      "checkpointDevice": "cpu",
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
   },
   {
     "id": "drums-muscriptor-medium",
@@ -425,5 +598,61 @@
     "retiredFor": [
       "drums"
     ]
+  },
+  {
+    "id": "vocals-pyin",
+    "name": "pYIN Vocals",
+    "stems": [
+      "vocals"
+    ],
+    "retiredFor": [
+      "vocals"
+    ],
+    "model": "pyin-mono-v1-stemvel1",
+    "backend": "pyin",
+    "options": {
+      "analysisRate": 22050,
+      "hopLength": 256,
+      "fmin": 65,
+      "fmax": 1047,
+      "minVoicedProbability": 0.25,
+      "levelFloorDb": -60,
+      "medianFrames": 3,
+      "hysteresisFrames": 2,
+      "minNoteSeconds": 0.06,
+      "joinGapSeconds": 0.06,
+      "octaveBlockSeconds": 2,
+      "octaveToleranceSemitones": 7,
+      "outlierSpanSemitones": 24,
+      "program": 53,
+      "midiTempo": 120,
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.12,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
+    "id": "vocals-rmvpe",
+    "name": "RMVPE 主唱",
+    "stems": [
+      "vocals"
+    ],
+    "defaultFor": "vocals",
+    "model": "score-vocals-rmvpe-v1",
+    "backend": "score-vocals",
+    "options": {
+      "program": 53,
+      "midiTempo": 120,
+      "adapterVersion": 1
+    }
   }
 ]

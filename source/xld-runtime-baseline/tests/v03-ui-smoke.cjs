@@ -37,7 +37,7 @@ app.whenReady().then(async () => {
       return {
         engines: document.querySelectorAll('.engine-card').length,
         engineNames: [...document.querySelectorAll('.engine-card')].map(node => node.textContent),
-        batchEnabled: !document.querySelector('#analyzeAllButton')?.disabled,
+        batchHidden: Boolean(document.querySelector('#analyzeAllButton')?.hidden),
         selectedTrack: document.querySelector('#analysisTargetTitle')?.textContent,
         fontBefore: before,
         fontAfter: document.querySelector('#fontScaleLabel')?.textContent,
@@ -53,8 +53,8 @@ app.whenReady().then(async () => {
       fs.writeFileSync(target, (await win.webContents.capturePage()).toPNG());
     }
     const assertions = {
-      fourMsafEngines: result.engines === 4,
-      batchReady: result.batchEnabled,
+      oneSectionEngine: result.engines === 1,
+      batchHiddenOnSectionTab: result.batchHidden,
       selectedTrack: Boolean(result.selectedTrack),
       fontControl: result.fontBefore !== result.fontAfter,
       transportIcons: result.transportSvgs === 5,

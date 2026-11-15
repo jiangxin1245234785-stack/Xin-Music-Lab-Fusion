@@ -3,13 +3,16 @@
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
 const within=(base,file)=>{const rel=path.relative(base,file);return rel===''||(!rel.startsWith('..'+path.sep)&&rel!=='..'&&!path.isAbsolute(rel));};
 function createMidiExport({assets,protectedRoots=()=>[]}){
- async function prepare(track,{stem,runId}){
+ async function prepare(track,{stem,runId,variant='canonical'}){
+  if(!['canonical','performance'].includes(variant))return {ok:false,error:'export-extension'};
   const value=await assets.readMidi(track,stem);
   if(!value.ok)return {ok:false,error:value.error||'midi-missing'};
   if(!runId||value.runId!==runId)return {ok:false,error:'export-version-changed'};
-  const source=path.join(assets.directory(track),value.file),bytes=await fs.readFile(source);
+  if(variant==='performance'&&(!value.tempoFile||value.tempoFile!==`midi/${stem}/${runId}/${stem}.tempo.mid`))return {ok:false,error:'midi-tempo-missing'};
+  const source=path.join(assets.directory(track),variant==='performance'?value.tempoFile:value.file),bytes=await fs.readFile(source);
+  if(variant==='performance'&&crypto.createHash('sha256').update(bytes).digest('hex')!==value.digests?.tempoMidi)return {ok:false,error:'midi-incomplete'};
   const name=(track.title||'Track').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').slice(0,100);
-  return {ok:true,bytes,source,runId,stem,filename:name+' - '+stem+' - '+runId.slice(0,8)+'.mid'};
+  return {ok:true,bytes,source,runId,stem,filename:name+' - '+stem+' - '+runId.slice(0,8)+(variant==='performance'?' - tempo':'')+'.mid'};
  }
  async function write(prepared,destination){
   if(!prepared?.ok)return {ok:false,error:'midi-missing'};

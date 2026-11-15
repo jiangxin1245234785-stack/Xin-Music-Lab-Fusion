@@ -587,7 +587,7 @@
       renderMixer();renderRefinements();
       const presetControl=$('timelineMixPreset');if(presetControl){presetControl.value=sourceModes.size?'custom':preset;presetControl.hidden=scope!=='mix';
         for(const option of presetControl.options)option.textContent=rt('runtime.hybrid.preset.'+option.value);}
-      const original=$('timelineOriginal');if(original){original.textContent=rt(isOriginal?.()?'runtime.hybrid.return':'runtime.hybrid.original');original.disabled=!mixMembers.length;}
+      const original=$('timelineOriginal');if(original){const label=rt(isOriginal?.()?'runtime.hybrid.return':'runtime.hybrid.original');if(original.textContent!==label)original.textContent=label;original.title=rt('runtime.transport.compareHint');original.disabled=!mixMembers.length;}
       const scopeControl=$('timelineAuditionScope');
       if(scopeControl){scopeControl.value=scope;scopeControl.options[0].textContent=rt('runtime.mix.all');scopeControl.options[1].textContent=rt('runtime.mix.single');}
       const button = $('timelineAudition');
@@ -595,10 +595,12 @@
       const focused = selectedId(), lane = focused ? getLane(focused) : null;
       const sounding = timer !== null || loading, ready = Boolean(lane && (mode === 'wav' ? (lane.sourceAudio?.url||lane.sourceAudio?.stream) : (lane.notes?.length||(scope==='mix'&&wavGroups().length)))) && !unavailable;
       button.disabled = !ready;
-      button.textContent = rt(loading ? 'runtime.audition.cancelLoad' : sounding ? 'runtime.audition.pause' : scope==='mix'?'runtime.mix.play':'runtime.audition.play');
+      const playLabel=rt(loading ? 'runtime.audition.cancelLoad' : sounding ? 'runtime.audition.pause' : scope==='mix'?'runtime.mix.play':'runtime.audition.play');
+      if(button.textContent!==playLabel)button.textContent=playLabel;
       button.setAttribute('aria-pressed', sounding ? 'true' : 'false');
+      // The standing explanation (synthesised tones, exports unchanged) is the button's tooltip, not a line of text.
       button.title = unavailable ? rt('runtime.audition.unavailable') : !lane ? rt('runtime.audition.idle')
-        : !lane.notes?.length ? rt('runtime.audition.empty') : rt('runtime.audition.hint');
+        : !ready ? rt('runtime.audition.empty') : rt(scope==='mix' ? 'runtime.mix.title' : 'runtime.audition.hint');
       const source = $('timelineAuditionSource');
       if (source) {
         source.hidden=scope==='mix';source.value = mode; source.disabled = !lane || unavailable;
@@ -608,8 +610,8 @@
         source.options[1].disabled = !(lane?.sourceAudio?.url||lane?.sourceAudio?.stream);
       }
       const status = $('timelineAuditionStatus');
-      if (status) status.textContent = getMixError?.() ? (['mix-parent-overlap','mix-source-unavailable','mix-timebase','mix-duplicate-source'].includes(getMixError())?rt('runtime.hybrid.'+getMixError()):rt('runtime.hybrid.invalid')) : failure ? rt(failure) : scope==='mix'&&mixMembers.length ? rt('runtime.mix.hint',{audible:mixInfo().audible,total:mixMembers.length}) : loading ? rt('runtime.audition.loading')
-        : lane ? rt(mode === 'wav' ? 'runtime.audition.wavHint' : 'runtime.audition.hint', { stem: lane.stem }) : rt('runtime.audition.idle');
+      if (status) status.textContent = getMixError?.() ? (['mix-parent-overlap','mix-source-unavailable','mix-timebase','mix-duplicate-source'].includes(getMixError())?rt('runtime.hybrid.'+getMixError()):rt('runtime.hybrid.invalid')) : failure ? rt(failure) : loading ? rt('runtime.audition.loading') : sounding ? rt('runtime.transport.tracksPlaying') : scope==='mix'&&mixMembers.length ? rt('runtime.mix.hint',{audible:mixInfo().audible,total:mixMembers.length})
+        : lane ? (mode === 'wav' ? rt('runtime.audition.wavHint', { stem: lane.stem }) : '') : '';
       const external = loopControls?.state();
       const shownLoop = external ? external.loop : loop;
       const loopReady = external ? external.available : ready;

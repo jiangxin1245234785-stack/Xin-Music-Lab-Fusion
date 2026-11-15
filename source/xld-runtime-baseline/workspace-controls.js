@@ -1,11 +1,11 @@
 (function(root) {
   'use strict';
-  const tabs = ['overview', 'section', 'harmony', 'stems', 'midi', 'timeline'];
+  const tabs = ['overview', 'section', 'harmony', 'stems', 'midi'];
   // The overview keeps one status card per result type; the timeline is a view, not a result type.
   tabs.push('properties');
   const resultCards = ['section', 'harmony', 'stems', 'midi'];
-  const sections = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf', 'songformer'];
-  const harmonies = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
+  const sections = ['songformer'];
+  const harmonies = ['chord-btc', 'chord-chordmini', 'chord-consonance'];
 
   // Partial long-song runs must remain visibly partial even when a result exists.
   function isPartial(result, duration) {
@@ -42,6 +42,8 @@
     const resultHub = root.XldWorkbenchResults.create({show,getState});
     const properties = root.XldWorkbenchProperties.create({show,getState});
     function show(next) {
+      // The timeline is always present. Listening must never dismiss the inspector.
+      if (next === 'timeline') return;
       if (!tabs.includes(next)) return;
       scrollPositions[active] = panel.scrollTop;
       active = next;
@@ -131,12 +133,11 @@
         elements.card.dataset.ready = String(Boolean(selected && summary.ready));
         elements.card.disabled = !selected;
         const task = state.activeTask;
-        const ids = key==='section'?sections:key==='harmony'?harmonies:key==='stems'?['demucs-6s','bs-roformer-sw']:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','drums-adtof','drums-adtof-stems','basic-pitch','guitar-gaps','piano-highres','piano-transkun','bass-highres'];
+        const ids = key==='section'?sections:key==='harmony'?harmonies:key==='stems'?['demucs-6s','bs-roformer-sw']:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','drums-adtof','drums-adtof-stems','basic-pitch','guitar-gaps','piano-highres','piano-transkun','bass-highres','vocals-rmvpe'];
         if (task && selected && task.trackId===selected.id && ids.includes(task.engine)) elements.status.textContent = copy('running')+' '+Math.round((task.progress||0)*100)+'%';
       }
       $('workspaceMidiEmpty').hidden = Boolean(derived?.ok || derived?.strings?.active);
       $('derivedHeading').textContent = copy(active === 'midi' ? 'midiTitle':'stemsTitle');
-      $('workspacePlaybackState').textContent = copy(state.currentTrack ? audio.paused ? 'paused':'playing' : 'player');
     }
     for (const button of document.querySelectorAll('[data-workspace-tab]')) {
       button.addEventListener('click',()=>show(button.dataset.workspaceTab));
@@ -167,7 +168,7 @@
     audio.addEventListener('play',render); audio.addEventListener('pause',render);
     document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelector('.workspace-settings').open=false;});
     showLibrary('albums'); render();
-    return {show,showLibrary,render};
+    return {show,showLibrary,render,restore:()=>{show(shell.initial.current);if(!shell.initial.opened)shell.close();}};
   }
   const api = {create,isPartial};
   if (typeof module==='object' && module.exports) module.exports=api;

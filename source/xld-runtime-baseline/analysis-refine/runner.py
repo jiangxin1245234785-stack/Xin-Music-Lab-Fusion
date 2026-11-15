@@ -103,26 +103,18 @@ def run(input_path,output_path,engine,start,duration,run_id,track_id,parent_run,
         backend['retries']=retries
     if (input_path.stat().st_size,input_path.stat().st_mtime_ns)!=(before.st_size,before.st_mtime_ns):raise ValueError('处理期间源文件发生变化')
     folder=output_path.parent/run_id;folder.mkdir(parents=True,exist_ok=False)
-    notify('保存音轨与试听文件',.9,'save')
-    waves={'original':audio,'target':target,'residual':residual};peaks={}
-    for name,data in waves.items():
-        peaks[name]=0.
-        for offset in range(0,len(data),sr*10):
-            block=data[offset:offset+sr*10]
-            if not np.isfinite(block).all():raise ValueError('结果包含无效采样')
-            peaks[name]=max(peaks[name],float(np.max(np.abs(block))))
-        sf.write(folder/(name+'.wav'),data,sr,subtype='FLOAT')
-    gain=min(1.,.95/max(max(peaks.values()),.95));play_files={}
-    for name,data in waves.items():
-        filename=('listen-' if gain<1 else '')+name+'.wav';play_files[name]=run_id+'/'+filename
-        if gain<1:
-            with sf.SoundFile(folder/filename,'w',samplerate=sr,channels=audio.shape[1],subtype='FLOAT') as stream:
-                for offset in range(0,len(data),sr*10):stream.write(data[offset:offset+sr*10]*gain)
+    notify('保存音轨（试听不再生成副本）',.9,'save')
+    from output import save_waves
+    # Compressed original songs may decode differently in other players. Keep their decoded input;
+    # generated base WAVs have an exact sample-addressable parent and need no extra original copy.
+    files,playback=save_waves(folder,{'original':audio,'target':target,'residual':residual},sr,keep_original=source_stem=='mix')
     error=0.
     for offset in range(0,len(audio),sr*10):
         end=offset+sr*10;error=max(error,float(np.max(np.abs(audio[offset:end]-target[offset:end]-residual[offset:end]))))
-    (folder/'README.txt').write_text('XLD · '+profile['name']+'\nTarget: '+target_name+'\nSource: '+source_stem+'\nScope: '+scope+'\noriginal / target / residual: raw FLOAT WAV, peaks may exceed 1.0.\nlisten-*: common-gain audition copies; gain='+str(gain)+'\n目标与剩余共同组成输入音轨，不叠加原输入。不同乐器目标可能重叠，不直接相加。原始 FLOAT 文件供编辑，listen- 文件供试听。\n',encoding='utf-8')
-    result=dict(schemaVersion=2,kind='refinement',scope=scope,engine=engine,runId=run_id,trackId=track_id,parentRunId=parent_run,cacheKey=cache_key,target=target_name,requestedDevice=device,sourceStem=source_stem,timeOrigin=first/sr,duration=len(audio)/sr,sampleRate=sr,frames=len(audio),channels=audio.shape[1],backend=backend,files={name:run_id+'/'+name+'.wav' for name in ['original','target','residual']},playback=dict(gain=gain,peaks=peaks,files=play_files),reconstructionError=error)
+    (folder/'README.txt').write_text('XLD · '+profile['name']+'\nTarget: '+target_name+'\nSource: '+source_stem+'\nScope: '+scope+'\nRaw FLOAT WAV; peaks may exceed 1.0. XLD applies shared audition gain at playback.\nInput references its exact base stem and sample range; decoded original songs retain original.wav.\n目标与剩余共同组成输入音轨，不叠加原输入。不同乐器目标可能重叠，不直接相加。\n',encoding='utf-8')
+    result=dict(schemaVersion=3,kind='refinement',scope=scope,engine=engine,runId=run_id,trackId=track_id,parentRunId=parent_run,cacheKey=cache_key,target=target_name,requestedDevice=device,sourceStem=source_stem,timeOrigin=first/sr,duration=len(audio)/sr,sampleRate=sr,frames=len(audio),channels=audio.shape[1],backend=backend,files=files,playback=playback,reconstructionError=error)
+    if source_stem!='mix':
+        result['originalSource']=dict(kind='stem',runId=parent_run,stem=source_stem,startFrame=first,frames=len(audio),size=before.st_size,mtimeMs=before.st_mtime*1000)
     output_path.write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')
     notify('整曲细分已生成' if scope=='full' else '细分预览已生成',1,'complete')
     return result

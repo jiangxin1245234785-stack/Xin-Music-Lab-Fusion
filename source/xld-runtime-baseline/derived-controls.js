@@ -24,8 +24,10 @@
     const sourceName=()=>(stemModels||[]).find(model=>model.id===result?.engine)?.name || result?.engine || result?.model || '—';
     const mergeRun=document.getElementById('midiMergeRun'), mergeOpen=document.getElementById('midiMergeOpen'), mergeFolder=document.getElementById('midiMergeFolder');
     let mergeMessage=null;
-    const inputFor=stem=>result?.midiInputs?.[stem] || (result?.ok && result?.stems?.some(item=>item.name===stem)?{runId:result.runId,audioUrl:result.stems.find(item=>item.name===stem).audioUrl}:null);
-    const supportedParts=()=>['bass','piano','guitar','drums','strings'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && (stem!=='strings'||inputFor(stem)));
+    // `derived` defaults to the selected track's state; the one-click run passes another track's readDerived answer.
+    const inputFor=(stem,derived=result)=>derived?.midiInputs?.[stem] || (derived?.ok && derived?.stems?.some(item=>item.name===stem)?{runId:derived.runId,audioUrl:derived.stems.find(item=>item.name===stem).audioUrl}:null);
+    // vocals last: its first step may be the vocal line (score-vocals), and a failure there must not stop the others.
+    const supportedParts=(derived=result)=>['bass','piano','guitar','drums','strings','vocals'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && (stem!=='strings'||inputFor(stem,derived)));
     const sourceKey=()=>result?.midiSourceKey || result?.runId;
     const auditionStems=()=>[...(result?.stems||[]),...(result?.strings?.active?[{name:'strings',audioUrl:result.strings.active.audioUrl}]:[])];
     const stringsSelect=document.getElementById('midiStringsSource');
@@ -110,7 +112,24 @@
     const batchButton=document.getElementById('midiBatchRun'), batchFolder=document.getElementById('midiBatchFolder');
     const batchText=(key,params)=>rt('runtime.midiBatch.'+key,params);
     let batchReport=null;
-    function batchModels() {return supportedParts().filter(stem=>inputFor(stem)).map(stem=>({stem,model:selectedModel(stem)}));}
+    function batchModels(derived=result) {return supportedParts(derived).filter(stem=>inputFor(stem,derived)).map(stem=>({stem,model:selectedModel(stem)}));}
+    // The vocals part is the vocal line (score-vocals.json: lead split + RMVPE) written as a MIDI run (models.json
+    // `vocals-rmvpe`). A run is reused only while the vocal line is current and is the one it was converted from
+    // (readDerived's vocals.sha256); a song with no singing gets no run, and that counts as done.
+    const vocalsSilent=()=>result?.vocals?.state==='current'&&result.vocals.sung===false;
+    const vocalsConverted=cached=>Boolean(result?.vocals&&!result.vocals.due&&result.vocals.sha256&&cached?.backend?.scoreVocals?.sha256===result.vocals.sha256);
+    // 生成 MIDI for vocals: the vocal line first when the stem has no current one (the 谱面层 button's `score-vocals`
+    // task), then the conversion. The analysis service refuses a conversion from a line that is not current.
+    async function runVocals(track,regenerate,engine) {
+      const latest=await bridge.readDerived(track.id).catch(()=>null);
+      if(latest?.vocals?.due){
+        onTask({trackId:track.id,trackTitle:track.title,engine:'score-vocals',engineName:rt('runtime.timeline.vocalsEngine'),status:'starting',progress:0});
+        const made=await bridge.runAnalysis(track.id,'score-vocals');
+        if(made?.task)onTask(made.task);
+        if(!made?.ok)return made||{ok:false,error:'request-failed'};
+      }
+      return bridge.runDerived(track.id,'midi','vocals',regenerate,engine);
+    }
     function renderBatch(busy) {
       document.getElementById('midiBatchTitle').textContent=batchText('title');
       batchButton.textContent=batchText('run');
@@ -123,11 +142,11 @@
       const list=document.getElementById('midiBatchPlan');list.replaceChildren();
       for(const {stem,model} of plan){
         const item=document.createElement('span'), cached=midiFor(stem,model?.id);
-        const state=cached?.ok&&cached.matches!==false&&!force.checked?'reuse':!model?.available?'unavailable':force.checked?'regenerate':'generate';
-        item.className=state==='reuse'?'ready':'';
+        const state=stem==='vocals'&&vocalsSilent()?'vocalsSilent':cached?.ok&&cached.matches!==false&&!force.checked&&(stem!=='vocals'||vocalsConverted(cached))?'reuse':!model?.available?'unavailable':force.checked?'regenerate':'generate';
+        item.className=state==='reuse'||state==='vocalsSilent'?'ready':'';
         item.textContent=stem+' · '+(manualActive(stem)?rt('runtime.assets.runStatus.manual')+' · ':'')+(model?.name || '—')+' · '+batchText(state,{count:cached?.noteCount||0});list.append(item);
       }
-      document.getElementById('midiBatchStatus').textContent=inSourceScope(batchReport) ? batchText(batchReport.key,batchReport)
+      document.getElementById('midiBatchStatus').textContent=inSourceScope(batchReport) ? batchText(batchReport.key,batchReport)+(batchReport.note?' '+batchReport.note:'')
         : !getSelected()?batchText('choose'):!plan.length?batchText('needsStems'):unavailable?batchText('unavailableHint'):force.checked?batchText('force',{count:plan.length}):batchText('ready');
     }
     function loadModels() {
@@ -181,10 +200,11 @@
         const copy=document.createElement('span');copy.className='engine-copy';
         const title=document.createElement('strong');
         const guitar=midiStem()==='guitar' && ['muscriptor-medium','muscriptor-large'].includes(model.id);
-        const trial=/^(strings|drums)-muscriptor-/.test(model.id),size=model.id.endsWith('-large')?'large':'medium';
-        title.textContent=guitar?rt('runtime.assets.guitarUse.'+model.id):trial?rt('runtime.assets.'+(midiStem()==='strings'?'stringsUse.':'muscriptorTrial.')+size):model.name;
+        const trial=/^(strings|drums)-muscriptor-/.test(model.id),size=model.id.includes('muscriptor-large')?'large':'medium';
+        const stringsMode=midiStem()==='strings'?(model.id==='strings-muscriptor-large-v04'?'tempo':model.id==='strings-muscriptor-large'?'legato':model.id==='strings-muscriptor-large-raw'?'raw':null):null;
+        title.textContent=stringsMode?rt('runtime.assets.stringsUse.'+stringsMode):guitar?rt('runtime.assets.guitarUse.'+model.id):trial?rt('runtime.assets.'+(midiStem()==='strings'?'stringsUse.':'muscriptorTrial.')+size):model.name;
         if(guitar||trial){const name=document.createElement('span');name.className='model-engine-name';name.textContent=model.name;copy.append(title,name);}else copy.append(title);
-        card.title=guitar?rt('runtime.assets.guitarHint.'+model.id):trial?rt('runtime.assets.muscriptorHint.'+midiStem()):model.name;
+        card.title=stringsMode?rt('runtime.assets.stringsHint.'+stringsMode):guitar?rt('runtime.assets.guitarHint.'+model.id):trial?rt('runtime.assets.muscriptorHint.'+midiStem()):model.name;
         const status=document.createElement('span');status.textContent=cached?.ok?rt(active?(cached.matches===false?'runtime.assets.modelActiveSuperseded':'runtime.assets.modelActive'):cached.noteCount===0?'runtime.assets.modelEmpty':cached.matches===false?'runtime.assets.modelSuperseded':'runtime.assets.modelCached',{count:cached.noteCount}):rt(model.available?'runtime.assets.modelReady':'runtime.assets.modelMissing');
         copy.append(status);
         const badge=document.createElement('span');badge.className='engine-badge';badge.textContent=rt(model.id===preferred?.id?'runtime.assets.modelDefault':'runtime.assets.modelAlternative');
@@ -194,7 +214,7 @@
       }
       document.getElementById('derivedMidiScope').textContent=manualActive()?rt('runtime.assets.runStatus.manual'):selected?rt('runtime.assets.modelScope',{stem:midiStem()}):'';
       document.getElementById('derivedMidiHint').textContent=!candidates().length?rt('runtime.assets.modelChoose'):
-        !models?rt('runtime.assets.modelLoading'):/^(strings|drums)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):selectedModel()?.id==='piano-transkun'?rt('runtime.assets.transkunHint'):selectedModel()?.id==='drums-adtof-stems'?rt('runtime.assets.drumStemsHint'):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':'runtime.assets.modelHint');
+        !models?rt('runtime.assets.modelLoading'):selectedModel()?.id==='strings-muscriptor-large-v04'?rt('runtime.assets.stringsHint.tempo'):selectedModel()?.id==='strings-muscriptor-large'?rt('runtime.assets.stringsHint.legato'):selectedModel()?.id==='strings-muscriptor-large-raw'?rt('runtime.assets.stringsHint.raw'):/^(strings|drums)-muscriptor-/.test(selectedModel()?.id||'')?rt('runtime.assets.muscriptorHint.'+midiStem()):selectedModel()?.id==='piano-transkun'?rt('runtime.assets.transkunHint'):selectedModel()?.id==='drums-adtof-stems'?rt('runtime.assets.drumStemsHint'):rt(midiStem()==='strings'?(selectedModel()?.id==='yourmt3-plus'?'runtime.assets.yourmt3Hint':'runtime.assets.stringsModelHint'):midiStem()==='guitar'?'runtime.assets.guitarHint.'+selectedModel()?.id:midiStem()==='drums'?'runtime.assets.drumHint':midiStem()==='vocals'?'runtime.assets.vocalsHint':'runtime.assets.modelHint');
     }
     // Which runs exist is scoped exactly like the rest of this panel: track, source, stem, engine. Values are
     // {state:'loading'|'ready'|'error', runs}. render() only ever reads it; the fetch writes it and re-renders once.
@@ -341,7 +361,7 @@
       deleteMidiButton.textContent=rt('runtime.assets.deleteMidi');
       deleteMidiButton.disabled=busy||!selectedMidi()?.ok||!bridge.deleteMidi;
       midiButton.textContent=rt(selectedMidi()?.ok?'runtime.assets.partMidi':'runtime.assets.midi');
-      renderStemModels(busy); renderModels(busy); renderVersions(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy);
+      renderStemModels(busy); renderModels(busy); renderVersions(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy); renderTempo(busy);
       const failure=selectedFailure();
       if(deletionMessage && inSourceScope(deletionMessage) && deletionMessage.stem===midiStem() && deletionMessage.engine===selectedModel()?.id) status.textContent=rt(deletionMessage.key,deletionMessage);
       else if(failure) status.textContent=rt('runtime.assets.failedDetail',{model:failure.model || rt('runtime.assets.separate'),error:localizeError(failure.detail)});
@@ -360,6 +380,21 @@
       }
       onChange?.();
     }
+    function renderTempo(busy){
+      const panel=document.getElementById('derivedTempoPanel'),button=document.getElementById('derivedTempoExport');
+      if(!panel||!button)return;
+      const midi=selectedMidi(),timing=midi?.backend?.timing,score=midi?.backend?.tempoExport;
+      panel.hidden=!(view==='midi'&&midi?.ok&&timing&&score&&midi.tempoFile);
+      button.textContent=rt('runtime.assets.tempoExport');button.disabled=busy||!activeMidi(midiStem(),midi);
+      if(!panel.hidden)document.getElementById('derivedTempoStatus').textContent=rt('runtime.assets.tempoSummary',{bpm:timing.bpm.toFixed(1),meter:timing.beatsPerBar||'?',count:score.tempoCount,offset:score.playbackOffsetSeconds.toFixed(2)});
+    }
+    document.getElementById('derivedTempoExport')?.addEventListener('click',async()=>{
+      const midi=selectedMidi(),track=getSelected();if(!track||!midi?.ok||!activeMidi(midiStem(),midi)||!bridge.exportMidi)return;
+      try{const response=await bridge.exportMidi({trackId:track.id,stem:midiStem(),runId:midi.runId,variant:'performance'});
+        if(response?.ok&&!response.cancelled)message='runtime.assets.tempoExportDone';
+        else if(response?.error)message=response.error==='export-draft-pending'?'runtime.assets.tempoExportDraft':'runtime.assets.tempoExportFailed';
+      }catch(_){message='runtime.assets.tempoExportFailed';}render();
+    });
     function reset() {
       sequence++; trackId=getSelected()?.id || null; result=null; message=null; mergeMessage=null; batchReport=null; stringsMessage=null;
       forceByView.stems=forceByView.midi=force.checked=false; midiSelect.replaceChildren(); versionCache.clear(); versionMessage=null;
@@ -472,7 +507,7 @@
       onTask({trackId:track.id,trackTitle:track.title,engine,engineName:kind==='stems'?selectedStemModel().name:selectedModel().name+' · '+stem,status:'starting',progress:0});
       render();
       let response;
-      try { response=await bridge.runDerived(track.id,kind,stem,force.checked,engine); }
+      try { response=kind==='midi'&&stem==='vocals'?await runVocals(track,force.checked,engine):await bridge.runDerived(track.id,kind,stem,force.checked,engine); }
       catch (_) { response={ok:false,error:'request-failed'}; }
       onTask(response.task || null);
       if(!response.ok && !['analysis-cancelled','analysis-busy'].includes(response.error)) {
@@ -481,55 +516,91 @@
       }
       try {await refresh();} finally {pending=false;}
       if (getSelected()?.id===track.id && (kind==='stems' || inputFor(stem)?.runId===sourceRunId)) {
-        message=response.ok ? (kind==='midi'?null:response.cached?'runtime.assets.cached':'runtime.assets.generated')
+        message=response.ok ? (kind==='midi'?(response.noSinging?'runtime.midiBatch.vocalsNone':null):response.cached?'runtime.assets.cached':'runtime.assets.generated')
           : response.error==='analysis-cancelled'?'runtime.assets.cancelled'
           : response.error==='analysis-busy'?'runtime.assets.busy'
           : response.error==='runtime-missing'?'runtime.assets.runtimeMissing':'runtime.assets.generateFailed';
       }
       render();
     }
-    batchButton.addEventListener('click',async()=>{
-      const track=getSelected();if(!track || pending || getBusy() || batchButton.disabled)return;
-      const sourceRunId=sourceKey(), regenerate=force.checked;
-      const plan=batchModels().map(({stem,model})=>Object.freeze({stem,engine:model.id,name:model.name,kind:'midi',sourceRunId:inputFor(stem)?.runId}));
+    // 一键生成 MIDI for any track, not only the selected one: the button below runs it for the selected track, and the
+    // one-click analysis (oneclick-controls.js) runs it per track, album included, after setModels(). `derived` is the
+    // track's readDerived answer (read here when not given); `exclude` drops parts the caller has already marked
+    // unavailable; `onStep(index,total,step)` / `onResult(step,response)` report each step. Busy state is the caller's.
+    async function runBatch(track,{derived=null,regenerate=false,exclude=[],onStep=null,onResult=null}={}) {
+      await loadModels();
+      const latest=derived||await bridge.readDerived(track.id).catch(()=>null);
+      const sourceRunId=latest?.midiSourceKey||latest?.runId;
+      const plan=batchModels(latest).filter(({stem})=>!exclude.includes(stem)).map(({stem,model})=>Object.freeze({stem,engine:model?.id,name:model?.name,kind:'midi',sourceRunId:inputFor(stem,latest)?.runId}));
       plan.push(Object.freeze({kind:'merge',engine:'midi-merge',name:mergeText('title')}));
-      let mergeSkipped=false;
+      const midiParts=plan.filter(step=>step.kind==='midi').length;
+      let mergeSkipped=false,vocalsFailure=null,vocalsSilence=false;
       const total=plan.length;
-      pending=true;batchReport={trackId:track.id,sourceRunId,key:'working',step:1,total};
-      onBatchState({running:true,index:0,total,reset:true});render();
+      batchReport={trackId:track.id,sourceRunId,key:'working',step:1,total};
       let outcome;
+      const runOne=async step=>{
+        if(step.kind==='merge') {
+          const latest=await bridge.readDerived(track.id);
+          if(!(latest?.ok||Object.keys(latest?.midiInputs||{}).length) || (latest.midiSourceKey||latest.runId)!==sourceRunId)return {ok:false,error:'midi-batch-source-changed'};
+          if(Object.values(latest.midi||{}).filter(m=>m?.ok && m.noteCount>0).length<2) {
+            mergeSkipped=true;return {ok:true,skipped:true};
+          }
+        }
+        // vocals: the vocal line (if owed) and its conversion. If it cannot be made (an add-on missing), the other
+        // parts still count as done and the reason is said on its own, rather than the whole batch reading as stopped;
+        // a song with no singing is done with no run.
+        if(step.stem==='vocals'){
+          const response=await runVocals(track,regenerate,step.engine);
+          if(response?.task)onTask(response.task);
+          if(response?.ok){vocalsSilence=Boolean(response.noSinging);failures.delete(failureKey(track.id,'midi',step.stem,step.engine,step.sourceRunId));await refresh();return response;}
+          if(response?.error==='analysis-cancelled')return response;
+          vocalsFailure=String(localizeError(response?.detail||response?.error||'')).trim().split(/\r?\n/).pop();
+          return {ok:true,skipped:true,why:vocalsFailure};
+        }
+        const response=step.kind==='merge'?await requestMerge(track):await bridge.runDerived(track.id,'midi',step.stem,regenerate,step.engine);
+        if(response.task)onTask(response.task);
+        if(response.ok && step.stem) {failures.delete(failureKey(track.id,'midi',step.stem,step.engine,step.sourceRunId));await refresh();}
+        return response;
+      };
       try {
         outcome=await root.XldMidiBatch.run({plan,sourceRunId,
           readSource:async()=>{const value=await bridge.readDerived(track.id);return {ok:Boolean(value?.ok||Object.keys(value?.midiInputs||{}).length),runId:value?.midiSourceKey||value?.runId};},cancelled:()=>isBatchCancelled(),
           onStep:(index,total,step)=>{
             batchReport={trackId:track.id,sourceRunId,key:'working',step:index,total};
-            onBatchState({running:true,index,total});
+            onStep?.(index,total,step);
             onTask({trackId:track.id,trackTitle:track.title,engine:step.engine,engineName:step.name+(step.stem?' · '+step.stem:''),status:'starting',progress:0});render();
           },
-          runStep:async step=>{
-            if(step.kind==='merge') {
-              const latest=await bridge.readDerived(track.id);
-              if(!(latest?.ok||Object.keys(latest?.midiInputs||{}).length) || (latest.midiSourceKey||latest.runId)!==sourceRunId)return {ok:false,error:'midi-batch-source-changed'};
-              if(Object.values(latest.midi||{}).filter(m=>m?.ok && m.noteCount>0).length<2) {
-                mergeSkipped=true;return {ok:true,skipped:true};
-              }
-            }
-            const response=step.kind==='merge'?await requestMerge(track):await bridge.runDerived(track.id,'midi',step.stem,regenerate,step.engine);
-            if(response.task)onTask(response.task);
-            if(response.ok && step.stem) {failures.delete(failureKey(track.id,'midi',step.stem,step.engine,step.sourceRunId));await refresh();}
-            return response;
-          }
+          runStep:async step=>{const response=await runOne(step);try{onResult?.(step,response);}catch(_){}return response;}
         });
       }catch(error){outcome={ok:false,error:'request-failed',detail:String(error),completed:[]};}
+      try {await refresh();} catch(_){}
+      const key=outcome.ok?(mergeSkipped?'doneNoMerge':'done'):outcome.error==='analysis-cancelled'?'cancelled':outcome.error==='midi-batch-source-changed'?'sourceChanged':'failed';
+      // A vocals step that made no MIDI (no singing, or it could not be made) is not counted as a part.
+      batchReport={trackId:track.id,sourceRunId,key,error:localizeError(outcome.detail || outcome.error || ''),count:outcome.completed?.length || 0,total,parts:midiParts-(vocalsFailure||vocalsSilence?1:0)};
+      // What became of the vocals, in one more sentence when it is not simply a part like the others.
+      if(outcome.ok)batchReport.note=vocalsFailure?batchText('vocalsFailed',{why:vocalsFailure}):vocalsSilence?batchText('vocalsNone'):'';
+      const message=batchText(key,batchReport)+(batchReport.note?' '+batchReport.note:'');
+      onTask({trackId:track.id,trackTitle:track.title,engine:'midi-batch',engineName:batchText('title'),status:outcome.ok?'complete':outcome.error==='analysis-cancelled'?'cancelled':'failed',progress:outcome.ok?1:(outcome.completed?.length || 0)/total,message});
+      return {...outcome,plan,key,message,mergeSkipped};
+    }
+    batchButton.addEventListener('click',async()=>{
+      const track=getSelected();if(!track || pending || getBusy() || batchButton.disabled)return;
+      pending=true;
+      onBatchState({running:true,index:0,total:batchModels().length+1,reset:true});render();
+      try {await runBatch(track,{derived:result,regenerate:force.checked,onStep:(index,total)=>onBatchState({running:true,index,total})});}
       finally {
-        try {await refresh();} finally {pending=false;}
+        pending=false;
         onBatchState({running:false,index:0,total:0});
-        const key=outcome.ok?(mergeSkipped?'doneNoMerge':'done'):outcome.error==='analysis-cancelled'?'cancelled':outcome.error==='midi-batch-source-changed'?'sourceChanged':'failed';
-        batchReport={trackId:track.id,sourceRunId,key,error:localizeError(outcome.detail || outcome.error || ''),count:outcome.completed?.length || 0,total,parts:plan.length-1};
-        onTask({trackId:track.id,trackTitle:track.title,engine:'midi-batch',engineName:batchText('title'),status:outcome.ok?'complete':outcome.error==='analysis-cancelled'?'cancelled':'failed',progress:outcome.ok?1:(outcome.completed?.length || 0)/total,message:batchText(key,batchReport)});
         render();
       }
     });
+    // The one-click analysis picks the models for this run; the 转谱 panel then shows (and remembers) what actually ran.
+    async function setModels(picks={}) {
+      await loadModels();
+      for(const [stem,id] of Object.entries(picks))if(id!==MANUAL_ENGINE&&candidates(stem).some(model=>model.id===id))choices[stem]=id;
+      try{localStorage.setItem('xld.midi.models',JSON.stringify(choices));}catch(_){}
+      render();
+    }
     mergeRun.addEventListener('click',async()=>{
       const track=getSelected();if(!track || pending || getBusy())return;
       const sourceRunId=sourceKey();
@@ -551,7 +622,7 @@
     separate.addEventListener('click',()=>generate('stems'));
     transcribe.addEventListener('click',()=>generate('midi'));
     root.addEventListener('focus',()=>{if(!switching) refresh();});
-    return {reset,refresh,render,onPlayback,
+    return {reset,refresh,render,onPlayback,runBatch,setModels,midiEngines:loadModels,
       setView: value => {if(value!==view){forceByView[view]=force.checked;view=value;force.checked=forceByView[view]||false;message=null;}render();},
       snapshot: () => ({trackId, result, pending, failure:selectedFailure()}),
       playingStem: track => playback?.trackId===track?.id && playback.stem!=='original'?playback.stem:null};

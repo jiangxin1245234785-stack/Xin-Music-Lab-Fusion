@@ -52,9 +52,17 @@ def available_engines():
         if profile['backend'] == 'adtof-stems':
             from drumkit import ready as drumkit_ready
             ready = ready and drumkit_ready(profile)
+        if profile['backend'] == 'pyin':
+            # No weights to find: pYIN is an algorithm, so availability is just librosa.
+            from vocals import ready as vocals_ready
+            ready = vocals_ready(profile)
+        if profile['backend'] == 'score-vocals':
+            # A conversion of the stored vocal line: nothing to load but the MIDI writer.
+            from score_vocals_backend import ready as score_vocals_ready
+            ready = score_vocals_ready(profile)
         results.append({'id': profile['id'], 'available': bool(ready)})
     return results
-STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48}
+STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48, "vocals": 53}
 STRING_PROGRAMS = {"strings": 48, "strings-all": 48, "violin": 40, "viola": 41, "cello": 42, "double-bass": 43}
 
 
@@ -78,7 +86,8 @@ def validate_midi_roundtrip(midi, midi_file):
 
 
 def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
-               source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings", keep_kit=None):
+               source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings", keep_kit=None, beat_source=None,
+               score_vocals=None, score_vocals_sha256=None):
     profile = PROFILES[engine]
     if stem not in profile["stems"] or stem in profile.get('retiredFor', []):
         raise ValueError("模型不支持当前声部")
@@ -86,7 +95,7 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         raise ValueError("无效弦乐音源")
     options = profile["options"]
     if stem not in STEMS:
-        raise ValueError("请选择 bass、piano、guitar 或 drums")
+        raise ValueError("请选择 bass、piano、guitar、drums、strings 或 vocals")
     run_id, source_run_id = str(uuid.UUID(run_id)), str(uuid.UUID(source_run_id))
     started = time.monotonic()
     input_path = input_path.resolve()
@@ -101,6 +110,11 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
     for block in sf.blocks(str(input_path), blocksize=65536, dtype="float32"):
         if not np.isfinite(block).all():
             raise ValueError("分轨包含无效采样")
+    timing=None
+    if options.get('tempoAnalysis'):
+        if beat_source is None:raise ValueError('节拍试验需要与分轨等长的原曲音源')
+        from tempo import analyze
+        timing=analyze(beat_source,profile,duration,notify)
     notify("加载转谱模型", 0.06, "model")
     import pretty_midi
     with contextlib.redirect_stdout(sys.stderr):
@@ -138,6 +152,12 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         elif profile['backend'] == 'transkun':
             from transkun_backend import predict as transkun_predict
             detected, backend = transkun_predict(input_path, profile, notify, duration)
+        elif profile['backend'] == 'pyin':
+            from vocals import predict as vocals_predict
+            detected, backend = vocals_predict(input_path, profile, notify, duration)
+        elif profile['backend'] == 'score-vocals':
+            from score_vocals_backend import predict as score_vocals_predict
+            detected, backend = score_vocals_predict(score_vocals, score_vocals_sha256, notify, duration)
         else:
             from highres import predict as highres_predict
             detected, backend = highres_predict(input_path, profile, notify, duration)
@@ -179,6 +199,20 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         from yourmt3 import preserve_overlapping_notes
         backend.update(preserve_overlapping_notes(midi))
         backend['programMode'] = 'source-string-timbre; native groups retained' if stem == 'strings' else 'source-guitar-timbre; native groups combined, all notes retained'
+    if profile['backend']=='muscriptor' and stem=='strings' and 'gapFillMs' in options:
+        from muscriptor_backend import finish_timing
+        backend.update(finish_timing(midi,profile))
+    if 'velocityFromStem' in options:
+        # These backends transcribe pitch but not dynamics and return one velocity for every
+        # note. Replace it with the stem's own energy at each onset — the technique the
+        # DrumSep engine already uses per kit stem, here on the one stem being transcribed.
+        # Runs last, so it scales whatever notes the timing passes above settled on.
+        from velocity import apply as velocity_from_stem
+        notify('按分轨能量推算力度', .9, 'velocity')
+        replaced = backend.get('velocityMode')
+        backend.update(velocity_from_stem(midi, input_path, options['velocityFromStem'],
+                                          group_by_pitch=(stem == 'drums')),
+                       velocityReplaced=replaced)
     notes = [{"start": note.start, "end": note.end, "pitch": note.pitch, "velocity": note.velocity}
              for part in midi.instruments for note in part.notes]
     if profile['backend'] == 'adtof-stems':
@@ -194,6 +228,12 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
     midi_file, notes_file = directory / f"{stem}.mid", directory / "notes.json"
     midi.write(str(midi_file))
     validate_midi_roundtrip(midi, midi_file)
+    performance_file=None
+    if timing is not None:
+        from tempo import write_performance
+        performance_file=directory/(stem+'.tempo.mid')
+        backend['timing']=timing
+        backend['tempoExport']=write_performance(midi_file,performance_file,timing)
     notes_file.write_text(json.dumps({"schemaVersion": 1, "kind": "notes", "trackId": track_id,
                                     "stem": stem, "sourceRunId": source_run_id, "runId": run_id,
                                     "engine": engine, "model": profile["model"], "timeOrigin": 0,
@@ -210,6 +250,9 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
               "digests": {"midi": digest(midi_file), "notes": digest(notes_file)},
               "createdAt": datetime.now(timezone.utc).isoformat(), "elapsedSeconds": round(time.monotonic() - started, 3),
               "file": (relative / midi_file.name).as_posix(), "notesFile": (relative / notes_file.name).as_posix()}
+    if performance_file is not None:
+        result['tempoFile']=(relative/performance_file.name).as_posix()
+        result['digests']['tempoMidi']=digest(performance_file)
     if stem == "strings":
         result.update(sourceTarget=string_target, program=STRING_PROGRAMS[string_target])
     output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -228,7 +271,10 @@ def main():
     parser.add_argument("--source-run-id", required=False)
     parser.add_argument("--run-id", required=False)
     parser.add_argument("--string-target", choices=STRING_PROGRAMS, default="strings")
+    parser.add_argument("--beat-source", type=Path, required=False)
     parser.add_argument("--keep-kit", type=Path, required=False, help="adtof-stems only: write the separated kit stems to this directory (verification)")
+    parser.add_argument("--score-vocals", type=Path, required=False, help="vocals-rmvpe only: the score-vocals.json judged current for this stem")
+    parser.add_argument("--score-vocals-sha256", required=False, help="vocals-rmvpe only: that file's SHA-256")
     args = parser.parse_args()
     if args.engines:
         print(json.dumps(available_engines()))
@@ -237,7 +283,8 @@ def main():
         if getattr(args, name) is None:
             parser.error('--' + name.replace('_', '-') + ' is required')
     try:
-        transcribe(args.input, args.output, args.track_id, args.stem, args.source_run_id, args.run_id, engine=args.engine, string_target=args.string_target, keep_kit=args.keep_kit)
+        transcribe(args.input, args.output, args.track_id, args.stem, args.source_run_id, args.run_id, engine=args.engine, string_target=args.string_target, keep_kit=args.keep_kit, beat_source=args.beat_source,
+                   score_vocals=args.score_vocals, score_vocals_sha256=args.score_vocals_sha256)
     except Exception as error:
         emit(str(error), phase="failed")
         print(str(error), file=sys.stderr)

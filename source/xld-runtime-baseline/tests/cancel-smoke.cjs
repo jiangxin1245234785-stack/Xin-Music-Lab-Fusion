@@ -30,7 +30,7 @@ app.whenReady().then(async () => {
       const row = [...document.querySelectorAll('.track-row')].find(item => item.textContent.includes('song cemetery'));
       row?.click();
       for (let i = 0; i < 100 && document.querySelector('#analysisTargetTitle')?.textContent !== 'song cemetery'; i++) await wait(100);
-      const engine = [...document.querySelectorAll('.engine-card')].find(card => card.textContent.includes('MSAF · Spectral'));
+      const engine = [...document.querySelectorAll('.engine-card')].find(card => card.textContent.includes('SongFormer'));
       engine?.click();
       document.querySelector('#analyzeButton')?.click();
       let task = null;

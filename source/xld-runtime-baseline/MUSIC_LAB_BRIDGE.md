@@ -2,7 +2,14 @@
 
 XLD writes one `music-lab.json` beside each track's analysis files. The file is
 local-only and contains no audio. It is the supported integration boundary for
-Xin's Music Lab; consumers should not depend on MSAF or SongFormer cache paths.
+Xin's Music Lab; consumers should not depend on any engine's cache paths.
+
+Engines in the file: sections `songformer`; chords `chord-chordmini`, `chord-btc`,
+`chord-consonance`. Since 2026-11-14 the four MSAF section engines and the three
+Librosa chord engines (`chord-cqt`, `chord-cens`, `chord-hybrid`) are removed:
+the file no longer carries them, even when their old result files are still on
+disk. A consumer that meets one of those ids in an older `music-lab.json` should
+ignore it.
 
 Current contract: `xld.music-lab/2`
 
@@ -22,13 +29,13 @@ Current contract: `xld.music-lab/2`
     "source": "absolute local audio path"
   },
   "analyses": [{
-    "engine": { "id": "msaf", "name": "MSAF · Spectral" },
+    "engine": { "id": "songformer", "name": "SongFormer · AI" },
     "duration": 0,
     "analyzedRanges": null,
-    "segments": [{ "start": 0, "end": 10, "label": "A", "confidence": null }]
+    "segments": [{ "start": 0, "end": 10, "label": "verse", "confidence": null }]
   }],
   "harmony": [{
-    "engine": { "id": "chord-cqt", "name": "Librosa · CQT / HMM", "family": "harmony" },
+    "engine": { "id": "chord-chordmini", "name": "ChordMini · BTC-CL", "family": "harmony" },
     "duration": 0,
     "metrics": { "chordChanges": 0, "uniqueChords": 0, "meanConfidence": 0, "noChordRatio": 0 },
     "segments": [{ "start": 0, "end": 4.2, "label": "Dm", "confidence": 0.78 }]

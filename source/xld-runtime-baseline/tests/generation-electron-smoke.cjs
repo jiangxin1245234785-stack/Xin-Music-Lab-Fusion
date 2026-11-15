@@ -59,10 +59,10 @@ app.whenReady().then(async()=>{
   const section=await evaluate('window.__section');assert(section.ok,JSON.stringify(section));
   assert(section.result.segments.length>0);assert.equal(section.integrationWarning,null);
   step('Existing SongFormer section analysis and XML bridge export passed');
-  await evaluate(`window.__harmony=null;window.XLD.runAnalysis(${id},'chord-cens',null,false,'hpss').then(value=>window.__harmony=value)`);
+  await evaluate(`window.__harmony=null;window.XLD.runAnalysis(${id},'chord-chordmini',null,false,'none').then(value=>window.__harmony=value)`);
   await until('window.__harmony!==null',180);
   const harmony=await evaluate('window.__harmony');assert(harmony.ok,JSON.stringify(harmony));
-  step('Existing CENS harmony analysis with HPSS passed');
+  step('ChordMini harmony analysis passed');
   const xml=require('../../fusion-runtime-baseline/desktop/xld-analysis-service.cjs').createService({analysisRoot:path.join(root,'test-analysis')});
   const xmlStems=await xml.readStems(track),xmlMidi=await xml.readMidi(track,'bass');
   assets=await evaluate(`window.XLD.readDerived(${id})`);assert(xmlStems.ok,xmlStems.error);assert(xmlMidi.ok,xmlMidi.error);assert.deepEqual(xmlStems.stems,assets.stems);assert.equal(xmlMidi.directory,assets.midi.bass.directory);

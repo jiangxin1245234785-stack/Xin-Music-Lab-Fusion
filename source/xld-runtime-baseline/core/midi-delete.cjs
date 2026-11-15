@@ -20,7 +20,8 @@ function createMidiDeletion({assets,getRoot,trash}) {
   // Once the lookup is by runId that deserves saying out loud.
   if(directory!==path.dirname(path.join(assets.directory(track),String(result.file||''))))throw Error('midi-delete-changed');
   await guarded(root,directory);
-  const names=(await fs.readdir(directory)).sort(),expected=[stem+'.mid','notes.json'].sort();
+  const names=(await fs.readdir(directory)).sort(),expected=[stem+'.mid','notes.json'];
+  if(result.tempoFile===`midi/${stem}/${runId}/${stem}.tempo.mid`)expected.push(stem+'.tempo.mid');expected.sort();
   if(JSON.stringify(names)!==JSON.stringify(expected))throw Error('midi-delete-unknown-files');
   const fingerprints=[];
   for(const name of names){const file=await guarded(root,path.join(directory,name)),stat=await fs.lstat(file);if(!stat.isFile())throw Error('midi-delete-unknown-files');fingerprints.push([name,hash(await fs.readFile(file))]);}

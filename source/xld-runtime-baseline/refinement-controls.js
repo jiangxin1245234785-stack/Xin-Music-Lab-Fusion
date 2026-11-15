@@ -100,7 +100,8 @@
   $('refinementFolder').onclick=async()=>{const key=route();const reply=await bridge.revealRefinement(payload()).catch(error=>({ok:false,error:String(error)}));if(!reply.ok&&key===route()){message={key:'failed',error:reply.error};render();}};
   for(const button of document.querySelectorAll('[data-refinement-audio]'))button.onclick=()=>{
    if(!result?.ok)return;const name=button.dataset.refinementAudio;
-   if(onAudition){onAudition({track:getSelected(),url:result.urls[name],start:result.timeOrigin,end:result.timeOrigin+result.duration,label:name==='target'?targetName():text(name)});for(const candidate of document.querySelectorAll('[data-refinement-audio]'))candidate.setAttribute('aria-pressed',String(candidate===button));return;}
+   if(onAudition){onAudition({track:getSelected(),url:result.urls[name],...result.auditions?.[name],start:result.timeOrigin,end:result.timeOrigin+result.duration,label:name==='target'?targetName():text(name)});for(const candidate of document.querySelectorAll('[data-refinement-audio]'))candidate.setAttribute('aria-pressed',String(candidate===button));return;}
+   if(result.schemaVersion===3)return; // Compact floats require the bounded PCM player, never an unattenuated fallback.
    const current=player.currentTime||0;audio.pause();
    player.onloadedmetadata=()=>{player.currentTime=Math.min(current,Math.max(0,player.duration-.01));};player.src=result.urls[name];player.play().catch(()=>{message={key:'playFailed'};render();});
    for(const candidate of document.querySelectorAll('[data-refinement-audio]'))candidate.setAttribute('aria-pressed',String(candidate===button));

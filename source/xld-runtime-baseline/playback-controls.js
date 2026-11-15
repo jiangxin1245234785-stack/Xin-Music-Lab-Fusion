@@ -5,7 +5,7 @@ function create({sources,onChange,onClaim,volume=0.82}){
  let active='main',loop=null,epoch=0,switching=false,ticking=false,error='';
  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
  const source=()=>sources[active];
- const info=()=>({...source().info(),id:active,error,loop:loop&&{...loop}});
+ const info=()=>{const value=source().info();return {...value,id:active,error:error||value.error||'',loop:loop&&{...loop}};};
  function changed(){onChange?.(info());}
  function setVolume(value){volume=clamp(Number(value)||0,0,1);for(const s of Object.values(sources))s.volume(volume);changed();}
  function claim(id){

@@ -1,0 +1,432 @@
+{
+ "comment": "Raw SongFormer segments of six songs, copied from the analysis root on 2026-11-13 by work/xld-sections-20261113/extract-fixtures.cjs. Fixed: the tests do not read the analysis root.",
+ "songs": {
+  "Besties": {
+   "artist": "Black Country, New Road",
+   "duration": 216.7570068027211,
+   "auto": false,
+   "segments": [
+    {
+     "start": 0,
+     "end": 10.2004,
+     "label": "intro"
+    },
+    {
+     "start": 10.2004,
+     "end": 28.5611,
+     "label": "intro"
+    },
+    {
+     "start": 28.5611,
+     "end": 48.2419,
+     "label": "verse"
+    },
+    {
+     "start": 48.2419,
+     "end": 68.0427,
+     "label": "verse"
+    },
+    {
+     "start": 68.0427,
+     "end": 80,
+     "label": "chorus"
+    },
+    {
+     "start": 80,
+     "end": 101.4809,
+     "label": "chorus"
+    },
+    {
+     "start": 101.4809,
+     "end": 125.9618,
+     "label": "verse"
+    },
+    {
+     "start": 125.9618,
+     "end": 149.0028,
+     "label": "chorus"
+    },
+    {
+     "start": 149.0028,
+     "end": 169.5236,
+     "label": "chorus"
+    },
+    {
+     "start": 169.5236,
+     "end": 189.4444,
+     "label": "inst"
+    },
+    {
+     "start": 189.4444,
+     "end": 213.0853,
+     "label": "chorus"
+    },
+    {
+     "start": 213.0853,
+     "end": 216.757,
+     "label": "silence"
+    }
+   ]
+  },
+  "Nancy Tries to Take the Night": {
+   "artist": "Black Country, New Road",
+   "duration": 396.5810204081633,
+   "auto": true,
+   "segments": [
+    {
+     "start": 0,
+     "end": 45.6018,
+     "label": "intro"
+    },
+    {
+     "start": 45.6018,
+     "end": 76.203,
+     "label": "inst"
+    },
+    {
+     "start": 90,
+     "end": 116.041,
+     "label": "intro"
+    },
+    {
+     "start": 116.041,
+     "end": 159.6028,
+     "label": "verse"
+    },
+    {
+     "start": 159.6028,
+     "end": 197.8843,
+     "label": "chorus"
+    },
+    {
+     "start": 197.8843,
+     "end": 252.0065,
+     "label": "inst"
+    },
+    {
+     "start": 252.0065,
+     "end": 270.0072,
+     "label": "chorus"
+    },
+    {
+     "start": 270,
+     "end": 278.7604,
+     "label": "verse"
+    },
+    {
+     "start": 278.7604,
+     "end": 305.6414,
+     "label": "chorus"
+    },
+    {
+     "start": 305.6414,
+     "end": 342.8429,
+     "label": "verse"
+    },
+    {
+     "start": 342.8429,
+     "end": 380.0444,
+     "label": "chorus"
+    },
+    {
+     "start": 380.0444,
+     "end": 393.7249,
+     "label": "outro"
+    },
+    {
+     "start": 393.7249,
+     "end": 396.581,
+     "label": "silence"
+    }
+   ]
+  },
+  "Ego": {
+   "artist": "Ciśnienie",
+   "duration": 690.72,
+   "auto": true,
+   "segments": [
+    {
+     "start": 0,
+     "end": 1.5601,
+     "label": "silence"
+    },
+    {
+     "start": 1.5601,
+     "end": 54.0022,
+     "label": "intro"
+    },
+    {
+     "start": 54.0022,
+     "end": 76.9231,
+     "label": "inst"
+    },
+    {
+     "start": 90,
+     "end": 122.5213,
+     "label": "intro"
+    },
+    {
+     "start": 122.5213,
+     "end": 248.0463,
+     "label": "verse"
+    },
+    {
+     "start": 248.0463,
+     "end": 270.0072,
+     "label": "inst"
+    },
+    {
+     "start": 270,
+     "end": 304.3214,
+     "label": "intro"
+    },
+    {
+     "start": 304.3214,
+     "end": 349.8032,
+     "label": "verse"
+    },
+    {
+     "start": 349.8032,
+     "end": 450.0072,
+     "label": "inst"
+    },
+    {
+     "start": 450,
+     "end": 472.9209,
+     "label": "intro"
+    },
+    {
+     "start": 472.9209,
+     "end": 528.2431,
+     "label": "verse"
+    },
+    {
+     "start": 528.2431,
+     "end": 550.444,
+     "label": "chorus"
+    },
+    {
+     "start": 550.444,
+     "end": 606.1262,
+     "label": "inst"
+    },
+    {
+     "start": 606.1262,
+     "end": 628.8072,
+     "label": "verse"
+    },
+    {
+     "start": 628.8072,
+     "end": 630.0072,
+     "label": "chorus"
+    },
+    {
+     "start": 631.4437,
+     "end": 672.6053,
+     "label": "inst"
+    },
+    {
+     "start": 672.6053,
+     "end": 690.72,
+     "label": "silence"
+    }
+   ]
+  },
+  "nemesis": {
+   "artist": "KASHIWA Daisuke",
+   "duration": 341.75,
+   "auto": true,
+   "segments": [
+    {
+     "start": 0,
+     "end": 43.0817,
+     "label": "intro"
+    },
+    {
+     "start": 43.0817,
+     "end": 64.3226,
+     "label": "chorus"
+    },
+    {
+     "start": 64.3226,
+     "end": 85.6834,
+     "label": "verse"
+    },
+    {
+     "start": 90,
+     "end": 160.3228,
+     "label": "intro"
+    },
+    {
+     "start": 160.3228,
+     "end": 203.0445,
+     "label": "verse"
+    },
+    {
+     "start": 203.0445,
+     "end": 245.6462,
+     "label": "chorus"
+    },
+    {
+     "start": 245.6462,
+     "end": 267.3671,
+     "label": "inst"
+    },
+    {
+     "start": 267.3671,
+     "end": 270.0072,
+     "label": "outro"
+    },
+    {
+     "start": 271.2036,
+     "end": 325.6858,
+     "label": "inst"
+    },
+    {
+     "start": 325.6858,
+     "end": 339.4864,
+     "label": "outro"
+    },
+    {
+     "start": 339.4864,
+     "end": 341.75,
+     "label": "silence"
+    }
+   ]
+  },
+  "Void": {
+   "artist": "world's end girlfriend",
+   "duration": 178,
+   "auto": false,
+   "segments": [
+    {
+     "start": 0,
+     "end": 35.0414,
+     "label": "verse"
+    },
+    {
+     "start": 35.0414,
+     "end": 63.8426,
+     "label": "verse"
+    },
+    {
+     "start": 63.8426,
+     "end": 93.7237,
+     "label": "inst"
+    },
+    {
+     "start": 93.7237,
+     "end": 120.8448,
+     "label": "inst"
+    },
+    {
+     "start": 120.8448,
+     "end": 150.966,
+     "label": "inst"
+    },
+    {
+     "start": 150.966,
+     "end": 173.4069,
+     "label": "outro"
+    },
+    {
+     "start": 173.4069,
+     "end": 178,
+     "label": "silence"
+    }
+   ]
+  },
+  "MEGURI": {
+   "artist": "world's end girlfriend",
+   "duration": 568.75,
+   "auto": true,
+   "segments": [
+    {
+     "start": 0,
+     "end": 29.1612,
+     "label": "intro"
+    },
+    {
+     "start": 29.1612,
+     "end": 67.5627,
+     "label": "verse"
+    },
+    {
+     "start": 67.5627,
+     "end": 86.7635,
+     "label": "chorus"
+    },
+    {
+     "start": 90,
+     "end": 105.9606,
+     "label": "intro"
+    },
+    {
+     "start": 105.9606,
+     "end": 163.4429,
+     "label": "verse"
+    },
+    {
+     "start": 163.4429,
+     "end": 240.366,
+     "label": "chorus"
+    },
+    {
+     "start": 240.366,
+     "end": 268.8072,
+     "label": "inst"
+    },
+    {
+     "start": 268.8072,
+     "end": 270.0072,
+     "label": "outro"
+    },
+    {
+     "start": 270,
+     "end": 288.3607,
+     "label": "intro"
+    },
+    {
+     "start": 288.3607,
+     "end": 321.9621,
+     "label": "verse"
+    },
+    {
+     "start": 321.9621,
+     "end": 360.3636,
+     "label": "chorus"
+    },
+    {
+     "start": 360.3636,
+     "end": 398.7652,
+     "label": "verse"
+    },
+    {
+     "start": 398.7652,
+     "end": 450.0072,
+     "label": "inst"
+    },
+    {
+     "start": 450,
+     "end": 458.2803,
+     "label": "intro"
+    },
+    {
+     "start": 458.2803,
+     "end": 515.8826,
+     "label": "verse"
+    },
+    {
+     "start": 515.8826,
+     "end": 566.5247,
+     "label": "chorus"
+    },
+    {
+     "start": 566.5247,
+     "end": 568.75,
+     "label": "silence"
+    }
+   ]
+  }
+ }
+}

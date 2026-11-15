@@ -10,8 +10,8 @@ async function guarded(root,file){
  let current=root;for(const part of ['',...path.relative(root,file).split(path.sep)]){if(part)current=path.join(current,part);const stat=await fs.lstat(current);if(stat.isSymbolicLink())throw Error('storage-link-rejected');}
  const realRoot=await fs.realpath(root),real=await fs.realpath(file);if(!within(realRoot,real))throw Error('storage-path-invalid');return file;
 }
-function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(directory,{recursive:true}),onChanged=()=>{}}){
- let mutating=false;
+function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(directory,{recursive:true}),onChanged=()=>{},optimizer}){
+ let mutating=false,optimizing=false,cancelled=false;
  async function scan(){
   const root=path.resolve(getRoot()),files=new Map(),directories=[],warnings=[];let bytes=0,wavBytes=0;
   try{const stat=await fs.lstat(root);if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('storage-root-invalid');}catch(error){if(error.code==='ENOENT')return {root,bytes:0,wavBytes:0,rows:[],warnings:[],busy:isBusy()||mutating};throw error;}
@@ -45,7 +45,9 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    const dependencyCount=new Set(dependencies.map(r=>r.value.kind+':'+r.value.runId)).size;
    const active=kind==='stems'&&records.some(r=>r.file===path.join(track,'stems.json')&&r.value.runId===runId);
    const id=hash(root+'\0'+path.relative(root,directory));
-   rows.push({id,revision:hash(JSON.stringify(children.map(([p,s])=>[p,s.size,s.mtimeMs,s.link||false]).sort())),directory,track:parts[1].replace(/__[a-f0-9]+$/,''),album:parts[0],kind,runId,engine:data.engine||data.model||'旧输出',target:data.target||'',sourceStem:data.sourceStem||'',scope:data.scope||'preview',timeOrigin:data.timeOrigin||0,duration:data.duration||0,bytes:rowBytes,files:children.length,modified:Math.max(...children.map(([,s])=>s.mtimeMs)),kept,active,dependencyCount,blocked:unknown?'目录含链接或未知文件':dependencyCount?'仍被 '+dependencyCount+' 项细分 / MIDI 使用':'',keepRecords:keepRecords.map(r=>r.file)});
+   const redundant=children.filter(([file])=>/^listen-(original|target|residual)\.wav$/.test(path.basename(file))||(path.basename(file)==='original.wav'&&data.sourceStem!=='mix'));
+   const optimizable=kind==='refinement'&&!unknown&&Boolean(data.playback)&&redundant.length>0&&(data.schemaVersion===2||(data.schemaVersion===3&&files.has(path.join(track,'refinement','storage-optimization',runId+'.json'))));
+   rows.push({id,manifest:record?.file,optimizable,redundantBytes:redundant.reduce((n,[,s])=>n+s.size,0),compact:data.schemaVersion===3,revision:hash(JSON.stringify(children.map(([p,s])=>[p,s.size,s.mtimeMs,s.link||false]).sort())),directory,track:parts[1].replace(/__[a-f0-9]+$/,''),album:parts[0],kind,runId,engine:data.engine||data.model||'旧输出',target:data.target||'',sourceStem:data.sourceStem||'',scope:data.scope||'preview',timeOrigin:data.timeOrigin||0,duration:data.duration||0,bytes:rowBytes,files:children.length,modified:Math.max(...children.map(([,s])=>s.mtimeMs)),kept,active,dependencyCount,blocked:unknown?'目录含链接或未知文件':dependencyCount?'仍被 '+dependencyCount+' 项细分 / MIDI 使用':'',keepRecords:keepRecords.map(r=>r.file)});
   }
   rows.sort((a,b)=>b.bytes-a.bytes);return {root,bytes,wavBytes,rows,warnings,busy:isBusy()||mutating};
  }
@@ -79,6 +81,13 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
   onChanged();return {ok:errors.length===0,deleted,bytes:removedBytes,mode,errors};
  });}
  async function reveal(item){const {rows:[row]}=await select([item],{allowBlocked:true,allowKept:true});return row.directory;}
- return {scan,protect,clear,reveal,busy:()=>mutating};
+ async function optimize(item,mode,confirm){return lock(async()=>{
+  if(!optimizer)throw Error('storage-optimizer-unavailable');
+  const {root,rows:[row]}=await select([item],{allowBlocked:true,allowKept:true});if(!row.optimizable)throw Error('此结果暂无可优化副本');
+  cancelled=false;optimizing=true;
+  try{return await optimizer({root,row,mode,confirm,check:()=>{if(cancelled)throw Error('已取消副本优化');if(isBusy()||path.resolve(getRoot())!==root)throw Error('资料库或任务状态已变化');}});}
+  finally{optimizing=false;onChanged();}
+ });}
+ return {scan,protect,clear,reveal,optimize,cancelOptimize:()=>{if(optimizing)cancelled=true;return {ok:true};},busy:()=>mutating};
 }
 module.exports={createStorage,guarded};

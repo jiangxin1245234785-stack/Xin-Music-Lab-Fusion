@@ -6,6 +6,20 @@ Predicted velocities and the sustain pedal (CC64) are kept as the model emits th
 No quantization, no tempo detection; the runner re-encodes at the fixed 120 BPM timebase.
 Audio is read with soundfile (the package's own pydub path is not used); stems are 44.1 kHz,
 which is the model's sample rate, so no resampling normally happens.
+
+Notes in silence. The model rescales every 16 s window to unit variance before it looks at it
+(Model_ablation.processFramesBatch, "gain normalization"), so its output does not depend on input gain: the
+same 16 s of piano gives the same notes at 0 dB and at -80 dB. A window that holds only a separation residue
+(-90 to -130 dBFS) therefore reaches the network as loudly as real piano, and it answers with 40-50 ms notes.
+Digital zero stays zero and gives nothing; faint residue does not. In the library that was 2,762 of 8,966
+Transkun notes on 2026-11-13; on Mirrors, a stem with almost no piano, 631 of 643. The model's input is left
+alone (any change to it could move the real notes too); instead the decoded notes are checked against the
+stem's own level with the rule analysis-midi/evidence.py uses for its "silent" verdict: the loudest
+512-sample frame from 30 ms before the note to 30 ms after its end (at least 0.1 s after its start) is more
+than 50 dB under the stem's loud level (95th percentile of frames above -70 dBFS) AND under -60 dBFS. On a
+stem with no frame above -70 dBFS there is no loud level and the -60 dBFS test alone decides (evidence.py
+finds nothing silent there). Such notes are dropped; the rest are the model's output untouched. The backend
+info records it under 'silenceFilter'. tests/transkun-silence.py keeps the constants equal to evidence.PARAMS.
 """
 from pathlib import Path
 import hashlib
@@ -36,6 +50,52 @@ def ready(profile):
     return bool(weight) and weight.is_file() and weight.stat().st_size == profile['checkpoint']['size'] \
         and config_path(profile).is_file() \
         and all(importlib.util.find_spec(name) for name in ['torch', 'moduleconf', 'pretty_midi', 'soundfile', 'mir_eval'])
+
+
+LEVEL_HOP = 512           # evidence.LEVEL_HOP
+SILENCE_REL_DB = -50.0    # evidence.PARAMS['silenceRelDb']
+SILENCE_ABS_DB = -60.0    # evidence.PARAMS['silenceAbsDb']
+LEVEL_PAD = 0.03
+MIN_NOTE_WINDOW = 0.1
+NO_LOUD = -120.0          # evidence.read_levels' loud level when no frame is above -70 dBFS
+
+
+def stem_levels(samples, rate):
+    """(frame level in dBFS of the louder channel, frames per second, loud level) — evidence.read_levels on samples in memory."""
+    import numpy as np
+    frames = (samples.shape[0] // LEVEL_HOP) * LEVEL_HOP
+    if not frames:
+        return np.zeros(0, np.float32), rate / LEVEL_HOP, NO_LOUD
+    energy = (samples[:frames] ** 2).reshape(-1, LEVEL_HOP, samples.shape[1]).mean(axis=1).max(axis=1)
+    level = 10 * np.log10(energy + 1e-20)
+    audible = level[level > -70]
+    loud = float(np.percentile(audible, 95)) if audible.size else NO_LOUD
+    return level, rate / LEVEL_HOP, loud
+
+
+def is_silent(start, end, level, fps, loud):
+    """evidence.judge's silent verdict for a note from start to end (seconds).
+
+    One addition: a stem with no frame above -70 dBFS has no loud level (it reads as NO_LOUD), and evidence.judge
+    then finds nothing silent at all. Here the -60 dBFS test alone decides for such a stem, so a stem that is all
+    residue gives no notes (New Order - Ceremony in the library: peak -87 dBFS, 341 Transkun notes)."""
+    first = max(0, int((start - LEVEL_PAD) * fps))
+    last = min(len(level), int((max(end, start + MIN_NOTE_WINDOW) + LEVEL_PAD) * fps) + 1)
+    local = float(level[first:last].max()) if last > first else -200.0
+    return local < SILENCE_ABS_DB and (loud <= NO_LOUD or local < loud + SILENCE_REL_DB)
+
+
+def drop_silent(midi, levels):
+    """Remove the notes that sit in silence from every instrument of a PrettyMIDI, in place; returns the info record."""
+    level, fps, loud = levels
+    dropped = 0
+    for part in midi.instruments:
+        kept = [note for note in part.notes if not is_silent(float(note.start), float(note.end), level, fps, loud)]
+        dropped += len(part.notes) - len(kept)
+        part.notes = kept
+    return {'method': 'stem-level-1', 'relDb': SILENCE_REL_DB, 'absDb': SILENCE_ABS_DB,
+            'loudDbfs': round(loud, 1), 'quietStem': loud <= NO_LOUD, 'dropped': dropped,
+            'kept': sum(len(part.notes) for part in midi.instruments)}
 
 
 def _digest(path):
@@ -78,6 +138,7 @@ def predict(audio_path, profile, notify, duration):
     model.eval()
 
     samples, sr = sf.read(str(audio_path), dtype='float32', always_2d=True)  # (frames, channels)
+    levels = stem_levels(samples, sr)
     if sr != model.fs:
         import torchaudio
         resampled = torchaudio.functional.resample(torch.from_numpy(samples.T.copy()), sr, model.fs)
@@ -104,6 +165,7 @@ def predict(audio_path, profile, notify, duration):
         notes = model.transcribe(x, stepInSecond=step_seconds, segmentSizeInSecond=segment_seconds, discardSecondHalf=False)
     elapsed = time.monotonic() - started
     midi = writeMidi(notes)
+    silence = drop_silent(midi, levels)
     return midi, {
         'name': 'transkun',
         'version': importlib.metadata.version('transkun'),
@@ -117,4 +179,5 @@ def predict(audio_path, profile, notify, duration):
         'velocityMode': 'predicted',
         'pedal': 'cc64-predicted',
         'noteLengthsIncludePedalExtension': False,
+        'silenceFilter': silence,
     }

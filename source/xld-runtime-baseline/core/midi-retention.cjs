@@ -38,7 +38,12 @@ function createMidiRetention({assets,getRoot,trash}) {
    let folder,names;
    try{folder=await guarded(root,path.join(directory,'midi',stem,run.runId));names=(await fs.readdir(folder)).sort();}
    catch(error){if(error.code!=='ENOENT')throw error;skipped.push({runId:run.runId,reason:'midi-missing'});continue;}
-   if(JSON.stringify(names)!==JSON.stringify([stem+'.mid','notes.json'].sort())){skipped.push({runId:run.runId,reason:'midi-retention-unknown-files'});continue;}
+   const expected=[stem+'.mid','notes.json'];
+   if(names.includes(stem+'.tempo.mid')){
+    const view=await assets.midi.readRun(track,stem,run.runId);
+    if(view.ok&&view.run.tempoFile===`midi/${stem}/${run.runId}/${stem}.tempo.mid`)expected.push(stem+'.tempo.mid');
+   }
+   if(JSON.stringify(names)!==JSON.stringify(expected.sort())){skipped.push({runId:run.runId,reason:'midi-retention-unknown-files'});continue;}
    // Only the payload folder, exactly as midi-delete.clear does: the record and any pointer copies stay, so a
    // restore from the bin revives the cache.
    await trash(folder);

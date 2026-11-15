@@ -7,7 +7,7 @@ XLD 负责音乐分析：分轨、MIDI、段落和和弦；XML 负责可视化�
 
 core/analysis-service.cjs 是可导入执行器，core/derived-assets.cjs 负责结果；analysis-separation 和 analysis-midi 维护分轨/转谱 CLI。XML 的旧文件位置只保留兼容转发。分轨新增 BS-RoFormer SW 默认与 Demucs 6s 备选；MIDI 沿用按乐器选择的模型，段落与和弦逻辑未改，用户音频及已有输出目录不搬迁。XLD 的段落/和弦原有任务代码已改为调用此核心。
 
-Python/模型继续使用现有安装：D:\Program Files\xin-local-deck-beta；MSAF Python 复用 D:\Program Files\xin-local-deck；Basic Pitch 使用 D:\Caches\codex\runtimes\xld-midi；专用转谱模型使用 D:\Caches\codex\runtimes\xld-midi-highres，权重位于 D:\Caches\codex\models\xld-midi-highres。支持 XLD_RUNTIME_ROOT、XLD_PYTHON、XLD_AI_PYTHON、XLD_HARMONY_PYTHON、XLD_MIDI_PYTHON 及原模型缓存变量。开发源码没有复制运行时环境，也没有覆盖安装产品。
+Python/模型继续使用现有安装：D:\Program Files\xin-local-deck-beta；基础分析解释器（XLD_PYTHON，和弦 runner 的最后后备）复用 D:\Program Files\xin-local-deck；段落只有 SongFormer，和弦是 ChordMini / BTC / consonance-ACE（MSAF 与 Librosa 和弦引擎已于 2026-11-14 删除）；Basic Pitch 使用 D:\Caches\codex\runtimes\xld-midi；专用转谱模型使用 D:\Caches\codex\runtimes\xld-midi-highres，权重位于 D:\Caches\codex\models\xld-midi-highres。支持 XLD_RUNTIME_ROOT、XLD_PYTHON、XLD_AI_PYTHON、XLD_HARMONY_PYTHON、XLD_MIDI_PYTHON 及原模型缓存变量。开发源码没有复制运行时环境，也没有覆盖安装产品。
 
 同一配置目录复用一个 XLD 窗口。XML 再次打开 XLD 时，新选曲交给已有窗口，不自动播放或取消任务；切回 XML 后当前曲目结果自动更新。每个宿主拥有独立的分析服务实例，同一实例内各类任务互斥；没有跨应用任务队列或常驻服务。
 

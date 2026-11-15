@@ -14,6 +14,8 @@
   // The sound studio's track colours (memesynth/studio/theme.css, from the Okabe-Ito set made for red-green colour
   // blindness). The studio has no strings; they take the set's yellow, toned for the dark ground. Amber is never a track.
   const STEM_COLORS = { bass: '#4d7fd0', piano: '#7cc4f2', guitar: '#2fb89a', drums: '#e8663a', strings: '#d9cd6a', vocals: '#d78ab5', other: '#9aa1a9' };
+  // A note written where its stem is silent: an empty outline, in no track's colour, because nothing sounds there.
+  const EVIDENCE_SILENT = '#cfcbc2';
   const GM_DRUM_KEYS = { 35: 'kick', 36: 'kick', 38: 'snare', 40: 'snare', 42: 'hihat', 44: 'hihat', 46: 'hihat', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 49: 'crash', 51: 'ride', 57: 'crash', 59: 'ride' };
   const MAX_CANVAS = 16384;   // Chromium's per-dimension canvas limit; the device pixel ratio is capped against it.
   const PITCH_ROW_HEIGHT = 18;   // the tallest a focused semitone row gets; the focused lane shrinks rows to fit
@@ -187,6 +189,12 @@
     let paintQueued = false;
     // One strip per lane, two things it can say. Showing both at once would cost a third of a compact lane.
     let stripMode = 'role';   // 'role' | 'harmony' | 'off'
+    // What the stems say about the notes on screen: stem -> {runId, verdicts, extend, totals}, both arrays indexed
+    // like notes.json (note[5]). Filled by a check, read back on every load, dropped when the run changes.
+    const evidence = new Map();
+    let evidenceBusy = false, evidenceArmed = false, evidenceNote = '';
+    let toolbar = null, evidenceView = {};   // timeline-toolbar.js: the rows and the 更多 menu
+    const evidenceFor = lane => { const found = evidence.get(lane?.stem); return found && found.runId === lane.runId ? found : null; };
 
 
     let layout=window.XldTrackLayout.create(),groupCache=new Map(),editTargets=new Map(),dragRow=null;
@@ -663,8 +671,10 @@
       const ctx = contextFor(surface.canvas,view);
       if (!ctx) return;
       if(lane.wavOnly&&lane.sourceAudio?.waveform){
-        const points=lane.sourceAudio.waveform,step=width/points.length;ctx.fillStyle=STEM_COLORS[lane.stem]||'#9aa0b4';
-        for(let i=0;i<points.length;i++){const x=i*step;if(x+step<offset||x>offset+visibleWidth)continue;const h=Math.max(1,points[i]*(height-12));ctx.fillRect(x,(height-h)/2,Math.max(1,step-1),h);}return;
+        // The backing is drawn in the vocals' own colour, one step fainter, so the two rows read as one voice.
+        const backing=lane.stem==='vocals / backing';
+        const points=lane.sourceAudio.waveform,step=width/points.length;ctx.fillStyle=backing?STEM_COLORS.vocals:STEM_COLORS[lane.stem]||'#9aa0b4';ctx.globalAlpha=backing?.6:1;
+        for(let i=0;i<points.length;i++){const x=i*step;if(x+step<offset||x>offset+visibleWidth)continue;const h=Math.max(1,points[i]*(height-12));ctx.fillRect(x,(height-h)/2,Math.max(1,step-1),h);}ctx.globalAlpha=1;return;
       }
       const rowHeight = detailed?(layout.row||PITCH_ROW_HEIGHT):height/layout.span;
       const firstRow=Math.max(0,Math.floor(pitchTop/rowHeight)),lastRow=Math.min(layout.span,Math.ceil((pitchTop+height)/rowHeight));
@@ -691,15 +701,46 @@
       // right below. Loudness still shades them, but a focused part never fades below readable.
       const floor = detailed ? 0.55 : 0.4;
       ctx.fillStyle = color;
+      // What the stem itself says about each note (core/midi-evidence.cjs). A note written where the stem is
+      // silent is drawn hollow; one with no energy at its pitch, or little, is faded. A lane holding unsaved
+      // edits has moved on from the run the verdicts were made for, so it is drawn plain.
+      const verdicts = lane.isDraft ? null : evidenceFor(lane)?.verdicts;
       for (const {note,rect} of surface.visible) {
         const velocity = note[3];
         const { x, y, width:w, height:h } = rect;
-        ctx.globalAlpha = floor + (1 - floor) * Math.min(1, Math.max(0, velocity / 127));
+        const verdict = verdicts ? verdicts[note[5]] : 0;
+        const alpha = floor + (1 - floor) * Math.min(1, Math.max(0, velocity / 127));
+        if (verdict === 3) {
+          ctx.globalAlpha = 1; ctx.strokeStyle = EVIDENCE_SILENT; ctx.lineWidth = 1;
+          ctx.strokeRect(x + .5, y + .5, Math.max(1, w - 1), Math.max(1, h - 1));
+          continue;
+        }
+        ctx.globalAlpha = verdict === 2 ? alpha * .28 : verdict === 1 ? alpha * .55 : alpha;
         // A one-pixel gap keeps repeated notes of one pitch from welding into a single bar.
         ctx.fillRect(x, y, detailed && w > 3 ? w - 1 : w, h);
       }
       ctx.globalAlpha = 1;
+      // Only once the row is opened: folded, the curve is a dense scribble over the notes it was cut into.
+      if (detailed && lane.contour && layout.kind === 'pitch') drawContour(ctx, lane.contour, layout, rowHeight, surface.total, width, offset, visibleWidth, color);
       if (detailed) drawPitchNames(ctx, layout, rowHeight, pitchTop, height, view.labelX);
+    }
+
+    // The vocal line's pitch curve (score-vocals.json), over its notes in the part's own colour. Gaps (unvoiced
+    // frames, stored as null) break the line rather than being bridged.
+    function drawContour(ctx, contour, layout, rowHeight, total, width, offset, visibleWidth, color) {
+      const {hop, start, midi} = contour;
+      if (!(hop > 0) || !Array.isArray(midi) || !(total > 0)) return;
+      const first = Math.max(0, Math.floor(((offset / width) * total - start) / hop) - 1);
+      const last = Math.min(midi.length, Math.ceil((((offset + visibleWidth) / width) * total - start) / hop) + 1);
+      ctx.save(); ctx.strokeStyle = color; ctx.globalAlpha = .9; ctx.lineWidth = 1.5; ctx.beginPath();
+      let open = false;
+      for (let k = first; k < last; k += 1) {
+        const value = midi[k];
+        if (!Number.isFinite(value)) { open = false; continue; }
+        const x = ((start + k * hop) / total) * width, y = (layout.high - value) * rowHeight + rowHeight / 2;
+        if (open) ctx.lineTo(x, y); else { ctx.moveTo(x, y); open = true; }
+      }
+      ctx.stroke(); ctx.restore();
     }
 
     // A line under every C, drawn beneath the notes.
@@ -747,6 +788,7 @@
     // distinction between violin and cello has been sitting in the file all along, unread.
     function laneName(lane) {
       if (!lane) return '';
+      if (lane.stem === 'vocals / backing') return rt('runtime.timeline.backing');
       const name = lane.instrument?.name?.trim();
       if (!name) return lane.instrument ? `${lane.stem} ${lane.instrument.index + 1}` : lane.stem;
       return `${lane.stem} · ${name}`;
@@ -803,7 +845,15 @@
     // Section starts of the top section row, drawn down through a focused part as its time reference.
     function sectionMarks(rows) {
       const row = rows.find(r => r.kind === 'section');
-      return row ? row.result.segments.map(s => Number(s.start) || 0).filter(t => t > 0).sort((a, b) => a - b) : [];
+      return row ? shownSegments(row.result).map(s => Number(s.start) || 0).filter(t => t > 0).sort((a, b) => a - b) : [];
+    }
+
+    // A section engine's result comes with tidied `sections` (core/sections.cjs, attached by the main process): the
+    // lane shows those names in the interface language and colours by the first raw label. Others are shown as they are.
+    function shownSegments(result) {
+      if (!Array.isArray(result?.sections)) return result.segments;
+      const english = String(document.documentElement?.lang || '').toLowerCase().startsWith('en');
+      return result.sections.map(row => ({ start: row.start, end: row.end, label: english ? row.name.en : row.name.zh, rawLabel: row.label, rawLabels: row.labels, colourLabel: row.colour }));
     }
 
     // A focused lane fills the window down to the player instead of a fixed share of it, and its rows shrink until
@@ -892,6 +942,7 @@
       $('timelineTitle').textContent = rt('runtime.timeline.title');
       if (!selectable()) { noteSelecting = false; selectionKeys.clear(); }
       renderSelection();
+      renderEvidence();
       host.classList.toggle('tl-note-selecting',noteSelecting);
       $('timelineHint').textContent = rt(midiEditor?.active() ? 'runtime.edit.canvasHint' : noteSelecting ? 'runtime.selection.hint' : rangeSelecting ? 'runtime.audition.rangeHint' : annotating ? 'runtime.timeline.annotateHint' : focusStem ? 'runtime.timeline.focusHint' : 'runtime.timeline.hint');
       $('timelineLoopChoose')?.setAttribute('aria-pressed', rangeSelecting ? 'true' : 'false');
@@ -932,6 +983,7 @@
         : loading ? rt('runtime.timeline.loading')
           : focusStem ? rt('runtime.timeline.focused', { stem: laneName(lookup(focusStem)) || focusStem, count: lanes.length })
             : rt('runtime.timeline.summary', { sections: rows.filter(r => r.kind === 'section').length, chords: rows.filter(r => r.kind === 'harmony').length, stems: noteLanes.length });
+      renderToolbar();   // after the focus check above: a vanished lane must take the 本轨 row with it
       const reference=$('timelineReference');
       if(reference){
         reference.hidden=!selected||stripMode==='off';
@@ -976,10 +1028,11 @@
         element.dataset.axis = row.axis;
         const head = document.createElement('div');
         head.className = 'tl-row-head';
-        head.innerHTML = `<strong>${escapeHtml(result.engine?.name || result.engine?.id || '')}</strong><span>${escapeHtml(rt('runtime.timeline.segments', { count: result.segments.length }))}</span>`;
+        const shown = shownSegments(result);
+        head.innerHTML = `<strong>${escapeHtml(result.engine?.name || result.engine?.id || '')}</strong><span>${escapeHtml(rt('runtime.timeline.segments', { count: shown.length }))}</span>`;
         const body = document.createElement('div');
         body.className = 'tl-row-body';
-        for (const segment of result.segments) {
+        for (const segment of shown) {
           const start = Number(segment.start) || 0, end = Number(segment.end) || start;
           const block = document.createElement('div');
           block.className = 'tl-seg';
@@ -992,9 +1045,9 @@
           block.annotationId = row.kind === 'manual' ? (segment.id || null) : null;
           block.style.left = `${Math.max(0, start / total) * 100}%`;
           block.style.width = `${Math.max(.2, ((end - start) / total) * 100)}%`;
-          block.style.background = segmentColor(row.kind, result.engine?.id, segment.label);
+          block.style.background = segmentColor(row.kind, result.engine?.id, segment.colourLabel ?? segment.rawLabel ?? segment.label);
           block.textContent = String(segment.label ?? '?');
-          block.title = `${segment.label} · ${clock(start)}–${clock(end)}`;
+          block.title = `${segment.label}${segment.rawLabels ? ` (${segment.rawLabels.join(' + ')})` : ''} · ${clock(start)}–${clock(end)}`;
           body.append(block);
         }
         attachLane(body, total, row.axis);
@@ -1016,8 +1069,11 @@
         head.type = 'button';
         head.className = 'tl-row-head tl-row-toggle';
         head.title = rt(detailed ? 'runtime.timeline.focusExit' : 'runtime.timeline.focus');
-        const subtitle = lane.wavOnly ? rt('runtime.hybrid.waveform') : laneSubtitle(lane);
-        head.innerHTML = `<strong>${escapeHtml(laneName(lane))} · ${escapeHtml(lane.engine === 'manual-revision' ? rt('runtime.assets.runStatus.manual') : lane.engineName || lane.engine)}${lane.isDraft ? ' *' : ''}</strong>`
+        const subtitle = lane.status === 'none' ? rt('runtime.timeline.vocalsNone') : lane.wavOnly ? rt('runtime.hybrid.waveform') : laneSubtitle(lane);
+        const engineLabel = lane.engine === 'manual-revision' ? rt(evidenceFor(lane)?.appliedFrom ? 'runtime.evidence.refined' : 'runtime.assets.runStatus.manual')
+          : lane.engine === 'score-vocals' ? rt('runtime.timeline.vocalsEngine')
+          : lane.stem === 'vocals / backing' ? rt('runtime.timeline.splitEngine') : lane.engineName || lane.engine;
+        head.innerHTML = `<strong>${escapeHtml(laneName(lane))} · ${escapeHtml(engineLabel)}${lane.isDraft ? ' *' : ''}</strong>`
           + `<span>${escapeHtml(lane.wavOnly?'WAV':rt('runtime.timeline.notes', { count: lane.noteCount }))}${subtitle ? ' · ' + escapeHtml(subtitle) : ''}`
           + `${detailed && spans ? ' · ' + escapeHtml(roleMix(spans, total)) : ''}</span>`;
         head.addEventListener('click', () => setFocus(detailed ? null : lane.laneId));
@@ -1337,6 +1393,113 @@
       // Every lane object is new, so anything holding one of their note arrays is now holding a stale copy.
       onLanesChanged?.(focusStem);
       render();
+      loadEvidence(request);
+    }
+
+    // --- checking the notes against the stems ----------------------------------------------------------------
+    // 核对 asks the stem about every note of a run and stores the answer beside it; nothing in the run changes.
+    // 精修 makes a new version without the notes that sit in silence (and, if ticked, with the short ones
+    // lengthened). The original stays in the version list. Both act on the focused part, or on every part.
+    function evidenceTargets() {
+      const focused = lookup(focusStem);
+      const stems = focused ? [focused.stem] : [...new Set(lanes.map(lane => lane.stem))];
+      return stems.map(stem => lanes.find(lane => lane.stem === stem)).filter(lane => lane && lane.runId && lane.editable && !lane.wavOnly);
+    }
+    async function loadEvidence(request) {
+      if (!bridge.readMidiEvidence) return;
+      const wanted = new Map(lanes.filter(lane => lane.runId && lane.editable).map(lane => [lane.stem, lane.runId]));
+      for (const [stem, found] of [...evidence]) if (wanted.get(stem) !== found.runId) evidence.delete(stem);
+      for (const [stem, runId] of wanted) {
+        if (evidence.get(stem)?.runId === runId) continue;
+        let value = null;
+        try { value = await bridge.readMidiEvidence({trackId, stem, runId}); } catch (_) { value = null; }
+        if (request !== sequence) return;
+        if (value?.ok && value.flat) evidence.set(stem, {runId, verdicts: value.flat.verdicts, extend: value.flat.extend, totals: value.totals, appliedFrom: value.appliedFrom || null});
+      }
+      // A lane is repainted only when its view changes, and new verdicts change what is drawn without changing
+      // the view: forget the last view so the notes are drawn again.
+      for (const surface of surfaces.values()) surface.last = null;
+      render();
+    }
+    function renderEvidence() {
+      const check = $('timelineEvidenceCheck'), apply = $('timelineEvidenceApply'), status = $('timelineEvidenceStatus');
+      if (!check || !apply || !status) return;
+      const targets = evidenceTargets(), known = targets.map(evidenceFor).filter(Boolean);
+      const extend = Boolean($('timelineEvidenceExtend')?.checked);
+      const silent = known.reduce((sum, item) => sum + (item.totals?.silent || 0), 0);
+      const short = known.reduce((sum, item) => sum + (item.totals?.short || 0), 0);
+      const weak = known.reduce((sum, item) => sum + (item.totals?.weak || 0) + (item.totals?.noPitch || 0), 0);
+      const editing = Boolean(midiEditor?.active()) || targets.some(lane => lane.isDraft);
+      check.textContent = rt(evidenceBusy ? 'runtime.evidence.working' : 'runtime.evidence.check');
+      check.disabled = evidenceBusy || loading || !targets.length;
+      check.title = rt('runtime.evidence.checkHint');
+      apply.textContent = rt(evidenceArmed ? 'runtime.evidence.confirm' : 'runtime.evidence.apply');
+      apply.disabled = evidenceBusy || loading || editing || !(silent || (extend && short));
+      apply.setAttribute('aria-pressed', evidenceArmed ? 'true' : 'false');
+      apply.title = rt(editing ? 'runtime.evidence.editing' : 'runtime.evidence.applyHint');
+      $('timelineEvidenceExtendLabel').textContent = rt('runtime.evidence.extend', {count: short});
+      $('timelineEvidenceExtend').disabled = evidenceBusy || !short;
+      status.textContent = evidenceNote || (evidenceArmed ? rt('runtime.evidence.armed', {silent, short: extend ? short : 0})
+        : !targets.length ? '' : !known.length ? rt('runtime.evidence.unchecked')
+        : rt('runtime.evidence.summary', {checked: known.length, parts: targets.length, silent, weak, short}));
+      evidenceView = {targets: targets.length, fixable: Boolean(silent || (extend && short)), short};
+      renderToolbar();
+    }
+    // The toolbar shows rows and the 更多 menu from the same state the buttons above were drawn from.
+    function renderToolbar() {
+      toolbar?.render({focused: Boolean(focusStem), annotating, selecting: noteSelecting && !midiEditor?.active(),
+        busy: evidenceBusy, loading, armed: evidenceArmed, ...evidenceView});
+    }
+    async function checkEvidence() {
+      if (evidenceBusy || !bridge.checkMidiEvidence) return;
+      const id = trackId, failed = [];
+      evidenceBusy = true; evidenceArmed = false;
+      for (const lane of evidenceTargets()) {
+        evidenceNote = rt('runtime.evidence.checking', {part: laneName(lane)}); renderEvidence();
+        let result = null;
+        try { result = await bridge.checkMidiEvidence({trackId: id, stem: lane.stem, runId: lane.runId}); } catch (error) { result = {ok: false, error: String(error)}; }
+        if (id !== trackId) break;
+        if (!result?.ok) failed.push(laneName(lane) + ' (' + (result?.error || 'request-failed') + ')');
+        else evidence.delete(lane.stem);
+      }
+      evidenceBusy = false;
+      evidenceNote = failed.length ? rt('runtime.evidence.failed', {parts: failed.join(', ')}) : '';
+      if (id === trackId) await loadEvidence(sequence); else renderEvidence();
+    }
+    async function applyEvidence() {
+      if (evidenceBusy || !bridge.applyMidiEvidence) return;
+      if (!evidenceArmed) { evidenceArmed = true; evidenceNote = ''; renderEvidence(); return; }
+      const id = trackId, extend = Boolean($('timelineEvidenceExtend')?.checked), failed = [];
+      let removed = 0, lengthened = 0;
+      evidenceBusy = true; evidenceArmed = false;
+      for (const lane of evidenceTargets()) {
+        const found = evidenceFor(lane);
+        if (!found || !((found.totals?.silent || 0) || (extend && (found.totals?.short || 0)))) continue;
+        evidenceNote = rt('runtime.evidence.applying', {part: laneName(lane)}); renderEvidence();
+        let result = null;
+        try { result = await bridge.applyMidiEvidence({trackId: id, stem: lane.stem, runId: lane.runId, removeSilent: true, extend}); } catch (error) { result = {ok: false, error: String(error)}; }
+        if (result?.ok) { removed += result.removed || 0; lengthened += result.lengthened || 0; }
+        else if (result?.error !== 'evidence-no-change') failed.push(laneName(lane) + ' (' + (result?.error === 'evidence-empties-instrument' ? rt('runtime.evidence.empties') : result?.error || 'request-failed') + ')');
+        if (id !== trackId) break;
+      }
+      evidenceBusy = false;
+      evidenceNote = rt('runtime.evidence.applied', {removed, lengthened}) + (failed.length ? ' ' + rt('runtime.evidence.failed', {parts: failed.join(', ')}) : '');
+      if (id === trackId) await refresh(); else renderEvidence();
+    }
+    function bindEvidence() {
+      // The row goes under the audition bar, found through a control that is known to sit in it.
+      const bar = $('timelineAudition')?.parentElement;
+      if (!bar?.insertAdjacentElement || !bridge.checkMidiEvidence || $('timelineEvidence')) return;
+      const row = document.createElement('div');
+      row.id = 'timelineEvidence'; row.className = 'timeline-audition timeline-evidence';
+      row.innerHTML = '<button type="button" id="timelineEvidenceCheck" class="quiet-button"></button>'
+        + '<button type="button" id="timelineEvidenceApply" class="quiet-button" aria-pressed="false"></button>'
+        + '<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" id="timelineEvidenceExtend" style="width:16px;height:16px;min-height:0!important;padding:0!important">'
+        + '<span id="timelineEvidenceExtendLabel"></span></label><span id="timelineEvidenceStatus" role="status"></span>';
+      bar.insertAdjacentElement('afterend', row);
+      $('timelineEvidenceCheck').addEventListener('click', checkEvidence);
+      $('timelineEvidenceApply').addEventListener('click', applyEvidence);
+      $('timelineEvidenceExtend').addEventListener('change', () => { evidenceArmed = false; evidenceNote = ''; renderEvidence(); });
     }
 
     function setStripMode(mode) {
@@ -1390,6 +1553,11 @@
       $('timelineFocusExit')?.addEventListener('click', () => setFocus(null));
       $('timelineLoopChoose')?.addEventListener('click', () => setRangeSelecting(!rangeSelecting));
       $('timelineSelectNotes')?.addEventListener('click', () => setNoteSelecting(!noteSelecting));
+      bindEvidence();
+      // 核对全部轨 is the old unfocused 核对原声; it lives in the 更多 menu because the 本轨 row is gone without a focus.
+      toolbar = globalThis.XldTimelineToolbar?.create({document, rt,
+        onCheckAll: () => { if (!focusStem) checkEvidence(); },
+        onApplyAll: () => { if (!focusStem) applyEvidence(); }}) || null;
       $('timelineSelectionClear')?.addEventListener('click', clearSelection);
       $('timelineAnnotate')?.addEventListener('click', () => setAnnotating(!annotating));
       $('timelineLocate')?.addEventListener('click', () => locatePlayhead());
@@ -1400,6 +1568,7 @@
       window.addEventListener('resize', () => { if (!$('workspaceTimeline')?.hidden) render(); });
       window.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || $('workspaceTimeline')?.hidden) return;
+        if (toolbar?.close(true)) return;   // an open 更多 menu takes the first Esc
         if (cancelNoteGesture) { cancelNoteGesture(); return; }
         // Escape clears a choice before leaving its mode or the focused lane.
         if (draft) { draft = null; renderEditor(); return; }

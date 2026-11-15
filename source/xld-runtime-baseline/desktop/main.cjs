@@ -16,24 +16,15 @@ const {defaultUserPaths} = require('../../shared-analysis/user-paths.cjs');
 const DEFAULT_LIBRARY_ROOT = defaultUserPaths(app).libraryRoot;
 const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus']);
 const COVER_NAMES = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.png', 'front.jpg', 'front.png'];
-const {MSAF_ENGINE_IDS, AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS} = require('../core/result-engines.cjs');
+const {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS, REMOVED_RESULT_ENGINE_IDS, isDeletableResultEngineId} = require('../core/result-engines.cjs');
 const ANNOTATIONS_FILENAME = 'manual-tags.json';
 const MUSIC_LAB_FILENAME = 'music-lab.json';
-const ANALYSIS_SECONDS_PER_MINUTE = {
-  msaf: 6.0,
-  'msaf-sf': .7,
-  'msaf-foote': .7,
-  'msaf-cnmf': 1.3,
-  songformer: 7.0,
-  'chord-cqt': 2.2,
-  'chord-cens': .35,
-  'chord-hybrid': .45
-};
 const trackIndex = new Map();
 let libraryRoot = DEFAULT_LIBRARY_ROOT;
 let analysisRootPath = null;
 const {consumeRequest} = require('../core/open-request.cjs');
 const { createService } = require('../core/analysis-service.cjs');
+const { withSections, bridgeSegments } = require('../core/sections.cjs');
 let mainWindow = null;
 const mainLocale = createMainLocaleController();
 
@@ -153,6 +144,7 @@ function analysisDirectoryForTrack(track) {
 const derivedAssets = createDerivedAssets({analysisRoot});
 const midiRevision = require('../core/midi-revision.cjs').createMidiRevision({analysisRoot, assets: derivedAssets});
 const midiDrafts=require('../core/midi-drafts.cjs').createMidiDrafts({assets:derivedAssets});
+const midiEvidence = require('../core/midi-evidence.cjs').createMidiEvidence({assets: derivedAssets, revision: midiRevision});
 const analysisService = createService({
   xldRoot: ANALYSIS_RUNTIME_ROOT,
   // Surplus MIDI versions go to the Recycle Bin, never to fs.rm. Without this callback retention only reports.
@@ -438,8 +430,8 @@ function firstExisting(candidates) {
   return null;
 }
 
-// Beta reuses the stable build's MSAF venv read-only (no reinstall). Override
-// with XLD_PYTHON if the stable project lives elsewhere.
+// The stable build's base analysis venv, reused read-only (no reinstall) as the last fallback for the chord
+// runner. Override with XLD_PYTHON if the stable project lives elsewhere.
 function getLocalPython() {
   return firstExisting([
     process.env.XLD_PYTHON,
@@ -506,12 +498,8 @@ async function buildMusicLabManifest(trackId) {
     duration: Number(result.duration) || duration,
     analyzedRanges: Array.isArray(result.analyzedRanges) ? result.analyzedRanges : null,
     metrics: result.metrics || null,
-    segments: (result.segments || []).map(segment => ({
-      start: Number(segment.start) || 0,
-      end: Number(segment.end) || 0,
-      label: String(segment.label ?? '?'),
-      confidence: Number.isFinite(Number(segment.confidence)) ? Number(segment.confidence) : null
-    }))
+    // start / end / label / confidence as always; section engines' segments also carry the tidied `name`.
+    segments: bridgeSegments(result, Number(result.duration) || duration)
   });
   return {
     schemaVersion: 2,
@@ -632,15 +620,28 @@ async function readMidiNotes(trackId, selection = null) {
         instrumentOf(index), index])
     });
   }
-  try {return {ok:true,trackId:track.id,...await mixAudioCatalog.read(track,lanes,selection)};}
+  // The vocals row (core/score-vocals.cjs vocalsRow): the vocals MIDI run when there is one, with the vocal line's
+  // pitch curve; otherwise a current vocal line read-only, as before vocals became a part; otherwise the plain WAV
+  // row every untranscribed stem has. The stored lead plays as the row's audio and the backing gets a WAV row of
+  // its own; with no split the stem plays.
+  let vocalSplit = null;
+  try {
+    analysisService.setAnalysisRoot(analysisRoot());
+    const vocals = await analysisService.readScoreVocals(track);
+    lanes.splice(0, lanes.length, ...require('../core/score-vocals.cjs').vocalsRow(lanes, vocals));
+    if (vocals.state === 'current' && vocals.split) vocalSplit ={lead: vocals.split.lead, backing: vocals.split.backing, stemRunId: vocals.source.stemRunId};
+  } catch (_) { vocalSplit = null; }
+  try {return {ok:true,trackId:track.id,...await mixAudioCatalog.read(track,lanes,selection,{vocalSplit})};}
   catch(error){return {ok:false,error:error.message,trackId:track.id,lanes:[]};}
 }
 
 const resultDeletion = () => require('../core/result-delete.cjs').createResultDeletion({ getRoot: analysisRoot, trash: file => shell.trashItem(file) });
+// 'all' means the engines the track page shows; the removed engines' leftovers are cleared from the library sweep,
+// which lists them by name first.
 const expandEngines = engine => engine === 'all' ? RESULT_ENGINE_IDS
   : engine === 'section-all' ? SECTION_ENGINE_IDS
     : engine === 'harmony-all' ? HARMONY_ENGINE_IDS
-      : isResultEngine(engine) ? [engine] : [];
+      : isDeletableResultEngineId(engine) ? [engine] : [];
 // One track's worth of deletion, without the interlock: the callers take it once around whatever they are doing,
 // so a sweep over sixty results does not grab and release it sixty times.
 async function deleteResultsFor(track, engines) {
@@ -673,8 +674,10 @@ async function deleteAnalysisResult(trackId, engine = null) {
 // something is running, and the scan is a few hundred milliseconds over the whole library, so it is fetched when
 // the panel opens rather than on every render.
 async function sweepResults(engines = null) {
-  const kinds = Object.fromEntries([...SECTION_ENGINE_IDS.map(id => [id, 'section']), ...HARMONY_ENGINE_IDS.map(id => [id, 'harmony'])]);
-  const wanted = Array.isArray(engines) && engines.length ? engines.filter(isResultEngine) : Object.keys(kinds);
+  // Leftovers of the removed engines are listed as their own kind, 'removed', so they can be found and cleared.
+  const kinds = Object.fromEntries([...SECTION_ENGINE_IDS.map(id => [id, 'section']), ...HARMONY_ENGINE_IDS.map(id => [id, 'harmony']),
+    ...REMOVED_RESULT_ENGINE_IDS.map(id => [id, 'removed'])]);
+  const wanted = Array.isArray(engines) && engines.length ? engines.filter(isDeletableResultEngineId) : Object.keys(kinds);
   const tracks = [...trackIndex.values()].map(track => ({ trackId: track.id, title: track.title, album: track.album, directory: analysisDirectoryForTrack(track) }));
   const sweep = require('../core/result-sweep.cjs').createResultSweep({ engineKinds: kinds });
   return { ok: true, root: analysisRoot(), ...await sweep.scan(tracks, { engines: wanted }) };
@@ -689,7 +692,7 @@ async function deleteResultsBulk(items) {
   for (const item of items) {
     const track = trackIndex.get(String(item?.trackId || ''));
     if (!track) return { ok: false, error: 'unknown-track' };
-    if (!isResultEngine(item?.engine)) return { ok: false, error: 'unknown-engine' };
+    if (!isDeletableResultEngineId(item?.engine)) return { ok: false, error: 'unknown-engine' };
     if (!grouped.has(track)) grouped.set(track, new Set());
     grouped.get(track).add(item.engine);
   }
@@ -772,14 +775,6 @@ function probeSeparationModes() {
   });
 }
 
-const msafUnavailable = () => MSAF_ENGINE_IDS.map(id => ({
-  id,
-  name: id === 'msaf' ? 'MSAF · Spectral' : `MSAF · ${id.slice(5).toUpperCase()}`,
-  available: false,
-  family: 'msaf',
-  status: 'MSAF 运行时未安装'
-}));
-
 const aiUnavailable = () => AI_ENGINE_IDS.map(id => ({
   id,
   name: id === 'songformer' ? 'SongFormer · AI' : id,
@@ -792,35 +787,30 @@ const aiUnavailable = () => AI_ENGINE_IDS.map(id => ({
 const HARMONY_RUNNER = path.join(__dirname, '..', 'analysis-harmony', 'harmony_runner.py');
 const harmonyUnavailable = () => HARMONY_ENGINE_IDS.map(id => ({
   id,
-  name: id === 'chord-cqt' ? 'Librosa · CQT / HMM'
-    : id === 'chord-cens' ? 'Librosa · CENS / HMM'
-    : id === 'chord-btc' ? 'BTC · Transformer'
+  name: id === 'chord-btc' ? 'BTC · Transformer'
     : id === 'chord-chordmini' ? 'ChordMini · BTC-CL'
-    : id === 'chord-consonance' ? 'consonance-ACE · Conformer' : 'Hybrid · Bass + Extended',
+    : id === 'chord-consonance' ? 'consonance-ACE · Conformer' : id,
   available: false,
   family: 'harmony',
-  resource: id === 'chord-hybrid' ? 'CPU MEDIUM' : 'CPU LIGHT',
-  status: 'Harmony 运行时缺少 Librosa'
+  resource: 'GPU',
+  status: '和弦运行时未找到'
 }));
 
-// MSAF engines first, AI engines after — so the AI lane renders alongside the
-// four MSAF lanes. Each family runs in its own Python environment.
+// Section engine (SongFormer) first, chord engines after. Each family runs in its own Python environment.
 async function detectEngines() {
-  const msafRunner = path.join(ANALYSIS_RUNTIME_ROOT, 'analysis', 'runner.py');
   const aiRunner = path.join(ANALYSIS_RUNTIME_ROOT, 'analysis-ai', 'songformer_runner.py');
   const harmonyRunner = HARMONY_RUNNER;
-  const [msaf, ai, harmony] = await Promise.all([
-    probeEngines(getLocalPython(), msafRunner),
+  const [ai, harmony] = await Promise.all([
     probeEngines(getAiPython(), aiRunner),
     probeEngines(getHarmonyPython(), harmonyRunner)
   ]);
-  const msafList = Array.isArray(msaf) && msaf.length ? msaf : msafUnavailable();
   const aiList = Array.isArray(ai) && ai.length ? ai : aiUnavailable();
   const harmonyList = Array.isArray(harmony) && harmony.length ? harmony : harmonyUnavailable();
   // A retired engine is not offered for new analysis. It is deliberately NOT removed from the registry, so its
-  // stored results stay readable and stay deletable — the sweep is how they get cleared.
+  // stored results stay readable and stay deletable — the sweep is how they get cleared. Only registered ids pass:
+  // an older runner that still lists a removed engine does not bring it back.
   const retired = require('../core/result-engines.cjs').isRetiredResultEngine;
-  return [...msafList, ...aiList, ...harmonyList].filter(engine => !retired(engine?.id));
+  return [...aiList, ...harmonyList].filter(engine => isResultEngine(engine?.id) && !retired(engine?.id));
 }
 
 function taskSnapshot() { return analysisService.task(); }
@@ -848,7 +838,8 @@ async function writeErrorRecord(task, detail) {
 }
 
 let midiSourceChanging=false;
-const storageManager=require('../core/storage.cjs').createStorage({getRoot:analysisRoot,isBusy:()=>Boolean(analysisService.task()||midiSourceChanging),trash:directory=>shell.trashItem(directory)});
+const storageManager=require('../core/storage.cjs').createStorage({getRoot:analysisRoot,isBusy:()=>Boolean(analysisService.task()||midiSourceChanging),trash:directory=>shell.trashItem(directory),
+ optimizer:require('../core/refinement-storage.cjs').createOptimizer({assets:derivedAssets,trackForDirectory:directory=>[...trackIndex.values()].find(track=>path.resolve(analysisDirectoryForTrack(track))===path.resolve(directory)),trash:file=>shell.trashItem(file)})});
 
 async function executeAnalysis(trackId, engine, options = {}) {
   if(storageManager.busy()||midiSourceChanging)return {ok:false,error:"存储管理正在操作文件，请稍后重试"};
@@ -869,7 +860,9 @@ async function executeAnalysis(trackId, engine, options = {}) {
 
 async function runAnalysis(_event, trackId, engine, range = null, auto = false, separation = 'none') {
   const sep = HARMONY_ENGINE_IDS.includes(engine) && ['hpss','demucs'].includes(separation) ? separation : 'none';
-  return executeAnalysis(trackId,engine,{range,auto,separation:sep});
+  const response = await executeAnalysis(trackId,engine,{range,auto,separation:sep});
+  // The screens show the tidied section names (core/sections.cjs); the file on disk stays as the engine wrote it.
+  return response?.ok && response.result ? {...response, result: withSections(response.result)} : response;
 }
 
 async function cancelAnalysis(taskId) {
@@ -936,6 +929,7 @@ app.whenReady().then(async () => {
     try {
       const result=await (operation==='keep'?analysisService.keepRefinement(track,options):analysisService.readRefinement(track,options));
       if(operation==='reveal'&&result.ok){const error=await shell.openPath(result.directory);return {ok:!error,error:error||null};}
+      if(result.ok&&result.auditions)for(const item of Object.values(result.auditions))item.sourceAudio=await mixAudioReader.register(require('node:url').fileURLToPath(item.url),track.id);
       return result;
     }catch(error){return {ok:false,error:error.message};}
   });
@@ -990,7 +984,7 @@ app.whenReady().then(async () => {
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     try{
       const exporter=require('../core/midi-export.cjs').createMidiExport({assets:derivedAssets,protectedRoots:()=>[analysisRoot(),app.getAppPath()]});
-      const args={stem:payload?.stem,runId:payload?.runId},prepared=await exporter.prepare(track,args);
+      const args={stem:payload?.stem,runId:payload?.runId,variant:payload?.variant||'canonical'},prepared=await exporter.prepare(track,args);
       if(!prepared.ok)return prepared;
       const drafts=await midiDrafts.list(track);
       if(!drafts.ok)return drafts;
@@ -1022,6 +1016,31 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     analysisService.setAnalysisRoot(analysisRoot());
     try{return await midiRevision.inspect(track,payload?.stem,payload?.runId);}
     catch(error){return {ok:false,error:error.message};}
+  });
+  // Checking a run against its stem writes one sidecar into the analysis root, and applying the result saves a
+  // revision and moves the active pointer, so both join the same mutex as saving a hand edit. Reading does not.
+  for(const operation of ['check','apply'])ipcMain.handle('assets:midi-evidence-'+operation,async(_event,payload)=>{
+    if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
+    const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    analysisService.setAnalysisRoot(analysisRoot());
+    midiSourceChanging=true;
+    try{
+      const result=await midiEvidence[operation](track,{stem:payload?.stem,runId:payload?.runId,
+        removeSilent:payload?.removeSilent!==false,extend:Boolean(payload?.extend)});
+      // The sidecar's per-note arrays stay in the main process; the interface asks for them by reading.
+      if(result?.ok)delete result.evidence;
+      return result;
+    }catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
+  });
+  ipcMain.handle('assets:midi-evidence-read',async(_event,payload)=>{
+    const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    analysisService.setAnalysisRoot(analysisRoot());
+    try{
+      const result=await midiEvidence.read(track,{stem:payload?.stem,runId:payload?.runId});
+      // The interface needs the flat arrays and the counts, not the stored document.
+      if(result?.evidence)result.evidence=true;
+      return result;
+    }catch(error){return {ok:false,error:error.message};}
   });
   ipcMain.handle('assets:keep-midi-run',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
@@ -1065,7 +1084,16 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     const midiInputs=Object.fromEntries((stems.ok?stems.stems:[]).filter(item=>require('../core/derived-assets.cjs').STEMS.includes(item.name)).map(item=>[item.name,{runId:stems.runId,audioUrl:item.audioUrl}]));
     if(strings.active)midiInputs.strings=strings.active;
     const midiSourceKey=JSON.stringify([stems.ok?stems.runId:null,strings.active?.runId||null]);
-    return {...stems, midi, variants, stemVariants, merged,strings,midiInputs,midiSourceKey};
+    // Whether 生成 MIDI for vocals has to make the vocal line first (`due`, core/score-vocals.cjs), whether the song
+    // has singing at all, and the digest of the current line, which a vocals-rmvpe run must have been converted from
+    // to count as reusable. The state name is shown, never the result.
+    let vocals={state:'no-stem',due:false};
+    try{const read=await analysisService.readScoreVocals(track);vocals={state:read.state,due:read.due,sung:Boolean(read.result?.lane)};
+      if(read.state==='current'){const line=await analysisService.readVocalLine(track);if(line.ok)vocals.sha256=line.sha256;}}catch(_){}
+    // A few file checks: the one-click analysis marks vocals unavailable up front (when a run is owed, or will be once the
+    // track is separated) instead of failing on that step.
+    if(vocals.state!=='current')vocals.missing=require('../core/score-vocals.cjs').addonsMissing();
+    return {...stems, midi, variants, stemVariants, merged,strings,midiInputs,midiSourceKey,vocals};
   });
   ipcMain.handle('assets:reveal', async (_event, payload) => {
     const track = trackIndex.get(String(payload?.trackId || ''));
@@ -1077,7 +1105,10 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
   });
   ipcMain.handle('analysis:engines', detectEngines);
   ipcMain.handle('analysis:separation-modes', probeSeparationModes);
-  ipcMain.handle('analysis:load', (_event, payload) => loadAnalysis(payload.trackId, payload.engine));
+  ipcMain.handle('analysis:load', async (_event, payload) => {
+    const loaded = await loadAnalysis(payload.trackId, payload.engine);
+    return Array.isArray(loaded) ? loaded.map(result => withSections(result)) : withSections(loaded);
+  });
   ipcMain.handle('analysis:summary', analysisSummary);
   ipcMain.handle('assets:wav-chunk', async (_event,payload) => {try{return await mixAudioReader.chunk(payload||{});}catch(error){return {ok:false,error:error.message};}});
   ipcMain.handle('assets:midi-notes', (_event, payload) => readMidiNotes(payload?.trackId,payload?.selection ?? null));
@@ -1091,6 +1122,12 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
   ipcMain.handle('storage:scan',storageReply(async()=>({ok:true,...await storageManager.scan()})));
   ipcMain.handle('storage:keep',storageReply(payload=>{if(typeof payload?.value!=='boolean')throw Error('storage-options-invalid');return storageManager.protect(payload.item,payload.value);}));
   ipcMain.handle('storage:reveal',storageReply(async payload=>{const error=await shell.openPath(await storageManager.reveal(payload.item));return {ok:!error,error};}));
+  ipcMain.handle('storage:cancel-optimize',()=>storageManager.cancelOptimize());
+  ipcMain.handle('storage:optimize',storageReply(payload=>storageManager.optimize(payload?.item,payload?.mode||'trash',async plan=>{
+   if(plan.mode!=='permanent')return true;
+   const en=mainLocale.getState()?.locale==='en-US',result=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:en?['Cancel','Optimize and delete copies']:['取消','优化并删除副本'],defaultId:0,cancelId:0,noLink:true,
+    title:en?'Optimize audio copies':'优化音频副本',message:plan.rows[0].track+' · '+(plan.bytes/1024**3).toFixed(2)+' GiB',detail:en?'Only verified redundant copies are permanently removed. Target, residual and MIDI stay intact. Older XLD versions cannot read the optimized result.':'仅永久删除已校验的冗余副本；提取结果、剩余声音和 MIDI 保留。优化后的结果不支持旧版 XLD。'});return result.response===1;
+  })));
   ipcMain.handle('storage:clear',storageReply(payload=>storageManager.clear(payload?.items,payload?.mode,async plan=>{
    const permanent=plan.mode==='permanent',english=mainLocale.getState()?.locale==='en-US';
    const size=(plan.bytes/1024**3).toFixed(2)+' GiB';

@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
       const albumCards = document.querySelectorAll('.album-card').length;
       const selectedTitle = document.querySelector('#albumTitle')?.textContent;
       const visibleTracks = document.querySelectorAll('.track-row').length;
-      const msafReady = [...document.querySelectorAll('.engine-card')].some(card => card.textContent.includes('MSAF') && card.textContent.includes('READY'));
+      const sectionEngineReady = [...document.querySelectorAll('.engine-card')].some(card => card.textContent.includes('SongFormer') && card.textContent.includes('READY'));
       document.querySelector('.track-row')?.click();
       await waitUntil(() => document.querySelector('#analysisTargetTitle')?.textContent !== '请单击选择一首曲目');
       const singleClickDidNotPlay = document.querySelector('#nowTitle')?.textContent === '尚未播放';
@@ -70,7 +70,7 @@ app.whenReady().then(async () => {
         await waitUntil(() => document.querySelectorAll('.comparison-row').length >= 2, 200);
         analysisCompleted = document.querySelectorAll('.comparison-row').length >= 2;
         analysisBlocks = document.querySelectorAll('.segment-block').length;
-        analysisBadge = [...document.querySelectorAll('.track-analysis-badge')].some(badge => badge.textContent.includes('SC') && badge.textContent.includes('✓'));
+        analysisBadge = [...document.querySelectorAll('.track-analysis-badge')].some(badge => badge.textContent.includes('AI') && badge.textContent.includes('✓'));
         comparisonRows = document.querySelectorAll('.comparison-row').length;
       } else if (${JSON.stringify(process.env.XLD_ANALYSIS_SMOKE === '1')}) {
         const targetAlbum = [...document.querySelectorAll('.album-card')].find(card => card.textContent.includes('The Lie Lay Land'));
@@ -80,32 +80,21 @@ app.whenReady().then(async () => {
         targetTrack?.click();
         await waitUntil(() => document.querySelector('#analysisTargetTitle')?.textContent.includes('song cemetery'));
         document.querySelector('#audioElement')?.pause();
-        const msaf = [...document.querySelectorAll('.engine-card')].find(card => card.textContent.includes('MSAF · Spectral'));
-        msaf?.click();
+        // The section tab has one engine since the clustering engines were removed, so the old two-engine
+        // (XLD_MULTI_ANALYSIS_SMOKE) branch is gone.
+        const sectionCard = [...document.querySelectorAll('.engine-card')].find(card => card.textContent.includes('SongFormer'));
+        sectionCard?.click();
         document.querySelector('#analyzeButton')?.click();
-        mark('spectral requested');
+        mark('songformer requested');
         taskShown = await waitUntil(() => !document.querySelector('#taskCard')?.classList.contains('hidden'), 100);
-        mark('spectral task visible=' + taskShown);
+        mark('songformer task visible=' + taskShown);
         const otherTrack = [...document.querySelectorAll('.track-row')].find(row => row.dataset.trackId !== targetTrack?.dataset.trackId);
-        const busyResponse = await window.XLD.runAnalysis(otherTrack?.dataset.trackId, 'msaf-sf');
+        const busyResponse = await window.XLD.runAnalysis(otherTrack?.dataset.trackId, 'songformer');
         busyRejected = busyResponse?.error === 'analysis-busy';
         analysisCompleted = await waitUntil(() => document.querySelectorAll('.comparison-row').length > 0, 1600);
-        mark('spectral comparison=' + analysisCompleted);
+        mark('songformer comparison=' + analysisCompleted);
         analysisBlocks = document.querySelectorAll('.segment-block').length;
-        analysisBadge = [...document.querySelectorAll('.track-analysis-badge')].some(badge => badge.textContent.includes('SC') && badge.textContent.includes('✓'));
-        if (${JSON.stringify(process.env.XLD_MULTI_ANALYSIS_SMOKE === '1')}) {
-          await waitUntil(() => !document.querySelector('#analyzeButton')?.disabled, 200);
-          mark('button released');
-          const sf = [...document.querySelectorAll('.engine-card')].find(card => card.textContent.includes('MSAF · SF'));
-          sf?.click();
-          await waitUntil(() => !document.querySelector('#analyzeButton')?.disabled && document.querySelector('#analyzeButton')?.textContent.includes('MSAF · SF'), 200);
-          mark('sf selected');
-          document.querySelector('#analyzeButton')?.click();
-          await waitUntil(() => document.querySelector('#taskKicker')?.textContent === 'ANALYSIS RUNNING', 100);
-          mark('sf task requested');
-          await waitUntil(() => document.querySelectorAll('.comparison-row').length >= 2, 1600);
-          mark('sf comparison ready');
-        }
+        analysisBadge = [...document.querySelectorAll('.track-analysis-badge')].some(badge => badge.textContent.includes('AI') && badge.textContent.includes('✓'));
         comparisonRows = document.querySelectorAll('.comparison-row').length;
       }
       return {
@@ -114,7 +103,7 @@ app.whenReady().then(async () => {
         albumCards,
         selectedTitle,
         visibleTracks,
-        msafReady,
+        sectionEngineReady,
         singleClickDidNotPlay,
         nowTitle: document.querySelector('#nowTitle')?.textContent,
         coverReady: Boolean(document.querySelector('#albumCover')?.getAttribute('src')),
@@ -136,7 +125,7 @@ app.whenReady().then(async () => {
       libraryScanned: result.albumCards >= 4,
       albumSelected: Boolean(result.selectedTitle),
       tracksListed: result.visibleTracks >= 2,
-      msafReady: result.msafReady,
+      sectionEngineReady: result.sectionEngineReady,
       spotifySelection: result.singleClickDidNotPlay,
       trackSelected: result.nowTitle !== '尚未播放',
       coverReady: result.coverReady,

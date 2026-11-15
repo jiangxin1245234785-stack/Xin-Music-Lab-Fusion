@@ -165,7 +165,7 @@ const HEADER = Buffer.from('4d546864000000060000000103c04d54726b0000000400ff2f00
       const read = name => require('node:fs').readFileSync(path.join(__dirname, '..', name), 'utf8');
       const module_ = read('core/midi-revision.cjs'), service = read('core/analysis-service.cjs');
       // pythonFor() cannot serve this: 'manual-revision' is deliberately absent from ENGINE_IDS, so every MIDI branch
-      // in pythonFor misses and it falls through to the MSAF interpreter, which has no pretty_midi.
+      // in pythonFor misses and it falls through to the base analysis interpreter, which has no pretty_midi.
       assert(/process\.env\.XLD_MIDI_PYTHON/.test(module_), 'the writer names its interpreter explicitly');
       // The name appears in a comment explaining why it cannot be used, so the check has to look at code.
       // Comments are stripped rather than the assertion loosened, which would have quietly stopped checking.

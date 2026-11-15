@@ -343,7 +343,7 @@ input[type="range"] { accent-color: var(--violet); height: 3px; cursor: pointer;
   .engine-list { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
 
-/* XLD v0.3 · focused MSAF workbench */
+/* XLD v0.3 · focused analysis workbench */
 .font-controls {
   margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 4px;
   border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.025);
@@ -524,3 +524,7 @@ input[type="range"] { accent-color: var(--violet); height: 3px; cursor: pointer;
 .refinement-range select{min-height:40px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;}
 
 .storage-dialog{box-sizing:border-box;width:min(1050px,94vw);max-height:88vh;color:var(--text);background:#12151d;border:1px solid var(--line);border-radius:18px;padding:24px;overflow:auto}.storage-dialog::backdrop{background:#000b}.storage-heading,.storage-toolbar,.storage-footer,.storage-row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.storage-heading{justify-content:space-between}.storage-heading h2{margin:0}.storage-path{color:var(--muted);overflow-wrap:anywhere;font-size:12px}.storage-toolbar input{flex:1;min-width:150px}.storage-toolbar input,.storage-toolbar select,.storage-footer select{color:var(--text);background:#1b1f2c;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}.storage-rows{display:grid;gap:8px;margin:16px 0;max-height:47vh;overflow:auto}.storage-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px}.storage-row strong,.storage-row small{display:block;overflow-wrap:anywhere}.storage-row small{color:var(--muted);margin-top:5px}.storage-row-actions{justify-content:flex-end}.storage-footer{position:sticky;bottom:-24px;background:#12151d;padding:16px 0}.storage-footer strong{flex:1}#storageStatus{color:#bde9df}#storageHelp{max-width:900px}@media(max-width:650px){.storage-dialog{padding:16px}.storage-row{grid-template-columns:24px minmax(0,1fr)}.storage-row-actions{grid-column:2;justify-content:flex-start}.storage-footer{bottom:-16px}}
+.transport-buttons button svg, .transport-buttons button svg * { pointer-events: none; }
+#workspace-tab-timeline { display: none; }
+#playButton { position: relative; }
+#playButton::after { content: attr(data-source-label); position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 500; color: var(--muted, #9898a8); pointer-events: none; }

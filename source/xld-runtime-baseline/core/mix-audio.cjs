@@ -57,7 +57,10 @@ function createAudioReader(){
 }
 // Only validated complements are offered. No user-provided paths cross the playback IPC boundary.
 function createCatalog({assets,refinement,reader}){
- async function read(track,midi,selection=null){
+ // `vocalSplit` ({lead, backing, stemRunId}, core/score-vocals.cjs) stands in for the vocal stem the way a full Mega
+ // refinement stands in for its parent: the lead carries the vocal notes, the backing is its own WAV row, and the two
+ // sum back to the stem, so the mix stays whole.
+ async function read(track,midi,selection=null,{vocalSplit=null}={}){
   const base=await assets.readStems(track),directory=assets.directory(track),groups=[],warnings=[];
   const folder=path.join(directory,'refinement');
   const names=await fs.readdir(folder).catch(()=>[]);
@@ -84,12 +87,22 @@ function createCatalog({assets,refinement,reader}){
    const sourceAudio=await reader.register(file,track.id);
    if(Math.abs(sourceAudio.duration-expected)>1/sourceAudio.sampleRate+.00001)throw Error('mix-timebase');
    if(added.has(sourceAudio.key))throw Error('mix-duplicate-source');added.add(sourceAudio.key);
+   // One row per stem: for vocals the caller has already chosen between the vocals MIDI run and the read-only
+   // score-vocals line (desktop/main.cjs), so there is never more than one candidate.
    const m=midi.find(l=>l.stem===midiStem&&l.sourceRunId===runId);
    // Preserve the editor's persisted source identity. PCM cache identity is separate.
    lanes.push(m?{...m,sourceAudio:{...sourceAudio,key:m.sourceAudio?.key||sourceAudio.key},duration:sourceAudio.duration}:{stem,engineName,noteCount:0,notes:[],instruments:[],editable:false,wavOnly:true,duration:sourceAudio.duration,sourceAudio});
   }
   if(!chosen.some(g=>g.parent==='mix')&&base.ok){
-   for(const stem of base.stems)if(!chosen.some(g=>g.parent===stem.name))await add(stem.name,fileURLToPath(stem.audioUrl),base.engine,base.runId,stem.frames/stem.sampleRate);
+   for(const stem of base.stems){
+    if(chosen.some(g=>g.parent===stem.name))continue;
+    if(stem.name==='vocals'&&vocalSplit&&vocalSplit.stemRunId===base.runId){
+     await add('vocals',vocalSplit.lead,'karaoke · lead',base.runId,stem.frames/stem.sampleRate);
+     await add('vocals / backing',vocalSplit.backing,'karaoke · backing',base.runId,stem.frames/stem.sampleRate,null);
+     continue;
+    }
+    await add(stem.name,fileURLToPath(stem.audioUrl),base.engine,base.runId,stem.frames/stem.sampleRate);
+   }
   }
   for(const g of chosen){
    const r=g.record;

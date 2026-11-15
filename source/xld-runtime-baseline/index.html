@@ -93,7 +93,9 @@
             <div class="hero-actions">
               <button id="playAlbumButton" class="primary-button"><span>▶</span> <span data-i18n="static.album.play">播放专辑</span></button>
               <button id="shuffleAlbumButton" class="secondary-button" data-i18n="static.album.shuffle">随机播放</button>
-              <button id="batchAlbumButton" class="secondary-button" title="对整张专辑逐曲运行 SongFormer 段落 + BTC 和弦（严格串行，可取消）">整张专辑批量(段落+和弦)</button>
+              <button id="batchAlbumButton" class="secondary-button" title="对整张专辑逐曲一键分析：段落、和弦（ChordMini）、分轨、转谱、融合 MIDI；已有的跳过（严格串行，可取消）">整张专辑一键分析</button>
+              <button id="scoreLayersTrackButton" class="secondary-button" title="给选中的这首歌补上谱面要用的小节线、响度和人声曲线（XML 的「谱面」场景用）">谱面层 · 这首歌</button>
+              <button id="scoreLayersAlbumButton" class="secondary-button" title="给整张专辑逐曲补谱面层；已经有的直接跳过（严格串行，可取消）">谱面层 · 整张专辑</button>
             </div>
           </div>
         </section>
@@ -124,6 +126,13 @@
       <div id="workspaceContent" class="analysis-panel workspace-content" role="tabpanel" aria-labelledby="workspace-tab-overview" tabindex="0">
         <section id="workspaceOverview">
   <div class="workspace-overview-heading"><div><h2 data-workspace-copy="overviewTitle">歌曲概览</h2><p id="workspaceOverviewHint"></p></div><button id="workspaceRefresh" class="quiet-button" data-workspace-copy="refresh">刷新结果</button></div>
+  <section id="oneclickPanel" class="oneclick-card" aria-labelledby="oneclickTitle">
+    <div class="oneclick-head"><div><strong id="oneclickTitle">一键分析</strong><small id="oneclickHint" class="derived-hint"></small></div><div id="oneclickPreset" class="oneclick-preset" role="radiogroup"></div></div>
+    <details id="oneclickChoices" class="oneclick-choices"><summary id="oneclickChoicesSummary">具体选择</summary><div id="oneclickChoiceList" class="oneclick-choice-list"></div></details>
+    <div class="oneclick-actions"><button id="oneclickTrack" class="primary-button" type="button" disabled>分析这首歌</button><button id="oneclickAlbum" class="secondary-button" type="button" disabled>分析整张专辑</button></div>
+    <ol id="oneclickSteps" class="oneclick-steps" hidden></ol>
+    <small id="oneclickStatus" class="derived-hint" aria-live="polite"></small>
+  </section>
   <div id="workspaceResults" class="workspace-results"></div>
   <section class="workspace-export"><div><strong data-workspace-copy="toXml">用于 XML 可视化</strong><p data-workspace-copy="exportHint">段落、和弦与人工标签通过现有接口交给 XML。</p></div><button id="exportMusicLabButton" class="icon-text-button" disabled data-i18n="static.result.export">更新 Music Lab 接口</button>
         <span id="integrationStatus">版本化 JSON · 尚未导出</span></section>
@@ -234,6 +243,7 @@
           <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听 WAV</button><button id="derivedMidiListen" class="secondary-button" disabled>试听 MIDI</button></div>
           </div><div id="derivedModels" class="engine-list midi-engine-list" role="group" aria-label="MIDI 模型"></div>
           <details class="compact-help"><summary data-workspace-copy="modelNotes">模型说明</summary><small id="derivedMidiHint" class="derived-hint">选择 bass、piano、guitar 或 drums 后生成 MIDI</small></details>
+          <div id="derivedTempoPanel" class="compact-help" hidden><small id="derivedTempoStatus" class="derived-hint"></small><button id="derivedTempoExport" type="button" class="quiet-button">导出变速谱面</button></div>
           <details id="derivedMidiVersionsBlock" class="compact-help"><summary id="derivedMidiVersionsSummary">模型版本</summary><div id="derivedMidiVersions" class="midi-version-list"></div></details>
           <div class="derived-actions"><button id="derivedTranscribe" class="primary-button" disabled>生成 MIDI</button><button id="derivedMidi" class="icon-text-button" disabled>打开 MIDI 目录</button><button id="derivedDeleteMidi" class="icon-text-button" disabled>删除 MIDI</button></div>
 </section>
@@ -258,13 +268,13 @@
         <div><span id="labEyebrow" class="eyebrow">SECTION LAB</span><h2 id="labTitle">段落评测台</h2></div>
         <span id="analysisState" class="analysis-state">待机</span>
       </div>
-<details id="workspaceModelOptions" class="workspace-model-options"><summary><span id="workspaceModelSummary"></span><span data-workspace-copy="changeModel">更换模型</span></summary>      <p id="labNote" class="analysis-note">原样对照各分析器的边界与聚类：MSAF 的相同字母仅表示同一算法认为结构相似；SongFormer (AI) 直接给出功能性段落（前奏 / 主歌 / 副歌…）。XLD 不融合也不重新解释任何分析器的判断。</p>
+<details id="workspaceModelOptions" class="workspace-model-options"><summary><span id="workspaceModelSummary"></span><span data-workspace-copy="changeModel">更换模型</span></summary>      <p id="labNote" class="analysis-note">SongFormer（AI）给出功能性段落（前奏 / 主歌 / 副歌…），XLD 原样显示，不重新解释。</p>
 
       <div id="engineList" class="engine-list"></div>
 
       <section id="harmonyPolicy" class="harmony-policy hidden">
-        <div><span class="eyebrow" data-i18n="static.resource.eyebrow">资源保护</span><strong data-i18n="static.resource.summary">三种方案串行执行，共享一次色度缓存</strong></div>
-        <span data-i18n="static.resource.note">仅使用 CPU · 不与 SongFormer 抢占 GPU · 结果不自动融合</span>
+        <div><span class="eyebrow" data-i18n="static.resource.eyebrow">资源保护</span><strong data-i18n="static.resource.summary">三种模型按顺序运行</strong></div>
+        <span data-i18n="static.resource.note">三种模型都在有显卡时用 GPU。各模型结果分别保存。</span>
         <label id="separationToggleRow" class="separation-toggle hidden" title="用 Demucs v4 去鼓和人声，仅将伴奏送入和弦引擎。" data-i18n-title="static.separation.title">
           <input type="checkbox" id="separationToggle">
           <span><span data-i18n="static.separation.prefix">和弦分析前先用</span> <strong data-i18n-raw>Demucs</strong> <span data-i18n="static.separation.suffix">分离伴奏（去鼓 + 去人声 · GPU）</span></span>
@@ -288,7 +298,7 @@
 
       <div class="analysis-actions">
         <button id="analyzeButton" class="primary-button" disabled>选择曲目后分析</button>
-        <button id="analyzeAllButton" class="secondary-button batch-button" disabled>一键运行四种 MSAF</button>
+        <button id="analyzeAllButton" class="secondary-button batch-button" disabled hidden>一键运行全部和弦模型</button>
       </div>
 
       <section class="comparison-card">
@@ -372,6 +382,7 @@
   <script src="midi-edit.js"></script>
   <script src="midi-editor-controls.js"></script>
   <script src="track-layout.js"></script>
+<script src="timeline-toolbar.js"></script>
 <script src="timeline-controls.js"></script>
   <script src="refinement-controls.js"></script>
   <script src="storage-controls.js"></script>
@@ -381,8 +392,12 @@
   <script src="workbench-properties.js"></script>
   <script src="workspace-controls.js"></script>
   <script src="wav-stream.js"></script>
+  <script src="refinement-player.js"></script>
 <script src="audition-controls.js"></script>
   <script src="playback-controls.js"></script>
+  <script src="score-layers-controls.js"></script>
+  <script src="oneclick-plan.js"></script>
+  <script src="oneclick-controls.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

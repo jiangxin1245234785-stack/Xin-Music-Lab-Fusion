@@ -56,22 +56,32 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
   return {...identity,scope,input,parent,stem,sourceStem,cacheKey:crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex'),directory:directory(track)};
  }
  async function validate(result,ctx) {
-  if(result?.kind!=='refinement'||result.schemaVersion!==2||!idPattern.test(result.runId||'')||result.trackId!==ctx.trackId||result.parentRunId!==ctx.parentRunId||result.cacheKey!==ctx.cacheKey||result.engine!==ctx.engine||result.sourceStem!==ctx.sourceStem||result.target!==ctx.target||result.requestedDevice!==ctx.device)throw Error('refinement-stale');
+  if(result?.kind!=='refinement'||![2,3].includes(result.schemaVersion)||!idPattern.test(result.runId||'')||result.trackId!==ctx.trackId||result.parentRunId!==ctx.parentRunId||result.cacheKey!==ctx.cacheKey||result.engine!==ctx.engine||result.sourceStem!==ctx.sourceStem||result.target!==ctx.target||result.requestedDevice!==ctx.device)throw Error('refinement-stale');
   if((result.scope||'preview')!==ctx.scope)throw Error('refinement-scope-stale');
   const stem=ctx.stem,frames=Math.min(Math.round(ctx.duration*stem.sampleRate),stem.frames-Math.round(ctx.start*stem.sampleRate));
   if(result.frames!==frames||result.channels!==stem.channels||result.sampleRate!==stem.sampleRate||result.timeOrigin!==Math.round(ctx.start*stem.sampleRate)/stem.sampleRate||Math.abs(result.duration-frames/stem.sampleRate)>1e-6||!Number.isFinite(result.reconstructionError)||result.reconstructionError>1e-5)throw Error('refinement-invalid');
-  for(const name of ['original','target','residual']){
-   if(result.files?.[name]!==result.runId+'/'+name+'.wav')throw Error('refinement-path-invalid');
-   if((await fs.stat(path.join(ctx.directory,result.files[name]))).size<frames*stem.channels*4)throw Error('refinement-incomplete');
+  const compact=result.schemaVersion===3,reference=compact&&result.originalSource;
+  if(compact&&(!result.files||Object.keys(result.files).some(name=>!(reference?['target','residual']:['original','target','residual']).includes(name))))throw Error('refinement-path-invalid');
+  if(reference){
+   if(ctx.sourceStem==='mix'||reference.kind!=='stem'||reference.runId!==ctx.parentRunId||reference.stem!==ctx.sourceStem||reference.startFrame!==Math.round(ctx.start*stem.sampleRate)||reference.frames!==frames||reference.size!==ctx.size||!Number.isFinite(reference.mtimeMs)||Math.abs(reference.mtimeMs-ctx.mtimeMs)>1||result.files?.original)throw Error('refinement-source-stale');
+   await require('./storage.cjs').guarded(path.dirname(ctx.directory),ctx.input);
+   const input=await fs.open(ctx.input,'r');try{const h=await require('./mix-audio.cjs').header(input,ctx.size);if(h.code!==3||h.bits!==32||h.frames!==stem.frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-source-stale');}finally{await input.close();}
   }
-  if(ctx.scope==='full'&&!result.playback)throw Error('refinement-playback-missing');
+  for(const name of reference?['target','residual']:['original','target','residual']){
+   if(result.files?.[name]!==result.runId+'/'+name+'.wav')throw Error('refinement-path-invalid');
+   const file=path.join(ctx.directory,result.files[name]),stat=await fs.stat(file);
+   if(stat.size<frames*stem.channels*4)throw Error('refinement-incomplete');
+   if(compact){await require('./storage.cjs').guarded(ctx.directory,file);const f=await fs.open(file,'r');try{const h=await require('./mix-audio.cjs').header(f,stat.size);if(h.code!==3||h.bits!==32||h.frames!==frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-audio-invalid');}finally{await f.close();}}
+  }
+  if((compact||ctx.scope==='full')&&!result.playback)throw Error('refinement-playback-missing');
   if(result.playback){
    const {gain,peaks,files}=result.playback;
    if(!Number.isFinite(gain)||gain<=0||gain>1)throw Error('refinement-playback-invalid');
    for(const name of ['original','target','residual']){
     const expected=result.runId+'/'+(gain<1?'listen-':'')+name+'.wav';
-    if(!Number.isFinite(peaks?.[name])||peaks[name]<0||peaks[name]*gain>1||files?.[name]!==expected)throw Error('refinement-playback-invalid');
-    if((await fs.stat(path.join(ctx.directory,expected))).size<frames*stem.channels*4)throw Error('refinement-playback-incomplete');
+    if(!Number.isFinite(peaks?.[name])||peaks[name]<0||peaks[name]*gain>1||(!compact&&files?.[name]!==expected))throw Error('refinement-playback-invalid');
+    if(compact){if(result.playback.mode!=='dynamic'||files)throw Error('refinement-playback-invalid');}
+    else if((await fs.stat(path.join(ctx.directory,expected))).size<frames*stem.channels*4)throw Error('refinement-playback-incomplete');
    }
   }
   return result;
@@ -81,7 +91,11 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
    const ctx=await context(track,options),result=await validate(JSON.parse(await fs.readFile(path.join(ctx.directory,ctx.cacheKey+'.json'),'utf8')),ctx);
    let kept=false;try{const selected=JSON.parse(await fs.readFile(path.join(ctx.directory,'kept',ctx.cacheKey+'.json'),'utf8'));kept=selected.runId===result.runId;}catch(_){}
    try{const flag=JSON.parse(await fs.readFile(path.join(ctx.directory,result.runId,'.xld-keep.json'),'utf8'));kept=kept||flag.runId===result.runId;}catch(_){}
-   return {ok:true,...result,kept,directory:path.join(ctx.directory,result.runId),rawUrls:Object.fromEntries(Object.entries(result.files).map(([key,file])=>[key,pathToFileURL(path.join(ctx.directory,file)).href])),urls:Object.fromEntries(Object.entries(result.playback?.files||result.files).map(([key,file])=>[key,pathToFileURL(path.join(ctx.directory,file)).href]))};
+   const rawUrls=Object.fromEntries(Object.entries(result.files).map(([key,file])=>[key,pathToFileURL(path.join(ctx.directory,file)).href]));
+   if(result.originalSource)rawUrls.original=pathToFileURL(ctx.input).href;
+   const urls=result.schemaVersion===3?rawUrls:Object.fromEntries(Object.entries(result.playback?.files||result.files).map(([key,file])=>[key,pathToFileURL(path.join(ctx.directory,file)).href]));
+   const auditions=result.schemaVersion===3?Object.fromEntries(Object.entries(urls).map(([name,url])=>[name,{url,gain:result.playback.gain,sourceOffset:name==='original'&&result.originalSource?result.originalSource.startFrame/result.sampleRate:0}])):null;
+   return {ok:true,...result,kept,directory:path.join(ctx.directory,result.runId),rawUrls,urls,auditions};
   }catch(error){return {ok:false,error:error.code==='ENOENT'?'尚未生成当前范围的结果':error.message};}
  }
  async function keep(track,options={}) {

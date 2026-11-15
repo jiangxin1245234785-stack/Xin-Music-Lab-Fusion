@@ -10,10 +10,21 @@ const midiModule = require('./derived-assets.cjs');
 const {setInterval, clearInterval} = require('node:timers');
 
 const resultEngines = require('./result-engines.cjs');
-const {MSAF_ENGINE_IDS, AI_ENGINE_IDS, HARMONY_ENGINE_IDS} = resultEngines;
+const {bridgeSegments} = require('./sections.cjs');
+const {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, RESULT_ENGINE_IDS} = resultEngines;
 const STEM_ENGINE_ID = 'demucs-6s';
 const STEM_ENGINE_IDS = midiModule.SEPARATION_ENGINE_IDS;
-const RESULT_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
+// The listening score's own analyses, in analysis-score/: `score-layers` (beat grid, loudness, stem levels) and
+// `score-vocals` (the lead vocal's notes and pitch contour). They are started and stored like result engines
+// (`<id>.json` beside the others) but are not section or chord results, so they are deliberately not in
+// RESULT_ENGINE_IDS: music-lab.json, the result lists and deletion never see them.
+// `python` names the environment variable that holds the interpreter: the beat model lives in the MuScriptor
+// add-on, the lead-vocal split runs where the RoFormer separation runs.
+const SCORE_ENGINES = Object.freeze({
+  'score-layers': {runner: 'runner.py', python: 'XLD_MUSCRIPTOR_PYTHON'},
+  'score-vocals': {runner: 'vocals_runner.py', python: 'XLD_ROFORMER_PYTHON'}
+});
+const SCORE_ENGINE_IDS = Object.keys(SCORE_ENGINES);
 
 function safeName(value, fallback = 'Unknown') {
   const cleaned = String(value || '')
@@ -60,24 +71,27 @@ function createService(options = {}) {
   let activeTask = null;
 
   const runnerFor = engine => {
+    if (SCORE_ENGINES[engine]) return path.join(__dirname, '..', 'analysis-score', SCORE_ENGINES[engine].runner);
     if (midiModule.ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-midi', 'runner.py');
     if (STEM_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-separation', 'runner.py');
     if (AI_ENGINE_IDS.includes(engine)) return path.join(xldRoot, 'analysis-ai', 'songformer_runner.py');
     // Harmony runner moved into source (chords.1); BTC weights stay under xldRoot/analysis-harmony/btc/weights.
     if (HARMONY_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-harmony', 'harmony_runner.py');
-    return path.join(xldRoot, 'analysis', 'runner.py');
+    return null;
   };
 
   // Explicit configuration is authoritative, including an uninstalled path.
   const configuredPython = (key, fallback = []) => firstExisting(process.env[key] ? [process.env[key]] : fallback);
   const pythonFor = engine => {
+    if (SCORE_ENGINES[engine]) return firstExisting([process.env[SCORE_ENGINES[engine].python]]);
     if(midiModule.profileFor(engine)?.backend === 'muscriptor') return firstExisting([process.env.XLD_MUSCRIPTOR_PYTHON]);
     if(engine === 'yourmt3-plus') return firstExisting([process.env.XLD_YOURMT3_PYTHON]);
     if(engine === 'bs-roformer-sw') return configuredPython('XLD_ROFORMER_PYTHON', ['D:/Caches/codex/runtimes/xld-roformer/Scripts/python.exe']);
     if (midiModule.ENGINE_IDS.includes(engine)) return midiModule.profileFor(engine).backend !== 'basic-pitch'
       ? configuredPython('XLD_HIGHRES_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi-highres\\Scripts\\python.exe'])
       : configuredPython('XLD_MIDI_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi\\Scripts\\python.exe']);
-    const msaf = configuredPython('XLD_PYTHON', [
+    // The base analysis interpreter (XLD_PYTHON): no engine of its own any more, kept as the last fallback.
+    const base = configuredPython('XLD_PYTHON', [
       path.join(stableXldRoot, 'analysis', '.venv', 'Scripts', 'python.exe'),
       path.join(xldRoot, 'analysis', '.venv', 'Scripts', 'python.exe')
     ]);
@@ -86,8 +100,8 @@ function createService(options = {}) {
     ]);
     if (STEM_ENGINE_IDS.includes(engine) || AI_ENGINE_IDS.includes(engine)) return ai;
     if (engine === 'chord-consonance') return firstExisting([process.env.XLD_CHORDS_PYTHON]);
-    if (HARMONY_ENGINE_IDS.includes(engine)) return process.env.XLD_HARMONY_PYTHON || ai || msaf;
-    return msaf;
+    if (HARMONY_ENGINE_IDS.includes(engine)) return process.env.XLD_HARMONY_PYTHON || ai || base;
+    return base;
   };
 
   const analysisDirectory = track => track.bridgePath ? path.dirname(track.bridgePath) : midiModule.trackDirectory(track, analysisRoot);
@@ -128,7 +142,7 @@ function createService(options = {}) {
   };
 
   const probe = (python, runner) => new Promise(resolve => {
-    if (!python || !fsSync.existsSync(runner)) return resolve([]);
+    if (!python || !runner || !fsSync.existsSync(runner)) return resolve([]);
     const child = spawn(python, [runner, '--engines'], {
       windowsHide: true,
       env: { ...process.env, TORCH_HOME: process.env.TORCH_HOME || path.join(xldRoot, 'analysis-ai', 'torch-home') }
@@ -154,12 +168,12 @@ function createService(options = {}) {
   }
 
   async function detectEngines() {
-    const [msaf, ai, harmony] = await Promise.all([
-      probe(pythonFor('msaf'), runnerFor('msaf')),
+    const [ai, harmony] = await Promise.all([
       probe(pythonFor('songformer'), runnerFor('songformer')),
-      probe(pythonFor('chord-cqt'), runnerFor('chord-cqt'))
+      probe(pythonFor('chord-chordmini'), runnerFor('chord-chordmini'))
     ]);
-    return [...msaf, ...ai, ...harmony];
+    // Only registered engines: an older runner that still lists a removed engine does not bring it back.
+    return [...ai, ...harmony].filter(engine => RESULT_ENGINE_IDS.includes(engine?.id));
   }
 
   async function buildManifest(track, directory) {
@@ -180,12 +194,8 @@ function createService(options = {}) {
       duration: Number(result.duration) || duration,
       analyzedRanges: Array.isArray(result.analyzedRanges) ? result.analyzedRanges : null,
       metrics: result.metrics || null,
-      segments: result.segments.map(segment => ({
-        start: Number(segment.start) || 0,
-        end: Number(segment.end) || 0,
-        label: String(segment.label ?? '?'),
-        confidence: Number.isFinite(Number(segment.confidence)) ? Number(segment.confidence) : null
-      }))
+      // start / end / label / confidence as always; section engines' segments also carry the tidied `name`.
+      segments: bridgeSegments(result, Number(result.duration) || duration)
     });
     const manifest = {
       schemaVersion: 2,
@@ -229,6 +239,7 @@ function createService(options = {}) {
 
   const derivedAssets = midiModule.createDerivedAssets({analysisRoot: () => analysisRoot});
   const {readStems, validateStems} = derivedAssets;
+  const scoreVocals = require('./score-vocals.cjs');
 
   async function removeStemRun(directory, runId) {
     if (!/^[a-f0-9-]{36}$/.test(runId || '')) return;
@@ -276,6 +287,20 @@ function createService(options = {}) {
     } finally {if(activeTask===task)activeTask=null;emitTask(task,onTask);}
   }
 
+  // The vocal line a `vocals-rmvpe` run converts: score-vocals.json, current for the vocal stem by the one judgement
+  // in core/score-vocals.cjs, together with the SHA-256 of the exact bytes judged (the runner refuses anything else).
+  async function currentVocalLine(track) {
+    const directory = analysisDirectory(track), file = path.join(directory, scoreVocals.ENGINE + '.json');
+    const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+    const before = await fs.readFile(file).catch(() => null);
+    const state = await scoreVocals.read(derivedAssets, track, directory);
+    if (state.state === 'no-stem') throw new Error('midi-needs-stems');
+    if (state.state !== 'current') throw new Error('vocals-line-not-current');
+    const after = await fs.readFile(file);
+    if (!before || digest(before) !== digest(after)) throw new Error('vocals-line-not-current');
+    return {file, sha256: digest(after), sung: Boolean(state.result.lane), why: state.result.why || null};
+  }
+
   async function run(track, engine, runOptions = {}, onTask) {
     if (activeTask) return { ok: false, error: 'analysis-busy', task: taskSnapshot(activeTask) };
     if (!track?.id || !track?.filePath || !fsSync.existsSync(track.filePath)) return { ok: false, error: 'track-missing' };
@@ -288,9 +313,11 @@ function createService(options = {}) {
     const isStems = STEM_ENGINE_IDS.includes(engine);
     const isMidi = midiModule.ENGINE_IDS.includes(engine);
     const midiStem = runOptions.stem;
+    // `vocals-rmvpe`: the vocals part made from the track's score-vocals result rather than by a model of its own.
+    const fromVocalLine = isMidi && midiModule.profileFor(engine)?.backend === 'score-vocals';
     if (isMidi && !midiModule.STEMS.includes(midiStem)) return { ok: false, error: 'midi-stem-unsupported' };
     if (isMidi && (!midiModule.profileFor(engine).stems.includes(midiStem) || midiModule.profileFor(engine).retiredFor?.includes(midiStem))) return {ok:false,error:'midi-engine-unsupported'};
-    if (!isStems && !isMidi && !RESULT_ENGINE_IDS.includes(engine)) return { ok: false, error: 'engine-unavailable' };
+    if (!isStems && !isMidi && !RESULT_ENGINE_IDS.includes(engine) && !SCORE_ENGINE_IDS.includes(engine)) return { ok: false, error: 'engine-unavailable' };
     // Retired engines stop being startable. Everything else about them is unchanged: their stored results stay
     // readable, stay in music-lab.json and stay deletable, which is the difference between a flag and a removal.
     if (!isStems && !isMidi && resultEngines.isRetiredResultEngine(engine)) return { ok: false, error: 'engine-retired' };
@@ -318,12 +345,24 @@ function createService(options = {}) {
           elapsedSeconds: (Date.now() - task.startedAtMs) / 1000, ...extra }) + '\n', 'utf8');
       } catch (error) { task.logWarning = error.message; }
     };
+    let vocalLine = null;
     try {
       await log('start');
+      // The vocals part is the stored vocal line written as MIDI. Refused unless that line is current for the vocal
+      // stem (making it is the `score-vocals` run's job, started first by the 转谱 panel); a song with no singing
+      // gets no run at all, and that is an answer, not a failure.
+      if (fromVocalLine) {
+        vocalLine = await currentVocalLine(track);
+        if (!vocalLine.sung) {
+          task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '这首歌没有人声';
+          return { ok: true, kind: 'midi', noSinging: true, why: vocalLine.why, result: null, task: taskSnapshot(task) };
+        }
+      }
       if ((isStems || isMidi) && !runOptions.force) {
         const cached = isMidi ? await midiAssets.read(track, midiStem, engine) : await readStems(track, engine);
-        // A readable result from an earlier model version is not a cache hit for the current version.
-        if (cached.ok && !task.cancelled && (!isMidi || cached.matches)) {
+        // A readable result from an earlier model version is not a cache hit for the current version, and a vocals
+        // part converted from an earlier vocal line is not one for the line the track has now.
+        if (cached.ok && !task.cancelled && (!isMidi || cached.matches) && (!fromVocalLine || cached.backend?.scoreVocals?.sha256 === vocalLine.sha256)) {
           task.committing = true;
           // A cache hit produces nothing new, so activating it is pure side effect — and if the version currently
           // in use is a hand-edited revision, that side effect silently replaces the user's own work with a model
@@ -341,10 +380,29 @@ function createService(options = {}) {
             ...(isMidi ? {activated: !keepsRevision, keptActive: keepsRevision ? active.runId : null} : {}) };
         }
       }
+      // A score result made from the stems the track has now is answered from disk: the album button can be
+      // pressed again and only the gaps are filled. `force` runs it anyway.
+      // score-vocals is held to the vocal stem's path, size and modification time and to its stored lead / backing
+      // (core/score-vocals.cjs), the same question the one-click transcription and the timeline ask.
+      if (engine === 'score-vocals' && !runOptions.force) {
+        const state = await scoreVocals.read(derivedAssets, track, directory);
+        if (state.state === 'current' && !task.cancelled) {
+          task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '已读取人声曲线';
+          return { ok: true, kind: 'score', cached: true, result: state.result, task: taskSnapshot(task) };
+        }
+      } else if (SCORE_ENGINE_IDS.includes(engine) && !runOptions.force) {
+        const kept = await readJson(output, null);
+        const stems = await readStems(track).catch(() => null);
+        if (kept?.kind === engine && (kept.source?.stemRunId ?? null) === (stems?.ok ? stems.runId : null) && !task.cancelled) {
+          task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '已读取谱面层';
+          return { ok: true, kind: 'score', cached: true, result: kept, task: taskSnapshot(task) };
+        }
+      }
       if (!python || !fsSync.existsSync(runner)) throw new Error('runtime-missing');
-      const featureDirectory = engine.startsWith('msaf') ? path.join(directory, 'features')
-        : HARMONY_ENGINE_IDS.includes(engine) ? path.join(directory, 'features-harmony') : path.join(analysisRoot, '.tmp');
-      await fs.mkdir(featureDirectory, { recursive: true });
+      // Every runner gets the same scratch working directory. None of the remaining engines keeps a feature cache
+      // in the track folder (the per-track `features/` and `features-harmony/` caches belonged to removed engines).
+      const workDirectory = path.join(analysisRoot, '.tmp');
+      await fs.mkdir(workDirectory, { recursive: true });
       await fs.mkdir(directory, { recursive: true });
       await writeTrackMetadata(track, directory);
       const midiSource = isMidi ? await midiAssets.source(track, midiStem) : null;
@@ -352,6 +410,8 @@ function createService(options = {}) {
       const args = [runner, '--engine', engine, '--input', midiSource?.path || track.filePath, '--output', staging];
       if (isMidi) args.push('--track-id', track.id, '--stem', midiStem, '--source-run-id', midiSource.runId, '--run-id', task.taskId);
       if(isMidi && midiStem==='strings')args.push('--string-target',midiSource.target);
+      if(isMidi && midiModule.profileFor(engine)?.options?.tempoAnalysis)args.push('--beat-source',track.filePath);
+      if (fromVocalLine) args.push('--score-vocals', vocalLine.file, '--score-vocals-sha256', vocalLine.sha256);
       if (isStems) args.push('--track-id', track.id, '--run-id', task.taskId);
       if (engine === 'songformer') {
         if (runOptions.auto !== false) args.push('--auto');
@@ -371,7 +431,7 @@ function createService(options = {}) {
           if (Number.isFinite(payload.durationSeconds) && payload.durationSeconds > 0) task.durationSeconds = payload.durationSeconds;
           if (typeof payload.cacheHit === 'boolean') task.cacheHit = payload.cacheHit;
           if (task.durationSeconds && !task.estimatedSeconds && !isStems && !isMidi) {
-            const rates = {msaf:6, 'msaf-sf':.7, 'msaf-foote':.7, 'msaf-cnmf':1.3, songformer:7, 'chord-cqt':2.2, 'chord-cens':.35, 'chord-hybrid':.45};
+            const rates = {songformer:7};
             const featureRate = task.cacheHit ? 0 : HARMONY_ENGINE_IDS.includes(engine) ? 2.2 : 8;
             task.estimatedSeconds = Math.max(6, task.durationSeconds / 60 * ((rates[engine] || 5) + featureRate));
           }
@@ -380,7 +440,7 @@ function createService(options = {}) {
         } catch (_) {}
       };
       const code = await new Promise((resolve, reject) => {
-        const child = spawn(python, args, { windowsHide: true, cwd: featureDirectory,
+        const child = spawn(python, args, { windowsHide: true, cwd: workDirectory,
           env: { ...process.env, PYTHONIOENCODING: 'utf-8', TORCH_HOME: isStems
             ? (process.env.XLD_SEPARATION_TORCH_HOME || 'D:\\Caches\\codex\\models\\xld')
             : (process.env.TORCH_HOME || path.join(xldRoot, 'analysis-ai', 'torch-home')) } });
@@ -406,8 +466,9 @@ function createService(options = {}) {
       const previous = isMidi ? await midiAssets.read(track, midiStem, engine) : isStems ? await readStems(track, engine) : null;
       const result = await promoteResult(staging, output, isStems ? value => validateStems(value, track, engine) : isMidi ? async value => {
         if (value?.runId !== task.taskId) throw new Error('midi-invalid');
+        if (fromVocalLine && value?.backend?.scoreVocals?.sha256 !== vocalLine.sha256) throw new Error('vocals-line-not-current');
         return midiAssets.validate(value, track, midiStem, engine);
-      } : null);
+      } : engine === 'score-vocals' ? value => scoreVocals.validate(derivedAssets, track, directory, value) : null);
       committed = true;
       let response;
       if (isMidi) {
@@ -485,11 +546,15 @@ function createService(options = {}) {
     separationEngines,
     refinementEngines: refinement.available,
     readRefinement: refinement.read,
+    // {state, due, result?, split?, source}: whether the vocal line is current for the track's vocal stem.
+    readScoreVocals: track => scoreVocals.read(derivedAssets, track, analysisDirectory(track)),
+    // {ok, sha256, sung} of the vocal line a vocals-rmvpe run would convert now, or {ok:false, error}.
+    readVocalLine: track => currentVocalLine(track).then(({sha256, sung}) => ({ok: true, sha256, sung}), error => ({ok: false, error: error.message})),
     keepRefinement: refinement.keep,
     run,
     cancel,
     task: () => taskSnapshot(activeTask),
-    constants: Object.freeze({ MSAF_ENGINE_IDS, AI_ENGINE_IDS, HARMONY_ENGINE_IDS, RESULT_ENGINE_IDS, STEM_ENGINE_ID, STEM_ENGINE_IDS })
+    constants: Object.freeze({ AI_ENGINE_IDS, HARMONY_ENGINE_IDS, RESULT_ENGINE_IDS, STEM_ENGINE_ID, STEM_ENGINE_IDS })
   });
 }
 

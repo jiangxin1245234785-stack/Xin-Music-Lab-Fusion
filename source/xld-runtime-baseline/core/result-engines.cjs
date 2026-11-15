@@ -12,24 +12,31 @@
 //   - it simply stops being offered for new analysis.
 // Stopping the offer, uninstalling the environment and deleting past results are three separate decisions, and
 // this file only expresses the first.
-const MSAF_ENGINE_IDS = Object.freeze(['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf']);
 const AI_ENGINE_IDS = Object.freeze(['songformer']);
-const HARMONY_ENGINE_IDS = Object.freeze(['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance']);
-const SECTION_ENGINE_IDS = Object.freeze([...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS]);
+const HARMONY_ENGINE_IDS = Object.freeze(['chord-btc', 'chord-chordmini', 'chord-consonance']);
+const SECTION_ENGINE_IDS = Object.freeze([...AI_ENGINE_IDS]);
 const RESULT_ENGINE_IDS = Object.freeze([...SECTION_ENGINE_IDS, ...HARMONY_ENGINE_IDS]);
-const RETIRED_RESULT_ENGINES = Object.freeze({
-  // No listening comparison against SongFormer was ever recorded; the owner retired these knowing that, on the
-  // evidence that SongFormer is already the displayed source for 19 of the 22 tracks that have sections at all.
-  // Their 79 stored results stay readable and stay deletable — that is what a flag buys over a removal.
-  'msaf': {since: '2026-09-19', reason: 'SongFormer 成为唯一段落引擎；MSAF 四变体退出新建入口，既有结果照读照删'},
-  'msaf-sf': {since: '2026-09-19', reason: 'SongFormer 成为唯一段落引擎；MSAF 四变体退出新建入口，既有结果照读照删'},
-  'msaf-foote': {since: '2026-09-19', reason: 'SongFormer 成为唯一段落引擎；MSAF 四变体退出新建入口，既有结果照读照删'},
-  'msaf-cnmf': {since: '2026-09-19', reason: 'SongFormer 成为唯一段落引擎；MSAF 四变体退出新建入口，既有结果照读照删'}
+// No engine is retired at the moment; the flag stays for the next one.
+const RETIRED_RESULT_ENGINES = Object.freeze({});
+// 已移除的引擎 — removed from the code on 2026-11-14 at the owner's word (the four MSAF section engines, retired
+// since 2026-09-19, and the three Librosa chord engines, far behind the AI chord models). Unlike a retired engine
+// these are gone: nothing runs, reads or exports them, and music-lab.json no longer carries them. Their leftover
+// files (`<id>.json`, `.error.json`, `.cancelled.json`) are still named here for one reason only, so the library
+// sweep can list them under this name and move them to the Recycle Bin instead of leaving undeletable orphans.
+// This is the one place these ids are written down.
+const REMOVED_RESULT_ENGINES = Object.freeze({
+  'msaf': 'section', 'msaf-sf': 'section', 'msaf-foote': 'section', 'msaf-cnmf': 'section',
+  'chord-cqt': 'harmony', 'chord-cens': 'harmony', 'chord-hybrid': 'harmony'
 });
+const REMOVED_RESULT_ENGINE_IDS = Object.freeze(Object.keys(REMOVED_RESULT_ENGINES));
+const isRemovedResultEngineId = engine => REMOVED_RESULT_ENGINE_IDS.includes(engine);
+// What the sweep and deletion may name: the live engines and the removed ones' leftovers.
+const isDeletableResultEngineId = engine => RESULT_ENGINE_IDS.includes(engine) || isRemovedResultEngineId(engine);
 const isResultEngineId = engine => RESULT_ENGINE_IDS.includes(engine);
 const retirementOf = engine => RETIRED_RESULT_ENGINES[engine] || null;
 const isRetiredResultEngine = engine => Boolean(retirementOf(engine));
 // What may still be started. Reading and deleting deliberately do NOT consult this.
 const offeredResultEngines = () => RESULT_ENGINE_IDS.filter(engine => !isRetiredResultEngine(engine));
-module.exports = {MSAF_ENGINE_IDS, AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS,
-  RETIRED_RESULT_ENGINES, isResultEngineId, retirementOf, isRetiredResultEngine, offeredResultEngines};
+module.exports = {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS,
+  RETIRED_RESULT_ENGINES, REMOVED_RESULT_ENGINES, REMOVED_RESULT_ENGINE_IDS, isRemovedResultEngineId, isDeletableResultEngineId,
+  isResultEngineId, retirementOf, isRetiredResultEngine, offeredResultEngines};

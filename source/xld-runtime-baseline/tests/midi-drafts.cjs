@@ -12,6 +12,10 @@ const {createMidiDrafts}=require('../core/midi-drafts.cjs');
  assert.equal((await d.write(t,{...p,notes:[[1,2,60,80,0,0]]})).ok,false);
  assert.deepEqual(await fs.readdir(path.join(root,'midi','strings')),['drafts']);
  assert((await d.write(t,{...p,notes:null})).ok);assert.equal((await d.read(t,p)).draft,null);
- console.log('midi drafts: ok (run identity, contained paths, invalid notes refused, no active pointer writes)');
+ // Every MIDI stem the registry knows has drafts, vocals included (task V); a name outside it does not.
+ const v={...p,stem:'vocals',instrument:0,notes:[[1,2,60,80,0,0]]};
+ assert((await d.write(t,v)).ok);assert.deepEqual((await d.read(t,v)).draft.notes,v.notes);
+ assert.equal((await d.write(t,{...v,stem:'other'})).ok,false);
+ console.log('midi drafts: ok (run identity, contained paths, invalid notes refused, no active pointer writes, vocals drafts)');
  }finally{await fs.rm(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1});

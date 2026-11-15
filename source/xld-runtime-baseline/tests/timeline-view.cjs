@@ -25,7 +25,7 @@ assert(html.includes('id="timelineStrip"'), 'the strip selector is present');
 assert(!/altKey/.test(read('timeline-controls.js')), 'Alt is not used as a modifier');
 assert(html.indexOf('data-workspace-tab="timeline"') > html.indexOf('data-workspace-tab="midi"'), 'timeline tab sits after the transcription tab');
 const workspace = read('workspace-controls.js');
-assert(workspace.includes("'stems', 'midi', 'timeline'"), 'timeline registered as a tab');
+assert(workspace.includes("if (next === 'timeline') return;"), 'legacy timeline route preserves the open inspector');
 assert(workspace.includes("const resultCards = ['section', 'harmony', 'stems', 'midi']"), 'overview keeps one card per result type, not per tab');
 assert(workspace.includes("$('workspaceTimeline').hidden = false"), 'panel visibility wired');
 const app = read('app.js');
@@ -224,6 +224,40 @@ const controls = sandbox.window.XldTimelineControls.create({
   const first = segments.find(block => block.dataset.start === '0' && block.dataset.end === '100');
   assert(first, 'chord segment present');
   assert.equal(first.style.width, `${(100 / 420) * 100}%`, 'segment width uses the shared duration');
+  // One song, three paths, one string of names: the score view's adapter, this lane (fed the result the way the main
+  // process hands it over, with `sections` from core/sections.cjs) and the bridge manifest's per-segment `name`.
+  {
+    const {withSections, bridgeSegments} = require('../core/sections.cjs');
+    const {nameSections} = require('../../scoreview/adapter/track-model.cjs');
+    const song = JSON.parse(read('tests/fixtures/sections-songs.json')).songs.MEGURI;
+    const result = { engine: { id: 'songformer', name: 'SongFormer' }, duration: song.duration, segments: song.segments };
+    const saved = state.analysisResults;
+    const laneNames = async lang => {
+      sandbox.document.documentElement = { lang };
+      state.analysisResults = new Map([['songformer', withSections(result)]]);
+      await controls.refresh();
+      const lane = host.querySelectorAll('.tl-row').find(row => row.dataset.engine === 'songformer');
+      return lane.querySelectorAll('.tl-seg').map(block => block.textContent).join('｜');
+    };
+    const lane = await laneNames('zh-CN');
+    const adapter = nameSections(song.segments, 'songformer', song.duration).map(row => row[2]).join('｜');
+    const bridged = bridgeSegments(result, song.duration).map(s => s.name).filter(Boolean).filter((n, i, a) => i === 0 || a[i - 1] !== n).join('｜');
+    assert.equal(lane, '引子｜主歌 1｜副歌 1｜间奏 1｜主歌 2｜副歌 2｜间奏 2｜主歌 3｜副歌 3｜主歌 4｜间奏 3｜主歌 5｜副歌 4', 'the timeline shows the tidied names');
+    assert.equal(adapter, lane, 'score view and XLD timeline agree');
+    assert.equal(bridged, lane, 'bridge manifest and XLD timeline agree');
+    assert.equal(await laneNames('en'), 'Intro｜Verse 1｜Chorus 1｜Interlude 1｜Verse 2｜Chorus 2｜Interlude 2｜Verse 3｜Chorus 3｜Verse 4｜Interlude 3｜Verse 5｜Chorus 4', 'names follow the interface language');
+    const interlude = host.querySelectorAll('.tl-seg').find(block => block.textContent === 'Interlude 1');
+    assert.ok(interlude.title.includes('(intro)'), 'the raw label is in the tooltip');
+    // One colour per name, as rendered (2026-11-14): Interlude 1 was an intro, and still takes the interlude colour.
+    const sectionLane = host.querySelectorAll('.tl-row').find(row => row.dataset.engine === 'songformer');
+    const byName = {};
+    for (const block of sectionLane.querySelectorAll('.tl-seg')) (byName[block.textContent.replace(/\s+\d+$/, '')] ||= new Set()).add(block.style.background);
+    for (const [name, set] of Object.entries(byName)) assert.equal(set.size, 1, `every ${name} block one colour: ${[...set]}`);
+    assert.deepEqual([...byName.Interlude], ['#605d34'], 'interludes take the inst colour, a renamed intro too');
+    delete sandbox.document.documentElement;
+    state.analysisResults = saved;
+    await controls.refresh();
+  }
   // Opening the tab re-reads the notes, so activating a different MIDI shows up without reloading the analysis.
   controls.bind();
   let reads = 0;

@@ -1,7 +1,9 @@
-"""CPU-conscious harmony analysis for Xin's Local Deck.
+"""Chord recognition for Xin's Local Deck.
 
-Three independent lanes share one cached chroma extraction.  The lanes are
-deliberately not fused so the listener can compare their behaviour directly.
+Three neural engines (ChordMini, BTC, consonance-ACE), each writing its own
+result.  They are deliberately not fused so the listener can compare them.
+The Librosa template engines and their per-track chroma cache were removed on
+2026-11-14; nothing here writes into the working directory any more.
 """
 
 from __future__ import annotations
@@ -23,18 +25,14 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-SAMPLE_RATE = 22050
-HOP_LENGTH = 2048
-CACHE_VERSION = 2
-CACHE_NAME = f"harmony-features-v{CACHE_VERSION}.npz"
 SEPARATION_MODES = ("none", "hpss", "demucs")
-# >1 isolates the harmonic (pitched) layer more aggressively; chord/chroma
-# engines read cleaner once drums/transients are suppressed.
+# >1 isolates the harmonic (pitched) layer more aggressively; chord engines
+# read cleaner once drums/transients are suppressed.
 HPSS_MARGIN = 3.0
 # Demucs v4 stem model. We keep bass+other (vocals + drums removed) — the
-# harmonic accompaniment — which measurably lifts the chroma engines on
-# tonal/drum-heavy material. Weights live under TORCH_HOME (set to D: by the
-# launcher). The model is loaded once per process and reused across engines.
+# harmonic accompaniment — fed to the chord engines when the 「Demucs 分离伴奏」
+# switch is on. Weights live under TORCH_HOME (set to D: by the launcher). The
+# model is loaded once per process and reused across engines.
 DEMUCS_MODEL_NAME = "htdemucs"
 _DEMUCS_MODEL = None
 # BTC posterior-aware smoothing: flicker shorter than BTC_MIN_SECONDS is folded
@@ -42,45 +40,8 @@ _DEMUCS_MODEL = None
 # (posterior >= BTC_KEEP_CONFIDENCE) is treated as a genuine fast change and kept.
 BTC_MIN_SECONDS = 0.5
 BTC_KEEP_CONFIDENCE = 0.7
-PITCHES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
 
 ENGINES = [
-    {
-        "id": "chord-cqt",
-        "name": "Librosa · CQT / HMM",
-        "family": "harmony",
-        "status": "24 大小三和弦 + N · 瞬态响应较快",
-        "description": "Librosa CQT chroma · template likelihood · Viterbi smoothing",
-        "resource": "CPU LIGHT",
-        "vocabulary": "maj-min",
-        "feature": "cqt",
-        "change_penalty": 2.15,
-        "minimum_seconds": 1.15,
-    },
-    {
-        "id": "chord-cens",
-        "name": "Librosa · CENS / HMM",
-        "family": "harmony",
-        "status": "24 大小三和弦 + N · 稳定和声优先",
-        "description": "Librosa CENS chroma · template likelihood · strong Viterbi smoothing",
-        "resource": "CPU LIGHT",
-        "vocabulary": "maj-min",
-        "feature": "cens",
-        "change_penalty": 3.25,
-        "minimum_seconds": 2.20,
-    },
-    {
-        "id": "chord-hybrid",
-        "name": "Hybrid · Bass + Extended",
-        "family": "harmony",
-        "status": "根音加权 · 7 / maj7 / m7 / sus / dim",
-        "description": "Librosa CQT chroma + bass chroma · extended chord templates · Viterbi",
-        "resource": "CPU MEDIUM",
-        "vocabulary": "extended",
-        "feature": "hybrid",
-        "change_penalty": 1.85,
-        "minimum_seconds": 0.95,
-    },
     {
         "id": "chord-btc",
         "name": "BTC · Transformer",
@@ -134,18 +95,15 @@ def engine_list() -> list[dict]:
         elif weights == "chordmini":
             available = btc_available() and chordmini_weights().is_file()
             status = engine["status"] if available else "ChordMini 权重缺失(runtime/addons/chords-v1/models/chordmini)"
-        elif weights == "consonance-ace":
+        else:
             available = consonance_available()
             status = engine["status"] if available else "chords-v1 环境或 consonance-ACE 权重缺失(XLD_CHORDS_ROOT / XLD_CHORDS_PYTHON)"
-        else:
-            available, status = True, engine["status"]
         out.append({**{k: v for k, v in engine.items() if k != "weights"}, "available": available, "status": status})
     return out
 
 
 # --- BTC (Bi-directional Transformer for Chord recognition, ISMIR19) ---------
-# Neural chord engine; far richer/more reliable than the librosa template lanes.
-# Runs on the GPU via the AI venv. Code is vendored under ./btc (two modern-Python
+# Neural chord engine. Runs on the GPU via the AI venv. Code is vendored under ./btc (two modern-Python
 # fixes applied: yaml Loader, np.float alias). Weights stay in the runtime tree:
 # <XLD_RUNTIME_ROOT>/analysis-harmony/btc/weights, with the old in-tree location as fallback.
 BTC_DIR = Path(__file__).resolve().parent / "btc"
@@ -549,24 +507,12 @@ def analyze_consonance(engine: dict, input_path: str, output_path: str, separati
     return result
 
 
-def normalize_columns(values: np.ndarray) -> np.ndarray:
-    values = np.maximum(np.asarray(values, dtype=np.float32), 0)
-    return values / np.maximum(values.sum(axis=0, keepdims=True), 1e-8)
-
-
-def aligned(values: np.ndarray, frames: int) -> np.ndarray:
-    values = np.asarray(values, dtype=np.float32)
-    if values.shape[-1] >= frames:
-        return values[..., :frames]
-    return np.pad(values, [(0, 0)] * (values.ndim - 1) + [(0, frames - values.shape[-1])], mode="edge")
-
-
 def separate_harmonic(samples: np.ndarray, mode: str) -> np.ndarray:
-    """Optional source-separation preprocessing applied before chroma/CQT.
+    """Optional source-separation preprocessing applied before the chord engine.
 
     'hpss' runs librosa's median-filtering harmonic-percussive separation and
     keeps the harmonic (pitched) layer, dropping drums and broadband
-    transients so chroma/template engines get a cleaner harmonic read. Returns
+    transients so the chord engine gets a cleaner harmonic read. Returns
     the input unchanged for 'none'. This is the zero-install first rung; AI
     stem separation (Demucs / RoFormer) can replace it behind the same flag."""
     if mode == "none":
@@ -625,182 +571,6 @@ def demucs_harmonic_mono(input_path: str, target_sr: int) -> np.ndarray:
     return mono.astype(np.float32)
 
 
-def extract_features(input_path: str, cache_path: Path, separation: str = "none") -> tuple[dict[str, np.ndarray | float], bool]:
-    if cache_path.is_file():
-        try:
-            cached = np.load(cache_path, allow_pickle=False)
-            if int(cached["version"]) == CACHE_VERSION:
-                return {key: cached[key] for key in cached.files}, True
-        except Exception:
-            cache_path.unlink(missing_ok=True)
-
-    emit("正在解码音频 · 22.05 kHz 单声道", 0.04, phase="decode", cacheHit=False)
-    samples, native_rate = librosa.load(input_path, sr=None, mono=True)
-    if int(native_rate) != SAMPLE_RATE:
-        samples = librosa.resample(samples, orig_sr=int(native_rate), target_sr=SAMPLE_RATE, res_type="polyphase")
-    sample_rate = SAMPLE_RATE
-    duration = float(librosa.get_duration(y=samples, sr=sample_rate))
-    if not len(samples) or duration <= 0:
-        raise ValueError("empty-audio")
-
-    # Keep the original mix for the loudness-based no-chord gate; only the
-    # chroma source is swapped to the separated harmonic layer.
-    rms_source = samples
-    if separation == "hpss":
-        emit("正在分离谐波分量 · HPSS", 0.09, phase="separate", durationSeconds=duration, cacheHit=False)
-        samples = separate_harmonic(samples, separation)
-    elif separation == "demucs":
-        emit("正在用 Demucs 分离伴奏(去鼓+去人声)", 0.09, phase="separate", durationSeconds=duration, cacheHit=False)
-        samples = demucs_harmonic_mono(input_path, sample_rate)
-
-    emit("正在提取共享 CQT 色度特征", 0.14, phase="features", durationSeconds=duration, cacheHit=False)
-    cqt = np.abs(librosa.cqt(
-        y=samples,
-        sr=sample_rate,
-        hop_length=HOP_LENGTH,
-        fmin=librosa.note_to_hz("C1"),
-        n_bins=84,
-        bins_per_octave=12,
-        filter_scale=1.0,
-    )).astype(np.float32)
-    chroma_cqt = normalize_columns(librosa.feature.chroma_cqt(
-        C=cqt, sr=sample_rate, hop_length=HOP_LENGTH, n_chroma=12, bins_per_octave=12
-    ))
-    chroma_cens = normalize_columns(librosa.feature.chroma_cens(
-        C=cqt, sr=sample_rate, hop_length=HOP_LENGTH, n_chroma=12, bins_per_octave=12
-    ))
-    bass = normalize_columns(cqt[:36].reshape(3, 12, cqt.shape[1]).sum(axis=0))
-    rms = librosa.feature.rms(y=rms_source, frame_length=4096, hop_length=HOP_LENGTH).astype(np.float32)
-    frames = min(chroma_cqt.shape[1], chroma_cens.shape[1], bass.shape[1])
-    feature_data = {
-        "version": np.array(CACHE_VERSION, dtype=np.int16),
-        "duration": np.array(duration, dtype=np.float64),
-        "sample_rate": np.array(sample_rate, dtype=np.int32),
-        "hop_length": np.array(HOP_LENGTH, dtype=np.int32),
-        "cqt": aligned(chroma_cqt, frames),
-        "cens": aligned(chroma_cens, frames),
-        "bass": aligned(bass, frames),
-        "rms": aligned(rms, frames),
-    }
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = cache_path.with_name(f"{cache_path.stem}.{os.getpid()}.tmp.npz")
-    np.savez(temporary, **feature_data)
-    temporary.replace(cache_path)
-    return feature_data, False
-
-
-def chord_vocabulary(kind: str) -> tuple[list[str], list[int | None], np.ndarray]:
-    qualities = [
-        ("", (0, 4, 7), (1.0, .82, .68)),
-        ("m", (0, 3, 7), (1.0, .82, .68)),
-    ]
-    if kind == "extended":
-        qualities.extend([
-            ("7", (0, 4, 7, 10), (1.0, .78, .62, .58)),
-            ("maj7", (0, 4, 7, 11), (1.0, .78, .62, .58)),
-            ("m7", (0, 3, 7, 10), (1.0, .78, .62, .58)),
-            ("sus2", (0, 2, 7), (1.0, .76, .68)),
-            ("sus4", (0, 5, 7), (1.0, .76, .68)),
-            ("dim", (0, 3, 6), (1.0, .78, .66)),
-        ])
-    labels: list[str] = []
-    roots: list[int | None] = []
-    templates: list[np.ndarray] = []
-    for suffix, intervals, weights in qualities:
-        for root, pitch in enumerate(PITCHES):
-            template = np.zeros(12, dtype=np.float32)
-            for interval, weight in zip(intervals, weights):
-                template[(root + interval) % 12] = weight
-            template /= max(np.linalg.norm(template), 1e-8)
-            labels.append(f"{pitch}{suffix}")
-            roots.append(root)
-            templates.append(template)
-    labels.append("N")
-    roots.append(None)
-    templates.append(np.zeros(12, dtype=np.float32))
-    return labels, roots, np.stack(templates)
-
-
-def emissions(engine: dict, features: dict) -> tuple[list[str], list[int | None], np.ndarray, np.ndarray]:
-    labels, roots, templates = chord_vocabulary(engine["vocabulary"])
-    chroma = np.asarray(features["cqt"] if engine["feature"] != "cens" else features["cens"], dtype=np.float32)
-    bass = np.asarray(features["bass"], dtype=np.float32)
-    rms = np.asarray(features["rms"], dtype=np.float32).reshape(-1)
-    frames = chroma.shape[1]
-    rms = rms[:frames]
-    chord_templates = templates[:-1]
-    scores = chord_templates @ chroma
-    if engine["feature"] == "hybrid":
-        root_matrix = np.stack([bass[int(root)] for root in roots[:-1]])
-        full_root = np.stack([chroma[int(root)] for root in roots[:-1]])
-        scores = .86 * scores + .10 * root_matrix + .04 * full_root
-
-    entropy = -(chroma * np.log(np.maximum(chroma, 1e-8))).sum(axis=0) / math.log(12)
-    rms_db = librosa.amplitude_to_db(np.maximum(rms, 1e-9), ref=np.max)
-    # N should describe silence or genuinely diffuse pitch content, not merely
-    # a dense arrangement.  Tie it to both entropy and the best chord match.
-    no_chord = .04 + .10 * entropy - .04 * np.max(scores, axis=0)
-    no_chord = np.clip(no_chord, .025, .18)
-    no_chord[rms_db < -52] = 1.25
-    score_matrix = np.vstack([scores, no_chord[None, :]])
-    sorted_scores = np.sort(score_matrix, axis=0)
-    margin = np.maximum(0, sorted_scores[-1] - sorted_scores[-2])
-    confidence = np.clip(.30 + margin * 2.4 + (1 - entropy) * .25, 0, 1)
-    return labels, roots, score_matrix * 7.0, confidence
-
-
-def transition_matrix(labels: list[str], roots: list[int | None], penalty: float) -> np.ndarray:
-    states = len(labels)
-    transition = np.full((states, states), -penalty, dtype=np.float32)
-    np.fill_diagonal(transition, 0)
-    for old in range(states):
-        for new in range(states):
-            if old == new:
-                continue
-            if roots[old] is None or roots[new] is None:
-                transition[old, new] = -penalty * .72
-                continue
-            distance = (int(roots[new]) - int(roots[old])) % 12
-            if roots[old] == roots[new]:
-                transition[old, new] = -penalty * .42
-            elif distance in (5, 7):
-                transition[old, new] = -penalty * .62
-    return transition
-
-
-def viterbi_decode(score_matrix: np.ndarray, transition: np.ndarray) -> np.ndarray:
-    states, frames = score_matrix.shape
-    back = np.zeros((states, frames), dtype=np.int16)
-    previous = score_matrix[:, 0].copy()
-    for frame in range(1, frames):
-        candidates = previous[:, None] + transition
-        back[:, frame] = np.argmax(candidates, axis=0)
-        previous = score_matrix[:, frame] + np.max(candidates, axis=0)
-        previous -= np.max(previous)
-    path = np.zeros(frames, dtype=np.int16)
-    path[-1] = int(np.argmax(previous))
-    for frame in range(frames - 1, 0, -1):
-        path[frame - 1] = back[path[frame], frame]
-    return path
-
-
-def collapse_path(path: np.ndarray, labels: list[str], confidence: np.ndarray, duration: float, frame_seconds: float) -> list[dict]:
-    segments: list[dict] = []
-    start = 0
-    for index in range(1, len(path) + 1):
-        if index < len(path) and path[index] == path[start]:
-            continue
-        end_time = min(duration, index * frame_seconds)
-        segments.append({
-            "start": min(duration, start * frame_seconds),
-            "end": end_time,
-            "label": labels[int(path[start])],
-            "confidence": float(np.mean(confidence[start:index])),
-        })
-        start = index
-    return segments
-
-
 def merge_short_segments(segments: list[dict], minimum_seconds: float, keep_confidence: float | None = None) -> list[dict]:
     items = [dict(segment) for segment in segments if segment["end"] > segment["start"]]
     changed = True
@@ -851,59 +621,6 @@ def merge_short_segments(segments: list[dict], minimum_seconds: float, keep_conf
     return merged
 
 
-def analyze(engine: dict, input_path: str, output_path: str, separation: str = "none") -> dict:
-    started = time.time()
-    cache_path = Path.cwd() / CACHE_NAME
-    if separation != "none":
-        # Separated chroma must not collide with the baseline feature cache.
-        cache_path = cache_path.with_name(f"harmony-features-v{CACHE_VERSION}.{separation}.npz")
-    features, cache_hit = extract_features(input_path, cache_path, separation)
-    duration = float(features["duration"])
-    emit("共享色度缓存已就绪" if cache_hit else "共享色度特征已写入缓存", 0.54, phase="cache", durationSeconds=duration, cacheHit=cache_hit)
-    labels, roots, score_matrix, confidence = emissions(engine, features)
-    emit(f"正在解码 {len(labels)} 个和弦状态", 0.66, phase="decode-harmony", durationSeconds=duration, cacheHit=cache_hit)
-    path = viterbi_decode(score_matrix, transition_matrix(labels, roots, float(engine["change_penalty"])))
-    frame_seconds = float(features["hop_length"]) / float(features["sample_rate"])
-    segments = merge_short_segments(
-        collapse_path(path, labels, confidence, duration, frame_seconds),
-        float(engine["minimum_seconds"]),
-    )
-    non_n = [segment for segment in segments if segment["label"] != "N"]
-    no_chord_seconds = sum(segment["end"] - segment["start"] for segment in segments if segment["label"] == "N")
-    result = {
-        "schemaVersion": 2,
-        "kind": "harmony",
-        "duration": round(duration, 3),
-        "segments": segments,
-        "engine": {
-            "id": engine["id"],
-            "name": engine["name"],
-            "family": "harmony",
-            "description": engine["description"],
-            "resource": engine["resource"],
-            "vocabulary": engine["vocabulary"],
-            "source": "https://github.com/librosa/librosa",
-        },
-        "metrics": {
-            "chordChanges": max(0, len(segments) - 1),
-            "uniqueChords": len({segment["label"] for segment in non_n}),
-            "meanConfidence": round(float(np.mean([segment["confidence"] for segment in segments])) if segments else 0, 4),
-            "noChordRatio": round(no_chord_seconds / max(duration, 1e-8), 4),
-        },
-        "featureCacheHit": cache_hit,
-        "separation": separation,
-        "elapsedSeconds": round(time.time() - started, 3),
-        "source": str(Path(input_path).resolve()),
-    }
-    output = Path(output_path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(f"{output.suffix}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(output)
-    emit("和弦识别完成 · 结果已写入 Harmony Lab", 1.0, phase="complete", durationSeconds=duration, cacheHit=cache_hit)
-    return result
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engines", action="store_true")
@@ -926,10 +643,8 @@ def main() -> int:
         parser.error("--engine, --input and --output are required")
     if engine.get("weights") in ("btc", "chordmini"):
         analyze_btc(engine, args.input, args.output, args.separation)
-    elif engine.get("weights") == "consonance-ace":
-        analyze_consonance(engine, args.input, args.output, args.separation)
     else:
-        analyze(engine, args.input, args.output, args.separation)
+        analyze_consonance(engine, args.input, args.output, args.separation)
     return 0
 
 

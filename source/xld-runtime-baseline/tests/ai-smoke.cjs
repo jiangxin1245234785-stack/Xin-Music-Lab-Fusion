@@ -1,8 +1,9 @@
 'use strict';
 
 // Headless Electron smoke for the AI engine wiring: boots the beta app and
-// verifies detectEngines() merges the MSAF venv (4 engines) with the AI venv
-// (SongFormer), and that the renderer shows a READY SongFormer engine card.
+// verifies detectEngines() merges the AI venv (SongFormer) with the three chord
+// engines, that no removed engine comes back, and that the renderer shows a
+// READY SongFormer engine card.
 // Does NOT run inference here — that is proven separately by the Python worker.
 
 const path = require('path');
@@ -47,7 +48,7 @@ app.whenReady().then(async () => {
         return false;
       };
       await waitUntil(() => document.querySelectorAll('.engine-card').length > 0);
-      // engines come straight from IPC detectEngines (MSAF venv + AI venv merged)
+      // engines come straight from IPC detectEngines (AI venv + chord runner merged)
       const engines = await window.XLD.getAnalysisEngines();
       const ai = engines.find(e => e.id === 'songformer');
       await waitUntil(() => [...document.querySelectorAll('.engine-card')].some(c => c.textContent.includes('SongFormer')));
@@ -65,8 +66,8 @@ app.whenReady().then(async () => {
     })()`);
     const assertions = {
       apiReady: true,
-      fiveEngines: result.engineCount >= 5,
-      msafFour: result.engineIds.filter(id => id.startsWith('msaf')).length === 4,
+      fourEngines: result.engineCount === 4,
+      noRemovedEngines: !result.engineIds.some(id => require('../core/result-engines.cjs').isRemovedResultEngineId(id)),
       aiPresent: result.aiPresent,
       aiAvailable: result.aiAvailable,
       aiFamily: result.aiFamily === 'ai',

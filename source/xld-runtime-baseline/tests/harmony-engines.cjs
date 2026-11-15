@@ -65,7 +65,11 @@ assert(!messages.includes('four chord models') && !messages.includes('四种和�
 // chords.2: ChordMini is the primary chord engine for the album batch and the default Harmony Lab selection; BTC is the fallback.
 const app = read('app.js');
 assert(app.includes("const PRIMARY_HARMONY_ENGINE = 'chord-chordmini';"), 'ChordMini must be the primary chord engine');
-assert(app.includes("pick(PRIMARY_HARMONY_ENGINE, ['chord-btc', ...HARMONY_ENGINE_IDS])"), 'album batch must prefer ChordMini and fall back to BTC first');
+// Since 2026-11-14 the album batch is the one-click chain; its chord step is chosen in oneclick-plan.js.
+const oneclickPlan = require('../oneclick-plan.js');
+const chordFor = analysis => oneclickPlan.plan(oneclickPlan.PRESETS.efficiency, {analysis}).find(step => step.id === 'chords').engine;
+assert.equal(chordFor([{id: 'chord-chordmini', available: true}, {id: 'chord-btc', available: true}]), 'chord-chordmini', 'album batch must prefer ChordMini');
+assert.equal(chordFor([{id: 'chord-chordmini', available: false}, {id: 'chord-btc', available: true}]), 'chord-btc', 'and fall back to BTC first');
 assert(app.includes('engine.id === PRIMARY_HARMONY_ENGINE && engine.available'), 'Harmony Lab default selection must prefer ChordMini');
 assert(!app.includes("pick('chord-btc'"), 'no BTC-first pick may remain');
 console.log('harmony-engines: ok');

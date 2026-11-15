@@ -1,13 +1,15 @@
 (function(root){
  'use strict';
  function create({bridge,getBusy,beforeClear,onChanged}){
-  const $=id=>document.getElementById(id),dialog=$('storageDialog');let data=null,pending=false,selected=new Set(),message='',sequence=0;
+  const $=id=>document.getElementById(id),dialog=$('storageDialog');let data=null,pending=false,selected=new Set(),message='',sequence=0,optimizingId=null;
   const en=()=>document.documentElement.lang==='en-US',t=(zh,english)=>en()?english:zh;
   const size=bytes=>bytes>=1024**3?(bytes/1024**3).toFixed(2)+' GiB':(bytes/1024**2).toFixed(1)+' MiB';
   const item=row=>({id:row.id,revision:row.revision});
   let targets=[];bridge.refinementEngines().then(models=>{targets=models.find(m=>m.id==='mega-53')?.targetDetails||[];render();}).catch(()=>{});
-  const name=row=>{const target=targets.find(target=>target.id===row.target);return target?(en()?target.nameEn:target.name):row.target;};
-  const rows=()=>{const q=$('storageSearch').value.trim().toLowerCase(),filter=$('storageFilter').value;return (data?.rows||[]).filter(row=>(filter==='all'||(filter==='kept'?row.kept:row.kind===filter))&&[row.track,row.album,row.engine,row.target,name(row)].join(' ').toLowerCase().includes(q));};
+  // The stored lead / backing split (score-vocals) is named in words, not by its engine id.
+  const engineName=row=>row.engine==='karaoke-lead'?t('主唱 / 和声分离','Lead / backing split'):row.engine;
+  const name=row=>{if(row.engine==='karaoke-lead')return t('主唱 + 和声','Lead + backing');const target=targets.find(target=>target.id===row.target);return target?(en()?target.nameEn:target.name):row.target;};
+  const rows=()=>{const q=$('storageSearch').value.trim().toLowerCase(),filter=$('storageFilter').value;return (data?.rows||[]).filter(row=>(filter==='all'||(filter==='kept'?row.kept:row.kind===filter))&&[row.track,row.album,row.engine,engineName(row),row.target,name(row)].join(' ').toLowerCase().includes(q));};
   const canSelect=row=>!row.kept&&!row.blocked;
   function render(){
    const busy=pending||getBusy()||data?.busy;
@@ -22,20 +24,22 @@
    $('storageRows').replaceChildren();
    for(const row of rows()){
     const line=document.createElement('div');line.className='storage-row';
-    const check=document.createElement('input');check.type='checkbox';check.checked=selected.has(row.id);check.disabled=busy||!canSelect(row);check.setAttribute('aria-label',row.track+' '+row.engine+' '+name(row));check.onchange=()=>{check.checked?selected.add(row.id):selected.delete(row.id);render();};
+    const check=document.createElement('input');check.type='checkbox';check.checked=selected.has(row.id);check.disabled=busy||!canSelect(row);check.setAttribute('aria-label',row.track+' '+engineName(row)+' '+name(row));check.onchange=()=>{check.checked?selected.add(row.id):selected.delete(row.id);render();};
     const copy=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small'),status=document.createElement('small');title.textContent=row.track+' · '+size(row.bytes);
-    detail.textContent=row.album+' · '+row.engine+' · '+(row.kind==='stems'?t('基础六轨','Six stems'):(name(row)+' · '+row.sourceStem+' · '+(row.scope==='full'?t('整曲','Full'):row.timeOrigin.toFixed(1)+'–'+(row.timeOrigin+row.duration).toFixed(1)+'s')))+' · '+new Date(row.modified).toLocaleDateString(en()?'en-US':'zh-CN');
-    status.textContent=[row.kept?t('已保留','Kept'):'',row.active?t('当前使用','Active'):'',row.blocked].filter(Boolean).join(' · ');copy.append(title,detail,status);
+    detail.textContent=row.album+' · '+engineName(row)+' · '+(row.kind==='stems'?t('基础六轨','Six stems'):(name(row)+' · '+row.sourceStem+' · '+(row.scope==='full'?t('整曲','Full'):row.timeOrigin.toFixed(1)+'–'+(row.timeOrigin+row.duration).toFixed(1)+'s')))+' · '+new Date(row.modified).toLocaleDateString(en()?'en-US':'zh-CN');
+    status.textContent=[row.kept?t('已保留','Kept'):'',row.active?t('当前使用','Active'):'',row.compact?t('精简存储','Compact storage'):'',row.optimizable?t('最多可减少 ','Up to ')+size(row.redundantBytes):'',row.blocked].filter(Boolean).join(' · ');copy.append(title,detail,status);
     const actions=document.createElement('div');actions.className='storage-row-actions';
     const keep=document.createElement('button');keep.className='quiet-button';keep.textContent=row.kept?t('取消保留','Unkeep'):t('保留','Keep');keep.disabled=busy||row.blocked==='目录含链接或未知文件';keep.onclick=()=>act(()=>bridge.storageKeep({item:item(row),value:!row.kept}));
     const open=document.createElement('button');open.className='quiet-button';open.textContent=t('打开目录','Open folder');open.disabled=pending;open.onclick=async()=>{try{const reply=await bridge.storageReveal({item:item(row)});if(!reply.ok){message=reply.error;render();}}catch(error){message=String(error);render();}};
+    if(row.optimizable&&bridge.storageOptimize){const optimize=document.createElement('button');optimize.className='quiet-button';optimize.dataset.storageOptimize=row.id;optimize.textContent=optimizingId===row.id?t('校验与优化中…','Verifying and optimizing…'):t('优化副本','Optimize copies');optimize.disabled=busy;optimize.title=t('校验后移除冗余副本，保留 MIDI。优化后需使用新版 XLD。','Verify and remove redundant copies, keeping MIDI. Requires this XLD version.');optimize.onclick=()=>{beforeClear();optimizingId=row.id;act(()=>bridge.storageOptimize({item:item(row),mode:$('storageMode').value}));};actions.append(optimize);}
+    if(optimizingId===row.id){const cancel=document.createElement('button');cancel.className='quiet-button';cancel.textContent=t('取消优化','Cancel optimization');cancel.onclick=()=>bridge.storageCancelOptimize();actions.append(cancel);}
     actions.append(keep,open);line.append(check,copy,actions);$('storageRows').append(line);
    }
    const chosen=(data?.rows||[]).filter(row=>selected.has(row.id));$('storageSelected').textContent=chosen.length+t(' 项 · ',' selected · ')+size(chosen.reduce((sum,row)=>sum+row.bytes,0));
    $('storageClear').disabled=busy||!chosen.length;$('storageRefresh').disabled=pending;$('storageSelect').disabled=busy;$('storageDeselect').disabled=pending;$('storageMode').disabled=pending;
   }
   async function refresh(){const token=++sequence;pending=true;render();try{const reply=await bridge.storageScan();if(token!==sequence)return;if(!reply.ok)throw Error(reply.error);data=reply;selected=new Set([...selected].filter(id=>data.rows.some(row=>row.id===id&&canSelect(row))));}catch(error){message=String(error);}finally{if(token===sequence){pending=false;render();}}}
-  async function act(operation){if(pending||getBusy())return;pending=true;message='';render();try{const reply=await operation();if(!reply.ok){message=reply.error||reply.errors?.map(e=>e.error).join('; ')||t('操作失败','Operation failed');}else if(reply.deleted!==undefined){message=reply.canceled?t('已取消','Cancelled'):reply.mode==='trash'?t('已移至回收站，清空后释放 ','Moved to Recycle Bin; empty it to free ')+size(reply.bytes):t('已清理 ','Removed ')+size(reply.bytes);}await onChanged();}catch(error){message=String(error);}finally{pending=false;await refresh();}}
+  async function act(operation){if(pending||getBusy())return;pending=true;message='';render();try{const reply=await operation();if(!reply.ok){message=reply.error||reply.errors?.map(e=>e.error).join('; ')||t('操作失败','Operation failed');}else if(reply.canceled){message=t('已取消','Cancelled');}else if(reply.deleted!==undefined||reply.optimized){message=(reply.mode==='trash'?t('已移至回收站，清空后释放 ','Moved to Recycle Bin; empty it to free '):t('已清理 ','Removed '))+size(reply.bytes);if(reply.retainedOriginal)message+=t(' · 输入未去重',' · Input copy retained');if(reply.pendingCleanup)message+=t(' · 部分副本保留，可重试：',' · Copies remain; retry: ')+(reply.errors||[]).join('; ');}await onChanged();}catch(error){message=String(error);}finally{pending=false;optimizingId=null;await refresh();}}
   $('storageManageButton').onclick=()=>{if(!dialog.open)dialog.showModal();message='';refresh();};$('storageClose').onclick=()=>dialog.close();
   $('storageRefresh').onclick=()=>{message='';refresh();};$('storageSearch').addEventListener('input',render);$('storageFilter').addEventListener('change',render);
   $('storageSelect').onclick=()=>{for(const row of rows())if(canSelect(row)&&!(row.kind==='stems'&&row.active))selected.add(row.id);render();};$('storageDeselect').onclick=()=>{selected.clear();render();};

@@ -61,15 +61,15 @@ app.whenReady().then(async()=>{
   checks.push('WAV/MIDI tabs reuse one source; default/alternative models and real output folders; paused playhead survives navigation');
   await capture('workspace-stems');
   await show('section');await click('#workspaceModelOptions summary');await click('[data-engine-id="songformer"]');await click('#workspaceModelOptions summary');
-  assert(await evaluate("document.querySelector('#segmentPanel').getClientRects().length>0 && document.querySelectorAll('#engineList .engine-card').length===5"));
+  assert(await evaluate("document.querySelector('#segmentPanel').getClientRects().length>0 && document.querySelectorAll('#engineList .engine-card').length===1"));
   assert(await evaluate("document.querySelectorAll('#comparisonTimeline .comparison-row').length>=1"));
   await evaluate("document.querySelector('#tagStart').value='0:02';document.querySelector('#tagEnd').value='0:08';document.querySelector('#tagLabel').value='工作台验收';document.querySelector('#tagLabel').dispatchEvent(new Event('input'))");
   await click('#saveTagButton');await until("document.querySelector('#manualTagList').textContent.includes('工作台验收')");
   await show('overview');assert(await evaluate("document.querySelector('#workspaceOverviewHint').textContent.includes('1 条人工标签')"));
   await show('section');assert(await evaluate("document.querySelector('#analysisState').textContent.includes('1 项段落分析')"));await capture('workspace-sections');
   checks.push('All section engines, long-song range controls, shared timeline and separate manual annotations remain usable');
-  await show('harmony');assert(await evaluate("document.querySelector('#manualTagPanel').classList.contains('hidden') && document.querySelectorAll('#engineList .engine-card').length===4"));
-  await click('#workspaceModelOptions summary');await click('[data-engine-id="chord-cqt"]');await click('#workspaceModelOptions summary');await click('#analyzeButton');await until("document.querySelector('#taskPercent').textContent==='42%'");
+  await show('harmony');assert(await evaluate("document.querySelector('#manualTagPanel').classList.contains('hidden') && document.querySelectorAll('#engineList .engine-card').length===3"));
+  await click('#workspaceModelOptions summary');await click('[data-engine-id="chord-chordmini"]');await click('#workspaceModelOptions summary');await click('#analyzeButton');await until("document.querySelector('#taskPercent').textContent==='42%'");
   await show('midi');
   const other=await evaluate(`document.querySelector('.track-row:not([data-track-id="${fixture.track.id}"])').dataset.trackId`);
   await click('[data-track-id="'+other+'"]');

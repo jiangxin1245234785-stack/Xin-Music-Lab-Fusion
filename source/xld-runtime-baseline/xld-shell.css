@@ -131,6 +131,8 @@ html body.workspace-app .timeline-head h2 { font-size: var(--x-fs-xl); font-weig
 html body.workspace-app :is(.timeline-zoom, .timeline-audition) { gap: 6px; }
 html body.workspace-app :is(.timeline-zoom, .timeline-audition, .timeline-selection, .midi-edit-actions, .timeline-editor) :is(button, select, input) { min-height: var(--x-h); font-size: var(--x-fs); }
 html body.workspace-app .timeline-strip span, html body.workspace-app .timeline-audition > span { color: var(--x-dim); font-size: var(--x-fs-s); }
+html body.workspace-app .timeline-more-menu { border-color: var(--x-line-2); border-radius: 10px; background: var(--x-panel-solid); }
+html body.workspace-app :is(.timeline-more-check, .timeline-more-status) { color: var(--x-dim); font-size: var(--x-fs-s); }
 html body.workspace-app .timeline-lanes { border: 1px solid var(--x-line); border-radius: 10px; background: var(--x-lanes); }
 html body.workspace-app .tl-scale span { color: var(--x-dim); font-size: var(--x-fs-s); font-variant-numeric: tabular-nums; }
 html body.workspace-app .tl-row-head { background: var(--x-lane-head); }

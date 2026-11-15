@@ -9,7 +9,9 @@
   $('emptyLibrary').onclick=()=>{if(document.querySelector('.workspace-library').hidden)$('workbenchLibrary').click();document.querySelector('.workspace-library button')?.focus();};
   $('emptyAnalysis').onclick=()=>show('section');$('emptyStems').onclick=()=>show('stems');
   const tab=document.createElement('button');tab.id='workspace-tab-properties';tab.type='button';tab.dataset.workspaceTab='properties';tab.setAttribute('role','tab');tab.setAttribute('aria-controls','workspaceProperties');document.querySelector('.workspace-tabs').append(tab);
-  const launch=document.createElement('button');launch.id='timelineProperties';launch.type='button';launch.className='quiet-button';launch.onclick=()=>show('properties');document.querySelector('.timeline-audition').prepend(launch);
+  const launch=document.createElement('button');launch.id='timelineProperties';launch.type='button';launch.className='quiet-button';launch.onclick=()=>show('properties');
+  // 属性 lives in the timeline's 更多 menu (timeline-toolbar.js leaves a slot for it); without the menu, first in the bar.
+  const slot=$('timelineMoreProperties');if(slot)slot.replaceWith(launch);else document.querySelector('.timeline-audition').prepend(launch);
   const listening=$('propertyListening');
   // Move controls, not copies: preserve their listeners, exact values and controller ownership.
   const dash=$('timelineLoopStart').nextElementSibling;

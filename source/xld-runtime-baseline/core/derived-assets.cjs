@@ -113,6 +113,10 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
     const prefix = `midi/${stem}/${result.runId}/`;
     if (result.file !== prefix + stem + '.mid' || result.notesFile !== prefix + 'notes.json') throw new Error('midi-invalid-path');
   }
+  // Optional score MIDI is an explicitly named sibling, never an arbitrary file.
+  function checkTempoPath(result,stem){
+    if(result.tempoFile && (result.tempoFile!==`midi/${stem}/${result.runId}/${stem}.tempo.mid` || !/^[a-f0-9]{64}$/.test(result.digests?.tempoMidi||'')))throw Error('midi-invalid-path');
+  }
   // Was the record made by the engine's current model version? Returns the legacy error code when not.
   function profileMismatch(result, profile) {
     if (Object.entries(profile.options || {}).some(([key, value]) => !require('node:util').isDeepStrictEqual(result.options?.[key], value))) return 'midi-invalid';
@@ -133,6 +137,7 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
     const midi = await fs.readFile(path.join(directory, result.file));
     if (midi.length < 14 || midi.toString('ascii', 0, 4) !== 'MThd' || midi.readUInt32BE(4) !== 6 ||
         (result.digests?.midi && result.digests.midi !== sha256(midi))) throw new Error('midi-incomplete');
+    if(result.tempoFile){const score=await fs.readFile(path.join(directory,result.tempoFile));if(score.length<14||score.toString('ascii',0,4)!=='MThd'||sha256(score)!==result.digests.tempoMidi)throw Error('midi-incomplete');}
     const raw = await fs.readFile(path.join(directory, result.notesFile));
     const notes = JSON.parse(raw.toString('utf8'));
     if ((result.digests?.notes && result.digests.notes !== sha256(raw)) ||
@@ -147,6 +152,7 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
   // `matches` says whether the engine's current model version made it; `strict` turns a mismatch into the legacy error.
   async function verify(result, track, stem, {source: current = null, engine = null, strict = false} = {}) {
     checkRecord(result, track, stem);
+    checkTempoPath(result,stem);
     const profile = profileForResult(result);
     if (!profile?.stems.includes(stem) || (engine && profile.id !== engine)) throw new Error('midi-invalid');
     const drift = profileMismatch(result, profile);

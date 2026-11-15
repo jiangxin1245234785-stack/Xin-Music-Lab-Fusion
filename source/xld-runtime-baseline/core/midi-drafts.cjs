@@ -1,11 +1,11 @@
 'use strict';
 // A draft belongs to a specific immutable MIDI run. It never occupies a run directory or an active pointer.
 const fs=require('node:fs/promises'),path=require('node:path');
-const {writeAtomic}=require('./derived-assets.cjs');
+const {writeAtomic,STEMS}=require('./derived-assets.cjs');
 const {validate}=require('../midi-edit.js');
 function createMidiDrafts({assets}){
  function file(track,stem,runId,instrument){
-  if(!['bass','piano','guitar','drums','strings'].includes(stem) || !/^[a-zA-Z0-9-]{1,80}$/.test(runId||'') ||
+  if(!STEMS.includes(stem) || !/^[a-zA-Z0-9-]{1,80}$/.test(runId||'') ||
     !Number.isInteger(instrument)||instrument<0||instrument>127)throw Error('draft-invalid');
   return path.join(assets.directory(track),'midi',stem,'drafts',runId+'.'+instrument+'.json');
  }
@@ -31,7 +31,7 @@ function createMidiDrafts({assets}){
  async function list(track){
   const drafts=[];
   try{
-   for(const stem of ['bass','piano','guitar','drums','strings']){
+   for(const stem of STEMS){
     const folder=path.join(assets.directory(track),'midi',stem,'drafts');
     const names=await fs.readdir(folder).catch(e=>{if(e.code==='ENOENT')return [];throw e;});
     const active=await assets.midi.read(track,stem),parents=new Map();

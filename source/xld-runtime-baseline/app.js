@@ -16,6 +16,9 @@ const dom = Object.fromEntries([
 
 const runtimeLocale = window.XLDRuntimeMessages.createRuntimeTranslator(window.xinXldLocale);
 const rt = (key, params) => runtimeLocale.t(key, params);
+// Score layers (score-layers-controls.js): bar lines, loudness and the vocal curve for the listening score.
+// It borrows the batch flag so the cancel button and every busy check treat it like any other batch.
+let scoreLayers = null;
 const runtimeRef = (key, params) => Object.freeze({ __xldI18nKey: key, params: params || {} });
 const resolveRuntimeParams = params => Object.fromEntries(Object.entries(params || {}).map(([key, value]) => [
   key,
@@ -69,6 +72,7 @@ let refinementControls = null;
 let timelineControls = null;
 let auditionControls = null;
 let playbackControls = null;
+let oneclickControls = null;
 const derivedControls = window.XldDerivedControls.create({
   bridge: window.XLD, audio: dom.audioElement, getSelected: () => state.selectedTrack,
   getCurrent: () => state.currentTrack, queueFor: track => albumForTrack(track)?.tracks || [],
@@ -97,24 +101,31 @@ refinementControls=window.XldRefinementControls.create({bridge:window.XLD,getSel
 // (OKLab) from a track colour and 0.3 from the amber, and its label keeps a contrast of 4.4 or more.
 // timeline-controls.js segmentColor() carries the same tables.
 const segmentColors = ['#804949','#78512a','#5d5e29','#356748','#12676b','#345f82','#5a5382','#754a6c'];
-const engineShortNames = { msaf: 'SC', 'msaf-sf': 'SF', 'msaf-foote': 'FT', 'msaf-cnmf': 'CN', songformer: 'AI' };
+const engineShortNames = { songformer: 'AI' };
 // SongFormer emits functional labels; give the common ones a stable semantic
-// colour. MSAF's abstract A/B/C labels won't match these keys and keep using
-// the hashed palette below.
+// colour. Labels that match none of these keys (manual tags) use the hashed palette below.
 const functionLabelColors = {
   intro: '#30684c', verse: '#2b5679', chorus: '#904c6e', 'pre-chorus': '#645c88',
   bridge: '#5b3d65', inst: '#605d34', solo: '#7f4c3a', break: '#404952',
   outro: '#1c5038', silence: '#383838', start: '#383838', end: '#383838'
 };
-const MSAF_ENGINE_IDS = ['msaf', 'msaf-sf', 'msaf-foote', 'msaf-cnmf'];
+// A section engine's result comes with tidied `sections` (core/sections.cjs, attached by the main process):
+// the bar shows those names in the interface language, the colour follows the tidied name (`colour`, one colour
+// per name since 2026-11-14), and the raw labels go in the tooltip. Results without `sections` (manual tags,
+// chords) are shown as they are.
+function sectionRows(result) {
+  if (!Array.isArray(result?.sections)) return result.segments;
+  const english = String(runtimeLocale.locale() || '').toLowerCase().startsWith('en');
+  return result.sections.map(row => ({ start: row.start, end: row.end, label: english ? row.name.en : row.name.zh, rawLabel: row.label, rawLabels: row.labels, colourLabel: row.colour }));
+}
 const AI_ENGINE_IDS = ['songformer'];
-const HARMONY_ENGINE_IDS = ['chord-cqt', 'chord-cens', 'chord-hybrid', 'chord-btc', 'chord-chordmini', 'chord-consonance'];
+const HARMONY_ENGINE_IDS = ['chord-btc', 'chord-chordmini', 'chord-consonance'];
 // Primary chord engine (user decision 2026-09-18 after the four-track comparison): ChordMini leads,
 // BTC stays as the alternative and fallback.
 const PRIMARY_HARMONY_ENGINE = 'chord-chordmini';
-const SECTION_ENGINE_IDS = [...MSAF_ENGINE_IDS, ...AI_ENGINE_IDS];
+const SECTION_ENGINE_IDS = [...AI_ENGINE_IDS];
 const KNOWN_ENGINE_IDS = [...SECTION_ENGINE_IDS, ...HARMONY_ENGINE_IDS];
-Object.assign(engineShortNames, { 'chord-cqt': 'CQ', 'chord-cens': 'CE', 'chord-hybrid': 'HX', 'chord-btc': 'BTC', 'chord-chordmini': 'CM', 'chord-consonance': 'ACE' });
+Object.assign(engineShortNames, { 'chord-btc': 'BTC', 'chord-chordmini': 'CM', 'chord-consonance': 'ACE' });
 // The root keeps its place on a wheel (a repeating progression repeats in colour); minor-type chords a step darker.
 const chordRootColors = {
   C: '#815154', 'C#': '#805441', D: '#765b35', Eb: '#666335', E: '#506943', F: '#3a6c57',
@@ -207,7 +218,10 @@ const transportIcons = {
 };
 
 function setTransportIcon(button, icon) {
-  if (button) button.innerHTML = transportIcons[icon] || '';
+  if (button && button.dataset.transportIcon !== icon) {
+    button.dataset.transportIcon = icon;
+    button.innerHTML = transportIcons[icon] || '';
+  }
 }
 
 function renderRepeatTitle() {
@@ -729,6 +743,24 @@ async function playTrack(track, queue = state.queue, autoPlay = true, startAt = 
   if (autoPlay) {
     try { await dom.audioElement.play(); } catch (error) { logAnalysis('runtime.playback.failed', { error: error.message }); }
   }
+  return playbackRequest === playbackSequence;
+}
+
+// The bottom button always refers to the original recording. The shared transport
+// still owns the clock, looping and volume for whichever source is sounding.
+function isOriginalPlayback(track=state.selectedTrack || state.currentTrack) {
+  return Boolean(track && playbackControls?.owner()==='main' && state.currentTrack?.id===track.id && dom.audioElement.getAttribute('src')===track.fileUrl);
+}
+async function toggleOriginalPlayback() {
+  const track=state.selectedTrack || state.currentTrack || state.selectedAlbum?.tracks[0];
+  if(!track)return;
+  const current=playbackControls.info();
+  const original=isOriginalPlayback(track);
+  if(original && (current.playing || current.loading)){playbackControls.pause();return;}
+  const position=current.trackId===track.id ? current.time : 0;
+  const pending=playTrack(track,albumForTrack(track)?.tracks||[],false,position,track.fileUrl);
+  playbackControls.tick();
+  if(await pending)await playbackControls.play();
 }
 
 // play() resolves only once playback actually begins, so anything that pauses in the meantime rejects it. Starting
@@ -815,6 +847,7 @@ async function loadTrackAnalysis(trackId) {
 }
 
 function updateAnalyzeButton() {
+  scoreLayers?.sync();
   derivedControls.render();
   updateSegmentPanel();
   updateResultActions();
@@ -824,9 +857,11 @@ function updateAnalyzeButton() {
   document.getElementById('workspaceDismissTask').hidden = busy;
   if (dom.batchAlbumButton) dom.batchAlbumButton.disabled = busy || !(state.selectedAlbum?.tracks?.length);
   if (dom.batchAlbumButton && !state.batchRunning) dom.batchAlbumButton.textContent = rt('runtime.album.batchDefault');
-  dom.analyzeAllButton.textContent = rt(state.activeLab === 'harmony'
-    ? 'runtime.analysis.runHarmonyBatch'
-    : 'runtime.analysis.runSectionBatch');
+  if (dom.batchAlbumButton) dom.batchAlbumButton.title = rt('runtime.album.batchTitle');
+  oneclickControls?.sync();
+  // The batch button is a chord-tab thing: the section tab has one engine.
+  dom.analyzeAllButton.textContent = rt('runtime.analysis.runHarmonyBatch');
+  dom.analyzeAllButton.hidden = state.activeLab !== 'harmony';
   if (busy) {
     dom.analyzeButton.disabled = true;
     dom.analyzeAllButton.disabled = true;
@@ -848,8 +883,8 @@ function updateAnalyzeButton() {
     return;
   }
   const engine = state.engines.find(item => item.id === state.selectedEngine);
-  const batchIds = state.activeLab === 'harmony' ? HARMONY_ENGINE_IDS : MSAF_ENGINE_IDS;
-  dom.analyzeAllButton.disabled = batchIds.some(id => !state.engines.find(item => item.id === id)?.available);
+  dom.analyzeAllButton.disabled = state.activeLab !== 'harmony'
+    || HARMONY_ENGINE_IDS.some(id => !state.engines.find(item => item.id === id)?.available);
   const longSongformer = state.selectedEngine === 'songformer'
     && (Number(state.selectedTrack.duration) || 0) > getAiMaxSegment() + 1;
   if (longSongformer) {
@@ -873,6 +908,11 @@ function updateResultActions() {
   dom.exportMusicLabButton.disabled = busy || !state.selectedTrack;
   dom.saveTagButton.disabled = busy || !state.selectedTrack || !dom.tagLabel.value.trim();
   dom.tagUseSegmentButton.disabled = busy || !state.selectedSegment;
+}
+
+// The colour of one block on the comparison bar: by the tidied name when there is one (tests/sections.cjs runs this).
+function sectionColour(engineId, segment) {
+  return hashColor(engineId, segment.colourLabel ?? segment.rawLabel ?? segment.label);
 }
 
 function hashColor(engineId, label) {
@@ -939,7 +979,7 @@ function renderComparison() {
   for (const result of results) {
     const engineId = result.engine?.id || 'engine';
     const harmonyResult = isHarmonyEngineId(engineId) || result.kind === 'harmony';
-    const segments = result.segments;
+    const segments = sectionRows(result);
     const row = document.createElement('section');
     row.className = `comparison-row${harmonyResult ? ' harmony-row' : ''}`;
     row.dataset.engine = engineId;
@@ -986,11 +1026,11 @@ function renderComparison() {
       if (segment.id) block.dataset.segmentId = segment.id;
       block.style.left = `${Math.max(0, start / duration) * 100}%`;
       block.style.width = `${Math.max(.25, ((end - start) / duration) * 100)}%`;
-      block.style.background = hashColor(engineId, segment.label);
+      block.style.background = sectionColour(engineId, segment);
       const confidence = Number(segment.confidence);
       if (harmonyResult && Number.isFinite(confidence) && confidence < .48) block.classList.add('low-confidence');
       block.title = rt('runtime.comparison.segmentTitle', {
-        label: segment.label,
+        label: segment.rawLabels ? `${segment.label} (${segment.rawLabels.join(' + ')})` : segment.label,
         start: formatPreciseTime(start),
         end: formatPreciseTime(end),
         duration: formatPreciseTime(end - start),
@@ -1308,11 +1348,11 @@ async function runAnalysis(engineOverride = null, options = {}) {
 }
 
 async function runAllAnalyses() {
-  if (!state.selectedTrack || state.activeTask || state.batchRunning) return;
-  const requested = state.activeLab === 'harmony' ? HARMONY_ENGINE_IDS : MSAF_ENGINE_IDS;
+  if (!state.selectedTrack || state.activeTask || state.batchRunning || state.activeLab !== 'harmony') return;
+  const requested = HARMONY_ENGINE_IDS;
   const engines = requested.filter(id => state.engines.find(item => item.id === id)?.available);
   if (engines.length !== requested.length) {
-    logAnalysis('runtime.log.batchUnavailable', { group: state.activeLab === 'harmony' ? 'Harmony' : 'MSAF' });
+    logAnalysis('runtime.log.batchUnavailable', { group: 'Harmony' });
     return;
   }
   const track = state.selectedTrack;
@@ -1322,7 +1362,7 @@ async function runAllAnalyses() {
   state.batchTotal = engines.length;
   updateAnalyzeButton();
   logAnalysis('runtime.log.batchStart', {
-    group: state.activeLab === 'harmony' ? 'Harmony' : 'MSAF', track: track.title, count: engines.length
+    group: 'Harmony', track: track.title, count: engines.length
   });
   let completed = 0;
   let failed = 0;
@@ -1348,62 +1388,11 @@ async function runAllAnalyses() {
   });
 }
 
-// Whole-album batch: per track run one section engine (SongFormer auto-segment,
-// falling back to any available MSAF) + one chord engine (ChordMini since chords.2,
-// falling back to BTC, then any available chord engine). Strictly serial, reuses the batch/cancel state.
+// Whole-album batch: since 2026-11-14 the one-click analysis chain for every track (sections, chords, stems, optional
+// fine split, every part's MIDI, merge; oneclick-controls.js), strictly serial, on the shared batch / cancel state.
 async function runAlbumBatch() {
-  const album = state.selectedAlbum;
-  if (!album || !album.tracks?.length || state.activeTask || state.batchRunning) return;
-  const pick = (preferred, pool) => (state.engines.find(item => item.id === preferred && item.available)?.id)
-    || pool.find(id => state.engines.find(item => item.id === id)?.available)
-    || null;
-  const sectionEngine = pick('songformer', SECTION_ENGINE_IDS);
-  const chordEngine = pick(PRIMARY_HARMONY_ENGINE, ['chord-btc', ...HARMONY_ENGINE_IDS]);
-  const plan = [];
-  if (sectionEngine) plan.push(sectionEngine);
-  if (chordEngine) plan.push(chordEngine);
-  if (!plan.length) {
-    logAnalysis('runtime.log.noBatchEngines', {});
-    return;
-  }
-  const tracks = album.tracks;
-  state.batchRunning = true;
-  state.batchCancelled = false;
-  state.batchTotal = tracks.length * plan.length;
-  state.batchIndex = 0;
-  updateAnalyzeButton();
-  const planLabel = plan.map(id => state.engines.find(item => item.id === id)?.name || id).join(' + ');
-  logAnalysis('runtime.log.albumBatchStart', { album: album.title, tracks: tracks.length, plan: planLabel });
-  let completed = 0;
-  let failed = 0;
-  let skipped = 0;
-  for (const track of tracks) {
-    if (state.batchCancelled) break;
-    for (const engineId of plan) {
-      if (state.batchCancelled) break;
-      state.batchIndex += 1;
-      if (dom.batchAlbumButton) dom.batchAlbumButton.textContent = rt('runtime.album.batchProgress', { index: state.batchIndex, total: state.batchTotal });
-      updateAnalyzeButton();
-      const options = { fromBatch: true, track };
-      if (engineId === 'songformer') options.auto = true;
-      const response = await runAnalysis(engineId, options);
-      if (response?.ok) completed += 1;
-      else if (response?.error === 'analysis-cancelled') { state.batchCancelled = true; break; }
-      else if (response == null) skipped += 1;
-      else failed += 1;
-    }
-  }
-  const cancelled = state.batchCancelled;
-  state.batchRunning = false;
-  state.batchIndex = 0;
-  state.batchTotal = 0;
-  if (dom.batchAlbumButton) dom.batchAlbumButton.textContent = rt('runtime.album.batchDefault');
-  updateAnalyzeButton();
-  logAnalysis(cancelled ? 'runtime.log.albumBatchCancelled' : 'runtime.log.albumBatchEnd', {
-    completed,
-    failed: failed ? runtimeRef('runtime.log.failedSuffix', { count: failed }) : '',
-    skipped: skipped ? runtimeRef('runtime.log.skippedSuffix', { count: skipped }) : ''
-  });
+  if (!state.selectedAlbum?.tracks?.length || state.activeTask || state.batchRunning) return;
+  return oneclickControls?.runAlbum();
 }
 
 async function refreshAnalysisSettings() {
@@ -1431,7 +1420,7 @@ dom.shuffleAlbumButton.addEventListener('click', () => {
   if (tracks.length) playTrack(tracks[Math.floor(Math.random() * tracks.length)], tracks);
 });
 dom.playButton.addEventListener('click', () => {
-  if(playbackControls)return playbackControls.toggle();
+  if(playbackControls)return toggleOriginalPlayback();
   if (!state.currentTrack) return playTrack(state.selectedTrack || state.selectedAlbum?.tracks[0], state.selectedAlbum?.tracks || []);
   if (dom.audioElement.paused) startPlayback(); else dom.audioElement.pause();
 });
@@ -1468,6 +1457,28 @@ dom.revealButton.addEventListener('click', () => (state.currentTrack || state.se
 dom.analyzeButton.addEventListener('click', () => runAnalysis());
 dom.analyzeAllButton.addEventListener('click', runAllAnalyses);
 dom.batchAlbumButton?.addEventListener('click', runAlbumBatch);
+scoreLayers = window.XldScoreLayers?.create({
+  bridge: window.XLD, trackButton: document.getElementById('scoreLayersTrackButton'), albumButton: document.getElementById('scoreLayersAlbumButton'),
+  getTrack: () => state.selectedTrack, getAlbum: () => state.selectedAlbum, isBusy: () => Boolean(state.activeTask || state.batchRunning),
+  setBatch: running => {
+    state.batchRunning=running;state.batchCancelled=false;state.batchIndex=0;state.batchTotal=0;
+    if(running)updateAnalyzeButton();else applyTask(state.activeTask||state.lastTask);
+  },
+  onProgress: ({index,total}) => { state.batchIndex=index; state.batchTotal=total; },
+  isCancelled: () => state.batchCancelled, log: text => logAnalysis(text), t: rt
+}) || null;
+oneclickControls = window.XldOneClick?.create({
+  bridge: window.XLD, rt, derived: derivedControls, albumButton: dom.batchAlbumButton,
+  getTrack: () => state.selectedTrack, getAlbum: () => state.selectedAlbum, getEngines: () => state.engines,
+  isBusy: () => Boolean(state.activeTask || state.batchRunning), isCancelled: () => state.batchCancelled,
+  runAnalysis: (engine, options) => runAnalysis(engine, { ...options, fromBatch: true }),
+  onTask: applyTask, localizeError: runtimeLocale.localizeBackendMessage, log: text => logAnalysis(text),
+  setBatch: running => {
+    state.batchRunning = running; state.batchCancelled = false; state.batchIndex = 0; state.batchTotal = 0;
+    if (running) updateAnalyzeButton(); else applyTask(state.activeTask || state.lastTask);
+  },
+  onProgress: ({ index, total }) => { state.batchIndex = index; state.batchTotal = total; updateAnalyzeButton(); }
+}) || null;
 dom.separationToggle?.addEventListener('change', () => {
   state.separation = dom.separationToggle.checked ? 'demucs' : 'none';
   logAnalysis(state.separation === 'demucs' ? 'runtime.log.demucsOn' : 'runtime.log.demucsOff', {});
@@ -1531,8 +1542,8 @@ dom.fontIncreaseButton.addEventListener('click', () => {
   applyFontScale(UI_SCALES[Math.min(UI_SCALES.length - 1, index + 1)]);
 });
 
-dom.audioElement.addEventListener('play', () => { setTransportIcon(dom.playButton, 'pause'); dom.playButton.setAttribute('aria-label', rt('runtime.playback.pauseAria')); renderTracks(); });
-dom.audioElement.addEventListener('pause', () => { setTransportIcon(dom.playButton, 'play'); dom.playButton.setAttribute('aria-label', rt('runtime.playback.playAria')); renderTracks(); });
+dom.audioElement.addEventListener('play', () => { renderTracks(); renderPlayback(); });
+dom.audioElement.addEventListener('pause', () => { renderTracks(); renderPlayback(); });
 dom.audioElement.addEventListener('loadedmetadata', () => {
   dom.durationTime.textContent = formatTime(dom.audioElement.duration);
   if (state.currentTrack) state.currentTrack.duration = dom.audioElement.duration;
@@ -1557,7 +1568,7 @@ dom.audioElement.addEventListener('error', () => logAnalysis('runtime.playback.l
 
 document.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.target.closest('input, textarea, select, button, summary, [contenteditable="true"], [role="button"]')) return;
-  if (event.code === 'Space') { event.preventDefault(); dom.playButton.click(); }
+  if (event.code === 'Space') { event.preventDefault(); if(!event.repeat)playbackControls ? playbackControls.toggle() : dom.playButton.click(); }
   if (event.code === 'ArrowRight' && event.altKey) stepTrack(1);
   if (event.code === 'ArrowLeft' && event.altKey) stepTrack(-1);
 });
@@ -1582,7 +1593,7 @@ window.XLD.onAnalysisTask(async task => {
     await refreshAnalysisSummary();
     if (state.selectedTrack?.id === task.trackId) {
       await loadTrackAnalysis(task.trackId);
-      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53'].includes(task.engine)) await derivedControls.refresh();
+      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','strings-muscriptor-large-raw','strings-muscriptor-large-v04','drums-muscriptor-medium','drums-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53','score-vocals','vocals-rmvpe'].includes(task.engine)) await derivedControls.refresh();
     }
     // Keep the terminal result visible until it is dismissed or a new task starts.
   }
@@ -1617,7 +1628,7 @@ function refreshRuntimeLocaleUi() {
   derivedControls.render();
   timelineControls?.render();
   auditionControls?.render();
-  dom.playButton.setAttribute('aria-label', rt(dom.audioElement.paused ? 'runtime.playback.playAria' : 'runtime.playback.pauseAria'));
+  renderPlayback();
   dom.albumGrid.scrollTop = scroll.albums;
   dom.trackList.scrollTop = scroll.tracks;
   dom.comparisonTimeline.scrollLeft = scroll.comparisonLeft;
@@ -1689,7 +1700,7 @@ async function bootstrap() {
     selectAlbum(rememberedAlbum);
     await selectTrack(rememberedAlbum.tracks.find(track => track.id === rememberedTrack));
   }
-  workspaceControls.show('timeline');
+  workspaceControls.restore();
   workspaceControls.showLibrary(state.selectedTrack ? 'tracks' : 'albums');
   state.bootstrapped = true;
   window.__xldAppReady = true;
@@ -1705,8 +1716,13 @@ function playbackPosition(trackId=state.selectedTrack?.id) {
 function renderPlayback() {
   if(!playbackControls)return;
   const p=playbackControls.info(),track=p.track;
-  setTransportIcon(dom.playButton,p.playing||p.loading?'pause':'play');
-  dom.playButton.setAttribute('aria-label',rt(p.playing||p.loading?'runtime.playback.pauseAria':'runtime.playback.playAria'));
+  const original=isOriginalPlayback();
+  const originalBusy=original && (p.playing||p.loading);
+  setTransportIcon(dom.playButton,originalBusy?'pause':'play');
+  dom.playButton.setAttribute('aria-label',rt(originalBusy?'runtime.transport.pauseOriginal':'runtime.transport.playOriginal'));
+  dom.playButton.title=dom.playButton.getAttribute('aria-label');
+  dom.playButton.dataset.sourceLabel=rt('runtime.transport.originalShort');
+  dom.seekBar.title=rt('runtime.transport.sharedPosition');
   if(!state.seeking){dom.currentTime.textContent=formatTime(p.time||0);dom.seekBar.value=p.end>0?Math.round((p.time||0)/p.end*1000):0;}
   dom.durationTime.textContent=formatTime(p.end||0);dom.seekBar.disabled=!p.available;
   dom.repeatButton.disabled=p.id!=='main';
@@ -1714,13 +1730,15 @@ function renderPlayback() {
   const label=document.getElementById('playbackSource');
   if(label){label.textContent=p.error?rt(p.error==='range'?'runtime.transport.range':'runtime.transport.failed'):p.label||'';label.title=label.textContent;}
   const status=document.getElementById('workspacePlaybackState');
-  if(status)status.textContent=rt(p.loading?'runtime.audition.loading':p.playing?'runtime.workspace.playing':p.available?'runtime.workspace.paused':'runtime.workspace.player');
+  if(status)status.textContent=rt(p.loading?'runtime.audition.loading':p.playing?(p.id==='audition'?'runtime.transport.tracksPlaying':'runtime.workspace.playing'):p.available?'runtime.workspace.paused':'runtime.workspace.player');
 }
 function setupPlayback(){
  const main=dom.audioElement,refine=document.getElementById('refinementAudio');
  let preview=null,previewEpoch=0,metadataCleanup=null;
+ const compactPreview=window.XldRefinementPlayer.create({readChunk:(trackId,key,index)=>window.XLD.readWavChunk(trackId,key,index),onChange:()=>playbackControls?.tick()});
+ const isCompact=()=>Boolean(preview?.sourceAudio);
  const total=(track,fallback)=>Number.isFinite(fallback)&&fallback>0?fallback:Number(track?.duration)||0;
- const previewStop=()=>{previewEpoch++;metadataCleanup?.();metadataCleanup=null;refine.pause();};
+ const previewStop=()=>{previewEpoch++;metadataCleanup?.();metadataCleanup=null;refine.pause();compactPreview.pause();};
  playbackControls=window.XldPlaybackControls.create({
   volume:Number(dom.volumeBar.value),
   onClaim:id=>{if(id!=='main'){playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;}const p=playbackControls?.info();if(p?.track) {setCover(dom.playerCover,dom.miniFallback,albumForTrack(p.track)?.coverUrl);updateMediaSession(p.track,albumForTrack(p.track));}},
@@ -1740,14 +1758,18 @@ function setupPlayback(){
     loop:value=>{const old=auditionControls.loop();if(!value){if(old)auditionControls.clearLoop();}else if(!old||old.start!==value.start||old.end!==value.end||old.enabled!==value.enabled)auditionControls.setLoop(value.start,value.end,value.enabled);}
    },
    refinement:{
-    info:()=>({track:preview?.track,trackId:preview?.track?.id,available:Boolean(preview),playing:!refine.paused,loading:Boolean(metadataCleanup),time:(preview?.start||0)+(Number(refine.currentTime)||0),start:preview?.start||0,end:preview?.end||0,label:'WAV · '+rt('runtime.transport.refinement')+' · '+(preview?.label||'')}),
-    play:()=>refine.play(),pause:previewStop,stop:previewStop,
-    seek:t=>{refine.currentTime=t-(preview?.start||0);},volume:v=>{refine.volume=v;}
+    scheduledLoop:false,
+    info:()=>({track:preview?.track,trackId:preview?.track?.id,available:Boolean(preview),error:isCompact()&&compactPreview.info().error?'failed':'',playing:isCompact()?compactPreview.info().playing:!refine.paused,loading:isCompact()?compactPreview.info().loading:Boolean(metadataCleanup),time:isCompact()?compactPreview.info().time:(preview?.start||0)+(Number(refine.currentTime)||0),start:preview?.start||0,end:preview?.end||0,label:'WAV · '+rt('runtime.transport.refinement')+' · '+(preview?.label||'')}),
+    play:()=>isCompact()?compactPreview.play():refine.play(),pause:previewStop,stop:previewStop,
+    loop:value=>{if(isCompact())compactPreview.loop(value);},
+    seek:t=>{if(isCompact())compactPreview.seek(t);else refine.currentTime=t-(preview?.start||0);},volume:v=>{refine.volume=v;compactPreview.volume(v);}
    }
   }
  });
  playbackControls.preview=async value=>{
   const previous=playbackPosition(value.track.id);previewStop();preview=value;
+  const previousLoop=playbackControls.loop();if(previousLoop&&(previousLoop.trackId!==value.track.id||previousLoop.start<value.start||previousLoop.end>value.end))playbackControls.clearLoop();
+  if(value.sourceAudio){compactPreview.set(value);playbackControls.claim('refinement');compactPreview.volume(playbackControls.volume());compactPreview.loop(playbackControls.loop());if(previous>=value.start&&previous<value.end)compactPreview.seek(previous);return playbackControls.play();}
   playbackControls.claim('refinement');const token=++previewEpoch;
   const offset=previous>=value.start&&previous<value.end?previous-value.start:0;
   refine.src=value.url;
@@ -1760,13 +1782,13 @@ function setupPlayback(){
   if(refine.error)return playbackControls.play();
   refine.currentTime=offset;return playbackControls.play();
  };
- playbackControls.releasePreview=()=>{previewStop();preview=null;if(playbackControls.owner()==='refinement')playbackControls.claim('main');};
+ playbackControls.releasePreview=()=>{previewStop();preview=null;compactPreview.clear();if(playbackControls.owner()==='refinement')playbackControls.claim('main');};
  refine.controls=false;
  for(const event of ['play','pause','timeupdate','loadedmetadata','ended','error'])refine.addEventListener(event,()=>playbackControls.tick());
  main.addEventListener('play',()=>playbackControls.claim('main'));
  playbackControls.setVolume(Number(dom.volumeBar.value));
  window.addEventListener('beforeunload',()=>playbackControls.stop());
- function frame(){if(playbackControls.info().playing)playbackControls.tick();requestAnimationFrame(frame);}requestAnimationFrame(frame);
+ function frame(){compactPreview.tick();if(playbackControls.info().playing)playbackControls.tick();requestAnimationFrame(frame);}requestAnimationFrame(frame);
 }
 async function listenMidi(stem){
  const track=state.selectedTrack?.id,position=playbackPosition(track),request=++playbackSequence;
@@ -1810,7 +1832,7 @@ auditionControls = window.XldAuditionControls.create({
   onOriginal:async()=>{
     const track=state.selectedTrack;if(!track)return;
     const current=playbackControls.info(),position=current.trackId===track.id?current.time:0,active=current.playing;
-    if(current.id==='audition'){
+    if(!isOriginalPlayback(track)){
       await playTrack(track,albumForTrack(track)?.tracks||[],active,position,track.fileUrl);
     }else{
       await auditionControls.setScope('mix');
@@ -1818,7 +1840,7 @@ auditionControls = window.XldAuditionControls.create({
       if(active)await auditionControls.start('@mix',position);
     }
   },
-  isOriginal:()=>playbackControls?.owner()==='main',
+  isOriginal:()=>isOriginalPlayback(),
 
   getFocus: () => timelineControls?.focus() || null,
   getTrackKey: () => state.selectedTrack?.id || null,
