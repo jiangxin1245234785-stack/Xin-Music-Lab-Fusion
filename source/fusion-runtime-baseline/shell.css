@@ -164,6 +164,7 @@
 .xl-row .intensity { display: flex; align-items: center; gap: calc(8px * var(--ui-scale)); flex: 1 1 auto; }
 .xl-row .intensity input, .xl-settings .product-control-dock input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--xl-accent); }
 .xl-toggle-list { display: grid; gap: calc(7px * var(--ui-scale)); }
+.xl-toggle-field[hidden] { display: none; }
 .xl-toggle-field { display: flex; align-items: center; justify-content: space-between; gap: calc(14px * var(--ui-scale)); min-height: calc(34px * var(--ui-scale)); color: var(--xl-text); font-size: calc(12.5px * var(--ui-scale)); cursor: pointer; }
 .xl-toggle-field > span { min-width: 0; line-height: 1.5; }
 .xl-toggle-field small { display: block; color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); }

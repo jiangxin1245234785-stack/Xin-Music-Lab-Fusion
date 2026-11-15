@@ -530,6 +530,8 @@
       // The background queue, shared with the library drawer's "prepare the score" batch.
       prepare,
       laneTip: under => laneName(under),
+      // The render core's handle while a score is shown (score-lyrics.js reads its clock and lane positions), else null.
+      viewHandle: () => (view && status === 'ready' ? view : null),
       status: () => ({status, trackId, active: active(), held, latencyMs: latency(), health, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,shapes,tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
                       prep: {auto: autoLayers, plan: prepPlan, phase: prepare && trackId ? prepare.phase(trackId) : 'idle',
                              error: prepare && trackId ? prepare.error(trackId) : null, attempts: prepare && trackId ? prepare.attempts(trackId) : 0,

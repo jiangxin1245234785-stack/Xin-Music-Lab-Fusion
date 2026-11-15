@@ -183,6 +183,11 @@
   const scoreScene = window.XinScoreScene?.create({
     bridge, audio: dom.audio, stage: dom.stage, canvas: document.getElementById('scoreCanvas')
   }) || null;
+  // Lyrics over the score (score-lyrics.js): asked for only while the score shows a song.
+  const scoreLyrics = scoreScene && window.XinScoreLyrics?.create({
+    bridge, stage: dom.stage, canvas: document.getElementById('scoreCanvas'), scene: scoreScene, audio: dom.audio
+  }) || null;
+  window.XinScoreLyricsView = Object.freeze({status: () => scoreLyrics?.status() || null});
   window.XinScoreSceneView = Object.freeze({
     status: () => scoreScene?.status() || null,
     refresh: () => scoreScene?.load(state.selectedTrackId),

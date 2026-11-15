@@ -154,7 +154,8 @@
             <small class="palette-muted" data-palette-muted="score" data-i18n="palette.mutedScore" hidden>谱面用固定的轨道颜色，配色在这里不起作用</small>
             <small class="palette-muted" data-palette-muted="own" data-i18n="palette.mutedOwn" hidden>这个画面用它自己的颜色，配色在这里不起作用</small>
             <small class="palette-muted" data-palette-muted="pulsarMono" data-i18n="palette.mutedPulsar" hidden>脉冲星的黑白模式不用配色；在「更多」里切到 EVA Neon 才跟配色</small>
-            <label class="xl-toggle-field"><span>跟和弦变色<small data-i18n="switch.chordOff">换了新配色以后，暂时不跟和弦变色</small></span><input id="fusionAutoColor" class="xl-switch-input" type="checkbox" role="switch" disabled /></label>
+            <!-- 跟和弦变色: hidden since B6 (no control that cannot be used); its stored value is kept for the chord tint. -->
+            <label class="xl-toggle-field" data-chord-color-row hidden><span>跟和弦变色<small data-i18n="switch.chordOff">换了新配色以后，暂时不跟和弦变色</small></span><input id="fusionAutoColor" class="xl-switch-input" type="checkbox" role="switch" disabled /></label>
             <div class="xl-row">
               <span class="xl-row__label" data-i18n="shell.textSize">字号</span>
               <span class="ui-scale-control" aria-label="界面字号" data-i18n-aria-label="visualSettings.uiScale">
@@ -214,6 +215,7 @@
             <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">音符光效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
             <label class="xl-toggle-field"><span data-i18n="score.fxFollow">光效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <label class="xl-toggle-field"><span><span data-i18n="score.lyrics">显示歌词</span><small data-i18n="score.lyricsHint">歌名和歌手会发到 LRCLIB 去查；歌曲文件夹里有同名 .lrc 就先用它</small></span><input id="scoreLyrics" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
             <div id="scoreDynamicsTools" hidden>
               <p id="scoreDynamicsStatus" class="score-dynamics-status" role="status" aria-live="polite"></p>
@@ -536,6 +538,8 @@
     <script src="../scoreview/media-clock.js"></script>
     <script src="./score-prepare.js"></script>
     <script src="./score-scene.js"></script>
+    <script src="./lyrics-core.js"></script>
+    <script src="./score-lyrics.js"></script>
     <script src="./score-dynamics-controls.js"></script>
     <script src="./score-notes-controls.js"></script>
     <script src="./score-export-controls.js"></script>

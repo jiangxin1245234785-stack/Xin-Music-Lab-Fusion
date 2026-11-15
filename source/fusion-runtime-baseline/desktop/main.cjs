@@ -129,6 +129,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   // XLD's service has started saving ('committing') it refuses, and that result is saved whole.
   app.on('before-quit',()=>{try{const running=xldAnalysis.task();if(running&&['starting','running'].includes(running.status))xldAnalysis.cancel();}catch(_){}});
   ipcMain.handle('fusion:listening-read',async()=>{try{return {ok:true,value:await listeningState.read()};}catch(e){return {ok:false,error:String(e.message||e)};}});
+  // Lyrics for the score (B6): the page names a track by id; the names sent out come from the library here, not the page.
+  const lyricsModule=require('./lyrics.cjs');
+  const lyrics=lyricsModule.createLyrics({root:lyricsModule.rootFor(app.getPath('appData'),app.getPath('userData'))});
+  ipcMain.handle('fusion:lyrics',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const duration=Number(track.duration)>0?Number(track.duration):(Number(payload?.duration)>0&&Number(payload.duration)<86400?Number(payload.duration):0);try{return await lyrics.get({id:track.id,title:track.title,artist:track.artist,album:track.album,duration,filePath:track.filePath});}catch(e){return {ok:false,reason:'error'};}});
   ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(
     __dirname,

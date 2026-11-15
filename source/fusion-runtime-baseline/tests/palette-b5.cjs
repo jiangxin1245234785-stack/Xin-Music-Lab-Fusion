@@ -172,6 +172,9 @@ async function coverCase() {
   assert.match(fusion, /if \(coverUrl\) dom\.cover\.src = coverUrl;\n    else dom\.cover\.removeAttribute\('src'\);\n    visualColor\?\.cover\?\.\(coverUrl\);/);
   assert.match(fusion, /const CHORD_COLOR_OFF = true;\n  function applyChordColor\(consensus\) \{\n    if \(CHORD_COLOR_OFF \|\|/);
   assert.match(html, /<input id="fusionAutoColor" class="xl-switch-input" type="checkbox" role="switch" disabled \/>/, '跟和弦变色置灰');
+  // B6: the whole row is hidden, and the hidden attribute wins over the field's own display.
+  assert.match(html, /<label class="xl-toggle-field" data-chord-color-row hidden><span>跟和弦变色/, '跟和弦变色整行藏起来');
+  assert.match(read('shell.css'), /\.xl-toggle-field\[hidden\] \{ display: none; \}/);
   assert.match(html, /data-i18n="switch\.chordOff">/);
   assert.match(app, /cover: url => setCoverPalette\(url\),/);
   assert.match(app, /basePalette\[role\] = basePalette\[role\]\.map\(\(value, index\) => value \+ \(targetPalette\[role\]\[index\] - value\) \* step\);/, '换色是渐变');

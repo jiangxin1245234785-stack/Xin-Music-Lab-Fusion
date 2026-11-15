@@ -36,7 +36,7 @@ for (const tag of buttons) {
   assert.match(tag, /data-i18n-aria-label="switch\./, `button has a spoken name in both languages: ${tag}`);
 }
 // The checkbox rows are labels, so clicking the words flips the switch too.
-const rows = drawer.match(/<label class="xl-toggle-field">[\s\S]*?<\/label>/g) || [];
+const rows = drawer.match(/<label class="xl-toggle-field"[^>]*>[\s\S]*?<\/label>/g) || [];
 assert.equal(rows.length, checkboxes.length, 'every checkbox sits in a label row');
 
 // 2. 置顶 is no longer a button in the button grid; it is a switch row like the others.
