@@ -20,7 +20,7 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    for(const item of await fs.readdir(directory,{withFileTypes:true})){
     const file=path.join(directory,item.name),relative=path.relative(root,file),stat=await fs.lstat(file);
     if(stat.isSymbolicLink()){warnings.push('跳过链接：'+relative);files.set(file,{link:true,size:0,mtimeMs:stat.mtimeMs});continue;}
-    if(stat.isDirectory()){directories.push(file);await walk(file,depth+1);}else if(stat.isFile()){files.set(file,{size:stat.size,mtimeMs:stat.mtimeMs});bytes+=stat.size;if(/\.wav$/i.test(item.name))wavBytes+=stat.size;}
+    if(stat.isDirectory()){directories.push(file);await walk(file,depth+1);}else if(stat.isFile()){files.set(file,{size:stat.size,mtimeMs:stat.mtimeMs});bytes+=stat.size;if(/\.(?:wav|flac)$/i.test(item.name))wavBytes+=stat.size;}
    }
   }
   await walk(root,0);
@@ -38,7 +38,8 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    if(!children.length)continue;
    const record=records.find(r=>r.track===track&&r.value.runId===runId&&r.value.kind===(kind==='stems'?'stems':'refinement'));
    const data=record?.value||{},keepRecords=records.filter(r=>r.track===track&&path.dirname(r.file)===path.join(track,'refinement','kept')&&r.value.runId===runId);
-   const known=kind==='stems'?/^(bass|piano|guitar|drums|vocals|other)\.wav$/:/^(?:(?:listen-)?(?:original|target|residual|strings))\.wav$/;
+   // Stem audio is a float WAV or (after the FLAC migration, core/stem-audio.cjs) a marked 24-bit FLAC.
+   const known=kind==='stems'?/^(bass|piano|guitar|drums|vocals|other)\.(?:wav|flac)$/:/^(?:(?:listen-)?(?:original|target|residual|strings))\.(?:wav|flac)$/;
    const unknown=children.some(([file,stat])=>stat.link||path.dirname(file)!==directory||!(known.test(path.basename(file))||['README.txt',marker].includes(path.basename(file))));
    const rowBytes=children.reduce((sum,[,stat])=>sum+stat.size,0),kept=files.has(path.join(directory,marker))||keepRecords.length>0;
    const dependencies=records.filter(r=>r.track===track&&((kind==='stems'&&r.value.kind==='refinement'&&r.value.parentRunId===runId&&directories.includes(path.join(track,'refinement',r.value.runId)))||(r.value.kind==='midi'&&r.value.sourceRunId===runId&&typeof r.value.file==='string'&&files.has(path.resolve(track,r.value.file)))));

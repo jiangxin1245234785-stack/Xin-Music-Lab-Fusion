@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs/promises'),fsSync=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process'),{fileURLToPath,pathToFileURL}=require('node:url');
 const PROFILES=require('../analysis-refine/profiles.json');
+const audio=require('./stem-audio.cjs');
 const profileFor=id=>PROFILES.find(profile=>profile.id===id);
 // Retirement stops an engine being offered for new runs. It deliberately does NOT touch profileFor, read(),
 // context() or the cache key, so every run a retired engine ever produced stays readable and stays deletable.
@@ -65,13 +66,16 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
   if(reference){
    if(ctx.sourceStem==='mix'||reference.kind!=='stem'||reference.runId!==ctx.parentRunId||reference.stem!==ctx.sourceStem||reference.startFrame!==Math.round(ctx.start*stem.sampleRate)||reference.frames!==frames||reference.size!==ctx.size||!Number.isFinite(reference.mtimeMs)||Math.abs(reference.mtimeMs-ctx.mtimeMs)>1||result.files?.original)throw Error('refinement-source-stale');
    await require('./storage.cjs').guarded(path.dirname(ctx.directory),ctx.input);
-   const input=await fs.open(ctx.input,'r');try{const h=await require('./mix-audio.cjs').header(input,ctx.size);if(h.code!==3||h.bits!==32||h.frames!==stem.frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-source-stale');}finally{await input.close();}
+   // The parent stem as a float WAV or a marked 24-bit FLAC (core/stem-audio.cjs).
+   const h=await audio.probe(ctx.input).catch(()=>null);if(!audio.isStemFormat(h)||h.frames!==stem.frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-source-stale');
   }
   for(const name of reference?['target','residual']:['original','target','residual']){
-   if(result.files?.[name]!==result.runId+'/'+name+'.wav')throw Error('refinement-path-invalid');
+   // Float WAV as written, or (compact results only, after the FLAC migration) a marked 24-bit FLAC.
+   const flac=compact&&result.files?.[name]===result.runId+'/'+name+'.flac';
+   if(!flac&&result.files?.[name]!==result.runId+'/'+name+'.wav')throw Error('refinement-path-invalid');
    const file=path.join(ctx.directory,result.files[name]),stat=await fs.stat(file);
-   if(stat.size<frames*stem.channels*4)throw Error('refinement-incomplete');
-   if(compact){await require('./storage.cjs').guarded(ctx.directory,file);const f=await fs.open(file,'r');try{const h=await require('./mix-audio.cjs').header(f,stat.size);if(h.code!==3||h.bits!==32||h.frames!==frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-audio-invalid');}finally{await f.close();}}
+   if(!flac&&stat.size<frames*stem.channels*4)throw Error('refinement-incomplete');
+   if(compact){await require('./storage.cjs').guarded(ctx.directory,file);const h=await audio.probe(file).catch(()=>null);if(!audio.isStemFormat(h)||h.frames!==frames||h.channels!==stem.channels||h.sampleRate!==stem.sampleRate)throw Error('refinement-audio-invalid');}
   }
   if((compact||ctx.scope==='full')&&!result.playback)throw Error('refinement-playback-missing');
   if(result.playback){

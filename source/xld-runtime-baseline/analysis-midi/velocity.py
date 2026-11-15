@@ -52,9 +52,12 @@ def onset_db(audio, onset, rate, options):
 
 def read_mono(audio_path, rate=None):
     """Mono float32 samples of a stem plus its sample rate; no resampling, no copy of channels."""
+    import sys
     import numpy as np
-    import soundfile as sf
-    samples, source_rate = sf.read(str(audio_path), dtype='float32', always_2d=True)
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import stem_audio  # a stem may be a marked FLAC at half level; read() applies the gain (XML's dynamics job too)
+    samples, source_rate = stem_audio.read(str(audio_path), dtype='float32', always_2d=True)
     mono = samples.mean(axis=1) if samples.shape[1] > 1 else samples[:, 0]
     return np.ascontiguousarray(mono), source_rate
 

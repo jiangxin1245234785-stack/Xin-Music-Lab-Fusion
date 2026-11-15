@@ -64,9 +64,11 @@ QUIET_STEM_DB = -120.0         # read_levels' loud level for a stem with nothing
 
 def read_levels(path):
     """Frame level of the stem in dBFS (the louder channel, so a hard-panned part is not averaged away)."""
+    import sys
     import numpy as np
-    import soundfile as sf
-    audio, rate = sf.read(str(path), dtype='float32', always_2d=True)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import stem_audio  # a stem may be a marked FLAC at half level; read() applies the gain
+    audio, rate = stem_audio.read(str(path), dtype='float32', always_2d=True)
     frames = (audio.shape[0] // LEVEL_HOP) * LEVEL_HOP
     if not frames:
         raise ValueError('evidence-audio-empty')

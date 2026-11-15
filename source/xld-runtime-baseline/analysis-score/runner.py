@@ -155,12 +155,13 @@ def stem_files(track_dir):
 
 def make_levels(track_dir):
     import numpy as np
-    import soundfile as sf
+    sys.path.insert(0, str(MIDI))
+    import stem_audio  # a stem is a float WAV or a marked FLAC at half level; read() applies the gain
     groups = {}
     for group, path in stem_files(track_dir).items():
         if not Path(path).is_file():
             continue
-        audio, rate = sf.read(str(path), dtype='float32', always_2d=True)
+        audio, rate = stem_audio.read(str(path), dtype='float32', always_2d=True)
         weighted = k_weighted(audio.mean(axis=1), rate)
         count = len(weighted) // rate
         if not count:

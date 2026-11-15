@@ -121,15 +121,21 @@ def separate(input_path: Path, output_path: Path, track_id: str, run_id: str, no
     assets = output_path.parent / "stems" / run_id
     assets.mkdir(parents=True, exist_ok=False)
     entries = []
+    # Stems are written as marked 24-bit FLAC at half level (analysis-midi/stem_audio.py; readers apply the gain).
+    # A stem with a sample at or above 2.0 cannot be held that way and is written as a float WAV, as before.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis-midi"))
+    import stem_audio
     for index, (name, waveform) in enumerate(zip(names, stems)):
-        notify(f"保存 {name}.wav", 0.86 + 0.12 * index / len(names), "save")
-        file = assets / f"{name}.wav"
-        sf.write(str(file), waveform.T.cpu().numpy(), 44100, subtype="FLOAT")
+        data = waveform.T.cpu().numpy()
+        flac = float(np.abs(data).max(initial=0)) < stem_audio.FLAC_GAIN
+        file = assets / f"{name}.{'flac' if flac else 'wav'}"
+        notify(f"保存 {file.name}", 0.86 + 0.12 * index / len(names), "save")
+        fields = stem_audio.write_stem(file, data, 44100) if flac else (sf.write(str(file), data, 44100, subtype="FLOAT") or {})
         info = sf.info(str(file))
-        if (info.frames, info.channels, info.samplerate, info.subtype) != (expected_frames, 2, 44100, "FLOAT"):
+        if (info.frames, info.channels, info.samplerate) != (expected_frames, 2, 44100) or not stem_audio.check_written(file, expected_frames, 2, 44100):
             raise ValueError(f"输出校验失败：{name}")
         entries.append({"name": name, "file": file.relative_to(output_path.parent).as_posix(),
-            "sampleRate": info.samplerate, "channels": info.channels, "frames": info.frames})
+            "sampleRate": info.samplerate, "channels": info.channels, "frames": info.frames, **fields})
     result = {"schemaVersion": 1, "kind": "stems", "trackId": track_id, "runId": run_id,
         "source": {"path": str(input_path), "size": source_stat.st_size, "mtimeMs": source_stat.st_mtime_ns / 1e6},
         "engine": engine, "model": profile["model"], "backend": backend,

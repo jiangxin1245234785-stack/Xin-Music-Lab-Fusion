@@ -88,6 +88,18 @@ def validate_midi_roundtrip(midi, midi_file):
 def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
                source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings", keep_kit=None, beat_source=None,
                score_vocals=None, score_vocals_sha256=None):
+    # A stem may be a float WAV or a marked 24-bit FLAC at half level (stem_audio.py). Every engine reads
+    # audio_path: the stem itself, or a temporary float WAV with the gain applied (outside the analysis root).
+    # The record still names the stem itself.
+    import stem_audio
+    with stem_audio.decoded(Path(input_path).resolve()) as audio_path:
+        return _transcribe(Path(input_path), Path(audio_path), output_path, track_id, stem, source_run_id, run_id, notify, engine,
+                           string_target, keep_kit, beat_source, score_vocals, score_vocals_sha256)
+
+
+def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id: str, stem: str,
+                source_run_id: str, run_id: str, notify=emit, engine="basic-pitch", string_target="strings", keep_kit=None, beat_source=None,
+                score_vocals=None, score_vocals_sha256=None):
     profile = PROFILES[engine]
     if stem not in profile["stems"] or stem in profile.get('retiredFor', []):
         raise ValueError("模型不支持当前声部")
@@ -103,11 +115,11 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
     notify("读取分轨", 0.02, "decode")
     import numpy as np
     import soundfile as sf
-    info = sf.info(str(input_path))
+    info = sf.info(str(audio_path))
     if info.frames <= 0 or info.samplerate <= 0:
         raise ValueError("分轨音频为空")
     duration = info.frames / info.samplerate
-    for block in sf.blocks(str(input_path), blocksize=65536, dtype="float32"):
+    for block in sf.blocks(str(audio_path), blocksize=65536, dtype="float32"):
         if not np.isfinite(block).all():
             raise ValueError("分轨包含无效采样")
     timing=None
@@ -134,33 +146,33 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
                     notify('正在识别音符', .08 + .8 * min(1, self.done / duration), 'transcribe')
                     return result
 
-            _, detected, _ = predict(input_path, ProgressModel(), onset_threshold=options['onsetThreshold'],
+            _, detected, _ = predict(audio_path, ProgressModel(), onset_threshold=options['onsetThreshold'],
                 frame_threshold=options['frameThreshold'], minimum_note_length=options['minimumNoteMs'], midi_tempo=120)
             backend = {'name': 'basic-pitch', 'version': importlib.metadata.version('basic-pitch'), 'device': 'cpu'}
         elif profile['backend'] == 'muscriptor':
             from muscriptor_backend import predict as muscriptor_predict
-            detected, backend = muscriptor_predict(input_path, profile, notify, duration, string_target=string_target)
+            detected, backend = muscriptor_predict(audio_path, profile, notify, duration, string_target=string_target)
         elif profile['backend'] == 'yourmt3':
             from yourmt3 import predict as yourmt3_predict
-            detected, backend = yourmt3_predict(input_path, profile, notify, duration)
+            detected, backend = yourmt3_predict(audio_path, profile, notify, duration)
         elif profile['backend'] == 'adtof-stems':
             from drumkit import predict as drumkit_predict
-            detected, backend = drumkit_predict(input_path, profile, notify, duration, keep_kit=keep_kit)
+            detected, backend = drumkit_predict(audio_path, profile, notify, duration, keep_kit=keep_kit)
         elif profile['backend'] == 'adtof':
             from drums import predict as drum_predict
-            detected, backend = drum_predict(input_path, profile, notify, duration)
+            detected, backend = drum_predict(audio_path, profile, notify, duration)
         elif profile['backend'] == 'transkun':
             from transkun_backend import predict as transkun_predict
-            detected, backend = transkun_predict(input_path, profile, notify, duration)
+            detected, backend = transkun_predict(audio_path, profile, notify, duration)
         elif profile['backend'] == 'pyin':
             from vocals import predict as vocals_predict
-            detected, backend = vocals_predict(input_path, profile, notify, duration)
+            detected, backend = vocals_predict(audio_path, profile, notify, duration)
         elif profile['backend'] == 'score-vocals':
             from score_vocals_backend import predict as score_vocals_predict
             detected, backend = score_vocals_predict(score_vocals, score_vocals_sha256, notify, duration)
         else:
             from highres import predict as highres_predict
-            detected, backend = highres_predict(input_path, profile, notify, duration)
+            detected, backend = highres_predict(audio_path, profile, notify, duration)
     notify("保存 MIDI", 0.92, "save")
     midi = pretty_midi.PrettyMIDI(initial_tempo=options["midiTempo"], resolution=960)
     instrument = pretty_midi.Instrument(program=STRING_PROGRAMS[string_target] if stem == "strings" else STEMS[stem], name=string_target if stem == "strings" else stem, is_drum=(stem == "drums"))
@@ -210,7 +222,7 @@ def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
         from velocity import apply as velocity_from_stem
         notify('按分轨能量推算力度', .9, 'velocity')
         replaced = backend.get('velocityMode')
-        backend.update(velocity_from_stem(midi, input_path, options['velocityFromStem'],
+        backend.update(velocity_from_stem(midi, audio_path, options['velocityFromStem'],
                                           group_by_pitch=(stem == 'drums')),
                        velocityReplaced=replaced)
     notes = [{"start": note.start, "end": note.end, "pitch": note.pitch, "velocity": note.velocity}

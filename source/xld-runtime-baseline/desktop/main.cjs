@@ -875,6 +875,8 @@ async function cancelAnalysis(taskId) {
 
 app.whenReady().then(async () => {
   if(!ownsWindow)return;
+  // A file:// link to a FLAC stem plays its decoded WAV (gain restored); every other file request is untouched.
+  require('../core/stem-audio.cjs').registerFileProtocol({protocol: require('electron').protocol, net: require('electron').net});
   await readSettings();
   ipcMain.handle('locale:get-host', () => mainLocale.getState());
   ipcMain.handle('locale:set-renderer', (_event, payload) => {

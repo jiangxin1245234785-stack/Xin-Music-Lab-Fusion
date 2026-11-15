@@ -373,12 +373,17 @@ function createDerivedAssets({analysisRoot}) {
     const names = new Set();
     for (const stem of result.stems) {
       if (!['bass', 'piano', 'guitar', 'drums', 'vocals', 'other'].includes(stem.name) || names.has(stem.name) ||
-          !/^stems\/[a-f0-9-]{36}\/[a-z]+\.wav$/.test(stem.file) ||
-          path.basename(stem.file) !== stem.name + '.wav' ||
+          !/^stems\/[a-f0-9-]{36}\/[a-z]+\.(?:wav|flac)$/.test(stem.file) ||
+          path.basename(stem.file) !== stem.name + path.extname(stem.file) ||
           stem.sampleRate !== 44100 || stem.channels !== 2 || !Number.isSafeInteger(stem.frames) || stem.frames <= 0 ||
           stem.frames !== result.stems[0].frames) throw new Error('stems-invalid');
       names.add(stem.name);
-      if ((await fs.stat(path.join(directory, stem.file))).size < stem.frames * 8) throw new Error('stems-incomplete');
+      // A float WAV (no encoding recorded) or a marked 24-bit FLAC at half level (core/stem-audio.cjs).
+      const flac = stem.file.endsWith('.flac');
+      if (flac ? stem.encoding !== 'flac-24' || stem.gain !== 2 : (stem.encoding !== undefined && stem.encoding !== 'wav-float32') || (stem.gain !== undefined && stem.gain !== 1))
+        throw new Error('stems-invalid');
+      const size = (await fs.stat(path.join(directory, stem.file))).size;
+      if (flac ? size < 64 : size < stem.frames * 8) throw new Error('stems-incomplete');
     }
     return result;
   }

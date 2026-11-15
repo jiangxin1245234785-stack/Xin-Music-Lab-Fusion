@@ -4,6 +4,8 @@ const {guarded}=require('./storage.cjs'),{header}=require('./mix-audio.cjs'),{wr
 const names=['original.wav','listen-original.wav','listen-target.wav','listen-residual.wav'];
 const same=(a,b)=>a.size===b.size&&a.mtimeMs===b.mtimeMs;
 async function exactRange(source,original,first,frames,check=()=>{}){
+ // Byte comparison of two float WAVs; a FLAC stem (after the migration) is never byte-equal to a WAV slice.
+ if(/\.flac$/i.test(source)||/\.flac$/i.test(original))return false;
  const a=await fs.open(source,'r');let b;
  try{b=await fs.open(original,'r');const ah=await header(a,(await a.stat()).size),bh=await header(b,(await b.stat()).size);
   if(ah.code!==3||bh.code!==3||ah.bits!==32||bh.bits!==32||ah.channels!==bh.channels||ah.sampleRate!==bh.sampleRate||bh.frames!==frames||first+frames>ah.frames)return false;

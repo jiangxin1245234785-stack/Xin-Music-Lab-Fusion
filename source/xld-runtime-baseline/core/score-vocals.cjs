@@ -10,7 +10,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {fileURLToPath} = require('node:url');
-const {header} = require('./mix-audio.cjs');
+const audio = require('./stem-audio.cjs');
 
 const ENGINE = 'score-vocals';
 const SPLIT_ENGINE = 'karaoke-lead';
@@ -39,7 +39,8 @@ function sameSource(recorded, current) {
     && recorded.size === current.size && Number.isFinite(recorded.mtimeMs) && Math.abs(recorded.mtimeMs - current.mtimeMs) <= MTIME_SLACK_MS;
 }
 
-// The two split files named in a result, checked against the stem: present, float WAV, same frames, rate, channels.
+// The two split files named in a result, checked against the stem: present, float WAV or marked 24-bit FLAC
+// (core/stem-audio.cjs), same frames, rate, channels.
 async function readSplit(directory, split, current) {
   if (!split || typeof split !== 'object') return {ok: false, error: 'split-missing'};
   const inside = relative => {
@@ -55,12 +56,9 @@ async function readSplit(directory, split, current) {
     if (saved?.kind !== 'refinement' || saved.engine !== SPLIT_ENGINE || saved.runId !== split.runId || ref.runId !== current.stemRunId
       || ref.size !== current.size || !(Math.abs(ref.mtimeMs - current.mtimeMs) <= MTIME_SLACK_MS)) return {ok: false, error: 'split-stale'};
     for (const name of ['lead', 'backing']) {
-      const handle = await fs.open(files[name], 'r');
-      try {
-        const h = await header(handle, (await handle.stat()).size);
-        if (h.code !== 3 || h.bits !== 32 || h.frames !== current.frames || h.channels !== current.channels || h.sampleRate !== current.sampleRate)
-          return {ok: false, error: 'split-audio-invalid'};
-      } finally { await handle.close(); }
+      const h = await audio.probe(files[name]);
+      if (!audio.isStemFormat(h) || h.frames !== current.frames || h.channels !== current.channels || h.sampleRate !== current.sampleRate)
+        return {ok: false, error: 'split-audio-invalid'};
     }
   } catch (error) { return {ok: false, error: error.code === 'ENOENT' ? 'split-missing' : 'split-invalid'}; }
   return {ok: true, ...files, runId: split.runId, model: split.model || null};

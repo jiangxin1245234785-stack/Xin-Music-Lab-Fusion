@@ -22,9 +22,12 @@ async function header(handle,size){
  return {...fmt,...data,frames:data.bytes/fmt.align,duration:data.bytes/fmt.align/fmt.sampleRate};
 }
 function sample(b,at,h){let v=h.code===3?b.readFloatLE(at):h.bits===16?b.readInt16LE(at)/32768:h.bits===24?b.readIntLE(at,3)/8388608:b.readInt32LE(at)/2147483648;return Number.isFinite(v)?v:0;}
-function createAudioReader(){
+// A FLAC stem (core/stem-audio.cjs) is read through its decoded float WAV in the temp cache; WAV stems as before.
+function createAudioReader({audioCache=require('./stem-audio.cjs').sharedCache()}={}){
  const entries=new Map(),cache=new Map();
+ const prepare=file=>audioCache.playable(file);
  async function register(file,trackId){
+  const source=file;file=await prepare(source);
   const stat=await fs.stat(file),key=crypto.createHash('sha256').update(JSON.stringify([file,stat.size,stat.mtimeMs])).digest('hex');
   if(cache.has(key)){entries.set(key,{...cache.get(key),trackId});return cache.get(key).public;}
   const f=await fs.open(file,'r');
@@ -34,7 +37,7 @@ function createAudioReader(){
     const b=Buffer.alloc(frames*h.align);await f.read(b,0,b.length,h.offset+start*h.align);
     let peak=0;for(let j=0;j<b.length;j+=h.bits/8)peak=Math.max(peak,Math.abs(sample(b,j,h)));waveform.push(Math.min(1,peak));
    }
-   const item={file,size:stat.size,mtime:stat.mtimeMs,h,trackId,public:{key,streamKey:key,url:pathToFileURL(file).href,stream:true,duration:h.duration,sampleRate:h.sampleRate,channels:h.channels,waveform}};
+   const item={file,source,size:stat.size,mtime:stat.mtimeMs,h,trackId,public:{key,streamKey:key,url:pathToFileURL(file).href,stream:true,duration:h.duration,sampleRate:h.sampleRate,channels:h.channels,waveform}};
    if(cache.size>=64)cache.delete(cache.keys().next().value);cache.set(key,item);entries.set(key,item);
    // Only retain source authorization for a bounded number of recently visited tracks.
    if(entries.size>256)entries.delete(entries.keys().next().value);
@@ -43,6 +46,8 @@ function createAudioReader(){
  }
  async function chunk({trackId,key,index}){
   const e=entries.get(key);if(!e||e.trackId!==trackId||!Number.isSafeInteger(index)||index<0)throw Error('wav-source-unavailable');
+  // A decoded copy another process evicted is decoded again (same samples, so the header read at register still holds).
+  if(e.source!==e.file&&!(await fs.stat(e.file).catch(()=>null))){e.file=await prepare(e.source);const n=await fs.stat(e.file);e.size=n.size;e.mtime=n.mtimeMs;}
   const s=await fs.stat(e.file);if(s.size!==e.size||Math.abs(s.mtimeMs-e.mtime)>1)throw Error('wav-source-changed');
   const h=e.h,start=index*BLOCK_SECONDS*h.sampleRate,frames=Math.min(BLOCK_SECONDS*h.sampleRate,h.frames-start);
   if(frames<=0)throw Error('wav-range');
@@ -53,7 +58,7 @@ function createAudioReader(){
    return {ok:true,index,sampleRate:h.sampleRate,frames,channels};
   }finally{await f.close();}
  }
- return {register,chunk};
+ return {register,chunk,prepare};
 }
 // Only validated complements are offered. No user-provided paths cross the playback IPC boundary.
 function createCatalog({assets,refinement,reader}){
@@ -93,6 +98,8 @@ function createCatalog({assets,refinement,reader}){
    // Preserve the editor's persisted source identity. PCM cache identity is separate.
    lanes.push(m?{...m,sourceAudio:{...sourceAudio,key:m.sourceAudio?.key||sourceAudio.key},duration:sourceAudio.duration}:{stem,engineName,noteCount:0,notes:[],instruments:[],editable:false,wavOnly:true,duration:sourceAudio.duration,sourceAudio});
   }
+  // Decode every FLAC this mix needs at once (one worker each) before the rows are registered one by one.
+  if(reader.prepare){const files=[];if(!chosen.some(g=>g.parent==='mix')&&base.ok)for(const stem of base.stems)files.push(fileURLToPath(stem.audioUrl));if(vocalSplit)files.push(vocalSplit.lead,vocalSplit.backing);for(const g of chosen)files.push(path.join(folder,g.record.files.target),path.join(folder,g.record.files.residual));await Promise.all(files.map(file=>reader.prepare(file)));}
   if(!chosen.some(g=>g.parent==='mix')&&base.ok){
    for(const stem of base.stems){
     if(chosen.some(g=>g.parent===stem.name))continue;

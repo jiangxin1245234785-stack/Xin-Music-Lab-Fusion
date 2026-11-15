@@ -48,11 +48,14 @@ const toByte = meanSquare => {
 };
 
 // Streams the data chunk and folds every hop of frames into one mean square (all channels together).
-async function computeEnvelope(file, {hopSeconds = HOP_SECONDS} = {}) {
-  const stat = await fsp.stat(file);
+// A FLAC stem is read through its decoded float WAV in the temp cache (core/stem-audio.cjs); the size and time
+// reported stay the stem's own.
+async function computeEnvelope(source, {hopSeconds = HOP_SECONDS, playable = file => require('./stem-audio.cjs').sharedCache().playable(file)} = {}) {
+  const stat = await fsp.stat(source);
+  const file = await playable(source);
   const handle = await fsp.open(file, 'r');
   let h;
-  try { h = await readHeader(handle, stat.size); } finally { await handle.close(); }
+  try { h = await readHeader(handle, file === source ? stat.size : (await handle.stat()).size); } finally { await handle.close(); }
   const hop = Math.max(1, Math.round(h.sampleRate * hopSeconds));
   const values = new Uint8Array(Math.ceil(h.frames / hop));
   const bytesPerSample = h.bits / 8, perHop = hop * h.channels;

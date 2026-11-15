@@ -81,6 +81,10 @@ def run(input_path,output_path,engine,start,duration,run_id,track_id,parent_run,
         sr=handle.samplerate;first=0 if scope=='full' else round(start*sr)
         if first>=len(handle):raise ValueError('起点已超过音轨长度')
         handle.seek(first);audio=handle.read(-1 if scope=='full' else round(duration*sr),dtype='float32',always_2d=True)
+    # A parent stem may be a marked 24-bit FLAC at half level (analysis-midi/stem_audio.py): restore its level.
+    sys.path.insert(0,str(HERE.parent/'analysis-midi'));import stem_audio
+    gain=stem_audio.gain_of(input_path)
+    if gain!=1:audio=audio*np.float32(gain)
     if audio.shape[1] not in [1,2] or not len(audio) or not np.isfinite(audio).all():raise ValueError('输入音频无效')
     notify('读取 '+source_stem+(' 整曲' if scope=='full' else ' 片段'),.03,'decode')
     if profile['backend']=='roformer':
@@ -111,7 +115,7 @@ def run(input_path,output_path,engine,start,duration,run_id,track_id,parent_run,
     error=0.
     for offset in range(0,len(audio),sr*10):
         end=offset+sr*10;error=max(error,float(np.max(np.abs(audio[offset:end]-target[offset:end]-residual[offset:end]))))
-    (folder/'README.txt').write_text('XLD · '+profile['name']+'\nTarget: '+target_name+'\nSource: '+source_stem+'\nScope: '+scope+'\nRaw FLOAT WAV; peaks may exceed 1.0. XLD applies shared audition gain at playback.\nInput references its exact base stem and sample range; decoded original songs retain original.wav.\n目标与剩余共同组成输入音轨，不叠加原输入。不同乐器目标可能重叠，不直接相加。\n',encoding='utf-8')
+    (folder/'README.txt').write_text('XLD · '+profile['name']+'\nTarget: '+target_name+'\nSource: '+source_stem+'\nScope: '+scope+'\n24-bit FLAC at half level (comment xld-gain=2; float WAV if a peak reaches 2.0); peaks may exceed 1.0. XLD applies shared audition gain at playback.\nInput references its exact base stem and sample range; decoded original songs retain original.wav.\n目标与剩余共同组成输入音轨，不叠加原输入。不同乐器目标可能重叠，不直接相加。\n',encoding='utf-8')
     result=dict(schemaVersion=3,kind='refinement',scope=scope,engine=engine,runId=run_id,trackId=track_id,parentRunId=parent_run,cacheKey=cache_key,target=target_name,requestedDevice=device,sourceStem=source_stem,timeOrigin=first/sr,duration=len(audio)/sr,sampleRate=sr,frames=len(audio),channels=audio.shape[1],backend=backend,files=files,playback=playback,reconstructionError=error)
     if source_stem!='mix':
         result['originalSource']=dict(kind='stem',runId=parent_run,stem=source_stem,startFrame=first,frames=len(audio),size=before.st_size,mtimeMs=before.st_mtime*1000)

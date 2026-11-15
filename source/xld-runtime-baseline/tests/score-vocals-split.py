@@ -18,6 +18,8 @@ import soundfile as sf
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'analysis-score'))
+sys.path.insert(0, str(HERE.parent / 'analysis-midi'))
+import stem_audio as stem_io  # noqa: E402  (lead / backing are marked 24-bit FLAC since 2026-11-15)
 import vocals_runner as runner  # noqa: E402
 
 RATE, SECONDS = 44100, 12
@@ -89,10 +91,11 @@ def main():
         lead, backing = track / split['lead'], track / split['backing']
         for path in (lead, backing):
             info = sf.info(str(path))
-            assert (info.format, info.subtype, info.samplerate, info.channels, info.frames) == ('WAV', 'FLOAT', RATE, 2, RATE * SECONDS), info
+            assert (info.format, info.subtype, info.samplerate, info.channels, info.frames) == ('FLAC', 'PCM_24', RATE, 2, RATE * SECONDS), info
+            assert stem_io.gain_of(path) == stem_io.FLAC_GAIN
         stem_audio, _ = sf.read(str(stem), dtype='float32', always_2d=True)
-        lead_audio, _ = sf.read(str(lead), dtype='float32', always_2d=True)
-        back_audio, _ = sf.read(str(backing), dtype='float32', always_2d=True)
+        lead_audio, _ = stem_io.read(str(lead), dtype='float32', always_2d=True)
+        back_audio, _ = stem_io.read(str(backing), dtype='float32', always_2d=True)
         assert np.max(np.abs(lead_audio + back_audio - stem_audio)) < 1e-6, 'lead + backing = stem'
         manifest = json.loads((track / split['manifest']).read_text(encoding='utf-8'))
         assert manifest['kind'] == 'refinement' and manifest['engine'] == 'karaoke-lead' and manifest['target'] == 'lead'
@@ -176,7 +179,7 @@ def main():
         assert silent['lane'] is None and silent['why'] and 'provenance' not in silent, silent
         assert calls == count, 'nothing is run on an empty stem'
         assert not (quiet / 'refinement').exists(), 'and nothing is stored'
-    print('score vocals split: PASS (float WAV lead / backing at the stem format, sum to the stem, read back on the same stem, '
+    print('score vocals split: PASS (marked FLAC lead / backing at the stem format, sum to the stem, read back on the same stem, '
           'made again on a changed stem, missing add-on named, no split for an empty stem)')
 
 

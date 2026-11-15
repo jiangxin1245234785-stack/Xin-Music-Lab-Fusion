@@ -91,12 +91,10 @@ def stem_source(stem, run_id):
 
 
 def wave_ok(path, frames, channels, rate):
-    import soundfile as sf
-    try:
-        info = sf.info(str(path))
-    except Exception:
-        return False
-    return info.format == 'WAV' and info.subtype == 'FLOAT' and info.frames == frames and info.channels == channels and info.samplerate == rate
+    """A stored lead or backing: a float WAV (as written before) or a marked 24-bit FLAC (stem_audio.py), of this shape."""
+    sys.path.insert(0, str(MIDI))
+    import stem_audio
+    return stem_audio.check_written(path, frames, channels, rate)
 
 
 def find_split(track_dir, source, frames, channels, rate):
@@ -143,7 +141,7 @@ def clear_stale_staging(folder, now=None):
             if not readme.is_file() or not readme.read_text(encoding='utf-8').startswith(README_MARK):
                 continue
             children = list(item.iterdir())
-            if any(not child.is_file() or child.name not in ('README.txt', 'target.wav', 'residual.wav') for child in children):
+            if any(not child.is_file() or child.name not in ('README.txt', 'target.wav', 'residual.wav', 'target.flac', 'residual.flac') for child in children):
                 continue
             if now - max(child.stat().st_mtime for child in children) < STALE_STAGING_SECONDS:
                 continue
@@ -157,7 +155,8 @@ def clear_stale_staging(folder, now=None):
 def save_split(track_dir, track_id, source, audio, rate, lead, model_dir, device):
     """Write lead and backing under refinement/, checked before they get their final names. Returns (manifest, relative path)."""
     import numpy as np
-    import soundfile as sf
+    sys.path.insert(0, str(MIDI))
+    import stem_audio
     folder = track_dir / 'refinement'
     folder.mkdir(exist_ok=True)
     clear_stale_staging(folder)
@@ -167,12 +166,13 @@ def save_split(track_dir, track_id, source, audio, rate, lead, model_dir, device
     frames, channels = audio.shape
     try:
         (staging / 'README.txt').write_text(
-            README_MARK + '\ntarget.wav = 主唱，residual.wav = 和声（人声分轨减去主唱，两条相加等于人声分轨）\n'
-            'Raw FLOAT WAV at the vocal stem\'s rate and channels. Lead = target, backing = residual.\n', encoding='utf-8')
+            README_MARK + '\ntarget.flac = 主唱，residual.flac = 和声（人声分轨减去主唱，两条相加等于人声分轨）\n'
+            '24-bit FLAC at half level (comment xld-gain=2; read with stem_audio.read) at the vocal stem\'s rate and channels. '
+            'Lead = target, backing = residual.\n', encoding='utf-8')
         backing = (audio - lead).astype(np.float32)
-        sf.write(str(staging / 'target.wav'), lead, rate, subtype='FLOAT', format='WAV')
-        sf.write(str(staging / 'residual.wav'), backing, rate, subtype='FLOAT', format='WAV')
-        if not all(wave_ok(staging / name, frames, channels, rate) for name in ('target.wav', 'residual.wav')):
+        stem_audio.write_stem(staging / 'target.flac', lead, rate)
+        stem_audio.write_stem(staging / 'residual.flac', backing, rate)
+        if not all(wave_ok(staging / name, frames, channels, rate) for name in ('target.flac', 'residual.flac')):
             raise SystemExit('主唱 / 和声写盘后核对不符')
         error = 0.0
         for at in range(0, frames, rate * 10):
@@ -191,7 +191,7 @@ def save_split(track_dir, track_id, source, audio, rate, lead, model_dir, device
              'frames': frames, 'channels': channels, 'reconstructionError': error,
              'backend': {'model': SPLIT['model'], 'checkpointBytes': (model_dir / 'model.ckpt').stat().st_size,
                          'configSha256': hashlib.sha256(config).hexdigest(), 'demix': 'analysis-refine/roformer.demix, 20 s chunks, overlap 2', 'device': device},
-             'files': {'target': run_id + '/target.wav', 'residual': run_id + '/residual.wav'},
+             'files': {'target': run_id + '/target.flac', 'residual': run_id + '/residual.flac'}, 'encoding': stem_audio.ENCODING_FLAC, 'gain': stem_audio.FLAC_GAIN,
              'originalSource': {'kind': 'stem', 'runId': source['stemRunId'], 'stem': 'vocals', 'startFrame': 0, 'frames': frames,
                                 'size': source['size'], 'mtimeMs': source['mtimeMs']},
              'createdAt': time.strftime('%Y-%m-%dT%H:%M:%S%z')}
@@ -270,7 +270,8 @@ def main(argv=None):
     if args.engine != ENGINE['id'] or not args.output:
         parser.error('需要 --engine score-vocals --input <原曲> --output <结果>')
     import numpy as np
-    import soundfile as sf
+    sys.path.insert(0, str(MIDI))
+    import stem_audio  # stems and stored splits: float WAV or marked FLAC at half level; read() applies the gain
     output = Path(args.output).resolve()
     track_dir = output.parent
     started = time.monotonic()
@@ -280,7 +281,7 @@ def main(argv=None):
         raise SystemExit('这首歌没有人声分轨，先做分轨')
     source = stem_source(stem, manifest.get('runId'))
     say(0.03, '正在读取人声分轨', 'decode')
-    audio, rate = sf.read(str(stem), dtype='float32', always_2d=True)
+    audio, rate = stem_audio.read(str(stem), dtype='float32', always_2d=True)
     duration = len(audio) / rate
     print(json.dumps({'durationSeconds': duration}), flush=True)
     result = {'schemaVersion': 1, 'kind': 'score-vocals', 'engine': ENGINE, 'duration': duration, 'segments': [],
@@ -295,7 +296,7 @@ def main(argv=None):
         model_dir, upstream, weights = addons(need_split=saved is None)
         if saved:
             say(0.08, '主唱 / 和声已经分过，直接读取', 'split')
-            lead, _ = sf.read(str(track_dir / 'refinement' / saved['files']['target']), dtype='float32', always_2d=True)
+            lead, _ = stem_audio.read(str(track_dir / 'refinement' / saved['files']['target']), dtype='float32', always_2d=True)
             device = 'reused'
         else:
             say(0.08, '正在把主唱从和声里分出来', 'split')

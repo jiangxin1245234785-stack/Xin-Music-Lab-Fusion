@@ -79,6 +79,8 @@ function createWindow() {
 }
 
 if (gotSingleInstanceLock) app.whenReady().then(async () => {
+  // A file:// link to a FLAC stem plays its decoded WAV (gain restored); every other file request is untouched.
+  require('../../xld-runtime-baseline/core/stem-audio.cjs').registerFileProtocol({protocol: require('electron').protocol, net: require('electron').net});
   const xldSettingsPath = path.join(app.getPath('appData'), "Xin's Local Deck Beta", 'settings.json');
   const refreshXldSettings = async () => {
     try {
