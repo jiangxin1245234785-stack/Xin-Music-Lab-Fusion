@@ -64,11 +64,12 @@ XLD_HIGHRES_MODELS 下放 note_F1=0.9677_pedal_F1=0.9186.pth（钢琴）和 filo
 
 ### MuScriptor
 
-先在对应 Hugging Face 模型页接受条款并用本人账号下载。代码固定 revision：7f213afecf23bd6a1b8672aa223690ee9807cefb。模型文件必须匹配随包 models.json 中 checkpoint 的 revision、大小和 SHA256。
+先在对应 Hugging Face 模型页接受条款并用本人账号下载。吉他、Medium 弦乐和历史鼓使用代码 revision `7f213afecf23bd6a1b8672aa223690ee9807cefb`；Large 弦乐默认及原时序备选使用 `4c03cafce703b95a52c3d158af74c076e5d1b608`，分别放入下列两个目录，不覆盖彼此。模型文件必须匹配随包 models.json 中 checkpoint 的 revision、大小和 SHA256。
 
 ~~~text
 <XLD_MUSCRIPTOR_ROOT>/
-  upstream/muscriptor/__init__.py   上游源码
+  upstream/muscriptor/__init__.py             7f213af：原有用途
+  upstream-4c03cafc/muscriptor/__init__.py    4c03caf：Large 弦乐两项
   models/model.safetensors         Medium
   models/large/model.safetensors    Large（可选）
 ~~~
@@ -106,6 +107,23 @@ BTC 权重 btc_model_large_voca.pt 仍位于 XLD_RUNTIME_ROOT/analysis-harmony/b
 
 `drums-adtof-stems` 在 ADTOF 之上需要 MDX23C DrumSep 6 stem 权重：XLD_DRUMSEP_ROOT 下放置 `aufr33-jarredou_DrumSep_model_mdx23c_ep_141_sdr_10.8059.ckpt`（sha256 d2a4aa53eb584d21eead358a4e66d1882ad182911be018f052b5da73be9096d0，437,652,699 字节）与 `config_drumsep_mdx23c_6stem.yaml`（sha256 bd6f471e3bfdd81ef9d9cd9f57a86e3d5e11b8941a5951db8a3c8585a6b4cfc1）。权重由 aufr33 / jarredou 发布，许可 **CC BY-NC-ND 4.0**（原仓库 github.com/jarredou/models 已删除，HF 镜像 Sucial/MSST-WebUI、noblebarkrr/mvsepless_resources、Politrees/UVR_resources 的文件 sha 一致）：只能个人非商业原样使用，不能再分发或制作衍生权重，因此不随任何包提供。模型代码（MSST，MIT）随 XLD 发布于 analysis-midi/vendor/mdx23c，运行在 XLD_HIGHRES_PYTHON。未配置 XLD_DRUMSEP_ROOT 时该引擎显示不可用，ADTOF 不受影响。
 
+### 人声（vocals-pyin）
+
+`vocals-pyin` 是这里唯一**不需要任何配置**的后端：pYIN 是算法不是模型，没有权重要下载、没有
+校验、没有专用环境变量。它只用 XLD_MIDI_PYTHON（basic 环境）里已有的 librosa，所以装好界面
+包就能用，全局诊断里也不会因为它报缺失。
+
+输入是分离出来的 `vocals.wav`，六轨里本来就有，不需要先做细分。输出单声部主旋律，GM program
+53（Voice Oohs）。力度不由 pYIN 给——它只报音高——而是走 runner 的分轨能量那一步
+（`velocityFromStem`），和吉他、弦乐同一条路径。
+
+时间开销全在 pYIN 上：本机一首 5 分钟的歌约两三分钟，其中九成以上是音高跟踪。适配器只在分轨
+响度够的区段上跑 pYIN，静音段跳过，这一项把 210 秒降到 139 秒且音符数不变。若要更快可改
+`analysisRate`（降到 16000 约快 1.4 倍）或加大 `hopLength`，代价是音符边界变粗。
+
+检测结果仍需人工听评，尤其是八度。适配器已按分块中位数做八度修正（副歌整体高八度不会被误改），
+但气声、和声垫和双轨人声仍可能被当成主旋律。
+
 ## 失败排查
 
 - 不可用：核对选中的模型、解释器是否存在、依赖是否装在这个解释器里、权重路径和版本是否正确。
@@ -113,3 +131,23 @@ BTC 权重 btc_model_large_voca.pt 仍位于 XLD_RUNTIME_ROOT/analysis-harmony/b
 - 显存不足：先试短片段或较小模型；CPU 支持因后端而异，当前 ADTOF/PyTorch CPU 路径有已知兼容问题。
 - 全局诊断报其他模型缺失：允许部分安装，优先看自己配置的卡片和目标任务结果。
 - 提交反馈时不要上传 HF/GitHub token、个人音乐或整套模型。
+
+### MuScriptor v0.4 节拍试验（可选，2026-10-26）
+
+默认 Large 弦乐仍用 `4c03caf`、50ms 连音；新增卡片 `strings-muscriptor-large-v04` 单独使用上游代码 `8a1ef88672cc23c26619adaff37ec48d82c0b906`（v0.4.0）。从 [MuScriptor 官方仓库](https://github.com/muscriptor/muscriptor/releases/tag/v0.4.0) 取得代码，放在 `<XLD_MUSCRIPTOR_ROOT>/upstream-8a1ef886/`。仍复用原 Large 权重，不需要另一份 5.46GB 模型；不覆盖默认与历史上游目录。
+
+此候选还需独立依赖目录 `<XLD_MUSCRIPTOR_ROOT>/v04-deps/`，本机锁定 `beat-this==1.1.0`、`rotary-embedding-torch==0.9.1`。依赖须与已有 torch、torchaudio、einops 环境相容；本机使用 `--target`、`--no-deps` 安装以保留共享依赖，并已实际运行验证，不是通用机器安装保证。
+
+从 [Beat This 官方仓库](https://github.com/CPJKU/beat_this) 取得 final0 checkpoint，放在 `<XLD_MUSCRIPTOR_ROOT>/beats/final0.ckpt`。本机文件为81,058,141字节，SHA256 `8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331`；使用前由适配器核验。不把第三方权重放入界面包，依照各自上游条款自行获取。
+
+候选先在 CPU 对原曲混音分析拍点，再沿用原音符识别与力度/50ms处理。主 MIDI 与编辑/混合继续使用秒级时间；额外 `<stem>.tempo.mid` 仅供独立“导出变速谱面 MIDI”。谱面可有弱起留白，摘要显示留白秒数；不得当作同起点音频直接替换。没有确定拍号时不写入臆测拍号。检测拍点仍需人工听评，尤其注意倍速/半速与强拍漂移。
+
+旧结果不会自动补拍点；在 MIDI 的弦乐来源选好整曲结果后，选择“v0.4 · 节拍试验”生成并启用该版本。手工编辑后的子版本继续按正常 MIDI 导出，不沿用过时谱面文件。未安装本候选时其余模型照常使用。
+
+**速度分歧提示（2026-10-26）**：拍点结果里带 `octaveCheck` 与 `tempoNeedsEar` 两个字段（落在结果 JSON 的 `backend.timing` 下）。适配器用 librosa 对原曲做一次独立速度估计，与检测速度比值；比值接近 2 或 0.5（log2 相差 0.08 以内，约 5.7%）时记为 `double-of-reference` / `half-of-reference`，`metricalSplit=true`、`needsEar=true`，并把**两个候选速度都列在 `candidates` 里**。
+
+**它不判谁对，也不给修正值**，这一点是踩过坑才定的。2026-09-18 否决 R4 时，七里香被记为「倍频错误」，依据是 Beat This 报 71.4 而 librosa 报 143.6；2026-10-26 用双速点击轨让用户实际听过之后，**确认 71 才是这首歌的正确律动,librosa 才是数了双倍**。也就是说当初认定的那个「错误」本身是对的——如果这道校验按原设计自动「纠正」它，会把一个正确结果改坏。半速与倍速都是对同一段音乐的合法读法，哪个对只有听的人知道，所以这里只报分歧、列候选，把判断交回去。
+
+真实验证（当初那四首）：七里香标出 2 倍分歧并列出 [71.1, 143.55]，其余三首 `agree`；每首约 2.6 秒。librosa 不在该解释器时降级为 `status: unavailable`，不影响转谱。
+
+**强拍漂移这一类它完全看不见**：用户 2026-10-26 判定 Nancy 的重音仍然不对，而这道校验对 Nancy 给的是 `agree`——速度没问题，错的是强拍落点，两者无关。强拍目前没有自动判据，只能人工听评。

@@ -17,11 +17,9 @@ if(previewProfile&&!acceptanceProfile){
  const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
 }
 if(!previewProfile&&fs.existsSync(developmentSeed)&&!acceptanceProfile){
- const seed=JSON.parse(fs.readFileSync(developmentSeed,'utf8'));
  const profiles=path.join(app.getPath('appData'),'XinMusicDevelopment',app.getVersion());
  fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);
  const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
- if(!isXml&&!fs.existsSync(path.join(profile,'settings.json')))fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({libraryRoot:seed.libraryRoot,analysisRoot:path.resolve(root,seed.analysisRoot)}));
 }
 // Isolated acceptance runs must never touch the user's profile or hand-off files.
 if(process.env.XIN_RELEASE_TEST_ROOT && process.env.XLD_TEST==='1' && process.env.XML_TEST==='1'){
@@ -29,6 +27,18 @@ if(process.env.XIN_RELEASE_TEST_ROOT && process.env.XLD_TEST==='1' && process.en
  fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);
  const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
  if(!isXml && process.env.XIN_RELEASE_XLD_DEBUG_PORT)app.commandLine.appendSwitch('remote-debugging-port',process.env.XIN_RELEASE_XLD_DEBUG_PORT);
+}
+// Both normal development starts and isolated exe acceptance runs use this same first-start
+// seeding path. Existing folder choices are preserved. Acceptance overrides never affect a normal start.
+if(!previewProfile&&fs.existsSync(developmentSeed)){
+ const seed=JSON.parse(fs.readFileSync(developmentSeed,'utf8'));
+ const shared=path.join(app.getPath('appData'),"Xin's Local Deck Beta");
+ const settings=path.join(shared,'settings.json');
+ if(!fs.existsSync(settings)){
+  const libraryRoot=acceptanceProfile&&process.env.XIN_RELEASE_TEST_LIBRARY_ROOT||seed.libraryRoot;
+  const analysisRoot=acceptanceProfile&&process.env.XIN_RELEASE_TEST_ANALYSIS_ROOT||path.resolve(root,seed.analysisRoot);
+  fs.mkdirSync(shared,{recursive:true});fs.writeFileSync(settings,JSON.stringify({libraryRoot,analysisRoot}));
+ }
 }
 const apps=path.join(root,'resources/apps');
 try{
