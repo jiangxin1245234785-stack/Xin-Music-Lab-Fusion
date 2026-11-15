@@ -188,7 +188,82 @@
     refresh: () => scoreScene?.load(state.selectedTrackId),
     setLatency: milliseconds => scoreScene?.setLatency(milliseconds),
     makeLayers: () => scoreScene?.makeLayers(),
-    hold: flag => scoreScene?.hold(flag)
+    hold: flag => scoreScene?.hold(flag),
+    laneTip: under => scoreScene?.laneTip(under) || null
+  });
+  // 「准备谱面：这张专辑 / 整个曲库」 in the library drawer (score-prepare.js prepareMany): only songs XLD
+  // has analysed whose score layers are missing or not current, one by one through the score's own queue.
+  // XLD's analysis service does the work and writes the results; XML only asks.
+  const scorePrepBatch = (() => {
+    const box = document.getElementById('scorePrepBatch');
+    const albumButton = document.getElementById('scorePrepAlbum'), libraryButton = document.getElementById('scorePrepLibrary');
+    const startButton = document.getElementById('scorePrepStart');
+    const cancelButton = document.getElementById('scorePrepCancel'), line = document.getElementById('scorePrepStatus');
+    const queue = scoreScene?.prepare || null;
+    const Prepare = window.XinScorePrepare;
+    if (!box || !queue || !Prepare || !startButton || typeof bridge?.scoreLayersState !== 'function') { if (box) box.hidden = true; return null; }
+    // handle: the batch running now; pending: the whole library surveyed, waiting for 开始.
+    let handle = null, pending = null, busy = false;
+    const titleOf = id => trackById(id)?.title || id;
+    const buttons = () => {
+      const running = Boolean(handle) || busy;
+      cancelButton.hidden = !handle;
+      startButton.hidden = !pending || running;
+      albumButton.disabled = libraryButton.disabled = running;
+    };
+    const show = progress => {
+      const counts = {ready: progress.ready || 0, notAnalysed: progress.notAnalysed || 0};
+      const prepared = progress.done - progress.failed;
+      let text;
+      if (progress.error) text = uiText('prep.unavailable', '读不到哪些歌要准备，先刷新曲库再试。');
+      else if (!progress.finished) {
+        text = progress.current
+          ? uiText('prep.progress', '第 {n} / {total} 首：{title}', {n: progress.done + 1, total: progress.total, title: titleOf(progress.current)})
+          : uiText('prep.waiting', '排队中：共 {total} 首', {total: progress.total});
+      } else if (progress.cancelled) {
+        // Cancelling stops the song being prepared (XLD's service stops it and keeps nothing of it), unless
+        // XLD had already begun saving it; the rest never start. Say which of the two happened.
+        const stopped = (progress.failures || []).some(item => item.error === 'analysis-cancelled');
+        text = stopped
+          ? uiText('prep.cancelledStopped', '已取消：准备好了 {n} 首；正在准备的那一首停下了，没有保存。', {n: prepared})
+          : uiText('prep.cancelled', '已取消：准备好了 {n} 首，后面的不再准备。', {n: prepared});
+      } else if (!progress.total) text = uiText('prep.nothing', '没有要准备的：{ready} 首已经有了，{notAnalysed} 首还没在 XLD 里分析过。', counts);
+      else text = uiText('prep.finished', '完成：{ok} 首准备好了，{failed} 首没成。', {ok: prepared, failed: progress.failed});
+      line.textContent = text;
+      if (progress.finished) handle = null;
+      buttons();
+    };
+    const begin = surveyed => {
+      pending = null;
+      handle = {cancel() {}, status: () => null};
+      handle = Prepare.startMany(queue, surveyed, show);
+      show(handle.status());
+    };
+    // 这张专辑: few songs, so it starts at once. 整个曲库: first says how many, and starts on 开始.
+    const look = async (ids, confirm) => {
+      if (handle || busy) return;
+      pending = null;
+      if (!ids.length) { line.textContent = uiText('prep.pickSong', '先在曲库里选一首歌，再准备它所在的专辑。'); buttons(); return; }
+      busy = true;
+      buttons();
+      line.textContent = uiText('prep.checking', '正在看哪些歌要准备…');
+      const surveyed = await Prepare.survey(bridge.scoreLayersState, ids);
+      busy = false;
+      if (!surveyed.ok || !surveyed.owed.length || !confirm) return begin(surveyed);
+      pending = surveyed;
+      line.textContent = uiText('prep.confirm', '共 {total} 首要准备（{ready} 首已经有了，{notAnalysed} 首还没在 XLD 里分析过）。',
+        {total: surveyed.owed.length, ready: surveyed.counts.ready, notAnalysed: surveyed.counts.notAnalysed});
+      buttons();
+    };
+    albumButton.addEventListener('click', () => look(Prepare.albumTrackIds(state.albums, state.selectedTrackId), false));
+    libraryButton.addEventListener('click', () => look(state.library.map(track => track.id), true));
+    startButton.addEventListener('click', () => { if (pending && !handle) begin(pending); });
+    cancelButton.addEventListener('click', () => handle?.cancel());
+    return Object.freeze({status: () => handle?.status() || null, line: () => line.textContent});
+  })();
+  window.XinScorePrepareView = Object.freeze({
+    batch: () => scorePrepBatch?.status() || null,
+    line: () => scorePrepBatch?.line() || ''
   });
   const productControlDock =
     window.SmokeResonanceProductControlDock?.create({

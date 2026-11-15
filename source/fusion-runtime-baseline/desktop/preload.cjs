@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('XinsMusicLabFusion', Object.freeze({
   runMidi: (trackId, stem, force = false) => ipcRenderer.invoke('fusion:midi-run', { trackId, stem, force }),
   readMidi: (trackId, stem) => ipcRenderer.invoke('fusion:midi-read', { trackId, stem }),
   scoreModel: (trackId,useDynamics=false,lang) => ipcRenderer.invoke('fusion:score-model', { trackId,useDynamics,lang }),
+  scoreLayersState: trackIds => ipcRenderer.invoke('fusion:score-layers-state', { trackIds }),
   scoreDynamics: payload => ipcRenderer.invoke('fusion:score-dynamics',payload),
   scoreExport: payload => ipcRenderer.invoke('fusion:score-export', payload),
   cancelScoreExport: () => ipcRenderer.invoke('fusion:score-export-cancel'),

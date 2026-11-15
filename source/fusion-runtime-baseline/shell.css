@@ -124,6 +124,24 @@
 .xl-drawer .fusion-library__filter input[type="search"] { flex: 1 1 auto; min-width: 0; height: calc(33px * var(--ui-scale)); padding: 0 calc(10px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: #0d1016; color: var(--xl-text); font: inherit; }
 .xl-drawer .fusion-library__only { display: flex; align-items: center; gap: calc(5px * var(--ui-scale)); white-space: nowrap; color: var(--xl-dim); cursor: pointer; }
 .xl-drawer .fusion-library__list { flex: 1 1 auto; min-height: 0; max-height: none; margin: 0; overflow-y: auto; }
+/* 「准备谱面：这张专辑 · 整个曲库」 under the list: one quiet line of small dim text with plain text
+   buttons (no frames, no amber), the progress on its own line below when there is one. */
+.xl-drawer .fusion-library__prep {
+  flex: none; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: calc(12px * var(--ui-scale)); row-gap: calc(3px * var(--ui-scale));
+  margin: 0; padding: calc(8px * var(--ui-scale)) calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale)); border-top: 1px solid var(--xl-line);
+  color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); line-height: 1.45;
+}
+.xl-drawer .fusion-library__prep[hidden] { display: none; }
+.xl-drawer .fusion-library__prep > span { color: var(--xl-dim); }
+.xl-drawer .fusion-library__prep > button {
+  height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  color: var(--xl-text); font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255,255,255,.22); text-underline-offset: 3px;
+}
+.xl-drawer .fusion-library__prep > button:hover:not(:disabled) { text-decoration-color: currentColor; }
+.xl-drawer .fusion-library__prep > button:disabled { opacity: .42; cursor: default; }
+.xl-drawer .fusion-library__prep > button[hidden] { display: none; }
+.xl-drawer .fusion-library__prep > small { flex: 1 0 100%; min-width: 0; color: var(--xl-dim); font-size: inherit; overflow-wrap: anywhere; }
+.xl-drawer .fusion-library__prep > small:empty { display: none; }
 .xl-drawer__foot { flex: none; max-height: 46%; overflow-y: auto; display: flex; flex-direction: column; gap: calc(7px * var(--ui-scale)); padding: calc(10px * var(--ui-scale)) calc(14px * var(--ui-scale)); border-top: 1px solid var(--xl-line); }
 .xl-drawer__foot .fusion-link-card { align-self: flex-start; }
 .xl-drawer__foot .fusion-analysis-card { margin: 0; padding: 0; border: 0; background: none; display: flex; flex-direction: column; gap: calc(6px * var(--ui-scale)); }

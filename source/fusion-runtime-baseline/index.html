@@ -76,6 +76,14 @@
             </label>
           </div>
           <div class="fusion-library__list" id="fusionLibraryList" aria-label="本地曲目列表"></div>
+          <div class="fusion-library__prep" id="scorePrepBatch">
+            <span data-i18n="prep.label">准备谱面：</span>
+            <button type="button" id="scorePrepAlbum" data-i18n="prep.album">这张专辑</button>
+            <button type="button" id="scorePrepLibrary" data-i18n="prep.library">整个曲库</button>
+            <button type="button" id="scorePrepStart" data-i18n="prep.start" hidden>开始</button>
+            <button type="button" id="scorePrepCancel" data-i18n="prep.cancel" title="停下正在准备的这一首（不保存），后面的不再开始" data-i18n-title="prep.cancelTitle" hidden>取消</button>
+            <small id="scorePrepStatus" aria-live="polite"></small>
+          </div>
         </section>
         <div class="xl-drawer__foot">
           <span class="fusion-link-card" id="fusionLinkCard" data-state="idle" title="XLD 桥接状态">
@@ -200,6 +208,7 @@
             <h3 data-i18n="score.options">谱面阅读</h3>
             <label class="xl-toggle-field"><span data-i18n="score.merge">合并同类乐器声部</span><input id="scoreMergeTimbres" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">特效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
             <label class="xl-toggle-field"><span data-i18n="score.fxFollow">特效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
@@ -519,6 +528,7 @@
     <script src="./stem-controls.js"></script>
     <script src="../scoreview/score-view.js"></script>
     <script src="../scoreview/media-clock.js"></script>
+    <script src="./score-prepare.js"></script>
     <script src="./score-scene.js"></script>
     <script src="./score-dynamics-controls.js"></script>
     <script src="./score-notes-controls.js"></script>

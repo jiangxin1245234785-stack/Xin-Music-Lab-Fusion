@@ -33,6 +33,20 @@
     return Object.prototype.hasOwnProperty.call(OLD_LEVELS, kept) ? OLD_LEVELS[kept] : 'clear';
   }
 
+  // Which models a lane's notes come from, for the lane tooltip: every distinct engine name among the
+  // model lanes of the lane's group (a merged lane holds parts that may come from different models), in
+  // the order they first appear. `lanes` is model.lanes, `under` what the core's hit() gave.
+  function laneModels(lanes, under) {
+    if (!under || under.texture || !Array.isArray(lanes)) return [];
+    const names = [];
+    for (const lane of lanes) {
+      if (!(lane.id === under.id || (under.group && lane.group === under.group))) continue;
+      const name = lane.meta && (lane.meta.engineName || lane.meta.engine);
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
+  }
+
   function create(config) {
     const {bridge, audio, stage, canvas} = config || {};
     const core = root.XinScoreView, clocks = root.XinMediaClock;
@@ -44,7 +58,7 @@
       return Number.isFinite(kept) && root.localStorage.getItem(LATENCY_KEY) !== null ? kept : DEFAULT_LATENCY_MS;
     };
 
-    let view = null, clock = clocks.create(audio, {offset: 0});
+    let view = null, clock = clocks.create(audio, {offset: 0}), shownModel = null;
     let trackId = '', sequence = 0, frame = 0, health = null;
     const stemSelect = root.document.getElementById('fusionStemSelect');
     // loop: {start, end, index} of the section being repeated; solo: the stem the view is showing as alone.
@@ -85,6 +99,59 @@
 
     const active = () => stage.dataset.effect === EFFECT;
 
+    // The score layers (bar lines, loudness, stem levels) are prepared in the background when a song
+    // without current ones is shown (score-prepare.js): XML asks, XLD's analysis service runs and saves.
+    // One plain line on the score says what is happening; a failure there is a click to try again.
+    const AUTO_KEY = 'xin-score-auto-layers';
+    let autoLayers = true;
+    try { autoLayers = root.localStorage.getItem(AUTO_KEY) !== 'off'; } catch (_) {}
+    const Prepare = root.XinScorePrepare || null;
+    const prepare = Prepare && typeof bridge.runAnalysis === 'function'
+      ? Prepare.create({run: (id, engine) => bridge.runAnalysis(id, engine),
+                        cancelRunning: () => { try { if (typeof bridge.cancelAnalysis === 'function') bridge.cancelAnalysis(); } catch (_) {} }})
+      : null;
+    let prepPlan = 'none', preparedAt = 0, noStemsUntil = 0, lineBox = null;
+    // Called when the score's song is loaded and when the user switches to the score. A preparation is
+    // started only while the score is on screen (Prepare.starts): a song accepted in another scene, the
+    // next song playing on, the last song restored at start-up start nothing until the score is shown.
+    function consider() {
+      prepPlan = Prepare ? Prepare.plan(health, autoLayers && Boolean(prepare)) : 'unknown';
+      if (!active()) return;
+      const layers = health && health.layers;
+      if (Prepare && Prepare.starts({active: active(), ready: status === 'ready', plan: prepPlan})) prepare.auto(trackId, layers ? layers.stemRunId : null);
+      if (prepPlan === 'no-stems' || prepPlan === 'stems-unreadable') noStemsUntil = root.performance.now() + 8000;
+    }
+    const autoInput = root.document.getElementById('scoreAutoLayers');
+    if (autoInput) {
+      autoInput.checked = autoLayers;
+      autoInput.addEventListener('change', () => {
+        autoLayers = autoInput.checked;
+        try { root.localStorage.setItem(AUTO_KEY, autoLayers ? 'on' : 'off'); } catch (_) {}
+        if (trackId && status === 'ready') consider();
+      });
+    }
+    if (prepare) prepare.subscribe(event => {
+      // A result is put on screen only for the song that is shown now (Prepare.reloads).
+      if (!Prepare.reloads(event, trackId)) return;
+      preparedAt = root.performance.now();
+      load(trackId);
+    });
+    function prepText() {
+      if (!trackId || status !== 'ready') return null;
+      const phase = prepare ? prepare.phase(trackId) : 'idle';
+      if (phase === 'queued' || phase === 'running') return {text: say('score.prepRunning', '正在准备小节线和响度…')};
+      if (phase === 'retrying') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
+      if (phase === 'failed') return {text: say('score.prepFailed', '没准备成，点这里再试'), retry: true};
+      if (phase === 'done' && root.performance.now() - preparedAt < 3000) return {text: say('score.prepDone', '准备好了')};
+      if (prepPlan === 'no-stems' && root.performance.now() < noStemsUntil) {
+        return {text: say('score.prepNoStems', '这首歌还没在 XLD 里分析过；分析之后，这里会有小节线和响度。')};
+      }
+      if (prepPlan === 'stems-unreadable' && root.performance.now() < noStemsUntil) {
+        return {text: say('score.prepStemsUnreadable', '这首歌的分轨读不出来，这次没法准备小节线和响度；可以在 XLD 里看看分轨。')};
+      }
+      return null;
+    }
+
     // The score keeps clear of this app's own chrome: it sits between the lowest of the top
     // bars and the scene catalogue. With the interface hidden (H) it has the whole window.
     let measured = 0;
@@ -124,13 +191,31 @@
       context.fillText(text, width / 2, height / 2);
     }
 
+    // The status of the score layers: one light line at the top of the score. Returns its box when it
+    // can be clicked (a failure: try again).
+    function statusLine(text, retry) {
+      const ratio = canvas.width / (canvas.clientWidth || 1);
+      const context = canvas.getContext('2d');
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.font = '500 12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
+      // Below the band where the app's own toast appears (the scene name on switching), so neither covers the other.
+      const wide = context.measureText(text).width + 24, left = (canvas.clientWidth - wide) / 2, top = 40;
+      context.fillStyle = 'rgba(13,16,22,.62)';
+      context.fillRect(left, top, wide, 24);
+      context.fillStyle = retry ? 'rgba(242,190,96,.95)' : 'rgba(232,236,245,.72)';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, canvas.clientWidth / 2, top + 12.5);
+      return retry ? {left, top, right: left + wide, bottom: top + 24} : null;
+    }
+
     // A line of help over the score for a few seconds.
-    function whisper(text) {
+    function whisper(text, top = 10) {
       const ratio = canvas.width / (canvas.clientWidth || 1);
       const context = canvas.getContext('2d');
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.font = '500 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
-      const wide = context.measureText(text).width + 28, left = (canvas.clientWidth - wide) / 2, top = 10;
+      const wide = context.measureText(text).width + 28, left = (canvas.clientWidth - wide) / 2;
       context.fillStyle = 'rgba(13,16,22,.82)';
       context.fillRect(left, top, wide, 28);
       context.fillStyle = 'rgba(232,236,245,.92)';
@@ -144,7 +229,13 @@
     function touch(event, repeat) {
       if (!active() || status !== 'ready' || !view) return;
       const box = canvas.getBoundingClientRect();
-      const under = view.hit(event.clientX - box.left, event.clientY - box.top);
+      const x = event.clientX - box.left, y = event.clientY - box.top;
+      // The failed-preparation line is a button: try once more for this song.
+      if (!repeat && lineBox && prepare && x >= lineBox.left && x <= lineBox.right && y >= lineBox.top && y <= lineBox.bottom) {
+        prepare.request(trackId);
+        return;
+      }
+      const under = view.hit(x, y);
       if (!under) return;
       if (under.kind === 'lane') {
         if (repeat) return;
@@ -176,7 +267,12 @@
         // While a video is being exported the score is not drawn (the export needs the GPU); the
         // last frame stays, the sound goes on.
         if (!held) { view.resize(); view.draw(); }
-        if (hint && root.performance.now() < hint.until) whisper(hint.text);
+        // The help line and the status line are never shown together: the status waits until the help
+        // has gone (6 s at most), so the top of the score holds one line besides the app's own toast.
+        const hinting = Boolean(hint && root.performance.now() < hint.until);
+        const prep = held || hinting ? null : prepText();
+        lineBox = prep ? statusLine(prep.text, prep.retry) : null;
+        if (hinting) whisper(hint.text, 10);
       }
       else if (status === 'loading') notice(say('score.loading', '正在读这首歌的谱面…'));
       else if (status === 'empty') notice(say('score.noNotes', '这首歌还没有转写出来的音符。在 XLD 里跑过转写之后，这里就有谱面。'));
@@ -184,7 +280,16 @@
       else notice(say('score.idle', '选一首歌，这里显示它的谱面。'));
       frame = root.requestAnimationFrame(paint);
     }
-    const wake = () => { measured = 0; if (!active()) { if (!docked) more.hidden = true; if (!syncDocked) sync.hidden = true; } if (active() && !frame) frame = root.requestAnimationFrame(paint); };
+    // Switching to the score is when a song already loaded gets its preparation looked at (consider()).
+    let wasActive = false;
+    const wake = () => {
+      measured = 0;
+      const now = active();
+      if (!now) { if (!docked) more.hidden = true; if (!syncDocked) sync.hidden = true; }
+      if (now && !frame) frame = root.requestAnimationFrame(paint);
+      if (now && !wasActive && trackId && status === 'ready') consider();
+      wasActive = now;
+    };
 
     function showCover(model, ticket) {
       if (!view) return;
@@ -220,8 +325,12 @@
       const options = {...reading,fxPreset,fxDynamics,showTexture: true,offsetSeconds: -latency() / 1000};
       if (view) { view.setModel(result.model); view.setOptions(options); }
       else view = core.create(canvas, result.model, () => clock.now(), options);
+      shownModel = result.model;
       showCover(result.model, ticket);
       status = 'ready';
+      // Waiting automatic preparations for songs left behind are dropped; a running one finishes.
+      if (trackChanged && prepare) prepare.forgetWaiting(trackId);
+      consider();
       offer();
       if (trackChanged) tell('score.help', '点一条轨：只听它，再点回到原曲 · 点段落：跳过去 · 双击段落：循环', 6);
       return true;
@@ -258,12 +367,34 @@
     stage.appendChild(nameTip);
     const inNameColumn = x => x <= (canvas.clientWidth < 520 ? 58 : 84);
     // The icon stands for a stem; its name in the interface's language (the model's own label otherwise).
-    const laneName = under => say(`score.lane.${under.group}`, under.label);
+    // A second line says which model the lane's notes come from, in the name XLD shows for it
+    // (lane.meta.engineName, set by the main process; the engine id when XLD has no name for it).
+    const laneModel = under => {
+      if (!shownModel || under.texture) return null;
+      const names = laneModels(shownModel.lanes, under);
+      return names.length ? say('score.laneModel', '音符来自：{model}').replace('{model}', names.join(' · ')) : null;
+    };
+    const laneName = under => {
+      const name = say(`score.lane.${under.group}`, under.label), model = laneModel(under);
+      return model ? `${name}\n${model}` : name;
+    };
     let nameTimer = 0;
+    // The name in the first line; the model, lighter, in the second (style.css .score-lane-name small).
     function showName(text, x, y, holdMs) {
       root.clearTimeout(nameTimer);
       nameTimer = 0;
-      if (nameTip.textContent !== text) nameTip.textContent = text;
+      if (nameTip.dataset.text !== text) {
+        const [first, second] = String(text).split('\n');
+        if (!second) nameTip.textContent = first;
+        else {
+          const head = root.document.createElement('span'), more = root.document.createElement('small');
+          head.textContent = first;
+          more.textContent = second;
+          nameTip.textContent = '';
+          nameTip.append(head, more);
+        }
+        nameTip.dataset.text = text;
+      }
       nameTip.style.left = `${Math.round(canvas.offsetLeft + x + 14)}px`;
       nameTip.style.top = `${Math.round(canvas.offsetTop + y - 12)}px`;
       nameTip.hidden = false;
@@ -293,7 +424,15 @@
     (foot || stage).appendChild(more);
     let making = false, syncDocked = false;
     // Which of the two analyses this track has not had: the layers first, then the vocal line.
-    const owed = () => (health ? [health.layersRun === false && 'score-layers', health.vocalsRun === false && 'score-vocals'].filter(Boolean) : []);
+    // With automatic preparation on, the layers are the queue's business and the button only offers the
+    // vocal line (unchanged, it stays the user's call). Off, it offers both, as before.
+    const layersOwed = () => (health.layers ? health.layers.owed === 'layers' : health.layersRun === false);
+    const owed = () => (health ? [!(autoLayers && prepare) && layersOwed() && 'score-layers', health.vocalsRun === false && 'score-vocals'].filter(Boolean) : []);
+    // The button's score-layers run goes through the same queue, so one song never runs twice at once.
+    const prepareOnce = id => new Promise(resolve => {
+      const off = prepare.subscribe(event => { if (event.type === 'done' && event.trackId === id) { off(); resolve(event.result || {ok: event.ok}); } });
+      prepare.request(id);
+    });
     const lacking = () => owed().length > 0;
     function offer() {
       const show = (docked || active()) && status === 'ready' && lacking() && typeof bridge.runAnalysis === 'function'
@@ -303,7 +442,7 @@
         : making ? say('score.layersRunning', '正在算小节线和响度…')
         : owed()[0] === 'score-vocals' ? say('score.vocalsRun', '补上人声曲线') : say('score.layersRun', '补上小节线、响度和人声曲线');
       if (more.textContent !== text) more.textContent = text;
-      more.disabled = Boolean(making);
+      more.disabled = Boolean(making) || Boolean(prepare && prepare.running());
       if (show && !docked) more.style.top = `${canvas.offsetTop + 52}px`;
       const tuning = syncDocked || (active() && status === 'ready' && !stage.classList.contains('ui-hidden'));
       if (sync.hidden === tuning) sync.hidden = !tuning;
@@ -316,7 +455,8 @@
       // One after the other: the analysis service runs one task at a time. A failure stops the rest.
       for (const engine of owed()) {
         making = engine;
-        try { result = await bridge.runAnalysis(id, engine); } catch (error) { result = {ok: false, detail: String(error && error.message || error)}; }
+        try { result = engine === 'score-layers' && prepare ? await prepareOnce(id) : await bridge.runAnalysis(id, engine); }
+        catch (error) { result = {ok: false, detail: String(error && error.message || error)}; }
         if (!result || !result.ok) break;
         if (id === trackId) await load(id);
       }
@@ -362,12 +502,20 @@
 
     return Object.freeze({
       load, reset, setLatency, makeLayers: () => more.click(), hold: flag => { held = Boolean(flag); },
+      // The background queue, shared with the library drawer's "prepare the score" batch.
+      prepare,
+      laneTip: under => laneName(under),
       status: () => ({status, trackId, active: active(), held, latencyMs: latency(), health, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
+                      prep: {auto: autoLayers, plan: prepPlan, phase: prepare && trackId ? prepare.phase(trackId) : 'idle',
+                             error: prepare && trackId ? prepare.error(trackId) : null, attempts: prepare && trackId ? prepare.attempts(trackId) : 0,
+                             // What is drawn now: no status line while the help line is up (L6).
+                             help: Boolean(hint && root.performance.now() < hint.until),
+                             line: hint && root.performance.now() < hint.until ? null : (prepText() || {}).text || null},
                       layers: view && status === 'ready' ? view.layers() : null,
                       frame: view && status === 'ready' ? view.lastFrame() : null}),
       destroy: () => { if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; clock.destroy(); }
     });
   }
 
-  root.XinScoreScene = Object.freeze({create, EFFECT, storedPreset, storedFollow, PRESETS});
+  root.XinScoreScene = Object.freeze({create, EFFECT, storedPreset, storedFollow, PRESETS, laneModels});
 })(globalThis);

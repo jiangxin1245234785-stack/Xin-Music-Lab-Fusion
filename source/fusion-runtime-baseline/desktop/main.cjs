@@ -12,6 +12,7 @@ const {readLatestTrack} = require('./refresh-track.cjs');
 const {writeRequest} = require('../../xld-runtime-baseline/core/open-request.cjs');
 // Section names come from XLD's one module; manifests written before segments carried `name` get it in memory.
 const {namedManifest} = require('../../xld-runtime-baseline/core/sections.cjs');
+const layersStateModule = require('./score-layers-state.cjs');
 const xldTimelineProvider = require('../xld-timeline-provider-adapter.js');
 const { createRepository: createGlitchPresetRepository } =
   require('./glitch-preset-repository.cjs');
@@ -123,6 +124,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   const dynamicsModule=require('./score-dynamics.cjs');
   const dynamics=dynamicsModule.createService({root:dynamicsModule.rootFor(app.getPath('appData'),app.getPath('userData')),readMidi:(track,stem)=>xldAnalysis.readMidi(track,stem),profileForResult:require('../../xld-runtime-baseline/core/derived-assets.cjs').profileForResult});
   app.on('before-quit',()=>dynamics.shutdown());
+  // An analysis still running when XML quits (the score layers prepared in the background, or any other
+  // one started here) is cancelled: its Python process is stopped and nothing half-made is kept. Once
+  // XLD's service has started saving ('committing') it refuses, and that result is saved whole.
+  app.on('before-quit',()=>{try{const running=xldAnalysis.task();if(running&&['starting','running'].includes(running.status))xldAnalysis.cancel();}catch(_){}});
   ipcMain.handle('fusion:listening-read',async()=>{try{return {ok:true,value:await listeningState.read()};}catch(e){return {ok:false,error:String(e.message||e)};}});
   ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(
@@ -591,22 +596,58 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       let stems=await adapter.readStems(stem => xldAnalysis.readMidi(track, stem));
       let dynamicsHealth={enabled:payload?.useDynamics===true,state:'original',applied:[]};
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
+      const layersBody = await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null);
       const built=adapter.modelFrom({
         track: { id: track.id, title: track.title, artist: track.artist, album: track.album },
         duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
         stems,
-        layers: await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null),
+        layers: layersBody,
         vocalLine: await adapter.readVocalLine(loaded.filePath ? path.dirname(loaded.filePath) : null),manualCaptions,
         // The renderer says which language it shows (it asks again when that changes); otherwise the app's.
         lang: normalizeLocale(payload?.lang) || mainLocale.getState().locale
       });
       for(const lane of built.model?.lanes||[])if(dynamicsHealth.applied.includes(lane.group||lane.id))lane.meta={...lane.meta,velocity:'stem-energy-relative',dynamicsRunId:dynamicsHealth.runId};
-      return {...built,health:{...built.health,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
+      // Which engine each lane's notes come from, in the words XLD shows (desktop/score-layers-state.cjs).
+      const lang = normalizeLocale(payload?.lang) || mainLocale.getState().locale;
+      for(const lane of built.model?.lanes||[])if(lane.meta&&lane.meta.engine)lane.meta={...lane.meta,engineName:layersStateModule.engineName(lane.meta.engine,lang)};
+      // Whether the score layers are there and made from the current stems, so the scene can have them prepared.
+      // A read that throws is "unreadable", not "no stems" (stemsStatus).
+      const stemsNow = await xldAnalysis.readStems(track).catch(error => ({ok: false, error: String(error?.message || error)}));
+      const stemsKind = layersStateModule.stemsStatus(stemsNow), layersState = layersStateModule.layersState(layersBody, stemsNow);
+      // stemRunId: which stems the verdict is about, so a song prepared earlier is looked at again after new stems.
+      const layersHealth = {state: layersState, stems: stemsKind, stemsReady: stemsKind === 'ready', stemRunId: stemsNow?.ok ? (stemsNow.runId ?? null) : null,
+                            owed: layersStateModule.owed(layersState, stemsKind)};
+      return {...built,health:{...built.health,layers:layersHealth,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
     } catch (error) {
       return { ok: false, error: 'score-adapter-failed', details: String(error?.message || error) };
     }
   };
   ipcMain.handle('fusion:score-model', (_event, payload) => scoreModelFor(payload));
+  // For preparing many tracks at once (the library drawer): per track, whether XLD has its stems and
+  // whether its score layers are current. Read-only, no model is built.
+  ipcMain.handle('fusion:score-layers-state', async (_event, payload) => {
+    const ids = Array.isArray(payload?.trackIds) ? payload.trackIds.map(String).slice(0, 5000) : [];
+    const adapter = require('../../scoreview/adapter/track-model.cjs');
+    const rows = [];
+    for (const id of ids) {
+      const track = fusionTrackIndex.get(id);
+      if (!track) { rows.push({trackId: id, ok: false, error: 'track-missing'}); continue; }
+      try {
+        const stems = await xldAnalysis.readStems(track).catch(error => ({ok: false, error: String(error?.message || error)}));
+        const status = layersStateModule.stemsStatus(stems);
+        let state = 'missing';
+        if (status === 'ready') {
+          const loaded = await loadFusionTrack(track.id);
+          const body = loaded.ok && loaded.filePath ? await adapter.readLayers(path.dirname(loaded.filePath)) : null;
+          state = layersStateModule.layersState(body, stems);
+        }
+        rows.push({trackId: id, ok: true, stems: status, stemsReady: status === 'ready', state, owed: layersStateModule.owed(state, status)});
+      } catch (error) {
+        rows.push({trackId: id, ok: false, error: String(error?.message || error)});
+      }
+    }
+    return {ok: true, rows};
+  });
   // The score as a video file (source/scoreview/export): desktop/score-export-ipc.cjs. The roots it keeps clear
   // of are every folder XML takes analysis from (the settings' root and the two default ones), whether or not
   // it exists yet; tests/score-export-wiring.cjs loads this file with a stand-in Electron and checks them.

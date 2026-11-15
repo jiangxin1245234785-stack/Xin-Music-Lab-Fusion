@@ -47,6 +47,9 @@ button { color: inherit; }
 .score-sync[hidden], .score-layers-run[hidden], .score-lane-name[hidden] { display: none; }
 /* A lane's name beside its icon while the pointer rests there (score-scene.js). */
 .score-lane-name { position: absolute; z-index: 6; pointer-events: none; white-space: nowrap; padding: calc(3px * var(--ui-scale)) calc(8px * var(--ui-scale)); border-radius: calc(6px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); background: rgba(13,16,22,.92); color: rgba(232,236,245,.92); font-size: calc(11px * var(--ui-scale)); font-weight: 600; }
+/* Two lines: the lane's name, then (lighter) which model its notes come from. */
+.score-lane-name > span, .score-lane-name > small { display: block; }
+.score-lane-name > small { margin-top: 1px; font-size: .92em; font-weight: 400; color: rgba(232,236,245,.62); }
 .score-sync button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2); background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; }
 .score-sync button:hover { border-color: rgba(114,232,206,.6); }
 /* The key hint would sit on top of the notes. */
@@ -400,9 +403,10 @@ button { color: inherit; }
 .catalog-archive[open] summary { color: rgba(255,255,255,.72); background: rgba(255,255,255,.07); }
 .catalog-archive[open] summary::after { transform: rotate(0); }
 .visual-catalog:has(.catalog-archive[open]) { overflow: visible; }
-.catalog-archive__drawer { position: absolute; z-index: 14; right: 0; bottom: 42px; display: grid; grid-template-rows: auto auto; gap: 6px; width: min(980px, calc(100vw - 48px)); padding: 9px 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(6,8,17,.9); box-shadow: 0 20px 65px rgba(0,0,0,.42); backdrop-filter: blur(26px) saturate(135%); }
+.catalog-archive__drawer { position: absolute; z-index: 14; right: 0; bottom: 42px; display: grid; grid-template-rows: auto auto; gap: 6px; width: max-content; max-width: calc(100vw - 48px); box-sizing: border-box; padding: 9px 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(6,8,17,.9); box-shadow: 0 20px 65px rgba(0,0,0,.42); backdrop-filter: blur(26px) saturate(135%); }
 .catalog-archive__drawer > .catalog-group { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; }
-.catalog-archive__drawer .catalog-items { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* The items wrap onto a second line rather than run out of the drawer (Rewop was cut in half, SPEC-B2 D). */
+.catalog-archive__drawer .catalog-items { min-width: 0; flex-wrap: wrap; row-gap: 3px; overflow: visible; }
 .catalog-archive__drawer .catalog-items::-webkit-scrollbar { display: none; }
 .catalog-archive__drawer > .catalog-rule { display: none; }
 
