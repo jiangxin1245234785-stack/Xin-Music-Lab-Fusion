@@ -932,7 +932,8 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 260));
       const topFxPowerBypasses = window.SmokeResonanceGlitch.get().enabled === false
         && topFxPower?.getAttribute('aria-pressed') === 'false'
-        && topFxPower?.textContent.trim() === '特效 关';
+        && topFxPower?.getAttribute('aria-checked') === 'false'
+        && topFxPower?.textContent.trim() === '画面特效';
       const generatorOutputBypassStatus =
         window.SmokeResonanceGeneratorOutput?.status();
       const generatorOutputBypasses = Boolean(

@@ -304,6 +304,18 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     return merged;
   };
 
+  // SPEC-B3: whether XLD has separated the track (stems.json) and written notes for it (a midi/<stem>.json
+  // pointer), by looking for the files only (read-only), for the library row's word (library-status.js).
+  // `manifestPath` is the track's music-lab.json. The full scan and the one-track refresh both use this.
+  const stemFacts = async manifestPath => {
+    if (!manifestPath) return {hasStems: false, hasNotes: false};
+    const dir = path.dirname(manifestPath);
+    let hasStems = false, hasNotes = false;
+    try { await fs.access(path.join(dir, 'stems.json')); hasStems = true; } catch (_) { hasStems = false; }
+    if (hasStems) { try { hasNotes = (await fs.readdir(path.join(dir, 'midi'))).some(name => name.endsWith('.json') && !name.endsWith('-source.json')); } catch (_) { hasNotes = false; } }
+    return {hasStems, hasNotes};
+  };
+
   const scanFusionLibrary = async () => {
     await refreshXldSettings();
     xldAnalysis.setAnalysisRoot(fusionAnalysisRoot);
@@ -321,6 +333,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const albums = [];
     const tracks = [];
     const linkOf = filePath => manifests.get(path.resolve(filePath).toLowerCase()) || null;
+    const stemFields = linked => stemFacts(linked?.filePath);
     const analysisFields = linked => {
       const analyses = Array.isArray(linked?.manifest?.analyses) ? linked.manifest.analyses : [];
       const harmony = Array.isArray(linked?.manifest?.harmony) ? linked.manifest.harmony : [];
@@ -366,7 +379,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
           coverUrl,
-          ...analysisFields(linked)
+          ...analysisFields(linked),
+          ...(await stemFields(linked))
         };
         registerTrack(track, filePath, linked);
         albumTracks.push(track);
@@ -380,7 +394,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
         title: albumInfo.album,
         coverUrl,
         trackCount: albumTracks.length,
-        analyzedCount: albumTracks.filter(track => track.hasStructure || track.hasHarmony).length,
+        // 「N 首可看谱面」: songs XLD wrote notes for (library-status.js isReady), not sections / chords.
+        analyzedCount: albumTracks.filter(track => track.hasNotes).length,
         tracks: albumTracks
       });
     }
@@ -410,7 +425,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
           coverUrl: null,
-          ...analysisFields(linked)
+          ...analysisFields(linked),
+          ...(await stemFields(linked))
         };
         registerTrack(track, filePath, linked);
         singles.push(track);
@@ -424,7 +440,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           title: '单曲 · Singles',
           coverUrl: null,
           trackCount: singles.length,
-          analyzedCount: singles.filter(track => track.hasStructure || track.hasHarmony).length,
+          analyzedCount: singles.filter(track => track.hasNotes).length,
           tracks: singles
         });
       }
@@ -437,7 +453,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       analysisRoot: primaryAnalysisRoot(),
       albumCount: albums.length,
       trackCount: tracks.length,
-      analyzedCount: tracks.filter(track => track.hasStructure || track.hasHarmony).length,
+      analyzedCount: tracks.filter(track => track.hasNotes).length,
       albums,
       tracks
     };
@@ -532,7 +548,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if(!indexed || !fsSync.existsSync(indexed.filePath))return {ok:false,error:'track-missing'};
     if(xldAnalysis.task()||dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     await refreshXldSettings();xldAnalysis.setAnalysisRoot(fusionAnalysisRoot);
-    return loadFusionTrack(trackId);
+    const loaded = await loadFusionTrack(trackId);
+    // B3 acceptance M1: coming back from XLD, the row's word (stems / notes) is looked at again too.
+    if (loaded && loaded.ok) loaded.trackFacts = await stemFacts(loaded.filePath);
+    return loaded;
   });
   ipcMain.handle('fusion:load-track', (_event, trackId) => loadFusionTrack(trackId));
   ipcMain.handle('fusion:settings', refreshXldSettings);
@@ -907,7 +926,13 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if (!win) return false;
     const next = !win.isAlwaysOnTop();
     win.setAlwaysOnTop(next, 'floating');
-    return next;
+    // B3 acceptance L3: say what the window really is after the change, not what was asked for.
+    return win.isAlwaysOnTop();
+  });
+  // So a reloaded page shows the window's real state.
+  ipcMain.handle('app:is-always-on-top', event => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return Boolean(win && win.isAlwaysOnTop());
   });
 
   ipcMain.handle('app:save-snapshot', async (_event, dataUrl) => {

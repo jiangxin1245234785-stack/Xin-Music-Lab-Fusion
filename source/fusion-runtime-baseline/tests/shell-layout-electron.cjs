@@ -41,7 +41,9 @@ app.whenReady().then(async()=>{
    await js(`(async()=>{await window.xinMusicLabLocale.setLocale(${JSON.stringify(locale)});for(let i=0;i<10;i++){const v=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'));if(Math.abs(v-${scale})<.01)break;document.getElementById(v>${scale}?'uiScaleDown':'uiScaleUp').click();}})()`);
    assert.equal(await js('document.documentElement.lang'),locale);
    assert.equal(await js('parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale"))'),scale);
-   assert.equal(await js('document.getElementById("glitchPowerButton").textContent'),await js(`document.getElementById('glitchPowerButton').getAttribute('aria-pressed')==='true'?${JSON.stringify(locale==='en-US'?'Effects on':'特效 开')}:${JSON.stringify(locale==='en-US'?'Effects off':'特效 关')}`));
+   // The words name the setting only; the state is the switch's own (aria-checked follows aria-pressed).
+   assert.equal(await js('document.getElementById("glitchPowerButton").textContent'),locale==='en-US'?'Visual effects':'画面特效');
+   assert.equal(await js('document.getElementById("glitchPowerButton").getAttribute("aria-checked")'),await js('document.getElementById("glitchPowerButton").getAttribute("aria-pressed")'));
    const scenario={locale,width,height,scale,states:[]};
    for(const layer of ['main','library','settings','score']){
     await js(`(()=>{document.getElementById('fusionClose').click();window.XinShell.setSettings(false);document.querySelector('.scene-button[data-effect="${layer==='score'?'score':'spectrum'}"]').click();${layer==='library'?"document.getElementById('fusionButton').click();":''}${layer==='settings'?'window.XinShell.setSettings(true);':''}})()`);

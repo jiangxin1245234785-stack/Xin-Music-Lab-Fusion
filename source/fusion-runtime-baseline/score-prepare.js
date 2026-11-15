@@ -22,9 +22,14 @@
     const later = options.setTimeout || ((fn, ms) => root.setTimeout(fn, ms));
     const clear = options.clearTimeout || (id => root.clearTimeout(id));
     const retryMs = Number.isFinite(options.retryMs) ? options.retryMs : RETRY_MS;
+    // Whether an automatic run may start now (the scene: the score is on screen). The automatic retry
+    // asks it when it falls due; without it, a retry falling due in another scene is held ('held')
+    // until the score is shown again and auto() is called for the song.
+    const mayStart = typeof options.mayStart === 'function' ? options.mayStart : () => true;
 
     // trackId -> {phase, source, attempts, error, batch, key}
-    //   phase: 'queued' | 'running' | 'retrying' (waiting to try once more) | 'done' | 'failed'
+    //   phase: 'queued' | 'running' | 'retrying' (waiting to try once more) | 'held' (the retry fell due
+    //          while the score was not on screen) | 'done' | 'failed'
     //   key: the stem run the job was for (health.layers.stemRunId). A song prepared (or given up on) for
     //   one set of stems is looked at again when XLD has made new stems.
     const jobs = new Map();
@@ -75,6 +80,8 @@
           entry.timer = later(() => {
             entry.timer = 0;
             if (entry.phase !== 'retrying') return;
+            // Only from the score (acceptance M1 holds for the retry too): otherwise wait for the score.
+            if (!mayStart()) { entry.phase = 'held'; emit({type: 'held', trackId: id}); return; }
             entry.phase = 'queued';
             queue.push(id);
             emit({type: 'queued', trackId: id});
@@ -93,6 +100,8 @@
     function auto(trackId, key) {
       const known = job(String(trackId || ''));
       if (known && ['queued', 'running', 'retrying'].includes(known.phase)) return false;
+      // A held retry for the same stems runs now, still as the one automatic retry (enqueue keeps the count).
+      if (known && known.phase === 'held' && known.key === keyOf(key)) return enqueue(trackId, 'auto', null, key);
       if (known && ['done', 'failed'].includes(known.phase) && known.key === keyOf(key)) return false;
       return enqueue(trackId, 'auto', null, key);
     }
@@ -112,7 +121,7 @@
         if (id !== keepTrackId && entry && entry.source === 'auto') { queue.splice(index, 1); jobs.delete(id); }
       }
       for (const [id, entry] of jobs) {
-        if (id !== keepTrackId && entry.phase === 'retrying' && entry.source === 'auto') { clear(entry.timer); jobs.delete(id); }
+        if (id !== keepTrackId && ['retrying', 'held'].includes(entry.phase) && entry.source === 'auto') { clear(entry.timer); jobs.delete(id); }
       }
     }
 

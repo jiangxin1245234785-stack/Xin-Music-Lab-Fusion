@@ -71,8 +71,8 @@
         <section class="fusion-library" id="fusionLibraryView">
           <div class="fusion-library__filter">
             <input id="fusionLibrarySearch" type="search" placeholder="搜索专辑、艺术家或曲目" aria-label="搜索本地音乐库" />
-            <label class="fusion-library__only" title="只显示已有 XLD 段落或和弦分析的曲目">
-              <input id="fusionLibraryAnalyzed" type="checkbox" /><span>仅已分析</span>
+            <label class="fusion-library__only" title="只显示 XLD 写过音符、谱面能看的歌">
+              <input id="fusionLibraryAnalyzed" type="checkbox" /><span>只看可看谱面</span>
             </label>
           </div>
           <div class="fusion-library__list" id="fusionLibraryList" aria-label="本地曲目列表"></div>
@@ -92,7 +92,7 @@
           <section class="fusion-analysis-card" id="fusionAnalysisCard" data-state="idle" aria-label="XLD 分析结果">
             <div class="fusion-analysis-card__head">
               <span><small>XLD · RESULTS</small><b id="fusionAnalysisTitle">选择曲目后读取分析结果</b></span>
-              <button id="fusionOpenXldLab" type="button" title="在 XLD 中分析当前曲目">在 XLD 中分析</button>
+              <button id="fusionOpenXldLab" type="button" title="在 XLD 里分析这首歌">在 XLD 里分析 ↗</button>
             </div>
             <small id="fusionStemStatus" aria-live="polite">选择曲目后读取分轨</small>
             <div class="fusion-analysis-card__progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="fusionAnalysisProgress"></i></div>
@@ -241,11 +241,13 @@
           </section>
           <section class="xl-group">
             <h3 data-i18n="shell.more">更多</h3>
+            <div class="xl-toggle-list">
+              <button class="calibration-toggle desktop-only xl-switch" id="pinButton" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="窗口置顶" data-i18n-aria-label="switch.pin" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
+            </div>
             <div class="xl-grid">
               <button class="calibration-toggle glitch-settings-toggle" id="glitchSettingsButton" type="button" aria-expanded="false" aria-controls="glitchPanel" title="打开 FX Rack 设置" data-i18n="engine.fxSettings" data-i18n-title="engine.fxSettingsTitle">设置</button>
               <button class="calibration-toggle" id="snapshotButton" type="button" title="保存当前视觉画面（S）" data-i18n="engine.snapshot" data-i18n-title="engine.snapshotTitle">快照</button>
-              <button class="calibration-toggle desktop-only xl-switch" id="pinButton" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="窗口置顶" data-i18n-aria-label="switch.pin" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
-              <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 Auto</button>
+              <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 自动</button>
               <button class="calibration-toggle pulsar-style-toggle" id="pulsarLayoutButton" type="button" title="切换折叠频谱、单向频谱或真实双声道" data-i18n-title="visualSettings.pulsarLayoutTitle">Fold Spectrum</button>
               <button class="calibration-toggle pulsar-style-toggle" id="pulsarStyleButton" type="button" title="切换脉冲星黑白 / 霓虹模式" data-i18n-title="visualSettings.pulsarStyleTitle">Ink Mono</button>
             </div>
@@ -486,9 +488,11 @@
         <div class="welcome__content">
           <div class="home-heading"><h2 id="welcomeTitle" data-i18n="home.heading">开始听歌</h2><button id="homeClose" type="button" data-i18n="home.back">回到画面</button></div>
           <p id="homeIntro" data-i18n="welcome.body">音符、和弦、段落跟着音乐走。分析过的歌看得最全；没分析过的也能播放和看频谱。</p>
-          <section class="home-section" aria-labelledby="homeResumeTitle"><h3 id="homeResumeTitle" data-i18n="home.resume">接着听</h3><div id="homeResume"></div></section>
-          <section class="home-section" aria-labelledby="homeAnalyzedTitle"><h3 id="homeAnalyzedTitle" data-i18n="home.analyzed">带分析的歌</h3><p class="home-note" data-i18n="home.analysisNote">已有段落或和弦，画面能跟着变化。</p><div id="homeAnalyzed" class="home-tracks"></div></section>
           <div class="home-actions"><button id="fusionWelcomeButton" class="fusion-welcome-button" type="button">正在扫描本地曲库…</button><button id="homeChooseLibrary" type="button" data-i18n="shell.chooseLibrary">换文件夹</button></div>
+          <div class="home-lists">
+            <section class="home-section" id="homeRecentSection" aria-labelledby="homeResumeTitle"><h3 id="homeResumeTitle" data-i18n="home.resume">最近播放</h3><div id="homeResume" class="home-tracks"></div></section>
+            <section class="home-section" id="homeAnalyzedSection" aria-labelledby="homeAnalyzedTitle"><h3 id="homeAnalyzedTitle" data-i18n="home.analyzed">已经分析过的</h3><p class="home-note" data-i18n="home.analysisNote">在 XLD 里分析过，谱面能看。</p><div id="homeAnalyzed" class="home-tracks"></div></section>
+          </div>
           <small data-i18n="welcome.note">曲库和分析结果的位置跟 XLD 用同一份设置。</small>
         </div>
       </section>
@@ -533,6 +537,7 @@
     <script src="./score-dynamics-controls.js"></script>
     <script src="./score-notes-controls.js"></script>
     <script src="./score-export-controls.js"></script>
+    <script src="./library-status.js"></script>
     <script src="./fusion.js"></script>
   </body>
 </html>

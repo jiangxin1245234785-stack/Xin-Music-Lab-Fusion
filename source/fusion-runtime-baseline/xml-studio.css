@@ -63,14 +63,15 @@ html:root .stage .xl-row .ui-scale-control b { font-family: var(--xs-mono); }
 html:root .stage :is(.xl-switch::before, .xl-switch-input) { background: #3a4048; border-color: var(--xs-edge); }
 html:root .stage :is(.xl-switch[aria-checked="true"]::before, .xl-switch-input:checked) { background: var(--xl-accent); border-color: var(--xl-accent); }
 html:root .stage :is(.xl-switch[aria-checked="true"]::after, .xl-switch-input:checked::after) { background: var(--xs-ink); }
-html:root .stage .xl-settings .xl-switch { border-color: var(--xs-edge); background: var(--xs-key); box-shadow: var(--xs-shadow); border-radius: calc(6px * var(--ui-scale)); }
-html:root .stage .xl-settings .xl-switch:hover { border-color: var(--xl-accent); }
+html:root .stage .xl-settings .xl-switch { border: 0; background: transparent; box-shadow: none; }
+html:root .stage .xl-settings .xl-switch:hover { color: #fff; background: transparent; }
 
 /* library: green for analysed, amber only for what is playing */
-html:root .stage .fusion-library-track__state { color: var(--xs-live); }
-html:root .stage .fusion-library-track__state[data-analysis-state="none"] { color: var(--xl-dim); }
+html:root .stage .fusion-library-track__state { color: var(--xl-dim); }
+html:root .stage .fusion-library-track__state[data-analysis-state="score"] { color: var(--xs-live); }
 html:root .stage .xl-drawer .fusion-library-track__main > i { font-family: var(--xs-mono); }
-html:root .stage .score-layers-run.is-docked { border-color: var(--xl-accent); background: var(--xl-accent-soft); color: var(--xl-accent); border-radius: calc(6px * var(--ui-scale)); }
+/* B3 follow-up: an ordinary button like 在 XLD 里分析 next to it; amber is not for this. */
+html:root .stage .score-layers-run.is-docked { border-color: var(--xs-edge); background: var(--xs-key); color: var(--xl-text); box-shadow: var(--xs-shadow); border-radius: calc(6px * var(--ui-scale)); }
 
 /* opening screen: the one main action in amber */
 html:root .stage .welcome { background: rgba(26,29,33,.97); }

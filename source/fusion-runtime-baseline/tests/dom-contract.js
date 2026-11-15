@@ -78,7 +78,8 @@ const forbiddenControls = [
 const presentForbiddenControls = forbiddenControls.filter(token => html.includes(token));
 const missingFxEntryWiring = [
   "glitchPowerButton.addEventListener('click', () => setGlitchRackEnabled(!glitchConfig.enabled))",
-  "bindUiText(glitchPowerButton, glitchConfig.enabled ? 'shell.fxOn' : 'shell.fxOff', glitchConfig.enabled ? '特效 开' : '特效 关')",
+  "bindUiText(glitchPowerButton, 'shell.fx', '画面特效')",
+  "glitchPowerButton.setAttribute('aria-pressed', String(glitchConfig.enabled))",
   "ensurePanelInViewport(glitchPanel)",
   "setPanelPosition(panel, saved.left, saved.top)",
   "glitchSettingsButton.addEventListener('click', () => setGlitchPanel(!glitchPanel.classList.contains('is-open'))"

@@ -33,14 +33,18 @@
     return Object.prototype.hasOwnProperty.call(OLD_LEVELS, kept) ? OLD_LEVELS[kept] : 'clear';
   }
 
-  // Which models a lane's notes come from, for the lane tooltip: every distinct engine name among the
-  // model lanes of the lane's group (a merged lane holds parts that may come from different models), in
-  // the order they first appear. `lanes` is model.lanes, `under` what the core's hit() gave.
-  function laneModels(lanes, under) {
+  // Which models a lane's notes come from, for the lane tooltip, in the order they first appear. `lanes`
+  // is model.lanes, `under` what the core's hit() gave, `merged` whether "merge instrument parts" is on.
+  // Merged: every distinct engine name among the model lanes of the group (one drawn lane holds parts that
+  // may come from different models). Not merged: the lane's own model only (by its id; the group is used
+  // only when the drawn lane has no model lane of its own id).
+  function laneModels(lanes, under, merged = true) {
     if (!under || under.texture || !Array.isArray(lanes)) return [];
+    const own = lanes.some(lane => lane.id === under.id);
     const names = [];
     for (const lane of lanes) {
-      if (!(lane.id === under.id || (under.group && lane.group === under.group))) continue;
+      const belongs = merged || !own ? (lane.id === under.id || (under.group && lane.group === under.group)) : lane.id === under.id;
+      if (!belongs) continue;
       const name = lane.meta && (lane.meta.engineName || lane.meta.engine);
       if (name && !names.includes(name)) names.push(name);
     }
@@ -107,7 +111,7 @@
     try { autoLayers = root.localStorage.getItem(AUTO_KEY) !== 'off'; } catch (_) {}
     const Prepare = root.XinScorePrepare || null;
     const prepare = Prepare && typeof bridge.runAnalysis === 'function'
-      ? Prepare.create({run: (id, engine) => bridge.runAnalysis(id, engine),
+      ? Prepare.create({run: (id, engine) => bridge.runAnalysis(id, engine), mayStart: () => active(),
                         cancelRunning: () => { try { if (typeof bridge.cancelAnalysis === 'function') bridge.cancelAnalysis(); } catch (_) {} }})
       : null;
     let prepPlan = 'none', preparedAt = 0, noStemsUntil = 0, lineBox = null;
@@ -140,7 +144,7 @@
       if (!trackId || status !== 'ready') return null;
       const phase = prepare ? prepare.phase(trackId) : 'idle';
       if (phase === 'queued' || phase === 'running') return {text: say('score.prepRunning', '正在准备小节线和响度…')};
-      if (phase === 'retrying') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
+      if (phase === 'retrying' || phase === 'held') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
       if (phase === 'failed') return {text: say('score.prepFailed', '没准备成，点这里再试'), retry: true};
       if (phase === 'done' && root.performance.now() - preparedAt < 3000) return {text: say('score.prepDone', '准备好了')};
       if (prepPlan === 'no-stems' && root.performance.now() < noStemsUntil) {
@@ -371,7 +375,7 @@
     // (lane.meta.engineName, set by the main process; the engine id when XLD has no name for it).
     const laneModel = under => {
       if (!shownModel || under.texture) return null;
-      const names = laneModels(shownModel.lanes, under);
+      const names = laneModels(shownModel.lanes, under, reading.mergeTimbres !== false);
       return names.length ? say('score.laneModel', '音符来自：{model}').replace('{model}', names.join(' · ')) : null;
     };
     const laneName = under => {

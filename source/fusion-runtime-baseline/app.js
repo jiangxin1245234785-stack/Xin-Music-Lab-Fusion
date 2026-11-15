@@ -2211,7 +2211,8 @@
     glitchRackToggle.setAttribute('aria-pressed', String(glitchConfig.enabled));
     glitchRackToggle.textContent = glitchConfig.enabled ? 'ON' : 'OFF';
     glitchPowerButton.setAttribute('aria-pressed', String(glitchConfig.enabled));
-    bindUiText(glitchPowerButton, glitchConfig.enabled ? 'shell.fxOn' : 'shell.fxOff', glitchConfig.enabled ? '特效 开' : '特效 关');
+    // The switch's pill says on or off; its words name the setting only (SPEC-B3 follow-up).
+    bindUiText(glitchPowerButton, 'shell.fx', '画面特效');
     stage.classList.toggle('postfx-on', glitchConfig.enabled);
     syncGlitchRendererState();
   }
@@ -2484,7 +2485,7 @@
     set: enabled => setDirectorEnabled(enabled)
   });
   function qualityLabel(mode) {
-    return mode === 'high' ? '画质 High' : mode === 'eco' ? '画质 Eco' : '画质 Auto';
+    return mode === 'high' ? '画质 高' : mode === 'eco' ? '画质 省电' : '画质 自动';
   }
 
   function currentQualityLevel() {
@@ -2651,11 +2652,7 @@
     directorState.lastSwitchAt = performance.now() - 4200;
     directorState.energyAnchor = audioState.energy.overall;
     directorToggle.setAttribute('aria-pressed', String(directorState.enabled));
-    bindUiText(
-      directorToggle,
-      directorState.enabled ? 'runtime.director.on' : 'runtime.director.off',
-      directorState.enabled ? '导演中' : '导演'
-    );
+    bindUiText(directorToggle, 'runtime.director.off', '自动换画面');
     if (persist) {
       try { localStorage.setItem('xins-fusion-director', String(directorState.enabled)); } catch (_) {}
       showToast(directorState.enabled
@@ -2717,7 +2714,7 @@
     if (!window.SmokeResonanceDesktop?.toggleAlwaysOnTop) return;
     const pinned = await window.SmokeResonanceDesktop.toggleAlwaysOnTop();
     pinButton.setAttribute('aria-pressed', String(pinned));
-    bindUiText(pinButton, pinned ? 'runtime.pin.on' : 'runtime.pin.off', pinned ? '已置顶' : '置顶');
+    bindUiText(pinButton, 'runtime.pin.off', '窗口置顶');
     showToast(pinned
       ? uiText('runtime.pin.enabled', '窗口已保持在最前')
       : uiText('runtime.pin.disabled', '窗口置顶已关闭'));
@@ -3058,7 +3055,11 @@
   } catch (_) {
     setDirectorEnabled(false, false);
   }
-  bindUiText(pinButton, 'runtime.pin.off', '置顶');
+  bindUiText(pinButton, 'runtime.pin.off', '窗口置顶');
+  // B3 acceptance L3: after a reload the switch shows whether the window really is on top.
+  Promise.resolve(window.SmokeResonanceDesktop?.isAlwaysOnTop?.())
+    .then(pinned => { if (typeof pinned === 'boolean') pinButton.setAttribute('aria-pressed', String(pinned)); })
+    .catch(() => {});
   if (window.SmokeResonanceDesktop) stage.classList.add('is-desktop');
   resize();
   ensureMaterialRuntime();

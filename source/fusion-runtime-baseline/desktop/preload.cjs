@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('SmokeResonanceDesktop', Object.freeze({
   getLocale: () => ipcRenderer.invoke('app:locale-get'),
   setLocale: locale => ipcRenderer.invoke('app:locale-set', { locale }),
   toggleAlwaysOnTop: () => ipcRenderer.invoke('app:toggle-always-on-top'),
+  isAlwaysOnTop: () => ipcRenderer.invoke('app:is-always-on-top'),
   saveSnapshot: dataUrl => ipcRenderer.invoke('app:save-snapshot', dataUrl)
 }));
 

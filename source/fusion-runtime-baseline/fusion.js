@@ -876,6 +876,7 @@
         return false;
       }
       const changed=JSON.stringify(payload.manifest)!==JSON.stringify(state.manifest);
+      const statusBefore=window.XinLibraryStatus?.statusOf(track);
       if(changed){
         if(!loadXldProvider(payload.manifest,payload,track).ok)return false;
         state.manifest=payload.manifest;
@@ -883,17 +884,13 @@
         const analyses=payload.manifest.analyses || [],harmony=payload.manifest.harmony || [];
         Object.assign(track,{hasStructure:analyses.some(value=>value.segments?.length),hasHarmony:harmony.some(value=>value.segments?.length),
           structureEngines:analyses.map(engineId),harmonyEngines:harmony.map(engineId),duration:Number(payload.manifest.timing?.duration)||0});
-        for(const album of state.albums){
-          const item=album.tracks.find(item=>item.id===track.id);if(item)Object.assign(item,track);
-          album.analyzedCount=album.tracks.filter(item=>item.hasStructure || item.hasHarmony).length;
-        }
-        if(state.libraryInfo){
-          const info=state.libraryInfo;info.analyzedCount=state.library.filter(item=>item.hasStructure || item.hasHarmony).length;
-          bindUiText(dom.libraryMeta,'fusion.runtime.libraryMeta',`${info.albumCount} 张专辑 · ${info.trackCount} 首 · ${info.analyzedCount} 首已有分析`,{albums:info.albumCount,tracks:info.trackCount,analyzed:info.analyzedCount});
-        }
-        renderLibrary();
-        populateEngineSelectors();updateTimeline();
       }
+      // B3 acceptance M1: stems / notes are looked at on every refresh (XLD writes them without touching
+      // music-lab.json), and everything that reads them follows: the row, the counts, the filter, the start page.
+      if(payload.trackFacts)Object.assign(track,{hasStems:Boolean(payload.trackFacts.hasStems),hasNotes:Boolean(payload.trackFacts.hasNotes)});
+      const statusChanged=window.XinLibraryStatus?.statusOf(track)!==statusBefore;
+      if(changed||statusChanged)applyTrackFacts(track);
+      if(changed){populateEngineSelectors();updateTimeline();}
       state.payload={...state.payload,...payload};state.bridgePath=payload.filePath || payload.sourcePath || '';
       await stemControls?.refresh();
       if(changed || manual)scoreScene?.load(track.id);
@@ -955,9 +952,39 @@
     if (!dom.seek.matches(':active')) dom.seek.value = String(Math.min(duration, time));
   }
 
+  // B3 follow-up: the drawer counts and filters by one meaning, 可看谱面 (library-status.js).
+  const scoreReady = track => Boolean(window.XinLibraryStatus?.isReady(track));
+
+  // After one track's facts changed: album counts, the header count, the rows and the start page, all from
+  // the same 可看谱面 rule (B3 acceptance M1).
+  function applyTrackFacts(track){
+    for(const album of state.albums||[]){
+      const item=album.tracks.find(item=>item.id===track.id);if(item&&item!==track)Object.assign(item,track);
+      album.analyzedCount=album.tracks.filter(scoreReady).length;
+    }
+    const listed=state.library.find(item=>item.id===track.id);if(listed&&listed!==track)Object.assign(listed,track);
+    if(state.libraryInfo){
+      const info=state.libraryInfo;info.analyzedCount=state.library.filter(scoreReady).length;
+      bindUiText(dom.libraryMeta,'fusion.runtime.libraryMeta',`${info.albumCount} 张专辑 · ${info.trackCount} 首 · ${info.analyzedCount} 首可看谱面`,{albums:info.albumCount,tracks:info.trackCount,analyzed:info.analyzedCount});
+    }
+    renderLibrary();renderHome();
+    if(track.id===state.selectedTrackId)sayTrackState(track);
+  }
+  // The drawer's status line says the playing song's state in the row's own words (B3 acceptance L1).
+  function sayTrackState(track){
+    const lists=window.XinLibraryStatus;if(!dom.status)return;
+    if(!lists||!track){bindUiText(dom.status,'fusion.runtime.trackState','这首歌：{state}',{state:uiText('library.status.none','还没分析')});return;}
+    const [key,fallback]=lists.wordOf(track);
+    bindUiText(dom.status,'fusion.runtime.trackState',`这首歌：${uiText(key,fallback)}`,{state:uiText(key,fallback)});
+  }
+
   function trackById(id) {
     return state.library.find(track => track.id === id) || null;
   }
+
+  // SPEC-B3: 最近播放, kept in this profile's local storage (track id + time only, library-status.js caps it).
+  function recentRecord(){const lists=window.XinLibraryStatus;if(!lists)return [];try{return lists.readRecent(localStorage.getItem(lists.RECENT_KEY));}catch(_){return [];}}
+  function rememberPlayed(id){const lists=window.XinLibraryStatus;if(!lists||!id||!trackById(id))return;try{localStorage.setItem(lists.RECENT_KEY,JSON.stringify(lists.addRecent(recentRecord(),id,Date.now(),known=>Boolean(trackById(known)))));}catch(_){}}
 
   function setHome(open){
     if(open){rememberPosition(true);setOpen(false);window.XinShell?.setSettings(false);for(const id of ['paletteClose','glitchClose'])document.getElementById(id)?.click();renderHome();}
@@ -970,15 +997,31 @@
     resume.replaceChildren();list.replaceChildren();
     const current=trackById(state.selectedTrackId),saved=trackById(resumeRecord?.trackId),hasCurrent=current&&dom.audio.readyState>0&&dom.audio.currentTime>0;
     const target=hasCurrent?current:saved,time=hasCurrent?dom.audio.currentTime:resumeRecord?.time||0;
-    const card=(track,detail,action)=>{const button=document.createElement('button');button.type='button';button.className='home-track';button.dataset.homeTrackId=track.id;const title=document.createElement('strong'),meta=document.createElement('span');title.textContent=track.title;meta.textContent=detail;button.append(title,meta);button.addEventListener('click',action);return button;};
-    if(target)resume.append(card(target,`${target.artist} · ${uiText('home.at','从 {time} 继续',{time:formatClock(time)})}`,async()=>{if(state.selectedTrackId===target.id&&dom.audio.readyState>0){setHome(false);if(dom.audio.paused)await togglePlayback();}else await loadTrack(target.id,{autoplay:true,restorePosition:true});}));
-    else{const p=document.createElement('p');p.className='home-note';p.textContent=uiText('home.noResume','还没有续听位置，从曲库选一首开始。');resume.append(p);}
-    const analyzed=state.library.filter(t=>t.hasStructure||t.hasHarmony).slice(0,4);
+    // SPEC-B3: two short lists. 最近播放 = this profile's own record (library-status.js), the song that can be
+    // resumed says from where; 已经分析过的 = songs XLD wrote notes for (the score can show them). Read-only.
+    const lists=window.XinLibraryStatus,HOME_ROWS=6;
+    const card=(track,detail,action)=>{const button=document.createElement('button');button.type='button';button.className='home-track';button.dataset.homeTrackId=track.id;
+      const cover=document.createElement('span');cover.className='home-track__cover';cover.setAttribute('aria-hidden','true');
+      if(track.coverUrl){const img=document.createElement('img');img.alt='';img.loading='lazy';img.src=track.coverUrl;cover.append(img);}
+      const copy=document.createElement('span');copy.className='home-track__copy';const title=document.createElement('strong'),meta=document.createElement('span');title.textContent=track.title;meta.textContent=detail;copy.append(title,meta);
+      button.title=`${track.title} · ${detail}`;button.append(cover,copy);button.addEventListener('click',action);return button;};
+    const recent=lists?lists.recentTracks(recentRecord(),state.library,HOME_ROWS):[];
+    // The song that can be resumed (a saved place past the first second) leads the list and says from where.
+    const resumable=target&&time>=1?target:null;
+    if(resumable&&!recent.some(t=>t.id===resumable.id))recent.unshift(resumable);
+    for(const track of recent.slice(0,HOME_ROWS)){
+      if(resumable&&track.id===resumable.id)resume.append(card(target,`${target.artist} · ${uiText('home.at','从 {time} 继续',{time:formatClock(time)})}`,async()=>{if(state.selectedTrackId===target.id&&dom.audio.readyState>0){setHome(false);if(dom.audio.paused)await togglePlayback();}else await loadTrack(target.id,{autoplay:true,restorePosition:true});}));
+      else resume.append(card(track,`${track.artist} · ${track.album}`,()=>loadTrack(track.id,{autoplay:true})));
+    }
+    const analyzed=lists?state.library.filter(lists.isReady).slice(0,HOME_ROWS):[];
     for(const track of analyzed)list.append(card(track,`${track.artist} · ${track.album}`,()=>loadTrack(track.id,{autoplay:true})));
-    if(!analyzed.length){const p=document.createElement('p');p.className='home-note';p.textContent=uiText('home.noAnalysis','暂时没有段落或和弦结果，也可以先从曲库听歌。');list.append(p);}
-    const intro=document.getElementById('homeIntro');intro.textContent=state.scanning?uiText('home.scanning','正在读曲库…'):!state.library.length?uiText('home.empty','先选一个音乐文件夹。没有分析结果也能播放和看频谱。'):uiText('welcome.body','音符、和弦、段落跟着音乐走。');
-    const choose=document.getElementById('homeChooseLibrary');choose.disabled=state.scanning;choose.classList.toggle('home-primary',!state.library.length);
-    dom.welcomeLoad.disabled=state.scanning;dom.welcomeLoad.classList.toggle('home-primary',!!state.library.length);dom.welcomeLoad.textContent=uiText('home.openLibrary','打开曲库');
+    // An empty list is left out; with nothing in either, one plain sentence and the one main button.
+    document.getElementById('homeRecentSection').hidden=!resume.childElementCount;
+    document.getElementById('homeAnalyzedSection').hidden=!list.childElementCount;
+    const nothing=!resume.childElementCount&&!list.childElementCount;
+    const intro=document.getElementById('homeIntro');intro.textContent=state.scanning?uiText('home.scanning','正在读曲库…'):!state.library.length?uiText('home.empty','先选一个音乐文件夹。没有分析结果也能播放和看频谱。'):nothing?uiText('home.noResume','还没有听过的歌，也还没有分析过的。打开曲库挑一首吧。'):uiText('welcome.body','音符、和弦、段落跟着音乐走。');
+    const choose=document.getElementById('homeChooseLibrary');choose.disabled=state.scanning;choose.classList.toggle('home-primary',!state.scanning&&!state.library.length);
+    dom.welcomeLoad.disabled=state.scanning;dom.welcomeLoad.classList.toggle('home-primary',!state.scanning&&!!state.library.length);dom.welcomeLoad.textContent=uiText('home.openLibrary','打开曲库');
   }
 
   function trackMatchesQuery(track, query) {
@@ -1005,10 +1048,12 @@
     details.className = 'fusion-library-track__details';
     const analysis = document.createElement('span');
     analysis.className = 'fusion-library-track__state';
-    const kind = track.hasStructure ? (track.hasHarmony ? 'both' : 'sections') : (track.hasHarmony ? 'chords' : 'none');
+    // SPEC-B3: one plain word for what the track has (library-status.js); green only when the score can show it.
+    const status = window.XinLibraryStatus;
+    const kind = status ? status.statusOf(track) : 'none';
     analysis.dataset.analysisState = kind;
-    const states = {both: ['library.both', '段落 · 和弦'], sections: ['library.sections', '有段落'], chords: ['library.chords', '有和弦'], none: ['library.none', '暂无段落/和弦']};
-    analysis.textContent = uiText(...states[kind]);
+    analysis.textContent = status ? uiText(...status.wordOf(track)) : '';
+    if (status) analysis.title = uiText(...status.hintOf(track));
     const playing = document.createElement('span');
     playing.className = 'fusion-library-track__play-state';
     playing.hidden = track.id !== state.selectedTrackId;
@@ -1022,11 +1067,11 @@
       const analyze = document.createElement('button');
       analyze.type = 'button';
       analyze.className = 'fusion-library-track__analyze';
-      analyze.title=uiText('fusion.runtime.analyzeTitle','在 XLD 中分析此曲');
+      analyze.title=uiText('fusion.runtime.analyzeTitle','在 XLD 里分析这首歌');
       bindUiText(
         analyze,
         'library.analyze',
-        '在 XLD 分析 ↗'
+        '在 XLD 里分析 ↗'
       );
       analyze.addEventListener('click', async event => {
         event.stopPropagation();
@@ -1058,7 +1103,7 @@
     const albums = Array.isArray(state.albums) ? state.albums : [];
     // Fallback to the legacy flat list if the backend didn't return albums.
     if (!albums.length) {
-      const flat = state.library.filter(track => trackMatchesQuery(track, query) && (!state.analyzedOnly || track.hasStructure || track.hasHarmony));
+      const flat = state.library.filter(track => trackMatchesQuery(track, query) && (!state.analyzedOnly || scoreReady(track)));
       if (!flat.length) {
         const empty = document.createElement('p');
         empty.className = 'fusion-library-empty';
@@ -1082,7 +1127,7 @@
     for (const album of albums) {
       const albumMatches = !query || `${album.title} ${album.artist}`.toLowerCase().includes(query);
       const visibleTracks = album.tracks.filter(track =>
-        (albumMatches || trackMatchesQuery(track, query)) && (!state.analyzedOnly || track.hasStructure || track.hasHarmony));
+        (albumMatches || trackMatchesQuery(track, query)) && (!state.analyzedOnly || scoreReady(track)));
       if (!visibleTracks.length) continue;
       shown += visibleTracks.length;
       const containsSelected = album.tracks.some(track => track.id === state.selectedTrackId);
@@ -1107,7 +1152,7 @@
       albumTitle.textContent = album.title;
       const albumMeta = document.createElement('small');
       const analyzed = album.analyzedCount
-        ? uiText('fusion.runtime.analyzedSuffix', ` · ${album.analyzedCount} 已分析`, { count: album.analyzedCount })
+        ? uiText('fusion.runtime.analyzedSuffix', ` · ${album.analyzedCount} 首可看谱面`, { count: album.analyzedCount })
         : '';
       bindUiText(
         albumMeta,
@@ -1186,7 +1231,7 @@
     bindUiText(
       dom.libraryMeta,
       'fusion.runtime.libraryMeta',
-      `${result.albumCount} 张专辑 · ${result.trackCount} 首 · ${result.analyzedCount} 首已有分析`,
+      `${result.albumCount} 张专辑 · ${result.trackCount} 首 · ${result.analyzedCount} 首可看谱面`,
       { albums: result.albumCount, tracks: result.trackCount, analyzed: result.analyzedCount }
     );
     renderLibrary();
@@ -1231,13 +1276,7 @@
     const coverUrl = payload.coverUrl || libraryTrack?.coverUrl || '';
     if (coverUrl) dom.cover.src = coverUrl;
     else dom.cover.removeAttribute('src');
-    const hasStructure = Array.isArray(state.manifest.analyses) && state.manifest.analyses.some(result => result?.segments?.length);
-    const hasHarmony = Array.isArray(state.manifest.harmony) && state.manifest.harmony.some(result => result?.segments?.length);
-    bindUiText(
-      dom.status,
-      hasStructure || hasHarmony ? 'fusion.runtime.trackReadyAnalyzed' : 'fusion.runtime.trackReady',
-      hasStructure || hasHarmony ? '本地曲目与 XLD 分析已自动接入' : '本地曲目已就绪 · 暂无离线分析'
-    );
+    sayTrackState(libraryTrack);
     dom.linkCard.dataset.state = 'linked';
     dom.play.disabled = false;
     dom.previous.disabled = state.library.length < 2;
@@ -1370,6 +1409,7 @@
   dom.previous.addEventListener('click', () => loadAdjacent(-1));
   dom.next.addEventListener('click', () => loadAdjacent(1));
   dom.audio.addEventListener('play', syncPlaybackButton);
+  dom.audio.addEventListener('play', () => rememberPlayed(state.selectedTrackId));
   dom.audio.addEventListener('pause', syncPlaybackButton);
   dom.audio.addEventListener('seeking', () => {
     if (state.seekActive) return;

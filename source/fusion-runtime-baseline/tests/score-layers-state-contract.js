@@ -98,6 +98,53 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(failing.auto('B', 'r2'), true);
   }
 
+  // --- the automatic retry also starts only from the score (B2 review, 1) -----------------------
+  {
+    const runs = [];
+    const pending = new Map();
+    const timers = [];
+    let onScreen = true;
+    const queue = Prepare.create({run: id => { runs.push(id); return new Promise(resolve => pending.set(id, resolve)); },
+                                  setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: () => {},
+                                  mayStart: () => onScreen});
+    queue.auto('A', 'r1');
+    pending.get('A')({ok: false, error: 'runtime-missing'});
+    await settle();
+    assert.equal(queue.phase('A'), 'retrying');
+    onScreen = false;                       // the user went to another scene, same song
+    timers.shift()();                       // 30 s later
+    assert.equal(queue.phase('A'), 'held', 'not on screen: the retry is held');
+    assert.deepEqual(runs, ['A'], 'nothing ran in the other scene');
+    assert.equal(queue.auto('A', 'r2'), true, 'new stems in the meantime: a new job');
+    pending.get('A')({ok: true});
+    await settle();
+    // Held, then back to the score: it runs as the one automatic retry; a failure then waits for the user.
+    queue.auto('B', 'r1');
+    pending.get('B')({ok: false, error: 'x'});
+    await settle();
+    onScreen = false;
+    timers.shift()();
+    assert.equal(queue.phase('B'), 'held');
+    onScreen = true;                        // back in the score: consider() calls auto()
+    assert.equal(queue.auto('B', 'r1'), true, 'the held retry runs once the score is on screen');
+    assert.equal(queue.attempts('B'), 2, 'as the second (automatic retry) attempt');
+    pending.get('B')({ok: false, error: 'x'});
+    await settle();
+    assert.equal(queue.phase('B'), 'failed', 'and then it waits for the user');
+    assert.equal(timers.length, 0, 'no further timer');
+    // Moving to another song drops a held retry like a waiting one.
+    queue.auto('C', 'r1');
+    pending.get('C')({ok: false, error: 'x'});
+    await settle();
+    onScreen = false;
+    timers.shift()();
+    assert.equal(queue.phase('C'), 'held');
+    queue.forgetWaiting('D');
+    assert.equal(queue.phase('C'), 'idle');
+    // The scene gives the queue its gate.
+    assert.match(fs.readFileSync(path.join(root, 'score-scene.js'), 'utf8'), /mayStart: \(\) => active\(\)/);
+  }
+
   // --- survey counts unreadable stems with the unreadable rows ---------------------------------
   {
     const surveyed = await Prepare.survey(async ids => ({ok: true, rows: ids.map(id => ({trackId: id, ok: true,
@@ -122,6 +169,12 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(Scene.laneModels(lanes, {id: 'drums', group: 'drums'}), ['drums-adtof'], 'no display name: the engine id');
     assert.deepEqual(Scene.laneModels(lanes, {id: 'texture', group: 'other', texture: true}), [], 'the texture lane has no notes');
     assert.deepEqual(Scene.laneModels(null, {id: 'piano', group: 'piano'}), []);
+    // "Merge instrument parts" off (B2 review, 2): a single lane names its own model only.
+    assert.deepEqual(Scene.laneModels(lanes, {id: 'strings/1', group: 'strings'}, false), ['人工修订']);
+    assert.deepEqual(Scene.laneModels(lanes, {id: 'strings/0', group: 'strings'}, false), ['MuScriptor Large']);
+    assert.deepEqual(Scene.laneModels(lanes, {id: 'strings', group: 'strings'}, false), ['MuScriptor Large', '人工修订'],
+      'a drawn lane with no model lane of its own id still lists its group');
+    assert.match(fs.readFileSync(path.join(root, 'score-scene.js'), 'utf8'), /laneModels\(shownModel\.lanes, under, reading\.mergeTimbres !== false\)/);
   }
 
   console.log('score layers state contract ok');

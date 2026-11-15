@@ -167,8 +167,11 @@
 .xl-toggle-field { display: flex; align-items: center; justify-content: space-between; gap: calc(14px * var(--ui-scale)); min-height: calc(34px * var(--ui-scale)); color: var(--xl-text); font-size: calc(12.5px * var(--ui-scale)); cursor: pointer; }
 .xl-toggle-field > span { min-width: 0; line-height: 1.5; }
 .xl-toggle-field small { display: block; color: var(--xl-dim); font-size: calc(11px * var(--ui-scale)); }
-.xl-settings .xl-switch { position: relative; height: auto; min-height: calc(36px * var(--ui-scale)); min-width: 0; padding: calc(8px * var(--ui-scale)) calc(62px * var(--ui-scale)) calc(8px * var(--ui-scale)) calc(11px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.14); border-radius: calc(8px * var(--ui-scale)); background: transparent; box-shadow: none; color: var(--xl-text); font: inherit; font-size: calc(12.5px * var(--ui-scale)); line-height: 1.5; white-space: normal; text-align: left; cursor: pointer; }
-.xl-settings .xl-switch:hover { border-color: var(--xl-accent); background: rgba(255,255,255,.04); }
+/* B3: every on/off setting is one row: the words on the left, the pill on the right (no box, no amber on hover). */
+.xl-settings .xl-switch { position: relative; display: flex; align-items: center; width: 100%; height: auto; min-height: calc(34px * var(--ui-scale)); min-width: 0; padding: 0 calc(52px * var(--ui-scale)) 0 0; border: 0; border-radius: calc(6px * var(--ui-scale)); background: transparent; box-shadow: none; color: var(--xl-text); font: inherit; font-size: calc(12.5px * var(--ui-scale)); line-height: 1.5; white-space: normal; text-align: left; cursor: pointer; }
+.xl-settings .xl-switch:hover { color: #fff; background: transparent; }
+.xl-settings .xl-switch::before { right: 0; }
+.xl-settings .xl-switch::after { right: calc(19px * var(--ui-scale)); }
 .xl-switch::before, .xl-switch-input { width: calc(35px * var(--ui-scale)); height: calc(20px * var(--ui-scale)); border-radius: calc(12px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.28); background: #434c5d; box-sizing: border-box; }
 .xl-switch::before { content: ''; position: absolute; top: 50%; right: calc(11px * var(--ui-scale)); transform: translateY(-50%); }
 .xl-switch::after, .xl-switch-input::after { content: ''; width: calc(12px * var(--ui-scale)); height: calc(12px * var(--ui-scale)); border-radius: 50%; background: #f4f7fc; transition: transform .15s; }
@@ -217,9 +220,16 @@
 .home-section h3 { margin: 0 0 calc(8px * var(--ui-scale)); color: var(--xl-text); font-size: calc(15px * var(--ui-scale)); font-weight: 500; }
 .home-note { margin: 0 0 calc(8px * var(--ui-scale)); color: var(--xl-dim); font-size: calc(12px * var(--ui-scale)); line-height: 1.6; }
 .home-tracks { display: grid; gap: calc(6px * var(--ui-scale)); }
-.welcome .home-track { display: grid; gap: calc(3px * var(--ui-scale)); width: 100%; min-width: 0; text-align: left; }
+/* SPEC-B3: 最近播放 and 已经分析过的 side by side when there is room, one under the other when not. */
+.home-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(260px * var(--ui-scale))), 1fr)); gap: 0 calc(20px * var(--ui-scale)); }
+.home-lists > .home-section { min-width: 0; }
+.home-lists > .home-section[hidden] { display: none; }
+.welcome .home-track { display: flex; align-items: center; gap: calc(10px * var(--ui-scale)); width: 100%; min-width: 0; padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(6px * var(--ui-scale)) calc(6px * var(--ui-scale)); text-align: left; }
+.home-track__cover { flex: none; width: calc(40px * var(--ui-scale)); height: calc(40px * var(--ui-scale)); border-radius: calc(4px * var(--ui-scale)); overflow: hidden; background: rgba(255,255,255,.08); }
+.home-track__cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.home-track__copy { display: grid; gap: calc(2px * var(--ui-scale)); min-width: 0; flex: 1 1 auto; }
 .home-track strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.home-track span { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); overflow-wrap: anywhere; }
+.home-track__copy > span { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-actions { display: flex; flex-wrap: wrap; gap: calc(8px * var(--ui-scale)); }
 .welcome .home-primary { background: var(--xl-accent); color: #06231d; font-weight: 600; border-color: transparent; }
 .welcome .home-primary:hover { background: #8ff0db; }
@@ -235,8 +245,8 @@
 .xl-drawer .fusion-library-track__main { grid-template-columns: calc(22px * var(--ui-scale)) minmax(0,1fr); padding: calc(6px * var(--ui-scale)) calc(8px * var(--ui-scale)); color: rgba(232,236,245,.86); }
 .xl-drawer .fusion-library-track__main > i { font: normal calc(10.5px * var(--ui-scale))/1 inherit; font-variant-numeric: tabular-nums; color: var(--xl-dim); }
 .fusion-library-track__details { display: flex; flex-wrap: wrap; align-items: center; gap: calc(5px * var(--ui-scale)); font-size: calc(10px * var(--ui-scale)); line-height: 1.5; }
-.fusion-library-track__state { color: #b4d9d0; }
-.fusion-library-track__state[data-analysis-state="none"] { color: var(--xl-dim); }
+.fusion-library-track__state { color: var(--xl-dim); }
+.fusion-library-track__state[data-analysis-state="score"] { color: #b4d9d0; }
 .fusion-library-track__play-state { padding: 0 calc(5px * var(--ui-scale)); border-radius: 4px; color: var(--xl-accent); background: var(--xl-accent-soft); }
 .xl-drawer .fusion-library-track__analyze { font-size: calc(10.5px * var(--ui-scale)); padding: calc(4px * var(--ui-scale)) calc(7px * var(--ui-scale)); border-radius: calc(6px * var(--ui-scale)); }
 .xl-drawer .fusion-library__only { font-size: calc(12px * var(--ui-scale)); }
@@ -244,7 +254,7 @@
 .xl-drawer__foot .fusion-link-card { max-width: 100%; }
 .xl-drawer__foot .fusion-link-card small { white-space: normal; max-width: none; }
 
-.score-layers-run.is-docked { position: static; align-self: flex-start; height: calc(31px * var(--ui-scale)); padding: 0 calc(11px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); border: 1px solid var(--xl-accent); background: var(--xl-accent-soft); color: #d6fff5; font: inherit; font-size: calc(12.5px * var(--ui-scale)); }
+.score-layers-run.is-docked { position: static; align-self: flex-start; height: calc(31px * var(--ui-scale)); padding: 0 calc(11px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.04); color: var(--xl-text); font: inherit; font-size: calc(12.5px * var(--ui-scale)); }
 .score-sync.is-docked { position: static; padding: 0; border: 0; background: none; color: var(--xl-text); font-size: inherit; gap: calc(8px * var(--ui-scale)); }
 .score-sync.is-docked button { width: calc(31px * var(--ui-scale)); height: calc(31px * var(--ui-scale)); border-radius: calc(8px * var(--ui-scale)); font-size: calc(14px * var(--ui-scale)); }
 /* --- score: export video (score-export-controls.js) --------------------------------------- */
