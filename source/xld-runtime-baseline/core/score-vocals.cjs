@@ -78,6 +78,8 @@ async function read(assets, track, directory) {
   try { result = JSON.parse(await fs.readFile(path.join(directory, ENGINE + '.json'), 'utf8')); } catch (_) { result = null; }
   if (result?.kind !== ENGINE) return {state: 'missing', due: true, source};
   if (!sameSource(result.source, source)) return {state: 'stale', due: true, source, result};
+  // Made by another model version (core/score-identity.cjs). No recorded identity = an earlier result, still valid.
+  if (!require('./score-identity.cjs').isCurrent(result, ENGINE)) return {state: 'stale', due: true, source, result, why: 'model-changed'};
   const named = result.provenance?.split;
   if (named) {
     const split = await readSplit(directory, named, source);

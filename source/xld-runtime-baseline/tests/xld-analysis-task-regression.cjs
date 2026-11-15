@@ -29,6 +29,10 @@ async function main() {
   vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), sandbox);
   await fsp.mkdir(path.join(root, 'analysis-ai/.venv/Scripts'), { recursive: true });
   await fsp.writeFile(path.join(root, 'analysis-ai/.venv/Scripts/python.exe'), 'fixture');
+  // Since audit fix 2 / item 7 the interpreter must be configured (no fallback into the runtime root's .venv).
+  const configuredAi = process.env.XLD_AI_PYTHON;
+  process.env.XLD_AI_PYTHON = path.join(root, 'analysis-ai/.venv/Scripts/python.exe');
+  process.on('exit', () => { if (configuredAi === undefined) delete process.env.XLD_AI_PYTHON; else process.env.XLD_AI_PYTHON = configuredAi; });
   await fsp.writeFile(path.join(root, 'analysis-ai/songformer_runner.py'), 'fixture');
   const audio = path.join(root, 'track.wav'); await fsp.writeFile(audio, 'fixture');
   const directory = path.join(root, 'result'); await fsp.mkdir(directory);
@@ -83,8 +87,10 @@ async function main() {
     assert.equal(JSON.parse(await fsp.readFile(resultPath)).segments[0].label, 'new');
     assert.equal(service.task(), null);
     const logs = (await fsp.readFile(path.join(root, 'logs/analysis.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-    assert.equal(logs.filter(x => x.event === 'start').length, 5);
-    assert.equal(logs.filter(x => x.event === 'finish').length, 5);
+    // 4, not 5, since the cross-program lock (audit fix 1, item 2): the run cancelled right after it was asked for is
+    // cancelled while its lock is being taken, before any task exists, so it neither starts nor logs.
+    assert.equal(logs.filter(x => x.event === 'start').length, 4);
+    assert.equal(logs.filter(x => x.event === 'finish').length, 4);
     assert(logs.some(x => x.status === 'failed') && logs.some(x => x.status === 'cancelled'));
     console.log('xld-analysis-task-regression: PASS (duplicate, early cancel, retry, partial merge, invalid output, manual tags, history)');
   } finally {

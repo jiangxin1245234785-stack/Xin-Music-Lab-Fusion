@@ -1,0 +1,9 @@
+{
+  "name": "xin-release-tools",
+  "private": true,
+  "description": "Building and checking dev releases. `npm test` runs every test that needs no built release; the three that check a built one take its folder as their first argument (see test:candidate).",
+  "scripts": {
+    "test": "node test.cjs && node test-build-dev.cjs && node test-configured-python.cjs && node test-diagnostics.cjs && node test-interface.cjs && node test-portable.cjs && node test-release-shell.cjs && node test-setup.cjs",
+    "test:candidate": "node -e \"console.log('Each needs a built release and the real runtime: node test-packaged.cjs <release> <fixture.json> <out>; node test-analysis-runtime.cjs <release> <input> <out>; node test-inference.cjs <release> <fixture.json> <out>')\""
+  }
+}

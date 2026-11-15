@@ -1,0 +1,9 @@
+{
+  "name": "xin-scoreview",
+  "private": true,
+  "description": "The listening score's core. `npm test` runs every test; the mutation tables (do the tests bite?) are separate and slow: npm run test:mutations.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.cjs\"",
+    "test:mutations": "node tests/mutations.cjs && node tests/roles-mutations.cjs && node tests/adapter-mutations.cjs"
+  }
+}

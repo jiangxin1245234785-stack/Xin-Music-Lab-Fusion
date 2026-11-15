@@ -96,20 +96,12 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   };
   await refreshXldSettings();
 
-  const firstExistingRoot = candidates => candidates.find(candidate => fsSync.existsSync(candidate)) || candidates[0];
-  const xldRoot = firstExistingRoot([
-    process.env.XLD_RUNTIME_ROOT,
-    path.join(__dirname, '..', '..', 'xin-local-deck-beta'),
-    'D:\\Program Files\\xin-local-deck-beta'
-  ].filter(Boolean));
-  const stableXldRoot = firstExistingRoot([
-    process.env.XLD_STABLE_RUNTIME_ROOT,
-    path.join(__dirname, '..', '..', 'xin-local-deck'),
-    'D:\\Program Files\\xin-local-deck'
-  ].filter(Boolean));
+  // The runtime root comes from XLD_RUNTIME_ROOT only (audit fix 2 / item 7): no fallback to an older install; a
+  // runtime that is not configured is reported as missing by the analysis service.
+  const xldRoot = process.env.XLD_RUNTIME_ROOT || null;
   const xldAnalysis = createXldAnalysisService({
     xldRoot,
-    stableXldRoot,
+    program: 'XML',
     analysisRoot: fusionAnalysisRoot
   });
   const glitchPresetRepository = createGlitchPresetRepository({
@@ -687,7 +679,17 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     try{
       if(payload.action==='status'){const found=await dynamics.read(track);return {ok:true,state:found.state,eligible:found.eligible,runId:found.cache?.runId||null,damaged:found.damaged};}
-      if(payload.action==='run'){if(xldAnalysis.task())return {ok:false,error:'analysis-busy'};return dynamics.start(track,{force:payload.force===true},task=>{if(!event.sender.isDestroyed())event.sender.send('fusion:score-dynamics-task',task);});}
+      if(payload.action==='run'){
+        if(xldAnalysis.task())return {ok:false,error:'analysis-busy'};
+        // The cross-program analysis lock (core/analysis-lock.cjs), held until the job is no longer busy.
+        const lockModule=require('../../xld-runtime-baseline/core/analysis-lock.cjs');
+        const lock=await lockModule.createAnalysisLock({program:'XML'}).acquire(fusionAnalysisRoot,{task:'score-dynamics',song:track.title||track.id});
+        if(!lock.ok)return {ok:false,error:'analysis-locked',holder:lock.holder,detail:lockModule.holderMessage(lock.holder)};
+        const finished=task=>!task||!['preparing','running','cancelling'].includes(task.status);
+        const started=dynamics.start(track,{force:payload.force===true},task=>{if(finished(task))lock.release().catch(()=>{});if(!event.sender.isDestroyed())event.sender.send('fusion:score-dynamics-task',task);});
+        if(!started?.ok||finished(started.task))await lock.release().catch(()=>{});
+        return started;
+      }
       return {ok:false,error:'dynamics-action-invalid'};
     }catch(error){return {ok:false,error:String(error.message||error)};}
   });
@@ -766,7 +768,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if(process.env.XLD_EXECUTABLE){
       return {...await require('./launch-xld.cjs').launch(process.env.XLD_EXECUTABLE),wrote};
     }
-    const launcher = fsSync.existsSync(developmentLauncher) ? developmentLauncher : path.join(xldRoot, 'start-xld.cmd');
+    const launcher = fsSync.existsSync(developmentLauncher) ? developmentLauncher : xldRoot ? path.join(xldRoot, 'start-xld.cmd') : '';
     if (!fsSync.existsSync(launcher)) return { ok: false, error: 'xld-not-found', wrote };
     try {
       // The launcher opens XLD; detached + unref lets it outlive this call.

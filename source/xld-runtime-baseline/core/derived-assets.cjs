@@ -17,8 +17,19 @@ function trackDirectory(track, root, displayNames = false) {
    ? track['path' + name[0].toUpperCase() + name.slice(1)] : track[name];
  const album = safeName(field('artist') + ' - ' + field('album'), 'Unknown album');
  const song = safeName(String(field('number') || 0).padStart(2, '0') + ' ' + field('title'), 'Unknown track');
- return path.join(root, album, song + '__' + String(track.id).slice(0, 10));
+ const id = String(track.id).slice(0, 10), full = path.join(root, album, song + '__' + id);
+ // A new folder's full path is kept to TRACK_PATH_LIMIT characters (audit fix 1, item 10): the song part is shortened
+ // first, then the album part, never below 24 characters. A folder that already exists under the full name is used as
+ // it is, so nothing analysed before moves.
+ if (full.length <= TRACK_PATH_LIMIT || fsSync.existsSync(full)) return full;
+ const trim = (name, by) => name.slice(0, Math.max(24, name.length - by)).replace(/[. ]+$/g, '') || name.slice(0, 24);
+ let a = album, s = song;
+ const over = () => path.join(root, a, s + '__' + id).length - TRACK_PATH_LIMIT;
+ if (over() > 0) s = trim(s, over());
+ if (over() > 0) a = trim(a, over());
+ return path.join(root, a, s + '__' + id);
 }
+const TRACK_PATH_LIMIT = 160;
 function derivedDirectory(track, root) {
  const candidates = [trackDirectory(track, root), trackDirectory(track, root, true), track.bridgePath && path.dirname(track.bridgePath)].filter(Boolean);
  return candidates.find(directory => fsSync.existsSync(path.join(directory, 'stems.json'))) || candidates[0];
@@ -341,7 +352,10 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
     for(const [runId, {raw, pointed}] of runs) {
       const entry = {runId, engine: engineOf(raw), model: raw.model ?? null, sourceRunId: raw.sourceRunId ?? null, sourceTarget: raw.sourceTarget ?? null,
         noteCount: raw.noteCount ?? null, createdAt: raw.createdAt ?? null, file: raw.file ?? null, pointed: pointed.sort(),
-        active: activeRead.ok && activeRead.runId === runId, kept: kept.has(runId)};
+        active: activeRead.ok && activeRead.runId === runId, kept: kept.has(runId),
+        // The stem batch (or, for strings, the refinement result) it was made from is gone: the version cannot be
+        // checked or played any more, so the version list does not show it unless asked (audit fix 1, item 5).
+        stemsDeleted: validId(raw.sourceRunId) && !fsSync.existsSync(path.join(analysisDirectory(track), stem === 'strings' ? 'refinement' : 'stems', raw.sourceRunId))};
       try {
         const verified = await verify(raw, track, stem, {source: current});
         Object.assign(entry, {identity: verified.identity, matches: verified.matches, directory: path.dirname(path.join(analysisDirectory(track), verified.file)),

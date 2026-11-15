@@ -42,13 +42,23 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    const known=kind==='stems'?/^(bass|piano|guitar|drums|vocals|other)\.(?:wav|flac)$/:/^(?:(?:listen-)?(?:original|target|residual|strings))\.(?:wav|flac)$/;
    const unknown=children.some(([file,stat])=>stat.link||path.dirname(file)!==directory||!(known.test(path.basename(file))||['README.txt',marker].includes(path.basename(file))));
    const rowBytes=children.reduce((sum,[,stat])=>sum+stat.size,0),kept=files.has(path.join(directory,marker))||keepRecords.length>0;
-   const dependencies=records.filter(r=>r.track===track&&((kind==='stems'&&r.value.kind==='refinement'&&r.value.parentRunId===runId&&directories.includes(path.join(track,'refinement',r.value.runId)))||(r.value.kind==='midi'&&r.value.sourceRunId===runId&&typeof r.value.file==='string'&&files.has(path.resolve(track,r.value.file)))));
-   const dependencyCount=new Set(dependencies.map(r=>r.value.kind+':'+r.value.runId)).size;
+   // What still uses this result (STORAGE-PLAN.md section 4, audit fix 1 item 4). A refinement result made from it, and
+   // a MIDI version that holds it - hand-edited (never removed automatically), pinned (保留) or in use - keep it.
+   // Other MIDI versions made from an earlier stem batch only follow it: clearing the batch takes their payload folders
+   // along (to the bin, like MIDI retention does), so they no longer block it.
    const active=kind==='stems'&&records.some(r=>r.file===path.join(track,'stems.json')&&r.value.runId===runId);
+   const midiUsers=records.filter(r=>r.track===track&&r.value.kind==='midi'&&r.value.sourceRunId===runId&&typeof r.value.file==='string'&&files.has(path.resolve(track,r.value.file)));
+   const holds=r=>r.value.engine==='manual-revision'||files.has(path.join(track,'midi',r.value.stem||'','kept',r.value.runId+'.json'))||
+     records.some(p=>p.file===path.join(track,'midi',(r.value.stem||'')+'.json')&&p.value.runId===r.value.runId);
+   const dependencies=[...records.filter(r=>r.track===track&&kind==='stems'&&r.value.kind==='refinement'&&r.value.parentRunId===runId&&directories.includes(path.join(track,'refinement',r.value.runId))),
+     ...midiUsers.filter(r=>kind!=='stems'||active||holds(r))];
+   const dependencyCount=new Set(dependencies.map(r=>r.value.kind+':'+r.value.runId)).size;
+   const followerIds=kind==='stems'&&!active?[...new Set(midiUsers.filter(r=>!holds(r)).map(r=>r.value.stem+'/'+r.value.runId))]:[];
+   const followers=followerIds.map(id=>path.join(track,'midi',...id.split('/'))).filter(dir=>directories.includes(dir));
    const id=hash(root+'\0'+path.relative(root,directory));
    const redundant=children.filter(([file])=>/^listen-(original|target|residual)\.wav$/.test(path.basename(file))||(path.basename(file)==='original.wav'&&data.sourceStem!=='mix'));
    const optimizable=kind==='refinement'&&!unknown&&Boolean(data.playback)&&redundant.length>0&&(data.schemaVersion===2||(data.schemaVersion===3&&files.has(path.join(track,'refinement','storage-optimization',runId+'.json'))));
-   rows.push({id,manifest:record?.file,optimizable,redundantBytes:redundant.reduce((n,[,s])=>n+s.size,0),compact:data.schemaVersion===3,revision:hash(JSON.stringify(children.map(([p,s])=>[p,s.size,s.mtimeMs,s.link||false]).sort())),directory,track:parts[1].replace(/__[a-f0-9]+$/,''),album:parts[0],kind,runId,engine:data.engine||data.model||'旧输出',target:data.target||'',sourceStem:data.sourceStem||'',scope:data.scope||'preview',timeOrigin:data.timeOrigin||0,duration:data.duration||0,bytes:rowBytes,files:children.length,modified:Math.max(...children.map(([,s])=>s.mtimeMs)),kept,active,dependencyCount,blocked:unknown?'目录含链接或未知文件':dependencyCount?'仍被 '+dependencyCount+' 项细分 / MIDI 使用':'',keepRecords:keepRecords.map(r=>r.file)});
+   rows.push({id,manifest:record?.file,optimizable,redundantBytes:redundant.reduce((n,[,s])=>n+s.size,0),compact:data.schemaVersion===3,revision:hash(JSON.stringify(children.map(([p,s])=>[p,s.size,s.mtimeMs,s.link||false]).sort())),directory,track:parts[1].replace(/__[a-f0-9]+$/,''),album:parts[0],kind,runId,engine:data.engine||data.model||'旧输出',target:data.target||'',sourceStem:data.sourceStem||'',scope:data.scope||'preview',timeOrigin:data.timeOrigin||0,duration:data.duration||0,bytes:rowBytes,files:children.length,modified:Math.max(...children.map(([,s])=>s.mtimeMs)),kept,active,dependencyCount,followers,followerBytes:followers.reduce((sum,dir)=>sum+[...files].filter(([p])=>within(dir,p)).reduce((n,[,s])=>n+s.size,0),0),blocked:unknown?'目录含链接或未知文件':dependencyCount?'仍被 '+dependencyCount+' 项细分 / MIDI 使用':'',keepRecords:keepRecords.map(r=>r.file)});
   }
   rows.sort((a,b)=>b.bytes-a.bytes);return {root,bytes,wavBytes,rows,warnings,busy:isBusy()||mutating};
  }
@@ -78,6 +88,9 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    const current=[];for(const name of await fs.readdir(row.directory)){const file=path.join(row.directory,name),stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink())throw Error('目录内容已变化');current.push([file,stat.size,stat.mtimeMs,false]);}
    if(hash(JSON.stringify(current.sort()))!==row.revision)throw Error('文件已变化，请刷新后重试');
    if(mode==='trash'){if(!trash)throw Error('回收站不可用');await trash(row.directory);}else await remove(row.directory);deleted++;removedBytes+=row.bytes;
+   // The MIDI versions that only followed this stem batch go with it (their records stay: the version list shows them
+   // as recycled, and a restore from the bin brings them back).
+   for(const folder of row.followers||[]){try{await guarded(fresh.root,folder);if(!(await fs.lstat(folder)).isDirectory())continue;let size=0;for(const name of await fs.readdir(folder)){const s=await fs.lstat(path.join(folder,name));if(s.isFile())size+=s.size;}if(mode==='trash')await trash(folder);else await remove(folder);removedBytes+=size;}catch(error){errors.push({id:row.id,error:'MIDI '+path.basename(folder)+': '+error.message});}}
   }catch(error){errors.push({id:row.id,error:error.message});}}
   onChanged();return {ok:errors.length===0,deleted,bytes:removedBytes,mode,errors};
  });}

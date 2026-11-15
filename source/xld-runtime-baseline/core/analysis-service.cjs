@@ -43,16 +43,9 @@ async function readJson(filePath, fallback = null) {
   try { return JSON.parse(await fs.readFile(filePath, 'utf8')); } catch (_) { return fallback; }
 }
 
-async function writeJsonAtomic(filePath, value) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
-  await fs.writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
-  await fs.rename(temporary, filePath).catch(async error => {
-    if (error.code !== 'EEXIST' && error.code !== 'EPERM') throw error;
-    await fs.rm(filePath, { force: true });
-    await fs.rename(temporary, filePath);
-  });
-}
+// One atomic JSON write for the whole service (audit 1.5): derived-assets' writeAtomic moves the old file aside
+// first and puts it back if the swap fails, where this used to delete the target before a second rename could fail.
+const writeJsonAtomic = (filePath, value) => midiModule.writeAtomic(filePath, value);
 
 function parseEngineList(text) {
   try { return JSON.parse(text); } catch (_) {}
@@ -64,9 +57,18 @@ function parseEngineList(text) {
   return [];
 }
 
+// The child's environment with TORCH_HOME set when there is one to set (an unset key must not become "undefined").
+function torchEnv(torchHome) {
+  const env = {...process.env};
+  if (torchHome) env.TORCH_HOME = torchHome;
+  return env;
+}
+
 function createService(options = {}) {
-  const xldRoot = path.resolve(options.xldRoot || process.env.XLD_RUNTIME_ROOT || 'D:\\Program Files\\xin-local-deck-beta');
-  const stableXldRoot = path.resolve(options.stableXldRoot || process.env.XLD_STABLE_RUNTIME_ROOT || 'D:\\Program Files\\xin-local-deck');
+  // The runtime root (SongFormer, BTC weights) comes from the caller or XLD_RUNTIME_ROOT; there is no built-in default
+  // (audit fix 2 / item 7: a missing configuration is reported as runtime-missing, never replaced by an old install).
+  const configuredRoot = options.xldRoot || process.env.XLD_RUNTIME_ROOT || null;
+  const xldRoot = configuredRoot ? path.resolve(configuredRoot) : null;
   let analysisRoot = path.resolve(options.analysisRoot || "D:\\Caches\\Xin's Local Deck\\Analysis");
   let activeTask = null;
 
@@ -74,34 +76,26 @@ function createService(options = {}) {
     if (SCORE_ENGINES[engine]) return path.join(__dirname, '..', 'analysis-score', SCORE_ENGINES[engine].runner);
     if (midiModule.ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-midi', 'runner.py');
     if (STEM_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-separation', 'runner.py');
-    if (AI_ENGINE_IDS.includes(engine)) return path.join(xldRoot, 'analysis-ai', 'songformer_runner.py');
+    if (AI_ENGINE_IDS.includes(engine)) return xldRoot ? path.join(xldRoot, 'analysis-ai', 'songformer_runner.py') : null;
     // Harmony runner moved into source (chords.1); BTC weights stay under xldRoot/analysis-harmony/btc/weights.
     if (HARMONY_ENGINE_IDS.includes(engine)) return path.join(__dirname, '..', 'analysis-harmony', 'harmony_runner.py');
     return null;
   };
 
-  // Explicit configuration is authoritative, including an uninstalled path.
-  const configuredPython = (key, fallback = []) => firstExisting(process.env[key] ? [process.env[key]] : fallback);
+  // Only the configured interpreter, and only if it is there: no fallback to an older environment.
+  const configuredPython = key => firstExisting([process.env[key]]);
   const pythonFor = engine => {
     if (SCORE_ENGINES[engine]) return firstExisting([process.env[SCORE_ENGINES[engine].python]]);
     if(midiModule.profileFor(engine)?.backend === 'muscriptor') return firstExisting([process.env.XLD_MUSCRIPTOR_PYTHON]);
     if(engine === 'yourmt3-plus') return firstExisting([process.env.XLD_YOURMT3_PYTHON]);
-    if(engine === 'bs-roformer-sw') return configuredPython('XLD_ROFORMER_PYTHON', ['D:/Caches/codex/runtimes/xld-roformer/Scripts/python.exe']);
-    if (midiModule.ENGINE_IDS.includes(engine)) return midiModule.profileFor(engine).backend !== 'basic-pitch'
-      ? configuredPython('XLD_HIGHRES_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi-highres\\Scripts\\python.exe'])
-      : configuredPython('XLD_MIDI_PYTHON', ['D:\\Caches\\codex\\runtimes\\xld-midi\\Scripts\\python.exe']);
-    // The base analysis interpreter (XLD_PYTHON): no engine of its own any more, kept as the last fallback.
-    const base = configuredPython('XLD_PYTHON', [
-      path.join(stableXldRoot, 'analysis', '.venv', 'Scripts', 'python.exe'),
-      path.join(xldRoot, 'analysis', '.venv', 'Scripts', 'python.exe')
-    ]);
-    const ai = configuredPython('XLD_AI_PYTHON', [
-      path.join(xldRoot, 'analysis-ai', '.venv', 'Scripts', 'python.exe')
-    ]);
+    if(engine === 'bs-roformer-sw') return configuredPython('XLD_ROFORMER_PYTHON');
+    if (midiModule.ENGINE_IDS.includes(engine)) return configuredPython(midiModule.profileFor(engine).backend !== 'basic-pitch' ? 'XLD_HIGHRES_PYTHON' : 'XLD_MIDI_PYTHON');
+    // XLD_PYTHON (the old structure-analysis environment) has no engine any more and is not a fallback for anything.
+    const ai = configuredPython('XLD_AI_PYTHON');
     if (STEM_ENGINE_IDS.includes(engine) || AI_ENGINE_IDS.includes(engine)) return ai;
     if (engine === 'chord-consonance') return firstExisting([process.env.XLD_CHORDS_PYTHON]);
-    if (HARMONY_ENGINE_IDS.includes(engine)) return process.env.XLD_HARMONY_PYTHON || ai || base;
-    return base;
+    if (HARMONY_ENGINE_IDS.includes(engine)) return configuredPython('XLD_HARMONY_PYTHON') || ai;
+    return null;
   };
 
   const analysisDirectory = track => track.bridgePath ? path.dirname(track.bridgePath) : midiModule.trackDirectory(track, analysisRoot);
@@ -145,7 +139,7 @@ function createService(options = {}) {
     if (!python || !runner || !fsSync.existsSync(runner)) return resolve([]);
     const child = spawn(python, [runner, '--engines'], {
       windowsHide: true,
-      env: { ...process.env, TORCH_HOME: process.env.TORCH_HOME || path.join(xldRoot, 'analysis-ai', 'torch-home') }
+      env: torchEnv(process.env.TORCH_HOME || (xldRoot && path.join(xldRoot, 'analysis-ai', 'torch-home')))
     });
     let stdout = '';
     child.stdout.setEncoding('utf8');
@@ -301,7 +295,30 @@ function createService(options = {}) {
     return {file, sha256: digest(after), sung: Boolean(state.result.lane), why: state.result.why || null};
   }
 
+  // Every task takes the analysis root's cross-program lock first (core/analysis-lock.cjs) and gives it back however
+  // it ends: XLD and XML each run one task at a time, and this makes it one task at a time between them too.
+  const analysisLock = require('./analysis-lock.cjs').createAnalysisLock({program: options.program || 'XLD'});
+  // A run is reserved synchronously (two IPC calls at once must not both start, and a cancel right after the call must
+  // find it) while the lock is being taken; `starting` is that reservation.
+  let starting = null;
   async function run(track, engine, runOptions = {}, onTask) {
+    if (activeTask) return { ok: false, error: 'analysis-busy', task: taskSnapshot(activeTask) };
+    if (starting) return { ok: false, error: 'analysis-busy' };
+    const reservation = starting = {cancelled: false};
+    let lock;
+    try { lock = await analysisLock.acquire(analysisRoot, {task: engine, song: track?.title || track?.id || ''}); }
+    finally { if (starting === reservation) starting = null; }
+    if (reservation.cancelled) { if (lock?.ok) await lock.release().catch(() => {}); return { ok: false, error: 'analysis-cancelled' }; }
+    if (!lock.ok) {
+      // Held by this very process: a task here is starting or running - the in-process answer, as before the lock.
+      if (lock.holder?.pid === process.pid) return { ok: false, error: 'analysis-busy', ...(activeTask ? {task: taskSnapshot(activeTask)} : {}) };
+      return { ok: false, error: 'analysis-locked', holder: lock.holder, detail: require('./analysis-lock.cjs').holderMessage(lock.holder) };
+    }
+    try { return await runUnlocked(track, engine, runOptions, onTask); }
+    finally { await lock.release().catch(() => {}); }
+  }
+
+  async function runUnlocked(track, engine, runOptions = {}, onTask) {
     if (activeTask) return { ok: false, error: 'analysis-busy', task: taskSnapshot(activeTask) };
     if (!track?.id || !track?.filePath || !fsSync.existsSync(track.filePath)) return { ok: false, error: 'track-missing' };
     if (engine === 'midi-merge') return runMerge(track,onTask);
@@ -393,7 +410,8 @@ function createService(options = {}) {
       } else if (SCORE_ENGINE_IDS.includes(engine) && !runOptions.force) {
         const kept = await readJson(output, null);
         const stems = await readStems(track).catch(() => null);
-        if (kept?.kind === engine && (kept.source?.stemRunId ?? null) === (stems?.ok ? stems.runId : null) && !task.cancelled) {
+        // Also made by the current model (core/score-identity.cjs; a result without a recorded identity stays valid).
+        if (kept?.kind === engine && (kept.source?.stemRunId ?? null) === (stems?.ok ? stems.runId : null) && require('./score-identity.cjs').isCurrent(kept, engine) && !task.cancelled) {
           task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '已读取谱面层';
           return { ok: true, kind: 'score', cached: true, result: kept, task: taskSnapshot(task) };
         }
@@ -441,9 +459,9 @@ function createService(options = {}) {
       };
       const code = await new Promise((resolve, reject) => {
         const child = spawn(python, args, { windowsHide: true, cwd: workDirectory,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8', TORCH_HOME: isStems
-            ? (process.env.XLD_SEPARATION_TORCH_HOME || 'D:\\Caches\\codex\\models\\xld')
-            : (process.env.TORCH_HOME || path.join(xldRoot, 'analysis-ai', 'torch-home')) } });
+          env: {...torchEnv(isStems
+            ? (process.env.XLD_SEPARATION_TORCH_HOME || process.env.TORCH_HOME)
+            : (process.env.TORCH_HOME || (xldRoot && path.join(xldRoot, 'analysis-ai', 'torch-home')))), PYTHONIOENCODING: 'utf-8'} });
         task.child = child;
         task.status = 'running'; task.phase = 'decode'; task.message = '正在读取音频';
         emitTask(task, onTask);
@@ -497,7 +515,17 @@ function createService(options = {}) {
       } else if (isStems) {
         await derivedAssets.activateStems(track, result);
         response = { ok: true, kind: 'stems', result: await readStems(track) };
-        if (previous?.runId !== task.taskId) await removeStemRun(directory, previous?.runId);
+        // The batch this one replaces (audit fix 1, item 5): to the Recycle Bin together with the MIDI versions that
+        // only it fed, unless a hand-edited, pinned or active version or a refinement result still uses it - then it
+        // stays and the answer says why. Without a bin (XML, tests) it is removed as before, under the same rule.
+        if (previous?.ok && previous.runId !== task.taskId) {
+          const batches = require('./stem-batches.cjs');
+          const retired = await batches.createStemBatches({assets: derivedAssets}).retire(track, previous.runId, {current: task.taskId,
+            dispose: options.trash ? folder => options.trash(folder) : folder => fs.rm(folder, {recursive: true, force: true})})
+            .catch(error => ({ok: false, error: error.message}));
+          response.previousStems = retired.ok ? {runId: previous.runId, recycled: Boolean(options.trash), midi: retired.midi}
+            : {runId: previous.runId, kept: true, why: retired.error || batches.keptReason(retired)};
+        }
       } else {
         let manifest = null, integrationWarning = null;
         try { manifest = options.buildManifest ? await options.buildManifest(track, directory) : await buildManifest(track, directory); }
@@ -523,6 +551,7 @@ function createService(options = {}) {
   }
 
   function cancel() {
+    if (!activeTask && starting) { starting.cancelled = true; return { ok: true, task: null }; }
     if (!activeTask || activeTask.committing) return { ok: false, error: 'no-active-task' };
     activeTask.cancelled = true;
     activeTask.status = 'cancelling'; activeTask.message = '正在取消分析';

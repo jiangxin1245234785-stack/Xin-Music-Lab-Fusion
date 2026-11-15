@@ -52,7 +52,11 @@ function createMidiMerge({analysisRoot,python}) {
     }
     if(parts.length<2)return {ok:false,error:'merge-needs-parts',parts,skipped};
     const fingerprint=hash(JSON.stringify({version:2,trackId:track.id,sourceRunId:source.runId||null,parts}));
-    const directory=path.join(assets.directory(track),'midi','merged',fingerprint);
+    // New merges go to a 16-character folder (audit fix 1, item 10: full paths came within 3 characters of Windows'
+    // 260 limit); an existing 64-character folder from before is read where it is. The manifest keeps the full
+    // fingerprint either way.
+    const legacy=path.join(assets.directory(track),'midi','merged',fingerprint);
+    const directory=fsSync.existsSync(legacy)?legacy:path.join(assets.directory(track),'midi','merged',fingerprint.slice(0,16));
     return {ok:true,trackId:track.id,sourceRunId:source.runId||null,parts,provenance,skipped,fingerprint,directory,file:path.join(directory,'merged.mid')};
   }
   async function read(track) {
@@ -76,7 +80,8 @@ function createMidiMerge({analysisRoot,python}) {
     if(cancelled())throw Error('analysis-cancelled');
     const cached=await read(track);
     if(cached.ok){await checkCurrent(track,input);if(cancelled())throw Error('analysis-cancelled');return {...cached,cached:true};}
-    const runtime=python || [process.env.XLD_HIGHRES_PYTHON,process.env.XLD_MIDI_PYTHON,'D:/Caches/codex/runtimes/xld-midi-highres/Scripts/python.exe','D:/Caches/codex/runtimes/xld-midi/Scripts/python.exe'].find(p=>p && fsSync.existsSync(p));
+    // Only configured interpreters (audit fix 2 / item 7): no fallback to an older environment.
+    const runtime=python || [process.env.XLD_HIGHRES_PYTHON,process.env.XLD_MIDI_PYTHON].find(p=>p && fsSync.existsSync(p));
     if(!runtime)throw Error('runtime-missing');
     const directory=input.directory, token=crypto.randomUUID();
     const job=path.join(directory,token+'.json'), output=path.join(directory,token+'.mid');

@@ -162,7 +162,6 @@ def main():
     parser.add_argument("--track-id", required=True)
     parser.add_argument("--run-id", default=str(uuid.uuid4()))
     args = parser.parse_args()
-    os.environ.setdefault("TORCH_HOME", r"D:\Caches\codex\models\xld")
     try:
         separate(args.input, args.output, args.track_id, args.run_id, engine=args.engine)
     except Exception as error:

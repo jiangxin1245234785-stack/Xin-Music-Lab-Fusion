@@ -55,6 +55,7 @@
     <p id="storageRoot" class="storage-path"></p>
     <div class="storage-toolbar"><input id="storageSearch" type="search" placeholder="搜索歌曲、模型或目标" aria-label="搜索输出"><select id="storageFilter" aria-label="结果类型"><option value="all">全部结果</option><option value="refinement">细分结果</option><option value="stems">基础分轨</option><option value="kept">已保留</option></select><button id="storageRefresh" class="quiet-button">刷新</button><button id="storageSelect" class="quiet-button">选择可清理项</button><button id="storageDeselect" class="quiet-button">取消选择</button></div>
     <p id="storageHelp" class="derived-hint"></p><p id="storageStatus" role="status" aria-live="polite"></p>
+    <section id="storageMissing" class="storage-missing" hidden><h3 id="storageMissingTitle">原音频找不到</h3><p id="storageMissingHelp" class="derived-hint"></p><div id="storageMissingRows" class="storage-rows"></div></section>
     <div id="storageRows" class="storage-rows"></div>
     <div class="storage-footer"><strong id="storageSelected"></strong><select id="storageMode" aria-label="清理方式"><option value="trash">移至回收站</option><option value="permanent">永久删除 · 释放空间</option></select><button id="storageClear" class="danger-button" disabled>清理所选</button></div>
   </dialog>
@@ -94,8 +95,6 @@
               <button id="playAlbumButton" class="primary-button"><span>▶</span> <span data-i18n="static.album.play">播放专辑</span></button>
               <button id="shuffleAlbumButton" class="secondary-button" data-i18n="static.album.shuffle">随机播放</button>
               <button id="batchAlbumButton" class="secondary-button" title="对整张专辑逐曲一键分析：段落、和弦（ChordMini）、分轨、转谱、融合 MIDI；已有的跳过（严格串行，可取消）">整张专辑一键分析</button>
-              <button id="scoreLayersTrackButton" class="secondary-button" title="给选中的这首歌补上谱面要用的小节线、响度和人声曲线（XML 的「谱面」场景用）">谱面层 · 这首歌</button>
-              <button id="scoreLayersAlbumButton" class="secondary-button" title="给整张专辑逐曲补谱面层；已经有的直接跳过（严格串行，可取消）">谱面层 · 整张专辑</button>
             </div>
           </div>
         </section>
@@ -396,7 +395,6 @@
   <script src="refinement-player.js"></script>
 <script src="audition-controls.js"></script>
   <script src="playback-controls.js"></script>
-  <script src="score-layers-controls.js"></script>
   <script src="oneclick-plan.js"></script>
   <script src="oneclick-controls.js"></script>
   <script src="app.js"></script>

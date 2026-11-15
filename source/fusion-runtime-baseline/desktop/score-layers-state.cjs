@@ -32,6 +32,8 @@ function layersState(layers, stems) {
   if (!layers || layers.kind !== 'score-layers') return 'missing';
   const made = layers.source && layers.source.stemRunId !== undefined ? layers.source.stemRunId : null;
   const now = stems && stems.ok ? (stems.runId ?? null) : null;
+  // Also made by the current model (XLD core/score-identity.cjs); a result without a recorded identity stays valid.
+  if (made === now && !require('../../xld-runtime-baseline/core/score-identity.cjs').isCurrent(layers, 'score-layers')) return 'stale';
   return made === now ? 'current' : 'stale';
 }
 

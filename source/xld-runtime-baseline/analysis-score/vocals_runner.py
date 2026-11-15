@@ -84,6 +84,17 @@ def addons(need_split=True):
     return model, seedvc / 'upstream', weights
 
 
+def sha_file(path):
+    """SHA-256 of a weight file (streamed), or None when it is not there."""
+    if not path or not Path(path).is_file():
+        return None
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(1 << 22), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def stem_source(stem, run_id):
     """The vocal stem as score-vocals.json and the split manifest record it (as MIDI records its source)."""
     stat = stem.stat()
@@ -189,7 +200,7 @@ def save_split(track_dir, track_id, source, audio, rate, lead, model_dir, device
              'runId': run_id, 'trackId': track_id, 'parentRunId': source['stemRunId'], 'cacheKey': key, 'target': 'lead',
              'requestedDevice': 'auto', 'sourceStem': 'vocals', 'timeOrigin': 0, 'duration': frames / rate, 'sampleRate': rate,
              'frames': frames, 'channels': channels, 'reconstructionError': error,
-             'backend': {'model': SPLIT['model'], 'checkpointBytes': (model_dir / 'model.ckpt').stat().st_size,
+             'backend': {'model': SPLIT['model'], 'checkpointBytes': (model_dir / 'model.ckpt').stat().st_size, 'checkpointSha256': sha_file(model_dir / 'model.ckpt'),
                          'configSha256': hashlib.sha256(config).hexdigest(), 'demix': 'analysis-refine/roformer.demix, 20 s chunks, overlap 2', 'device': device},
              'files': {'target': run_id + '/target.flac', 'residual': run_id + '/residual.flac'}, 'encoding': stem_audio.ENCODING_FLAC, 'gain': stem_audio.FLAC_GAIN,
              'originalSource': {'kind': 'stem', 'runId': source['stemRunId'], 'stem': 'vocals', 'startFrame': 0, 'frames': frames,
@@ -309,6 +320,11 @@ def main(argv=None):
                                           'manifest': saved_path, 'lead': 'refinement/' + saved['files']['target'],
                                           'backing': 'refinement/' + saved['files']['residual'], 'reused': device == 'reused'},
                                 'pitch': {'model': 'RMVPE', 'weights': weights.name, 'fps': FPS}}
+        # Which weights made it (analysis-score/models.json, core/score-identity.cjs). A reused split is judged by the
+        # weights recorded with it (an earlier split recorded none for the checkpoint: unknown, still valid).
+        backend = saved.get('backend') or {}
+        result['identity'] = {'version': ENGINE['version'], 'weights': {'lead': backend.get('checkpointSha256'), 'leadConfig': backend.get('configSha256'),
+                                                                     'pitch': sha_file(weights)}}
         mono = np.ascontiguousarray(lead.mean(axis=1))
         say(0.7, '正在跟主唱的音高', 'pitch')
         f0, fps = track_pitch(mono, rate, upstream, weights)

@@ -7,7 +7,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {createService} = require('../core/analysis-service.cjs');
-const controls = require('../score-layers-controls.js');
 
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xld-score-layers-'));
@@ -50,43 +49,11 @@ fs.writeFileSync(out, JSON.stringify({schemaVersion:1,kind:engine,engine:{id:eng
       assert.equal(service.task(), null);
     }
 
-    // The window's buttons, against a bridge that records what it was asked.
-    const button = () => ({disabled: false, textContent: '', listeners: {}, addEventListener(name, fn) { this.listeners[name] = fn; }});
-    const asked = [], lines = [], progress = [];
-    const state = {busy: false, cancelled: false, flags: []};
-    const answers = {'t2 score-vocals': {ok: false, detail: 'Traceback\n人声曲线需要的扩展没有装：karaoke-v1'}, 't3 score-layers': {ok: true, cached: true}};
-    const make = (extra = {}) => controls.create({
-      bridge: {runAnalysis: async (id, engine) => { asked.push(`${id} ${engine}`); if (extra.cancelAt === asked.length) state.cancelled = true; return answers[`${id} ${engine}`] || {ok: true}; }},
-      trackButton: button(), albumButton: button(), getTrack: () => ({id: 't1', title: 'One'}),
-      getAlbum: () => ({tracks: [{id: 't1', title: 'One'}, {id: 't2', title: 'Two'}, {id: 't3', title: 'Three'}]}),
-      isBusy: () => state.busy, setBatch: value => { state.busy = value; state.cancelled = false; state.flags.push(value); },
-      onProgress: value => progress.push({...value}),
-      isCancelled: () => state.cancelled, log: text => lines.push(text), t: (key, params) => key + (params ? ' ' + JSON.stringify(params) : '')});
-    const panel = make();
-    assert.equal(controls.create({}), null);
-    const one = await panel.run(button(), [{id: 't1', title: 'One'}]);
-    assert.deepEqual(asked, ['t1 score-layers', 't1 score-vocals'], 'both analyses, the layers first');
-    assert.deepEqual(one, {made: 2, kept: 0, failed: 0, cancelled: false});
-    assert.deepEqual(progress.map(p=>[p.index,p.total]),[[0,2],[1,2],[2,2]],'task-card progress has the same total and index as the button');
-    progress.length=0;
-    asked.length = 0;
-    const album = await panel.run(button(), [{id: 't1', title: 'One'}, {id: 't2', title: 'Two'}, {id: 't3', title: 'Three'}]);
-    assert.equal(asked.length, 6, 'a failure on one song does not stop the album');
-    assert.deepEqual(album, {made: 4, kept: 1, failed: 1, cancelled: false});
-    assert.deepEqual(progress.map(p=>[p.index,p.total]),Array.from({length:7},(_,i)=>[i,6]),'an album advances all six steps, including failure and cache hit');
-    assert.ok(lines.some(line => line.includes('runtime.score.failed') && line.includes('Two') && line.includes('karaoke-v1') && !line.includes('Traceback')), 'the failure names the song and the last line of the reason');
-    assert.deepEqual(state.flags.slice(-2), [true, false], 'the batch flag is released');
-    asked.length = 0;
-    state.busy = true;
-    assert.equal(await panel.run(button(), [{id: 't1', title: 'One'}]), null, 'nothing starts while something else is running');
-    assert.equal(asked.length, 0);
-    state.busy = false;
-    const stopping = make({cancelAt: 3});
-    const stopped = await stopping.run(button(), [{id: 't1', title: 'One'}, {id: 't2', title: 'Two'}, {id: 't3', title: 'Three'}]);
-    assert.equal(stopped.cancelled, true);
-    assert.equal(asked.length, 3, 'cancel stops before the next step');
-    assert.equal(state.busy, false);
-    console.log('score layers: PASS (startable engines, own result files, cache on unchanged stems, track and album buttons, failure, cancel)');
+    // XLD's header no longer has buttons for the score layers (audit fix 1, item 6): XML prepares them itself.
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8'), app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+    assert(!/scoreLayers(Track|Album)Button|score-layers-controls/.test(html + app), 'no score-layer buttons in XLD');
+    assert(!fs.existsSync(path.join(__dirname, '..', 'score-layers-controls.js')));
+    console.log('score layers: PASS (startable engines, own result files, cache on unchanged stems, no buttons in XLD)');
   } finally {
     if (before.m === undefined) delete process.env.XLD_MUSCRIPTOR_PYTHON; else process.env.XLD_MUSCRIPTOR_PYTHON = before.m;
     if (before.r === undefined) delete process.env.XLD_ROFORMER_PYTHON; else process.env.XLD_ROFORMER_PYTHON = before.r;

@@ -236,7 +236,8 @@
       if(!state||state.state==='loading'){versionsList.append(pill('derived-hint',rt('runtime.assets.runLoading')));return;}
       if(state.state==='error'){versionsList.append(pill('derived-hint',rt('runtime.assets.runFailed',{error:localizeError(state.error)})));return;}
       // 'files-missing' runs are the deliberate Recycle-Bin residue: one footer line, never an actionable row.
-      const rows=state.runs.filter(run=>run.status!=='files-missing'),recycled=state.runs.length-rows.length;
+      // So are versions whose stem batch is gone (removed by a re-separation or the storage page): one footer line.
+      const rows=state.runs.filter(run=>run.status!=='files-missing'&&!(run.stemsDeleted&&!run.active&&!run.kept)),stemsGone=state.runs.filter(run=>run.status!=='files-missing'&&run.stemsDeleted&&!run.active&&!run.kept).length,recycled=state.runs.length-rows.length-stemsGone;
       if(!rows.length)versionsList.append(pill('derived-hint',rt('runtime.assets.runNone')));
       const sourceChanged=rows.some(run=>run.status==='source-changed');
       for(const run of rows) {
@@ -269,6 +270,7 @@
         row.append(copy,actions);versionsList.append(row);
       }
       if(recycled>0)versionsList.append(pill('derived-hint',rt('runtime.assets.runTrashedFooter',{count:recycled})));
+      if(stemsGone>0)versionsList.append(pill('derived-hint',rt('runtime.assets.runStemsDeletedFooter',{count:stemsGone})));
       versionsList.append(pill('derived-hint',rt(sourceChanged?'runtime.assets.runSourceChangedHint':'runtime.assets.runRecycledHint')));
       if(versionMessage)versionsList.append(pill('derived-hint',versionMessage));
     }

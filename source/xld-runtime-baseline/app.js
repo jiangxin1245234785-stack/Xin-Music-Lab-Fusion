@@ -16,9 +16,6 @@ const dom = Object.fromEntries([
 
 const runtimeLocale = window.XLDRuntimeMessages.createRuntimeTranslator(window.xinXldLocale);
 const rt = (key, params) => runtimeLocale.t(key, params);
-// Score layers (score-layers-controls.js): bar lines, loudness and the vocal curve for the listening score.
-// It borrows the batch flag so the cancel button and every busy check treat it like any other batch.
-let scoreLayers = null;
 const runtimeRef = (key, params) => Object.freeze({ __xldI18nKey: key, params: params || {} });
 const resolveRuntimeParams = params => Object.fromEntries(Object.entries(params || {}).map(([key, value]) => [
   key,
@@ -847,7 +844,6 @@ async function loadTrackAnalysis(trackId) {
 }
 
 function updateAnalyzeButton() {
-  scoreLayers?.sync();
   derivedControls.render();
   updateSegmentPanel();
   updateResultActions();
@@ -1457,16 +1453,6 @@ dom.revealButton.addEventListener('click', () => (state.currentTrack || state.se
 dom.analyzeButton.addEventListener('click', () => runAnalysis());
 dom.analyzeAllButton.addEventListener('click', runAllAnalyses);
 dom.batchAlbumButton?.addEventListener('click', runAlbumBatch);
-scoreLayers = window.XldScoreLayers?.create({
-  bridge: window.XLD, trackButton: document.getElementById('scoreLayersTrackButton'), albumButton: document.getElementById('scoreLayersAlbumButton'),
-  getTrack: () => state.selectedTrack, getAlbum: () => state.selectedAlbum, isBusy: () => Boolean(state.activeTask || state.batchRunning),
-  setBatch: running => {
-    state.batchRunning=running;state.batchCancelled=false;state.batchIndex=0;state.batchTotal=0;
-    if(running)updateAnalyzeButton();else applyTask(state.activeTask||state.lastTask);
-  },
-  onProgress: ({index,total}) => { state.batchIndex=index; state.batchTotal=total; },
-  isCancelled: () => state.batchCancelled, log: text => logAnalysis(text), t: rt
-}) || null;
 oneclickControls = window.XldOneClick?.create({
   bridge: window.XLD, rt, derived: derivedControls, albumButton: dom.batchAlbumButton,
   getTrack: () => state.selectedTrack, getAlbum: () => state.selectedAlbum, getEngines: () => state.engines,

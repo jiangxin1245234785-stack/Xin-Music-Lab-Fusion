@@ -8,7 +8,8 @@ const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { createDerivedAssets, trackDirectory } = require('../core/derived-assets.cjs');
-const ANALYSIS_RUNTIME_ROOT = process.env.XLD_RUNTIME_ROOT || 'D:\\Program Files\\xin-local-deck-beta';
+// No built-in default (audit fix 2 / item 7): a runtime that is not configured is missing, not an older install.
+const ANALYSIS_RUNTIME_ROOT = process.env.XLD_RUNTIME_ROOT || null;
 const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createMainLocaleController, normalizeLocale } = require('./locale.cjs');
 
@@ -51,7 +52,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Keep Demucs (torch.hub) weight downloads off the C: drive: point TORCH_HOME
 // at a project-local folder (the app lives on D:). Inherited by every spawned
 // analysis process. Honoured only if the user hasn't set it explicitly.
-if (!process.env.TORCH_HOME) {
+if (!process.env.TORCH_HOME && ANALYSIS_RUNTIME_ROOT) {
   process.env.TORCH_HOME = path.join(ANALYSIS_RUNTIME_ROOT, 'analysis-ai', 'torch-home');
 }
 
@@ -149,6 +150,7 @@ const midiEvidence = require('../core/midi-evidence.cjs').createMidiEvidence({as
 const stemEnvelopes = require('../core/stem-envelope.cjs').createStemEnvelopes();
 const analysisService = createService({
   xldRoot: ANALYSIS_RUNTIME_ROOT,
+  program: 'XLD',
   // Surplus MIDI versions go to the Recycle Bin, never to fs.rm. Without this callback retention only reports.
   trash: directory => shell.trashItem(directory),
   buildManifest: async track => (await writeMusicLabBridge(track.id)).manifest
@@ -432,23 +434,10 @@ function firstExisting(candidates) {
   return null;
 }
 
-// The stable build's base analysis venv, reused read-only (no reinstall) as the last fallback for the chord
-// runner. Override with XLD_PYTHON if the stable project lives elsewhere.
-function getLocalPython() {
-  return firstExisting([
-    process.env.XLD_PYTHON,
-    'D:\\Program Files\\xin-local-deck\\analysis\\.venv\\Scripts\\python.exe',
-    path.join(ANALYSIS_RUNTIME_ROOT, 'analysis', '.venv', 'Scripts', 'python.exe')
-  ]);
-}
-
 // AI engines run in the beta's own isolated venv (analysis-ai/.venv), created by
 // setup-ai.ps1. Override with XLD_AI_PYTHON.
 function getAiPython() {
-  return firstExisting([
-    process.env.XLD_AI_PYTHON,
-    path.join(ANALYSIS_RUNTIME_ROOT, 'analysis-ai', '.venv', 'Scripts', 'python.exe')
-  ]);
+  return firstExisting([process.env.XLD_AI_PYTHON]);
 }
 
 // Harmony analysis is CPU-only and reuses an existing lightweight scientific
@@ -456,8 +445,7 @@ function getAiPython() {
 function getHarmonyPython() {
   return firstExisting([
     process.env.XLD_HARMONY_PYTHON,
-    getAiPython(),
-    getLocalPython()
+    getAiPython()
   ]);
 }
 
@@ -748,7 +736,7 @@ function parseEngineList(text) {
 
 function probeEngines(python, runner) {
   return new Promise(resolve => {
-    if (!python) { resolve(null); return; }
+    if (!python || !runner) { resolve(null); return; }
     const child = spawn(python, [runner, '--engines'], { windowsHide: true });
     let stdout = '';
     child.stdout.setEncoding('utf8');
@@ -800,7 +788,7 @@ const harmonyUnavailable = () => HARMONY_ENGINE_IDS.map(id => ({
 
 // Section engine (SongFormer) first, chord engines after. Each family runs in its own Python environment.
 async function detectEngines() {
-  const aiRunner = path.join(ANALYSIS_RUNTIME_ROOT, 'analysis-ai', 'songformer_runner.py');
+  const aiRunner = ANALYSIS_RUNTIME_ROOT ? path.join(ANALYSIS_RUNTIME_ROOT, 'analysis-ai', 'songformer_runner.py') : null;
   const harmonyRunner = HARMONY_RUNNER;
   const [ai, harmony] = await Promise.all([
     probeEngines(getAiPython(), aiRunner),
@@ -1150,6 +1138,32 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     title:english?'Storage cleanup':'清理分析音频',message:english?plan.rows.length+' results · '+size:plan.rows.length+' 项结果 · '+size,
     detail:(permanent?(english?'Permanently delete the selected generated audio. This cannot be undone.':'将永久删除所选生成音频，无法撤销。'):(english?'Disk space is freed after emptying the Recycle Bin.':'先移至回收站；清空回收站后才会释放磁盘空间。'))+'\n'+(english?'Original songs, MIDI and annotations are kept.':'原曲、MIDI 与人工标注保留。')+'\n\n'+plan.rows.slice(0,12).map(row=>row.track+' · '+row.engine+' · '+(row.target||'六轨')+' · '+(row.bytes/1024**2).toFixed(0)+' MiB').join('\n')+(plan.rows.length>12?'\n…':'')});return result.response===1;
   })));
+  // Songs whose original audio is gone from where their analysis says (audit fix 1, item 3): list, point at the new
+  // place (core/source-relink.cjs: same size, folder renamed to the new id, every record rewritten and checked), or move
+  // the song's analysis to the Recycle Bin.
+  const sourceRelink=()=>require('../core/source-relink.cjs').createSourceRelink({assets:derivedAssets,trackIdFor:stableTrackId});
+  ipcMain.handle('storage:missing-sources',storageReply(async()=>({ok:true,items:require('../core/source-relink.cjs').listMissing(analysisRoot())})));
+  ipcMain.handle('storage:relink-source',storageReply(async payload=>{
+    if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
+    const item=require('../core/source-relink.cjs').listMissing(analysisRoot()).find(m=>m.id===payload?.id);if(!item)return {ok:false,error:'relink-not-missing'};
+    const english=mainLocale.getState()?.locale==='en-US';
+    const pick=await dialog.showOpenDialog(mainWindow,{title:english?'Where is this song now?':'这首歌的原音频现在在哪里？',defaultPath:libraryRoot||undefined,properties:['openFile'],
+      filters:[{name:english?'Audio':'音频',extensions:[...AUDIO_EXTENSIONS].map(e=>e.slice(1))}]});
+    if(pick.canceled||!pick.filePaths[0])return {ok:true,canceled:true};
+    midiSourceChanging=true;
+    try{const result=await sourceRelink().relink(analysisRoot(),item.folder,pick.filePaths[0]);if(result.ok)await scanLibrary().catch(()=>{});return result;}
+    finally{midiSourceChanging=false;}
+  }));
+  ipcMain.handle('storage:discard-source',storageReply(async payload=>{
+    if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
+    const item=require('../core/source-relink.cjs').listMissing(analysisRoot()).find(m=>m.id===payload?.id);if(!item)return {ok:false,error:'relink-not-missing'};
+    const english=mainLocale.getState()?.locale==='en-US';
+    const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:english?['Cancel','Move to Recycle Bin']:['取消','移至回收站'],defaultId:0,cancelId:0,noLink:true,
+      title:english?'Original audio missing':'原音频找不到',message:item.title+' · '+(item.bytes/1024**3).toFixed(2)+' GiB',
+      detail:english?'Moves this song\'s whole analysis (stems, MIDI, everything) to the Recycle Bin.':'把这首歌的整套分析（分轨、MIDI 等全部）移到回收站。'});
+    if(answer.response!==1)return {ok:true,canceled:true};
+    return sourceRelink().discard(analysisRoot(),item.folder,dir=>shell.trashItem(dir));
+  }));
   ipcMain.handle('analysis:settings', () => ({ analysisRoot: analysisRoot(), libraryRoot }));
   ipcMain.handle('analysis:choose-root', async () => {
     if (analysisService.task()||storageManager.busy()||midiSourceChanging) return {canceled:true,error:'analysis-busy',analysisRoot:analysisRoot()};

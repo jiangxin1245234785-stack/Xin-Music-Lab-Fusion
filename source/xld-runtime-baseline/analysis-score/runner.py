@@ -216,6 +216,8 @@ def main(argv=None):
     result = {'schemaVersion': 1, 'kind': 'score-layers', 'engine': ENGINE, 'duration': duration, 'source': {'stemRunId': stem_run},
               # The service accepts a result by its `engine` and `segments`; this one has no segments.
               'segments': [], **layers, 'missing': missing, 'analysisSeconds': round(time.monotonic() - started, 1)}
+    # Which model made it (analysis-score/models.json, core/score-identity.cjs): a result from other weights is stale.
+    result['identity'] = {'version': ENGINE['version'], 'weights': {'beat': (layers.get('bars') or {}).get('checkpointSha256')}}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
     say(1.0, '谱面层完成', 'complete')
