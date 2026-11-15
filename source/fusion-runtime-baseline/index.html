@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="./xml-studio.css" />
   </head>
   <body>
-    <main class="stage" data-palette="aurora" data-effect="spectrum">
+    <main class="stage" data-palette="cover" data-effect="spectrum">
       <canvas id="visualizer" aria-label="随音乐变化的经典频谱动画" data-i18n-aria-label="canvas.classic"></canvas>
       <canvas id="betaCanvas" class="beta-canvas" aria-label="Butterchurn MilkDrop 音乐可视化" data-i18n-aria-label="canvas.milkdrop"></canvas>
       <canvas id="glitchCanvas" class="glitch-canvas" aria-label="随节奏撕裂的 Glitch 后处理" data-i18n-aria-label="canvas.glitch"></canvas>
@@ -138,21 +138,23 @@
         <div class="xl-settings__body">
           <section class="xl-group">
             <h3 data-i18n="visualSettings.look">外观</h3>
-            <div class="xl-row">
+            <div class="xl-row" data-palette-row>
               <span class="xl-row__label" data-i18n="shell.palette">配色</span>
               <div class="swatches">
-              <button class="swatch is-active" type="button" data-palette="aurora" aria-label="EVA 初号机紫绿配色" title="EVA-01 · 紫绿" data-i18n-aria-label="palette.auroraAria" data-i18n-title="palette.auroraTitle"></button>
-              <button class="swatch" type="button" data-palette="ember" aria-label="EVA 二号机红橙配色" title="EVA-02 · 红橙" data-i18n-aria-label="palette.emberAria" data-i18n-title="palette.emberTitle"></button>
-              <button class="swatch" type="button" data-palette="moon" aria-label="EVA 零号机蓝白配色" title="EVA-00 · 蓝白" data-i18n-aria-label="palette.moonAria" data-i18n-title="palette.moonTitle"></button>
-              <button class="swatch" type="button" data-palette="synthwave" aria-label="合成波霓虹配色" title="Synthwave · 品红青" data-i18n-aria-label="palette.synthwaveAria" data-i18n-title="palette.synthwaveTitle"></button>
-              <button class="swatch" type="button" data-palette="toxic" aria-label="酸蚀荧光配色" title="Acid Toxic · 荧光绿" data-i18n-aria-label="palette.toxicAria" data-i18n-title="palette.toxicTitle"></button>
-              <button class="swatch" type="button" data-palette="ultraviolet" aria-label="紫外电光配色" title="Ultraviolet · 蓝紫红" data-i18n-aria-label="palette.ultravioletAria" data-i18n-title="palette.ultravioletTitle"></button>
-              <button class="swatch" type="button" data-palette="solar" aria-label="日蚀金红配色" title="Solar Flare · 金红" data-i18n-aria-label="palette.solarAria" data-i18n-title="palette.solarTitle"></button>
+              <button class="swatch swatch--cover is-active" type="button" data-palette="cover" aria-label="跟封面取色" title="跟封面 · 从这首歌的封面取色" data-i18n-aria-label="palette.coverAria" data-i18n-title="palette.coverTitle"></button>
+              <button class="swatch" type="button" data-palette="dusk" aria-label="暮紫" title="暮紫" data-i18n-aria-label="palette.dusk" data-i18n-title="palette.dusk"></button>
+              <button class="swatch" type="button" data-palette="moss" aria-label="苔绿" title="苔绿" data-i18n-aria-label="palette.moss" data-i18n-title="palette.moss"></button>
+              <button class="swatch" type="button" data-palette="wine" aria-label="酒红" title="酒红" data-i18n-aria-label="palette.wine" data-i18n-title="palette.wine"></button>
+              <button class="swatch" type="button" data-palette="tide" aria-label="潮汐" title="潮汐" data-i18n-aria-label="palette.tide" data-i18n-title="palette.tide"></button>
+              <button class="swatch" type="button" data-palette="ink" aria-label="黑白" title="黑白" data-i18n-aria-label="palette.ink" data-i18n-title="palette.ink"></button>
               <button class="swatch swatch--custom" type="button" data-palette="custom" aria-label="自定义配色" title="自定义配色" data-i18n-aria-label="palette.customAria" data-i18n-title="palette.customTitle"></button>
               </div>
               <button class="calibration-toggle" id="paletteButton" type="button" aria-expanded="false" aria-controls="palettePanel" data-i18n="visualSettings.palette">调色</button>
             </div>
-            <label class="xl-toggle-field"><span>跟和弦变色<small data-i18n="switch.chordHint">有和弦分析的歌才起作用</small></span><input id="fusionAutoColor" class="xl-switch-input" type="checkbox" role="switch" checked /></label>
+            <small class="palette-muted" data-palette-muted="score" data-i18n="palette.mutedScore" hidden>谱面用固定的轨道颜色，配色在这里不起作用</small>
+            <small class="palette-muted" data-palette-muted="own" data-i18n="palette.mutedOwn" hidden>这个画面用它自己的颜色，配色在这里不起作用</small>
+            <small class="palette-muted" data-palette-muted="pulsarMono" data-i18n="palette.mutedPulsar" hidden>脉冲星的黑白模式不用配色；在「更多」里切到 EVA Neon 才跟配色</small>
+            <label class="xl-toggle-field"><span>跟和弦变色<small data-i18n="switch.chordOff">换了新配色以后，暂时不跟和弦变色</small></span><input id="fusionAutoColor" class="xl-switch-input" type="checkbox" role="switch" disabled /></label>
             <div class="xl-row">
               <span class="xl-row__label" data-i18n="shell.textSize">字号</span>
               <span class="ui-scale-control" aria-label="界面字号" data-i18n-aria-label="visualSettings.uiScale">
@@ -210,8 +212,8 @@
             <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="score.shapes">按乐器画音符</span><small data-i18n="score.shapesHint">弹拨的音有个头，弦乐是两头尖的梭</small></span><input id="scoreShapes" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">特效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
-            <label class="xl-toggle-field"><span data-i18n="score.fxFollow">特效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">音符光效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
+            <label class="xl-toggle-field"><span data-i18n="score.fxFollow">光效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
             <div id="scoreDynamicsTools" hidden>
               <p id="scoreDynamicsStatus" class="score-dynamics-status" role="status" aria-live="polite"></p>
@@ -253,7 +255,7 @@
               <button class="calibration-toggle pulsar-style-toggle" id="pulsarStyleButton" type="button" title="切换脉冲星黑白 / 霓虹模式" data-i18n-title="visualSettings.pulsarStyleTitle">Ink Mono</button>
             </div>
           </section>
-          <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 特效 · <kbd>S</kbd> 保存画面</p>
+          <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 画面特效 · <kbd>S</kbd> 保存画面</p>
         </div>
       </aside>
 
@@ -409,18 +411,16 @@
           <button id="paletteClose" class="calibration-close" type="button" aria-label="关闭配色面板">×</button>
         </div>
         <div class="calibration-presets palette-presets" role="group" aria-label="配色预设">
-          <button class="preset-button" type="button" data-palette-preset="aurora">EVA-01 紫绿</button>
-          <button class="preset-button" type="button" data-palette-preset="ember">EVA-02 红橙</button>
-          <button class="preset-button" type="button" data-palette-preset="moon">EVA-00 蓝白</button>
-          <button class="preset-button" type="button" data-palette-preset="synthwave">合成波</button>
-          <button class="preset-button" type="button" data-palette-preset="toxic">酸蚀绿</button>
-          <button class="preset-button" type="button" data-palette-preset="ultraviolet">紫外线</button>
-          <button class="preset-button" type="button" data-palette-preset="solar">日蚀</button>
+          <button class="preset-button" type="button" data-palette-preset="dusk">暮紫</button>
+          <button class="preset-button" type="button" data-palette-preset="moss">苔绿</button>
+          <button class="preset-button" type="button" data-palette-preset="wine">酒红</button>
+          <button class="preset-button" type="button" data-palette-preset="tide">潮汐</button>
+          <button class="preset-button" type="button" data-palette-preset="ink">黑白</button>
         </div>
         <div class="color-grid">
-          <label class="color-field"><span>主色</span><input id="customMain" type="color" data-custom-color="main" value="#8d7cff" /></label>
-          <label class="color-field"><span>高光</span><input id="customHot" type="color" data-custom-color="hot" value="#72e8ce" /></label>
-          <label class="color-field"><span>背景</span><input id="customDark" type="color" data-custom-color="dark" value="#1a153a" /></label>
+          <label class="color-field"><span>主色</span><input id="customMain" type="color" data-custom-color="main" value="#a17dd4" /></label>
+          <label class="color-field"><span>高光</span><input id="customHot" type="color" data-custom-color="hot" value="#e7c2ed" /></label>
+          <label class="color-field"><span>背景</span><input id="customDark" type="color" data-custom-color="dark" value="#1a1622" /></label>
         </div>
         <div class="palette-preview" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="calibration-grid color-fx-grid">
@@ -528,6 +528,7 @@
     <script src="./glitch-engine.js"></script>
     <script src="./glitch-feature-bus.js"></script>
     <script src="./glitch-webgl.js"></script>
+    <script src="./palette-core.js"></script>
     <script src="./app.js"></script>
     <script src="./shell.js"></script>
     <script src="./stem-controls.js"></script>

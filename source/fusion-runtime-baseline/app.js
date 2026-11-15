@@ -71,16 +71,25 @@
   const colorFlash = $('#colorFlash');
   const toast = $('#toast');
 
+  // The 配色 sets (B5, 2026-11-15; chosen in work/xml-palette-20261114): 跟封面 (cover) first and the default, then
+  // five hand-tuned sets, then custom. The seven old sets (three EVA, synthwave, toxic, ultraviolet, solar) are gone;
+  // a profile that still names one lands on 跟封面. `cover` is worked out from the song's cover when the song
+  // changes (PaletteCore.coverPalette); with no cover, or a grey one, it is the 黑白 set.
   const palettes = {
-    aurora: { main: [141, 124, 255], hot: [114, 232, 206], dark: [26, 21, 58] },
-    ember: { main: [255, 105, 84], hot: [255, 198, 102], dark: [67, 20, 18] },
-    moon: { main: [183, 211, 255], hot: [101, 151, 255], dark: [18, 35, 65] },
-    synthwave: { main: [255, 79, 216], hot: [67, 244, 255], dark: [42, 12, 61] },
-    toxic: { main: [145, 255, 56], hot: [232, 255, 99], dark: [18, 42, 12] },
-    ultraviolet: { main: [103, 93, 255], hot: [255, 79, 168], dark: [24, 13, 64] },
-    solar: { main: [255, 181, 46], hot: [255, 78, 66], dark: [60, 22, 9] }
+    cover: { main: [198, 196, 190], hot: [243, 242, 239], dark: [21, 20, 18] },
+    dusk: { main: [161, 125, 212], hot: [231, 194, 237], dark: [26, 22, 34] },
+    moss: { main: [104, 148, 88], hot: [185, 220, 185], dark: [17, 24, 16] },
+    wine: { main: [182, 82, 99], hot: [239, 187, 188], dark: [32, 17, 18] },
+    tide: { main: [66, 148, 157], hot: [188, 232, 234], dark: [12, 24, 27] },
+    ink: { main: [198, 196, 190], hot: [243, 242, 239], dark: [21, 20, 18] }
   };
-  const customColors = { main: '#8d7cff', hot: '#72e8ce', dark: '#1a153a' };
+  const PALETTE_DEFAULT = 'cover';
+  const paletteName = name => (name === 'custom' || Object.prototype.hasOwnProperty.call(palettes, name) ? name : PALETTE_DEFAULT);
+  const customColors = { main: '#a17dd4', hot: '#e7c2ed', dark: '#1a1622' };
+  // Scenes the 配色 does not reach, and the one line said under the greyed swatches there.
+  const paletteMuted = (effect, pulsarMode) => (effect === 'score' ? 'score'
+    : String(effect).startsWith('beta-') ? 'own'
+      : effect === 'pulsar' && pulsarMode !== 'neon' ? 'pulsarMono' : '');
 
   const effectNames = {
     spectrum: '经典 LED 频谱',
@@ -127,9 +136,12 @@
     { id: 'beta-glitch-4', energy: .65, centroid: .72, texture: .82, glitch: true }
   ];
 
-  let currentPalette = palettes.aurora;
-  let basePalette = palettes.aurora;
-  let activePaletteName = 'aurora';
+  let currentPalette = palettes.cover;
+  let basePalette = { main: [...palettes.cover.main], hot: [...palettes.cover.hot], dark: [...palettes.cover.dark] };
+  let targetPalette = palettes.cover;
+  let paletteEasedAt = 0;
+  let activePaletteName = PALETTE_DEFAULT;
+  const coverState = { url: null, source: 'none', notes: [], cache: new Map() };
   let activeEffect = 'spectrum';
   let intensity = 1;
   let w = 0;
@@ -1133,6 +1145,7 @@
 
   function setPulsarMode(mode, persist = true, notify = true) {
     pulsarState.mode = mode === 'neon' ? 'neon' : 'mono';
+    syncPaletteReach();
     bindUiText(
       pulsarStyleButton,
       pulsarState.mode === 'mono' ? 'runtime.pulsar.mode.mono' : 'runtime.pulsar.mode.neon',
@@ -1909,6 +1922,7 @@
   function setActiveEffectState(name, reason = 'material-change') {
     activeEffect = name;
     stage.dataset.effect = name;
+    syncPaletteReach();
     const runtime = ensureMaterialRuntime();
     if (runtime?.status()?.activeMaterialId !== name) {
       runtime.activate(name, reason);
@@ -1968,6 +1982,10 @@
   function hexToRgb(hex) {
     const normalized = String(hex).replace('#', '').padEnd(6, '0').slice(0, 6);
     return [0, 2, 4].map(index => Number.parseInt(normalized.slice(index, index + 2), 16) || 0);
+  }
+
+  function rgbToHexSet(set) {
+    return { main: rgbToHex(set.main), hot: rgbToHex(set.hot), dark: rgbToHex(set.dark) };
   }
 
   function rgbToHex(rgb) {
@@ -2046,6 +2064,12 @@
   }
 
   function updateColorEffects(now) {
+    // A new set (a swatch, or the next song's cover) is eased into over about half a second, not cut to.
+    const step = paletteEasedAt ? Math.min(1, 1 - Math.exp(-(now - paletteEasedAt) / 160)) : 1;
+    paletteEasedAt = now;
+    for (const role of ['main', 'hot', 'dark']) {
+      basePalette[role] = basePalette[role].map((value, index) => value + (targetPalette[role][index] - value) * step);
+    }
     const motion = now / 1000;
     const hueShift = colorFx.cycle > .001 ? (motion * colorFx.cycle / 18) % 1 : 0;
     const breathWave = .5 + .5 * Math.sin(motion * (1.05 + audioState.features.richness * .42));
@@ -2057,17 +2081,20 @@
     };
 
     const trigger = Math.max(audioState.features.onset, audioState.accents.overall, audioState.accents.treble * .85);
-    if (colorFx.strobe > .001 && trigger > .13 && now - colorFxState.lastFlashAt > 105) {
+    // The strobe flashes over every canvas; over the score it would flash the notes, so there it stays out (B5 C).
+    const strobe = stage.dataset.effect === 'score' ? 0 : colorFx.strobe;
+    if (strobe > .001 && trigger > .13 && now - colorFxState.lastFlashAt > 105) {
       colorFxState.flash = Math.max(colorFxState.flash, Math.min(1, trigger * 1.18));
       colorFxState.lastFlashAt = now;
     }
     colorFxState.flash *= .76;
-    const flashOpacity = colorFx.strobe * colorFxState.flash * .24;
+    const flashOpacity = strobe * colorFxState.flash * .24;
     colorFlash.style.opacity = flashOpacity.toFixed(3);
     colorFlash.style.background = `rgb(${currentPalette.hot.map(Math.round).join(',')})`;
     stage.style.setProperty('--accent', rgbToHex(currentPalette.main));
     stage.style.setProperty('--accent-2', rgbToHex(currentPalette.hot));
     stage.style.setProperty('--accent-soft', `rgba(${currentPalette.main.map(Math.round).join(',')}, .22)`);
+    stage.style.setProperty('--pal-dark', rgbToHex(currentPalette.dark));
   }
 
   function syncCustomPalette() {
@@ -2086,10 +2113,14 @@
 
   function applyPalette(name, persist = true) {
     syncCustomPalette();
-    if (!palettes[name]) name = 'aurora';
+    name = paletteName(name);
     activePaletteName = name;
-    basePalette = palettes[name];
-    currentPalette = { main: [...basePalette.main], hot: [...basePalette.hot], dark: [...basePalette.dark] };
+    targetPalette = palettes[name];
+    if (!persist) {
+      // At start-up: no easing from the default.
+      for (const role of ['main', 'hot', 'dark']) basePalette[role] = [...targetPalette[role]];
+      currentPalette = { main: [...basePalette.main], hot: [...basePalette.hot], dark: [...basePalette.dark] };
+    }
     stage.dataset.palette = name;
     document.querySelectorAll('.swatch').forEach(button => {
       button.classList.toggle('is-active', button.dataset.palette === name);
@@ -2098,6 +2129,70 @@
       try { localStorage.setItem('xins-fusion-palette', JSON.stringify({ name, custom: customColors })); } catch (_) {}
     }
     return name;
+  }
+
+  // Greys the 配色 row in a scene it does not reach, with one plain line saying why (B5 B1: nothing may be
+  // clickable and change nothing). The 跟和弦变色 switch stays greyed: the old sets it switched between are gone.
+  function syncPaletteReach() {
+    const muted = paletteMuted(activeEffect, pulsarState.mode);
+    const row = document.querySelector('[data-palette-row]');
+    if (!row) return muted;
+    row.classList.toggle('is-muted', Boolean(muted));
+    row.querySelectorAll('.swatch, #paletteButton').forEach(button => { button.disabled = Boolean(muted); });
+    document.querySelectorAll('[data-palette-muted]').forEach(note => { note.hidden = note.dataset.paletteMuted !== muted; });
+    if (muted && palettePanel.classList.contains('is-open')) setPalettePanel(false);
+    return muted;
+  }
+
+  // 跟封面: the song's cover, read small (48 x 48) and turned into a set by PaletteCore.coverPalette. No cover, a cover
+  // that cannot be read, or a grey one: the 黑白 set. Kept per cover address; the cover file is only read.
+  const coverFallback = Object.freeze({ name: '黑白', main: '#c6c4be', hot: '#f3f2ef', dark: '#151412' });
+  function readCoverPixels(url) {
+    return new Promise(resolve => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        try {
+          const small = document.createElement('canvas');
+          small.width = 48;
+          small.height = 48;
+          const context = small.getContext('2d', { willReadFrequently: true });
+          context.drawImage(image, 0, 0, 48, 48);
+          resolve(context.getImageData(0, 0, 48, 48).data);
+        } catch (error) {
+          resolve({ error: error?.name || 'unreadable' });
+        }
+      };
+      image.onerror = () => resolve({ error: 'load-failed' });
+      image.src = url;
+    });
+  }
+  function useCoverSet(set) {
+    palettes.cover = { main: hexToRgb(set.main), hot: hexToRgb(set.hot), dark: hexToRgb(set.dark) };
+    coverState.source = set.source;
+    coverState.notes = set.notes || [];
+    stage.style.setProperty('--cover-main', set.main);
+    stage.style.setProperty('--cover-hot', set.hot);
+    stage.style.setProperty('--cover-dark', set.dark);
+    if (activePaletteName === 'cover') targetPalette = palettes.cover;
+  }
+  async function setCoverPalette(url) {
+    url = url ? String(url) : '';
+    if (url === coverState.url) return coverState.source;
+    coverState.url = url;
+    let set = coverState.cache.get(url);
+    if (!set) {
+      const core = window.PaletteCore;
+      if (!url || !core) set = { ...coverFallback, source: url ? 'no-core' : 'no-cover', notes: [] };
+      else {
+        const pixels = await readCoverPixels(url);
+        set = pixels.error ? { ...coverFallback, source: `unreadable:${pixels.error}`, notes: [] } : core.coverPalette(pixels, coverFallback);
+      }
+      coverState.cache.set(url, set);
+    }
+    if (coverState.url !== url) return coverState.source;   // the song changed again while the cover was read
+    useCoverSet(set);
+    return set.source;
   }
 
   function setPalettePanel(open) {
@@ -2397,8 +2492,11 @@
   });
 
   window.SmokeResonanceColor = Object.freeze({
-    get: () => ({ palette: activePaletteName, effects: { ...colorFx } }),
+    get: () => ({ palette: activePaletteName, effects: { ...colorFx }, muted: paletteMuted(activeEffect, pulsarState.mode),
+      cover: { url: coverState.url, source: coverState.source, notes: [...coverState.notes], set: palettes.cover ? rgbToHexSet(palettes.cover) : null },
+      target: rgbToHexSet(targetPalette), shown: rgbToHexSet(basePalette) }),
     palette: name => applyPalette(name),
+    cover: url => setCoverPalette(url),
     effects: values => applyColorFx(values)
   });
   window.SmokeResonanceGlitch = Object.freeze({
@@ -3008,10 +3106,11 @@
         if (/^#[0-9a-f]{6}$/i.test(savedPalette.custom[key] || '')) customColors[key] = savedPalette.custom[key];
       }
     }
-    applyPalette(savedPalette?.name || 'aurora', false);
+    applyPalette(savedPalette?.name || PALETTE_DEFAULT, false);
   } catch (_) {
-    applyPalette('aurora', false);
+    applyPalette(PALETTE_DEFAULT, false);
   }
+  syncPaletteReach();
   try {
     const savedColorFx = JSON.parse(localStorage.getItem('xins-fusion-color-fx'));
     if (savedColorFx && typeof savedColorFx === 'object') applyColorFx(savedColorFx, false);

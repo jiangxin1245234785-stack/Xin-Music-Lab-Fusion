@@ -16,7 +16,7 @@ const done = [];
 function markup() {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const preset = html.indexOf('id="scoreEffects"'), follow = html.indexOf('id="scoreFxFollow"');
-  assert.ok(preset > 0 && follow > preset, '「特效跟随起伏」的开关应当在搭配下面');
+  assert.ok(preset > 0 && follow > preset, '「光效跟随起伏」的开关应当在「音符光效」下面');
   const tag = /<input id="scoreFxFollow"[^>]*>/.exec(html)[0];
   assert.match(tag, /type="checkbox"/);
   assert.match(tag, /\schecked\b/, '开关缺省应当是开的');
@@ -24,10 +24,10 @@ function markup() {
   assert.ok(html.slice(preset, follow).split('<label').length === 2, '开关应当紧跟在搭配那一行后面');
   global.window = global;
   const catalogs = fs.readFileSync(path.join(root, 'i18n', 'catalogs.js'), 'utf8');
-  assert.ok(catalogs.includes("'score.fxFollow': '特效跟随起伏'"), '中文词条');
-  assert.ok(catalogs.includes("'score.fxFollow': 'Effects follow the music'"), '英文词条');
+  assert.ok(catalogs.includes("'score.fxFollow': '光效跟随起伏'"), '中文词条');
+  assert.ok(catalogs.includes("'score.fxFollow': 'Note light follows the music'"), '英文词条');
   assert.ok(catalogs.includes("'score.lane.other': '其它'") && catalogs.includes("'score.lane.other': 'Other'"), '「其它」带子的悬停名');
-  done.push('设置里搭配下面有「特效跟随起伏 / Effects follow the music」，缺省开');
+  done.push('设置里「音符光效」下面有「光效跟随起伏 / Note light follows the music」，缺省开');
 }
 
 // --- the scene: what it keeps, what it gives the core -------------------------------------------------

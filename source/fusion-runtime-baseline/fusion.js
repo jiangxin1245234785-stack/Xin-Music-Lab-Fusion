@@ -679,8 +679,12 @@
     return Number.isFinite(value) ? Math.max(0, Math.min(200, value)) : 125;
   }
 
+  // Off since B5 (2026-11-15): it swapped the whole 配色 for one of the old sets on every new chord root, which
+  // undid the user's own choice; the old sets are gone and a chord tint on the new ones is not built. The switch is
+  // greyed in the page; its stored value is left as it was.
+  const CHORD_COLOR_OFF = true;
   function applyChordColor(consensus) {
-    if (!dom.autoColor.checked || !consensus?.root || consensus.confidence < .32) return;
+    if (CHORD_COLOR_OFF || !dom.autoColor.checked || !consensus?.root || consensus.confidence < .32) return;
     const now = performance.now();
     if (state.lastPaletteRoot === consensus.root || now - state.lastPaletteAt < 1200) return;
     const palette = rootPalettes[consensus.root];
@@ -1276,6 +1280,7 @@
     const coverUrl = payload.coverUrl || libraryTrack?.coverUrl || '';
     if (coverUrl) dom.cover.src = coverUrl;
     else dom.cover.removeAttribute('src');
+    visualColor?.cover?.(coverUrl);
     sayTrackState(libraryTrack);
     dom.linkCard.dataset.state = 'linked';
     dom.play.disabled = false;

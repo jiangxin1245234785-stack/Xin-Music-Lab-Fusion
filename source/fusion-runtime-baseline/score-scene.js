@@ -499,8 +499,9 @@
     earlier.textContent = '\u2212';
     later.textContent = '+';
     sync.append(earlier, shown, later);
-    // In the shell it is a row of the settings drawer; otherwise it floats over the stage.
-    const group = root.document.querySelector('#xlSettings .xl-group + .xl-group');
+    // In the shell it is a row of the settings drawer's 谱面阅读 group, above 导出视频 (B5: it sat in 画面效果, the
+    // second group, among the FX layer's controls); otherwise it floats over the stage.
+    const group = root.document.querySelector('#xlSettings [data-i18n="score.options"]')?.closest('.xl-group') || null;
     syncDocked = Boolean(group);
     if (syncDocked) {
       const row = root.document.createElement('div'), label = root.document.createElement('span');
@@ -509,7 +510,7 @@
       label.textContent = say('score.syncLabel', '谱面对齐');
       sync.classList.add('is-docked');
       row.append(label, sync);
-      group.appendChild(row);
+      group.insertBefore(row, group.querySelector(':scope > .score-export'));
     } else stage.appendChild(sync);
     const paintSync = () => {
       const text = say('score.sync', '画面晚 {ms} ms').replace('{ms}', String(latency()));

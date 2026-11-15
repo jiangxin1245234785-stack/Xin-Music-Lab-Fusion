@@ -8,8 +8,10 @@ assert.equal(report.ok, true, JSON.stringify(report.details, null, 2));
 // The floor is what the catalog holds now (455 on 2026-11-14), so a key that goes missing is noticed.
 // It was 450, then lowered to 400 when the calibration panel went; 400 would let 55 keys vanish unseen.
 // 2026-11-15: 453, after the four title keys of the removed beta-glitch-5..8 scenes; then 472 with the
-// 19 keys of preparing the score (SPEC-B2); 477 with the 5 of its fixes (B2 acceptance).
-assert.ok(report.counts.catalog >= 477, `expected broad catalog coverage, got ${report.counts.catalog}`);
+// 19 keys of preparing the score (SPEC-B2); 477 with the 5 of its fixes (B2 acceptance); 480 by B4.
+// B5: 473 — the seven old palettes' 14 swatch keys and 4 preset keys went, 11 came (five sets, 跟封面, three
+// greyed-row lines, the chord switch's new line).
+assert.ok(report.counts.catalog >= 473, `expected broad catalog coverage, got ${report.counts.catalog}`);
 assert.ok(report.counts.staticBindings >= 100, `expected at least 100 static bindings, got ${report.counts.staticBindings}`);
 // 114 before 2026-11-13; the spectrum calibration panel's 27 keys went with the panel.
 // 2026-11-14: 87 → 73 with the cat panel's 14 keys (removed) (common.restoreDefault stays, the Glitch panel uses it).

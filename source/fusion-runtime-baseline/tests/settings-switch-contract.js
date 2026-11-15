@@ -97,8 +97,8 @@ assert.equal(pin.getAttribute('aria-checked'), 'true');
 // 5. The words on a switch name the setting only; on / off is the pill's (B3 follow-up, 1).
 const appJs = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 assert.match(appJs, /bindUiText\(glitchPowerButton, 'shell\.fx', '画面特效'\);/);
-// Not the same name as the 谱面阅读 select 「特效」 (B3 acceptance M2).
-assert.match(html, /data-i18n="score\.effects">特效</);
+// Not the same name as the 谱面阅读 select, which is 「音符光效」 (B5 A: 特效 was said twice).
+assert.match(html, /data-i18n="score\.effects">音符光效</);
 assert.match(appJs, /bindUiText\(directorToggle, 'runtime\.director\.off', '自动换画面'\);/);
 assert.match(appJs, /bindUiText\(pinButton, 'runtime\.pin\.off', '窗口置顶'\);/);
 assert.doesNotMatch(appJs, /shell\.fxOn|shell\.fxOff|runtime\.director\.on|runtime\.pin\.on/);

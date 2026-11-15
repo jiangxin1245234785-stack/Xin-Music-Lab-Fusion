@@ -30,10 +30,11 @@
     ['#glitchPresetSave', 'glitch.saveCurrent'],
     ['#glitchReset', 'common.restoreDefault'],
     ['#palettePanel .calibration-head h2', 'palette.title'],
-    ['[data-palette-preset="synthwave"]', 'palette.synthwave'],
-    ['[data-palette-preset="toxic"]', 'palette.toxic'],
-    ['[data-palette-preset="ultraviolet"]', 'palette.ultraviolet'],
-    ['[data-palette-preset="solar"]', 'palette.solar'],
+    ['[data-palette-preset="dusk"]', 'palette.dusk'],
+    ['[data-palette-preset="moss"]', 'palette.moss'],
+    ['[data-palette-preset="wine"]', 'palette.wine'],
+    ['[data-palette-preset="tide"]', 'palette.tide'],
+    ['[data-palette-preset="ink"]', 'palette.ink'],
   ]);
 
   const ATTRIBUTE_BINDINGS = Object.freeze([
