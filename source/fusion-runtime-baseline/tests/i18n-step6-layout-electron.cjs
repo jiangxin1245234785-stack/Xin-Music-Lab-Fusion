@@ -25,7 +25,6 @@ ipcMain.handle('app:locale-set', (_event, payload) => {
   return { ok: true, locale: nativeLocale, source: 'renderer' };
 });
 ipcMain.handle('fusion:analysis-task', () => null);
-ipcMain.handle('fusion:analysis-engines', () => []);
 ipcMain.handle('fusion:settings', () => ({ ok: true, root: 'layout-fixture://library' }));
 ipcMain.handle('fusion:scan-library', () => ({
   ok: false,

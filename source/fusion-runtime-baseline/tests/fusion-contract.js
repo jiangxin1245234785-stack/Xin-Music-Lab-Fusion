@@ -27,7 +27,7 @@ for (const id of [
   'fusionButton', 'fusionPanel', 'fusionLoad', 'fusionAudio',
   'fusionLibraryList', 'fusionLibrarySearch',
   'fusionPlay', 'fusionPrevious', 'fusionNext', 'fusionAnalysisCard',
-  'fusionAnalysisEngine', 'fusionAnalysisRun', 'fusionAnalysisCancel', 'fusionAnalysisProgress',
+  'fusionAnalysisProgress', 'fusionOpenXldLab', 'fusionStemSelect', 'fusionMidiReveal',
   'glitchWebglCanvas', 'generatorCanvas', 'generatorPresetControl',
   'generatorPresetFiles', 'generatorPresetRepository', 'productControlDock'
 ]) assert(html.includes(`id="${id}"`), `missing Fusion DOM id: ${id}`);
@@ -113,6 +113,15 @@ assert(main.includes("ipcMain.handle('fusion:open-bridge'"), 'bridge file picker
 assert(main.includes("ipcMain.handle('fusion:scan-library'"), 'automatic local library scan IPC is missing');
 assert(main.includes("ipcMain.handle('fusion:load-track'"), 'automatic track loading IPC is missing');
 assert(main.includes("ipcMain.handle('fusion:analysis-run'"), 'embedded XLD analysis IPC is missing');
+// Audit fix 1 (2026-11-15): XML starts only the score's own steps; separating, transcribing, sections and chords are
+// XLD's, so their buttons, bridge calls and IPC are gone, and the analysis IPC refuses any other engine.
+for (const id of ['fusionStemRun', 'fusionMidiRun', 'fusionAnalysisRun', 'fusionAnalysisCancel', 'fusionAnalysisEngine', 'fusionAnalysisOptions'])
+  assert(!html.includes(`id="${id}"`), `XML must not offer analysis control ${id}`);
+for (const channel of ['fusion:stems-run', 'fusion:midi-run', 'fusion:analysis-engines']) assert(!main.includes(`'${channel}'`), `XML must not handle ${channel}`);
+for (const call of ['runSeparation', 'runMidi', 'analysisEngines']) assert(!new RegExp('\\b' + call + '\\b').test(preload), `XML bridge must not expose ${call}`);
+assert(main.includes("const XML_ENGINES = new Set(['score-layers', 'score-vocals']);")
+  && main.includes("if (!XML_ENGINES.has(String(payload?.engine || ''))) return {ok: false, error: 'engine-not-in-xml'};"), 'XML analysis IPC runs only the score layers and the vocal curve');
+assert(!fusion.includes('xins-fusion-analysis-engine'), 'the old analysis engine setting is no longer read or written');
 assert(main.includes('createXldAnalysisService'), 'Fusion must call the XLD analysis core directly');
 assert(main.includes('DEFAULT_LIBRARY_ROOT'), 'Fusion must own a local library root without launching XLD');
 assert(preload.includes("contextBridge.exposeInMainWorld('XinsMusicLabFusion'"), 'preload bridge is missing');

@@ -115,10 +115,9 @@
     libraryAnalyzed: $('#fusionLibraryAnalyzed'), locateTrack: $('#fusionLocateTrack'),
     sectionEngineSelect: $('#fusionSectionEngine'), chordEngineSelect: $('#fusionChordEngine'),
     analysisCard: $('#fusionAnalysisCard'), analysisTitle: $('#fusionAnalysisTitle'),
-    analysisEngine: $('#fusionAnalysisEngine'), analysisRun: $('#fusionAnalysisRun'),
-    analysisCancel: $('#fusionAnalysisCancel'), analysisStatus: $('#fusionAnalysisStatus'),
+    analysisStatus: $('#fusionAnalysisStatus'),
     analysisProgress: $('#fusionAnalysisProgress'), analysisPercent: $('#fusionAnalysisPercent'),
-    resultsRefresh: $('#fusionResultsRefresh'), analysisOptions: $('#fusionAnalysisOptions'),
+    resultsRefresh: $('#fusionResultsRefresh'),
     openXldLab: $('#fusionOpenXldLab')
   };
 
@@ -142,7 +141,6 @@
     scanning: false,
     loadingTrack: false,
     loadSequence: 0,
-    analysisEngines: [],
     analysisTask: null,
     analysisUnsubscribe: null,
     resolverUnsubscribe: null,
@@ -175,9 +173,7 @@
   }
   const stemControls = window.XldStemControls?.create({
     bridge, audio: dom.audio, getTrack: () => trackById(state.selectedTrackId),
-    getOriginalUrl: () => state.payload?.audioUrl,
-    isBusy: () => ['starting', 'running', 'cancelling'].includes(state.analysisTask?.status),
-    onTask: renderAnalysisTask, onSwitch: () => markTransportTransition('seek')
+    getOriginalUrl: () => state.payload?.audioUrl, onSwitch: () => markTransportTransition('seek')
   }) || null;
   // The listening score (score-scene.js). It is told which track is loaded and nothing else.
   const scoreScene = window.XinScoreScene?.create({
@@ -730,8 +726,6 @@
       clearUiBinding(dom.analysisTitle);
       dom.analysisTitle.textContent = busy ? `${task.trackTitle} · ${task.engineName}` : selected.title;
     } else bindUiText(dom.analysisTitle, 'fusion.runtime.noTrackAnalysis', '选择曲目后读取分析结果');
-    dom.analysisRun.disabled = busy || !selected || !dom.analysisEngine.value;
-    dom.analysisCancel.disabled = !busy || !task?.cancellable;
     dom.openXldLab.disabled = !selected || busy;
     dom.resultsRefresh.disabled = !selected || busy || refreshingResults;
     stemControls?.sync();
@@ -742,7 +736,6 @@
     const status = task?.status || 'idle';
     const progress = Math.round(Math.max(0, Math.min(1, Number(task?.progress) || 0)) * 100);
     dom.analysisCard.dataset.state = status;
-    if(['starting','running','cancelling'].includes(status))dom.analysisOptions.open=true;
     dom.analysisProgress.style.width = `${progress}%`;
     dom.analysisCard.querySelector('.fusion-analysis-card__progress')?.setAttribute('aria-valuenow', String(progress));
     dom.analysisPercent.textContent = task ? `${progress}%` : '—';
@@ -768,106 +761,6 @@
     else if (statusKey) bindUiText(dom.analysisStatus, statusKey, task?.message || '分析由 XLD 提供，返回时自动更新结果', { progress });
     else bindUiText(dom.analysisStatus, 'fusion.runtime.analysisIdle', '分析由 XLD 提供，返回时自动更新结果');
     updateAnalysisControls();
-  }
-
-  async function loadAnalysisEngines() {
-    if (!bridge?.analysisEngines) return;
-    dom.analysisEngine.disabled = true;
-    dom.analysisEngine.innerHTML = `<option value="">${uiText('fusion.runtime.probing', '正在探测分析器…')}</option>`;
-    let engines = [];
-    try { engines = await bridge.analysisEngines(); } catch (_) {}
-    state.analysisEngines = Array.isArray(engines) ? engines : [];
-    dom.analysisEngine.replaceChildren();
-    const families = [
-      ['msaf', 'STRUCTURE · CPU'],
-      ['ai', 'STRUCTURE · AI'],
-      ['harmony', 'HARMONY']
-    ];
-    for (const [family, label] of families) {
-      const items = state.analysisEngines.filter(engine => engine.family === family || (family === 'msaf' && String(engine.id).startsWith('msaf')));
-      if (!items.length) continue;
-      const group = document.createElement('optgroup');
-      group.label = label;
-      for (const engine of items) {
-        const option = document.createElement('option');
-        option.value = engine.id;
-        option.textContent = `${engine.name || engine.id}${engine.resource ? ` · ${engine.resource}` : ''}`;
-        option.disabled = engine.available === false;
-        group.append(option);
-      }
-      dom.analysisEngine.append(group);
-    }
-    const available = state.analysisEngines.filter(engine => engine.available !== false);
-    const saved = localStorage.getItem('xins-fusion-analysis-engine');
-    const preferred = available.find(engine => engine.id === saved)
-      || available.find(engine => engine.id === 'msaf-sf')
-      || available[0];
-    dom.analysisEngine.disabled = !preferred;
-    if (preferred) dom.analysisEngine.value = preferred.id;
-    else dom.analysisEngine.innerHTML = `<option value="">${uiText('fusion.runtime.noAnalyzer', '没有可用的分析运行时')}</option>`;
-    updateAnalysisControls();
-  }
-
-  async function runSelectedAnalysis() {
-    const track = trackById(state.selectedTrackId);
-    const engine = dom.analysisEngine.value;
-    if (!track || !engine || !bridge?.runAnalysis || ['starting', 'running', 'cancelling'].includes(state.analysisTask?.status)) return;
-    const engineInfo = state.analysisEngines.find(item => item.id === engine);
-    renderAnalysisTask({
-      trackId: track.id,
-      trackTitle: track.title,
-      engine,
-      engineName: engineInfo?.name || engine,
-      status: 'starting',
-      progress: 0,
-      message: uiText('fusion.runtime.starting', '正在启动分析器'),
-      cancellable: true
-    });
-    let result;
-    try {
-      result = await bridge.runAnalysis(track.id, engine, {
-        engineName: engineInfo?.name || engine,
-        auto: engine === 'songformer'
-      });
-    } catch (_) {
-      result = { ok: false, error: 'ipc-failed' };
-    }
-    if (result?.ok) {
-      if (state.selectedTrackId === track.id) {
-        state.manifest = result.manifest;
-        state.bridgePath = result.manifestPath || state.bridgePath;
-        if (state.payload) {
-          state.payload.manifest = result.manifest;
-          state.payload.filePath = state.bridgePath;
-        }
-        loadXldProvider(result.manifest, state.payload || {}, track);
-        dom.reveal.disabled = false;
-        dom.linkCard.dataset.state = 'linked';
-        bindUiText(dom.status, 'fusion.runtime.timelineUpdated', `${engineInfo?.name || engine} 分析完成 · 时间线已热更新`, { engine: engineInfo?.name || engine });
-        populateEngineSelectors();
-        updateTimeline();
-      }
-      await scanLibrary({ restore: false });
-      renderAnalysisTask(result.task);
-      return;
-    }
-    const errors = {
-      'analysis-busy': '已有其他曲目正在分析',
-      'runtime-missing': '分析运行时未安装',
-      'analysis-cancelled': '分析已取消',
-      'track-missing': '曲目文件已移动',
-      'engine-unavailable': '当前分析器不可用'
-    };
-    renderAnalysisTask(result?.task || {
-      trackId: track.id,
-      trackTitle: track.title,
-      engine,
-      engineName: engineInfo?.name || engine,
-      status: result?.error === 'analysis-cancelled' ? 'cancelled' : 'failed',
-      progress: 0,
-      message: errors[result?.error] || result?.detail || '分析失败',
-      cancellable: false
-    });
   }
 
   async function refreshCurrentResults(manual=false) {
@@ -1403,15 +1296,6 @@
   });
   dom.locateTrack?.addEventListener('click', locateCurrentTrack);
   dom.reveal.addEventListener('click', () => bridge?.revealBridge(state.bridgePath));
-  dom.analysisEngine?.addEventListener('change', () => {
-    localStorage.setItem('xins-fusion-analysis-engine', dom.analysisEngine.value);
-    updateAnalysisControls();
-  });
-  dom.analysisRun?.addEventListener('click', runSelectedAnalysis);
-  dom.analysisCancel?.addEventListener('click', async () => {
-    const result = await bridge?.cancelAnalysis?.();
-    if (result?.task) renderAnalysisTask(result.task);
-  });
   dom.openXldLab?.addEventListener('click', openCurrentInXld);
   dom.resultsRefresh?.addEventListener('click',()=>refreshCurrentResults(true));
   window.addEventListener('focus',()=>refreshCurrentResults());
@@ -1680,7 +1564,6 @@
   } else {
     state.analysisUnsubscribe = bridge.onAnalysisTask?.(renderAnalysisTask) || null;
     Promise.resolve(bridge.analysisTask?.()).then(renderAnalysisTask).catch(() => {});
-    loadAnalysisEngines();
     enterLocalMode(); // auto-enter local mode (welcome doubles as a brief loading splash), panel stays closed
   }
 })();

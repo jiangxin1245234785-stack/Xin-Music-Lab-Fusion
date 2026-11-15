@@ -15,7 +15,8 @@ assert.ok(report.counts.catalog >= 473, `expected broad catalog coverage, got ${
 assert.ok(report.counts.staticBindings >= 100, `expected at least 100 static bindings, got ${report.counts.staticBindings}`);
 // 114 before 2026-11-13; the spectrum calibration panel's 27 keys went with the panel.
 // 2026-11-14: 87 → 73 with the cat panel's 14 keys (removed) (common.restoreDefault stays, the Glitch panel uses it).
-assert.ok(report.counts.dynamicManifestKeys >= 73, `expected broad dynamic coverage, got ${report.counts.dynamicManifestKeys}`);
+// 2026-11-15: 74 → 72 with the analysis options group's two keys (audit fix 1).
+assert.ok(report.counts.dynamicManifestKeys >= 72, `expected broad dynamic coverage, got ${report.counts.dynamicManifestKeys}`);
 assert.deepEqual(report.locales, ['zh-CN', 'en-US']);
 
 console.log(

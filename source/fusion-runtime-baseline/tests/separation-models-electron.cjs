@@ -27,12 +27,13 @@ app.whenReady().then(async()=>{
   assert(await evaluate("Math.abs(document.querySelector('#fusionAudio').currentTime-123)<.1&&document.querySelector('#fusionAudio').paused"));
   await evaluate("document.querySelector('#fusionStemSelect').value='guitar';document.querySelector('#fusionStemSelect').dispatchEvent(new Event('change'))");await until("!document.querySelector('#fusionStemSelect').disabled&&!document.querySelector('#fusionMidiReveal').disabled");
   const legacy=await core.readMidi(fixture.track,'guitar');assert.notEqual(legacy.sourceRunId,roformer.sourceRunId);
-  const reused=await evaluate(`window.XinsMusicLabFusion.runSeparation(${JSON.stringify(fixture.track.id)},false)`);assert(reused.cached);assert.equal(reused.result.engine,'demucs-6s');
+  // XML has no separation or transcription call since audit fix 1 (2026-11-15): it only reads what XLD made.
+  assert.equal(await evaluate("['runSeparation','runMidi','analysisEngines'].filter(k=>k in window.XinsMusicLabFusion).length"),0);
   assert((await core.run(fixture.track,'bs-roformer-sw')).cached);
   await evaluate("document.querySelector('#fusionResultsRefresh').click()");await until("document.querySelector('#fusionStemSelect').value==='original'&&!document.querySelector('#fusionStemSelect').disabled");
   await evaluate("document.querySelector('#fusionStemSelect').value='guitar';document.querySelector('#fusionStemSelect').dispatchEvent(new Event('change'))");await until("!document.querySelector('#fusionMidiReveal').disabled&&!document.querySelector('#fusionStemSelect').disabled");
-  const midi=await evaluate(`window.XinsMusicLabFusion.runMidi(${JSON.stringify(fixture.track.id)},'guitar',false)`);assert(midi.cached);assert.equal(midi.result.runId,roformer.runId);assert.equal(midi.result.engine,'guitar-gaps');
-  const report={pass:true,checks:['XML reads RoFormer and opens its MIDI','Refresh after source change retains time and pause','Legacy MIDI restores with Demucs','Convenience actions reuse the current WAV/MIDI model','Returning to RoFormer restores its MIDI']};fs.writeFileSync(path.join(root,'xml-separation-ui.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+  const back=await core.readMidi(fixture.track,'guitar');assert.equal(back.runId,roformer.runId);
+  const report={pass:true,checks:['XML reads RoFormer and opens its MIDI','Refresh after source change retains time and pause','Legacy MIDI restores with Demucs','No separation or transcription call in XML','Returning to RoFormer restores its MIDI']};fs.writeFileSync(path.join(root,'xml-separation-ui.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  }catch(error){console.error(error);if(win)console.error(await win.webContents.executeJavaScript("document.querySelector('#fusionStemStatus')?.textContent"));process.exitCode=1;}
  finally{await core.run(fixture.track,'bs-roformer-sw');win?.destroy();app.exit(process.exitCode||0);}
 });

@@ -520,10 +520,7 @@ kbd { padding: 2px 5px; border: 1px solid rgba(255,255,255,.12); border-radius: 
 .fusion-analysis-card__head small { color: rgba(114,232,206,.5); font-size: calc(6px * var(--ui-scale)); letter-spacing: .16em; }
 .fusion-analysis-card__head b { overflow: hidden; color: rgba(255,255,255,.76); font-size: calc(9px * var(--ui-scale)); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .fusion-analysis-card__head button { flex: none; min-height: 25px; padding: 0 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 7px; color: rgba(255,255,255,.47); background: rgba(255,255,255,.025); font-size: calc(7px * var(--ui-scale)); cursor: pointer; }
-.fusion-analysis-card__controls { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 7px; }
-.fusion-analysis-card__controls select { min-width: 0; padding: 7px 9px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; color: rgba(255,255,255,.78); background: rgba(7,9,17,.88); font-size: calc(8px * var(--ui-scale)); }
-.fusion-analysis-card__controls button { padding: 0 9px; border: 1px solid rgba(114,232,206,.2); border-radius: 8px; color: rgba(255,255,255,.72); background: rgba(114,232,206,.07); font-size: calc(8px * var(--ui-scale)); cursor: pointer; }
-.fusion-analysis-card__controls button:disabled, .fusion-analysis-card__head button:disabled { opacity: .32; cursor: default; }
+.fusion-analysis-card__head button:disabled { opacity: .32; cursor: default; }
 .fusion-analysis-card__progress { height: 3px; overflow: hidden; border-radius: 5px; background: rgba(255,255,255,.06); }
 .fusion-analysis-card__progress i { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8d7cff, #72e8ce); box-shadow: 0 0 10px rgba(114,232,206,.45); transition: width .24s ease; }
 .fusion-analysis-card__status { color: rgba(255,255,255,.36); font-size: calc(7px * var(--ui-scale)); }
@@ -553,8 +550,4 @@ button:disabled { cursor: not-allowed; }
 #fusionMidiStatus { color: rgba(255,255,255,.5); font-size: calc(8px * var(--ui-scale)); align-self: center; min-width: 0; }
 #fusionStemStatus { color: rgba(255,255,255,.5); font-size: calc(8px * var(--ui-scale)); }
 
-.fusion-analysis-options summary { cursor:pointer; color:rgba(255,255,255,.55); font-size:calc(8px * var(--ui-scale)); }
-.fusion-analysis-options[open] { display:grid; gap:9px; }
-.fusion-analysis-shortcuts { grid-template-columns:1fr 1fr; }
-.fusion-analysis-shortcuts button { padding:7px 9px; }
 #fusionOpenXldLab { color:rgba(190,255,238,.9); border-color:rgba(114,232,206,.3); }

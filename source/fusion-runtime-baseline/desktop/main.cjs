@@ -586,7 +586,6 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     xldAnalysis.setAnalysisRoot(fusionAnalysisRoot);
     return { ok: true, ...roots };
   });
-  ipcMain.handle('fusion:analysis-engines', () => xldAnalysis.detectEngines());
   ipcMain.handle('fusion:analysis-task', () => xldAnalysis.task());
   ipcMain.handle('fusion:analysis-cancel', () => xldAnalysis.cancel());
   ipcMain.handle('app:locale-get', () => ({ ok: true, ...mainLocale.getState() }));
@@ -707,28 +706,6 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const error = await shell.openPath(result.directory);
     return { ok: !error, error: error || null };
   });
-  ipcMain.handle('fusion:midi-run', async (event, payload) => {
-    if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
-    const track = fusionTrackIndex.get(String(payload?.trackId || ''));
-    if (!track) return { ok: false, error: 'track-missing' };
-    const core = require('./midi-assets.cjs');
-    if (!core.STEMS.includes(payload?.stem)) return {ok:false,error:'midi-stem-unsupported'};
-    const active = await xldAnalysis.readMidi(track, payload.stem);
-    // A hand-edited revision must never be transcribed over from here. This handler picks the engine itself, and
-    // the renderer passes force = true whenever any MIDI exists (stem-controls.js), so the cache branch that
-    // protects a revision in the workbench is never reached: without this line the button silently replaces the
-    // user's own edit with fresh model output. Replacing an edit is a decision, and it belongs where the edit is
-    // made, not behind a button in the visualizer.
-    if (active.ok && active.engine === core.MANUAL_ENGINE) return {ok: false, error: 'midi-manual-active'};
-    const activeProfile = active.ok ? core.profileForResult(active) : null;
-    const reusable = activeProfile && !activeProfile.retiredFor?.includes(payload.stem);
-    const models = reusable ? [] : (await xldAnalysis.midiEngines()).filter(model=>model.stems.includes(payload.stem));
-    const engine = reusable ? activeProfile.id : (models.find(model => model.defaultFor === payload.stem && model.available) || models.find(model => model.id === 'basic-pitch' && model.available))?.id;
-    if (!engine) return {ok:false,error:'runtime-missing'};
-    return xldAnalysis.run(track, engine, { stem: payload?.stem, force: payload?.force === true }, snapshot => {
-      if (!event.sender.isDestroyed()) event.sender.send('fusion:analysis-task', snapshot);
-    });
-  });
   ipcMain.handle('fusion:stems-read', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if(!track)return {ok:false,error:'track-missing'};
@@ -744,20 +721,13 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     const error = await shell.openPath(result.directory);
     return { ok: !error, error: error || null };
   });
-  ipcMain.handle('fusion:stems-run', async (event, payload) => {
-    if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
-    const track = fusionTrackIndex.get(String(payload?.trackId || ''));
-    if (!track) return { ok: false, error: 'track-missing' };
-    const active = await xldAnalysis.readStems(track);
-    const models = active.ok ? [] : await xldAnalysis.separationEngines();
-    const engine = active.ok ? active.engine : (models.find(model => model.default && model.available) || models.find(model => model.available))?.id;
-    if (!engine) return {ok:false,error:'runtime-missing'};
-    return xldAnalysis.run(track, engine, { force: payload.force === true }, snapshot => {
-      if (!event.sender.isDestroyed()) event.sender.send('fusion:analysis-task', snapshot);
-    });
-  });
 
+  // XML starts only what it shows and XLD does not (project rule "who shows it starts it"): the score's
+  // own layers and the vocal curve. Splitting, transcription, sections and chords are XLD's, and their
+  // results are only read here; a re-run of those would delete the earlier stems or MIDI without a word.
+  const XML_ENGINES = new Set(['score-layers', 'score-vocals']);
   ipcMain.handle('fusion:analysis-run', async (event, payload) => {
+    if (!XML_ENGINES.has(String(payload?.engine || ''))) return {ok: false, error: 'engine-not-in-xml'};
     if(dynamics.isBusy())return {ok:false,error:'analysis-busy'};
     const indexed = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!indexed) return { ok: false, error: 'track-missing' };

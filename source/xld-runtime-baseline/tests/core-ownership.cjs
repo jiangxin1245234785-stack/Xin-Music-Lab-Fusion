@@ -7,7 +7,7 @@ const service=fs.readFileSync(require.resolve('../core/analysis-service.cjs'),'u
 assert(!service.includes('fusion-runtime-baseline'),'XLD execution must not depend on XML');
 for(const name of ['analysis-midi','analysis-separation']) {
  assert(fs.readFileSync(path.join(__dirname,'..',name,'runner.py'),'utf8').includes('def main()'));
- const wrapper=fs.readFileSync(path.join(__dirname,'../../fusion-runtime-baseline',name,'runner.py'),'utf8');
- assert(wrapper.includes('xld-runtime-baseline') && wrapper.length<700,'XML must keep only CLI compatibility');
+ // XML's September forwarding scripts were removed by audit fix 1 (2026-11-15): nothing called them.
+ assert(!fs.existsSync(path.join(__dirname,'../../fusion-runtime-baseline',name,'runner.py')),'XML keeps no runner of its own for '+name);
 }
-console.log('XLD core ownership: PASS (XML adapter, shared reader, native XLD runners)');
+console.log('XLD core ownership: PASS (XML adapter, shared reader, native XLD runners only)');

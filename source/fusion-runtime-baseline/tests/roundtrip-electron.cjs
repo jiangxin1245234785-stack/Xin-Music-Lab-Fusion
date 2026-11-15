@@ -25,13 +25,13 @@ app.whenReady().then(async()=>{
   await until("document.querySelector('#fusionStemSelect').options.length===7");
   await evaluate("document.querySelector('#welcome')?.remove();document.querySelector('#fusionPanel').classList.add('is-open');document.querySelector('#fusionAudio').currentTime=35");
   await until("Math.abs(document.querySelector('#fusionAudio').currentTime-35)<.1");
-  assert.equal(await evaluate("document.querySelector('#fusionAnalysisOptions').open"),false);
+  assert.equal(await evaluate("document.querySelector('#fusionAnalysisOptions')"),null);
   assert(await evaluate("document.querySelector('#fusionOpenXldLab').textContent.includes('XLD')"));
   await evaluate("document.querySelector('#fusionOpenXldLab').click()");
   for(let i=0;i<50&&launches<1;i++)await new Promise(r=>setTimeout(r,50));assert.equal(launches,1);
   const request=JSON.parse(fs.readFileSync(path.join(fixture.analysisRoot,'.xml-open-request.json')));
   assert.equal(request.source,track.filePath);assert.equal(request.locale,'zh-CN');
-  checks.push('Collapsed analysis controls and real XML hand-off request');
+  checks.push('No analysis controls, real XML hand-off request');
   function timeline(label){const value=JSON.parse(originalManifest);value.analyses[0].segments[0].label=label;fs.writeFileSync(manifestPath,JSON.stringify(value));}
   timeline('chorus');
   await evaluate("window.dispatchEvent(new Event('focus'))");

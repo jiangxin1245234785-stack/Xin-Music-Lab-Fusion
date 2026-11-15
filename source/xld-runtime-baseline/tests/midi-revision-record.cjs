@@ -212,12 +212,12 @@ for (const identity of [a, b]) assert(!profileIdentities.has(identity) && identi
         ['../fusion-runtime-baseline/stem-controls.js', read('../fusion-runtime-baseline/stem-controls.js')]])
         assert(new RegExp("MANUAL_ENGINE\\s*=\\s*'" + MANUAL_ENGINE + "'").test(text), file + ' must carry the same engine id');
 
-      // The visualizer picks its own engine and always passes force, so the cache branch never protects anything
-      // there. It was the one outright data-loss path: its 转 MIDI button ran a model straight over a revision.
-      const fusion = read('../fusion-runtime-baseline/desktop/main.cjs');
-      const refuse = fusion.indexOf("active.engine === core.MANUAL_ENGINE) return {ok: false, error: 'midi-manual-active'}");
-      const pick = fusion.indexOf('const activeProfile = active.ok ? core.profileForResult(active) : null;');
-      assert(refuse > 0 && refuse < pick, 'the visualizer refuses before it picks an engine to run');
+      // The visualizer's 转 MIDI button picked its own engine and always passed force: it was the one outright
+      // data-loss path, running a model straight over a revision. Since 2026-11-15 (audit fix 1) the visualizer
+      // has no way to start a transcription or a separation at all; only XLD does.
+      const fusion = read('../fusion-runtime-baseline/desktop/main.cjs'), fusionBridge = read('../fusion-runtime-baseline/desktop/preload.cjs');
+      assert(!fusion.includes("'fusion:midi-run'") && !fusion.includes("'fusion:stems-run'"), 'the visualizer has no transcription or separation IPC');
+      assert(!/\brunMidi\b|\brunSeparation\b/.test(fusionBridge), 'and no bridge call for one');
     }
 
     console.log('midi revision record: ok (a revision reads as an earlier version rather than a damaged one, is listable and switchable in both directions, and survives a stem-wide sweep that reclaims an identically-shaped model run)');
