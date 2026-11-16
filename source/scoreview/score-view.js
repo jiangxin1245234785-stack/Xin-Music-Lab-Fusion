@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.22.0';
+  const VERSION = '0.23.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -136,7 +136,7 @@
   // How each lane group sounds, for showShapes: 'struck' (struck or plucked: one attack, then it dies away), 'bass'
   // (struck, a step thicker), 'held' (bowed, blown, held: as every note is drawn). Groups not listed (vocals, drums,
   // the texture band, any group this table does not know) are drawn as ever. The same groups the icons are chosen by.
-  const SHAPE_BY_GROUP = Object.freeze({piano: 'struck', guitar: 'struck', bass: 'bass', strings: 'held', violin: 'held'});
+  const SHAPE_BY_GROUP = Object.freeze({piano: 'struck', guitar: 'struck', bass: 'bass', strings: 'held', violin: 'held', winds: 'held'});
   // The struck shape. head: the onset block, `head` times the note's thickness tall and as wide as it is tall, but
   // never more than `headCap` semitones taller than the note itself (a dense chord's heads may touch, never merge
   // into a wall); body: from the full thickness at the onset straight down to `tail` of it (never under `tailMin`
@@ -157,7 +157,9 @@
   // spindle, a short one as an olive. The ends are `tip` of the layer's middle (the halo never under `tipMin`
   // pixels, the core never under `coreTipMin`). The sides are curves (one quadratic each way, its control mid-ramp).
   // One path a layer a bucket: two fills, no gradient, no per-note light.
-  const SPINDLE_GROUPS = Object.freeze(['strings', 'violin']);
+  // Winds (0.23.0, work/winds-20261115/SPEC.md W2) are drawn as spindles too, for now: blown like bowed, the sound comes up,
+  // holds and goes. Take 'winds' out of this one line and they are plain held bars.
+  const SPINDLE_GROUPS = Object.freeze(['strings', 'violin', 'winds']);
   const SPINDLE = Object.freeze({share: 0.4, rampMax: 1, swell: 2.2, halo: 0.35, haloFloor: 0.14, core: 0.55, coreMin: 1,
     tip: 0.15, tipMin: 1, coreTipMin: 0.5});
   // Links between the notes of a string lane (shapeLinks), found once when the notes are laid out: only where a
@@ -175,7 +177,7 @@
   // ERB = 24.7 (4.37 f / 1000 + 1) Hz) in semitones, against A4's, clamped to [`low`, `high`] (where the band
   // reaches 0 Hz, `high`). The lane's thickness times it, never thinner than the lane's own thinnest note can be
   // (2 pixels, 3.5 on a melody lane) nor more than `cap` semitones over the lane's thickness.
-  const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin']);
+  const WEIGHT_GROUPS = Object.freeze(['piano', 'guitar', 'bass', 'strings', 'violin', 'winds']);
   const PITCH_WEIGHT = Object.freeze({low: 0.8, high: 1.7, cap: 0.6});
   function erbSemitones(midi) {
     const f = 440 * Math.pow(2, (midi - 69) / 12), erb = 24.7 * (4.37 * f / 1000 + 1);
@@ -354,7 +356,10 @@
   const GROUP_COLORS = {
     // the studio's track colours (Okabe-Ito); violin is a lighter shade of the strings' yellow
     vocals: '#d78ab5', guitar: '#2fb89a', piano: '#7cc4f2', violin: '#e9e09a',
-    strings: '#d9cd6a', bass: '#4d7fd0', drums: '#e8663a', other: '#9aa1a9'
+    strings: '#d9cd6a', bass: '#4d7fd0', drums: '#e8663a', other: '#9aa1a9',
+    // winds (0.23.0): a violet, the farthest from every track colour and from the amber of all that the family's rules
+    // allow (work/winds-20261115/w2/REPORT-W2.md: ΔE 0.134 from vocals, 0.305 from the amber, 145° of hue away)
+    winds: '#a18dfd'
   };
   const SPARE_COLORS = ['#a98be0', '#c49a7a', '#6fa8a0', '#b0b6c2'];   // never near the amber
   // One drawn icon per group of GROUP_COLORS, in the lane's own colour. All on a 24-unit
@@ -390,6 +395,10 @@
     // a snare drum and two sticks
     drums: [['M', 4, 11.5], ['Q', 12, 7.5, 20, 11.5], ['Q', 12, 15.5, 4, 11.5], ['M', 4, 11.5], ['L', 4, 18.5], ['M', 20, 11.5],
       ['L', 20, 18.5], ['M', 4, 18.5], ['Q', 12, 22.5, 20, 18.5], ['M', 9, 9.5], ['L', 5, 3.5], ['M', 15, 9.5], ['L', 19, 3.5]],
+    // a trumpet: the mouthpiece, the lead pipe, three valves, the bell flaring to the right, the tuning slide below
+    winds: [['M', 2, 11.5], ['L', 14.5, 11.5], ['M', 2, 10], ['L', 2, 13], ['M', 14.5, 9.5], ['L', 21.5, 5], ['L', 21.5, 18],
+      ['L', 14.5, 13.5], ['Z'], ['M', 6.5, 11.5], ['L', 6.5, 7.5], ['M', 9, 11.5], ['L', 9, 7.5], ['M', 11.5, 11.5], ['L', 11.5, 7.5],
+      ['M', 5, 11.5], ['Q', 5, 16.5, 9.5, 16.5], ['Q', 14, 16.5, 14, 13.5]],
     // anything else: a quaver
     other: [['C', 9.5, 17.5, 3], ['M', 12.5, 17.5], ['L', 12.5, 3.5], ['Q', 18, 5.5, 17, 11]]
   });
@@ -402,7 +411,9 @@
   // else the quaver of 'other'), and a group on screen more than once (its timbre tracks shown apart) has the same icon
   // on each lane with a small number beside it (1, 2, … top to bottom, MARK_NUMBER of the name's font size), not its name.
   const ICON_NEAREST = Object.freeze({keys: 'piano', keyboard: 'piano', organ: 'piano', synth: 'piano', cello: 'strings', viola: 'strings',
-    orchestra: 'strings', choir: 'vocals', voice: 'vocals', percussion: 'drums'});
+    orchestra: 'strings', choir: 'vocals', voice: 'vocals', percussion: 'drums',
+    // a wind group under another name (0.23.0): XLD's id is 'winds'
+    wind: 'winds', brass: 'winds', woodwind: 'winds', woodwinds: 'winds', horns: 'winds', sax: 'winds', reeds: 'winds'});
   const iconFor = group => ICONS[group] || ICONS[ICON_NEAREST[group]] || ICONS.other;
   const MARK_NUMBER = 0.72;
   // With a group shown apart and a lane too short for the icon at its one size, every icon on screen is
@@ -2879,7 +2890,7 @@
   return Object.freeze({
     create, simplifyNotes, drumAccents, smoothChords, toneNames, noteName, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
-    COVER_ADAPT, TEXTURE_ADAPT, measureCover,
+    COVER_ADAPT, TEXTURE_ADAPT, measureCover, GROUP_COLORS: Object.freeze({...GROUP_COLORS}),
     // Checks a model the way `create` would, without a canvas.
     inspect: model => { const p = prepare(model); return {track: p.track, lanes: p.lanes.length, skipped: p.skipped, ...p.has}; }
   });

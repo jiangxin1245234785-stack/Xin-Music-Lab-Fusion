@@ -44,7 +44,7 @@ test('pitchWeight: off by default, booleans only', () => {
   for (const value of ['yes', 1, null]) { view.setOptions({pitchWeight: value}); assert.equal(view.options().pitchWeight, false, String(value)); }
   view.setOptions({pitchWeight: true});
   assert.equal(view.options().pitchWeight, true);
-  assert.deepEqual([...ScoreView.WEIGHT_GROUPS], ['piano', 'guitar', 'bass', 'strings', 'violin']);
+  assert.deepEqual([...ScoreView.WEIGHT_GROUPS], ['piano', 'guitar', 'bass', 'strings', 'violin', 'winds']);
 });
 
 test('the ear\'s filter width in semitones: A2 ≈ 5.8, A3 ≈ 3.8, A4 ≈ 2.9, A5 ≈ 2.4, A6 ≈ 2.1', () => {

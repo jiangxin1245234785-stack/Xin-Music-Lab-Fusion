@@ -24,7 +24,18 @@ const {captions,mergeManual} = require('./captions.cjs');
 let rolesOf = null, rolesMissing = null;
 try { ({rolesOf} = require('./roles.cjs')); } catch (error) { rolesMissing = String(error && error.code || error && error.message || error); }
 const {segment} = require('../../xld-runtime-baseline/core/midi-read.cjs');
-const PROGRAM_NAMES={0:'钢琴',24:'木吉他',25:'木吉他',26:'爵士吉他',27:'电吉他',28:'闷音吉他',29:'过载吉他',30:'失真吉他',32:'原声贝斯',33:'电贝斯',34:'拨片贝斯',40:'小提琴',41:'中提琴',42:'大提琴',43:'低音提琴',48:'弦乐合奏'};
+const PROGRAM_NAMES={0:'钢琴',24:'木吉他',25:'木吉他',26:'爵士吉他',27:'电吉他',28:'闷音吉他',29:'过载吉他',30:'失真吉他',32:'原声贝斯',33:'电贝斯',34:'拨片贝斯',40:'小提琴',41:'中提琴',42:'大提琴',43:'低音提琴',48:'弦乐合奏',
+  // Winds (work/winds-20261115/SPEC.md W2): General MIDI brass, reeds and pipes.
+  56:'小号',57:'长号',58:'大号',59:'弱音小号',60:'圆号',61:'铜管组',62:'合成铜管',63:'合成铜管',64:'高音萨克斯',65:'中音萨克斯',66:'次中音萨克斯',67:'上低音萨克斯',
+  68:'双簧管',69:'英国管',70:'巴松',71:'单簧管',72:'短笛',73:'长笛',74:'竖笛',75:'排箫',76:'吹瓶',77:'尺八',78:'口哨',79:'陶笛'};
+// An instrument by the name MuScriptor's tokenizer gives it (its vocabulary, muscriptor/tokenizer/mt3.py), for a part
+// that carries a name and no program this table knows.
+const INSTRUMENT_NAMES={trumpet:'小号',trombone:'长号',tuba:'大号',french_horn:'圆号',brass_section:'铜管组',soprano_and_alto_sax:'高 / 中音萨克斯',
+  tenor_sax:'次中音萨克斯',baritone_sax:'上低音萨克斯',oboe:'双簧管',english_horn:'英国管',bassoon:'巴松',clarinet:'单簧管',flutes:'长笛',flute:'长笛',
+  violin:'小提琴',viola:'中提琴',cello:'大提琴',contrabass:'低音提琴',string_ensemble:'弦乐合奏',orchestral_harp:'竖琴'};
+// A part's name on screen: its program's, else its MuScriptor name's, else the stem's label with the raw name after it.
+const partLabel=(part,label)=>PROGRAM_NAMES[part.program]||INSTRUMENT_NAMES[String(part.name||'').trim().toLowerCase().replace(/[\s-]+/g,'_')]||
+  (part.name?`${label}·${part.name}`:label);
 
 const CONTRACT = 'xin.score-view/1';
 // Top to bottom on screen, as gate one settled it.
@@ -116,7 +127,7 @@ function lanesOf(stems, health) {
     } else {
       const parts=Array.isArray(entry.instruments)&&entry.instruments.reduce((n,p)=>n+(p.notes||[]).length,0)===(entry.notes||[]).length?entry.instruments.filter(p=>p.notes.length):[];
       if(parts.length>1)for(const part of parts){
-        lanes.push({id:stem+'/'+part.index,label:PROGRAM_NAMES[part.program]||part.name||label,kind,group:stem,groupLabel:label,notes:notesOf(part.notes),meta:{...meta,instrumentIndex:part.index,program:part.program,instrumentName:part.name}});
+        lanes.push({id:stem+'/'+part.index,label:partLabel(part,label),kind,group:stem,groupLabel:label,notes:notesOf(part.notes),meta:{...meta,instrumentIndex:part.index,program:part.program,instrumentName:part.name}});
       }else lanes.push({id: stem, label, kind, group: stem, groupLabel: label, notes, meta});
       health.lanes[stem] = {ok: true, engine: meta.engine, notes: notes.length,instruments:parts.length||1,velocity:meta.velocity,instrumentError:entry.instrumentError||null};
     }
@@ -343,4 +354,4 @@ async function readVocalLine(directory, xld = loadXld()) {
   }
 }
 
-module.exports = {TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS};
+module.exports = {partLabel, TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS};

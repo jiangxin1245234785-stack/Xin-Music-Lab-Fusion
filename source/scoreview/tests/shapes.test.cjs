@@ -59,7 +59,7 @@ function paths(calls) {
 const fills = frame => frame.surface.filter(call => call.name === 'fill').map(call => [call.fillStyle, call.state.shadowColor, call.state.shadowBlur, call.alpha]);
 
 test('the default is off; showShapes takes booleans only; the version moved up a step', () => {
-  assert.equal(ScoreView.VERSION, '0.22.0');
+  assert.equal(ScoreView.VERSION, '0.23.0');
   assert.equal(ScoreView.DEFAULTS.showShapes, false);
   const view = ScoreView.create(mockCanvas().canvas, oneLane('piano'), () => 0);
   assert.equal(view.options().showShapes, false);
@@ -67,7 +67,7 @@ test('the default is off; showShapes takes booleans only; the version moved up a
   assert.equal(view.options().showShapes, false, '不认识的值不该被接受');
   view.setOptions({showShapes: true});
   assert.equal(view.options().showShapes, true);
-  assert.deepEqual({...ScoreView.SHAPE_BY_GROUP}, {piano: 'struck', guitar: 'struck', bass: 'bass', strings: 'held', violin: 'held'});
+  assert.deepEqual({...ScoreView.SHAPE_BY_GROUP}, {piano: 'struck', guitar: 'struck', bass: 'bass', strings: 'held', violin: 'held', winds: 'held'});
 });
 
 test('off, and nothing given, draw exactly what 0.16.0 drew (the strict canvas: every drawing state)', () => {

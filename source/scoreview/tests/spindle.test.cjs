@@ -79,13 +79,13 @@ const heights = p => Array.from({length: p.points.length / 8}, (_, k) => {
 });
 
 test("shapeSet: 'two' by default; 'spindle' taken; 'three' (withdrawn) and anything else read as 'two'", () => {
-  assert.equal(ScoreView.VERSION, '0.22.0');
+  assert.equal(ScoreView.VERSION, '0.23.0');
   assert.equal(ScoreView.DEFAULTS.shapeSet, 'two');
   const view = ScoreView.create(mockCanvas().canvas, oneLane('strings'), () => 0);
   for (const value of ['three', 'four', 3, null, 'SPINDLE']) { view.setOptions({shapeSet: value}); assert.equal(view.options().shapeSet, 'two', String(value)); }
   view.setOptions({shapeSet: 'spindle'});
   assert.equal(view.options().shapeSet, 'spindle');
-  assert.deepEqual([...ScoreView.SPINDLE_GROUPS], ['strings', 'violin']);
+  assert.deepEqual([...ScoreView.SPINDLE_GROUPS], ['strings', 'violin', 'winds']);
 });
 
 test('the three-way set is gone from the core, and so is the solid spindle', () => {
