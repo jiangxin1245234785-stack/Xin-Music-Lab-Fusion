@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.23.0';
+  const VERSION = '0.23.1';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -357,9 +357,10 @@
     // the studio's track colours (Okabe-Ito); violin is a lighter shade of the strings' yellow
     vocals: '#d78ab5', guitar: '#2fb89a', piano: '#7cc4f2', violin: '#e9e09a',
     strings: '#d9cd6a', bass: '#4d7fd0', drums: '#e8663a', other: '#9aa1a9',
-    // winds (0.23.0): a violet, the farthest from every track colour and from the amber of all that the family's rules
-    // allow (work/winds-20261115/w2/REPORT-W2.md: ΔE 0.134 from vocals, 0.305 from the amber, 145° of hue away)
-    winds: '#a18dfd'
+    // winds (0.23.1, the user's pick of three): an olive, kept near the strings' yellow on purpose so winds and strings
+    // read as one family, yet within the family's rules (work/winds-20261115/w2/REPORT-W2.md: ΔE 0.149 from guitar,
+    // 0.222 from strings, 0.198 from the amber, 45° of hue away); the lit colour is mixed from it like every lane's
+    winds: '#7c9206'
   };
   const SPARE_COLORS = ['#a98be0', '#c49a7a', '#6fa8a0', '#b0b6c2'];   // never near the amber
   // One drawn icon per group of GROUP_COLORS, in the lane's own colour. All on a 24-unit

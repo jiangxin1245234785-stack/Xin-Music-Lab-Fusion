@@ -23,7 +23,7 @@ const AMBER = '#f0a830';
 
 test('the winds colour keeps the family rules: ΔE ≥ 0.10 from every track, ≥ 0.12 and 30° of hue from the amber', () => {
   const colours = ScoreView.GROUP_COLORS, winds = colours.winds;
-  assert.equal(winds, '#a18dfd');
+  assert.equal(winds, '#7c9206', '0.23.1：用户挑的橄榄');
   for (const [group, colour] of Object.entries(colours)) {
     if (group === 'winds') continue;
     assert.ok(dE(winds, colour) >= 0.10, `离 ${group} ${dE(winds, colour).toFixed(3)}`);
@@ -61,7 +61,7 @@ const iconMoves = surface => {
 
 test('a winds lane: drawn in its colour, with its own icon; other names for a wind group take that icon', () => {
   const {surface, stats} = frame(model([winds()]), {laneLabels: 'icon'});
-  assert.ok(surface.calls.some(c => c.name === 'fill' && /^rgba\(161,141,253,/.test(c.fillStyle)), '管乐的颜色');
+  assert.ok(surface.calls.some(c => c.name === 'fill' && /^rgba\(124,146,6,/.test(c.fillStyle)), '管乐的颜色');
   assert.equal(stats.labels[0].shown, 'icon');
   const own = iconMoves(surface)[0];
   for (const other of ['strings', 'other', 'piano', 'guitar']) assert.notEqual(iconMoves(frame(model([winds('x', other)]), {laneLabels: 'icon'}).surface)[0], own, `和 ${other} 的图标不同`);

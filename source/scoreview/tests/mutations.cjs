@@ -483,10 +483,10 @@ const MUTATIONS = [
   {file: "score-view.js", name: "图标：挤的时候不缩小", find: "const iconSide = split ? ", put: "const iconSide = false ? "},
   {file: "score-view.js", name: "图标：分开时不给矮轨让高", find: "if (split) least = Math.min(", put: "if (false) least = Math.min("},
   {file: "score-view.js", name: "图标：合并时也缩小", find: "const split = [...groupCount.values()].some(n => n > 1);", put: "const split = true;"},
-  // 0.23.0 winds (work/winds-20261115/SPEC.md W2): winds.test.cjs.
-  {file: "score-view.js", name: "管乐：颜色贴着弦乐", find: "    winds: '#a18dfd'\n", put: "    winds: '#c9bd6a'\n"},
-  {file: "score-view.js", name: "管乐：颜色撞琥珀", find: "    winds: '#a18dfd'\n", put: "    winds: '#e9a83a'\n"},
-  {file: "score-view.js", name: "管乐：没有颜色（落到备用色）", find: "    winds: '#a18dfd'\n", put: "    windz: '#a18dfd'\n"},
+  // 0.23.0 winds (work/winds-20261115/SPEC.md W2), olive since 0.23.1: winds.test.cjs.
+  {file: "score-view.js", name: "管乐：颜色贴着弦乐", find: "    winds: '#7c9206'\n", put: "    winds: '#c9bd6a'\n"},
+  {file: "score-view.js", name: "管乐：颜色撞琥珀", find: "    winds: '#7c9206'\n", put: "    winds: '#e9a83a'\n"},
+  {file: "score-view.js", name: "管乐：没有颜色（落到备用色）", find: "    winds: '#7c9206'\n", put: "    windz: '#a18dfd'\n"},
   {file: "score-view.js", name: "管乐：没有图标（落到八分音符）", find: "    winds: [['M', 2, 11.5],", put: "    windz: [['M', 2, 11.5],"},
   {file: "score-view.js", name: "管乐：不画梭状", find: "const SPINDLE_GROUPS = Object.freeze(['strings', 'violin', 'winds']);", put: "const SPINDLE_GROUPS = Object.freeze(['strings', 'violin']);"},
   {file: "score-view.js", name: "管乐：不按音高定粗细", find: "'strings', 'violin', 'winds']);\n  const PITCH_WEIGHT", put: "'strings', 'violin']);\n  const PITCH_WEIGHT"},

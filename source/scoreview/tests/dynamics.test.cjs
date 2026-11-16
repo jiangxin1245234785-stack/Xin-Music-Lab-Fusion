@@ -42,7 +42,7 @@ const curveOf = energy => {
 };
 
 test("the default is 'off'; only 'song' and 'off' are taken", () => {
-  assert.equal(ScoreView.VERSION, '0.23.0');
+  assert.equal(ScoreView.VERSION, '0.23.1');
   assert.equal(ScoreView.DEFAULTS.fxDynamics, 'off');
   const view = ScoreView.create(mockCanvas().canvas, fullModel(), () => 0);
   assert.equal(view.options().fxDynamics, 'off');

@@ -53,7 +53,7 @@
 | `id` | 唯一。转谱把一个分轨拆成几条音色轨时是 `<分轨>/<音色>`，否则就是分轨名。 |
 | `label` | 屏幕上的轨名。 |
 | `kind` | `pitched` 普通音符轨；`melody` 主旋律（画得更粗，带音名，A3 起叠音高曲线）；`drums` 鼓；`texture` 没有音符的声音（见下面的 `level`）。 |
-| `group` / `groupLabel` | 同一个分轨的音色轨共用一个 `group`。"音色轨合并"按它归并。缺省取 `id` 斜杠前的部分。核心认得的组：`vocals`、`guitar`、`piano`、`bass`、`strings`、`violin`、`drums`、`other`，0.23.0 起加 `winds`（管乐：颜色 `#a18dfd`、小号图标、形状开时和弦乐一样画梭形并连线、按音高定粗细、简化时按拉 / 吹的音接；`work/winds-20261115/SPEC.md` W2）。`wind`、`brass`、`woodwinds`、`horns`、`sax`、`reeds` 这些组名用管乐的图标。 |
+| `group` / `groupLabel` | 同一个分轨的音色轨共用一个 `group`。"音色轨合并"按它归并。缺省取 `id` 斜杠前的部分。核心认得的组：`vocals`、`guitar`、`piano`、`bass`、`strings`、`violin`、`drums`、`other`，0.23.0 起加 `winds`（管乐：颜色 `#7c9206`（橄榄，0.23.1 起；0.23.0 是紫 `#a18dfd`。用户挑的，有意和弦乐的黄靠近、读成一家）、小号图标、形状开时和弦乐一样画梭形并连线、按音高定粗细、简化时按拉 / 吹的音接；`work/winds-20261115/SPEC.md` W2）。`wind`、`brass`、`woodwinds`、`horns`、`sax`、`reeds` 这些组名用管乐的图标。 |
 | `notes` | `[起点秒, 时长秒, MIDI 音高, 力度 1–127]`，按起点排序。 |
 | `contour` | 只有 `melody` 轨可以带。第 k 帧在 `start + k × hop` 秒，值是带小数的 MIDI 音高，没有音高的帧是 `null`。 |
 | `rows` | 鼓的类别名，下标就是 `hits` 里的行号。顺序固定为 memesynth 的 `DRUM_ROUTES`。 |
