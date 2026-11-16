@@ -52,7 +52,8 @@ async function checkStartup({candidate,reportRoot,libraryRoot,analysisRoot}){
    if(path.resolve(require('node:url').fileURLToPath(state.url))!==path.resolve(expected))throw Error('Loaded the wrong application entry');
    const releaseInfo=await evaluate('window.XinRelease.info()');
    if(releaseInfo.version!==version||!state.help.includes(version))throw Error('Release version missing from shell');
-   if(name==='XLD'&&state.layerButtons!==2)throw Error('Score-layer buttons missing from XLD');
+   // Since audit fix 1 item 6 (9710c04) XML prepares score layers itself; XLD's header no longer has the two buttons.
+   if(name==='XLD'&&state.layerButtons!==0)throw Error('Score-layer buttons still in XLD');
    if(name==='XML'){
     const roots=await evaluate('window.XinsMusicLabFusion.settings()');
     if(path.resolve(roots.settingsPath)!==path.resolve(shared))throw Error('XML did not use the shared settings');

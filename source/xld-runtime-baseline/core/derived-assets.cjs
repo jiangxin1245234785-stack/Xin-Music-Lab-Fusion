@@ -355,7 +355,9 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
         active: activeRead.ok && activeRead.runId === runId, kept: kept.has(runId),
         // The stem batch (or, for strings, the refinement result) it was made from is gone: the version cannot be
         // checked or played any more, so the version list does not show it unless asked (audit fix 1, item 5).
-        stemsDeleted: validId(raw.sourceRunId) && !fsSync.existsSync(path.join(analysisDirectory(track), stem === 'strings' ? 'refinement' : 'stems', raw.sourceRunId))};
+        stemsDeleted: validId(raw.sourceRunId) && !fsSync.existsSync(path.join(analysisDirectory(track), stem === 'strings' ? 'refinement' : 'stems', raw.sourceRunId)),
+        // Its folder went to the Recycle Bin with its stem batch (core/stem-batches.cjs): recoverable from the bin.
+        recycled: fsSync.existsSync(path.join(analysisDirectory(track), 'midi', stem, 'recycled', runId + '.json')) && !fsSync.existsSync(path.join(analysisDirectory(track), 'midi', stem, runId))};
       try {
         const verified = await verify(raw, track, stem, {source: current});
         Object.assign(entry, {identity: verified.identity, matches: verified.matches, directory: path.dirname(path.join(analysisDirectory(track), verified.file)),

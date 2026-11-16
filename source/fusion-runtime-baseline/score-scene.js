@@ -160,9 +160,14 @@
       preparedAt = root.performance.now();
       load(trackId);
     });
+    // "XLD 正在分析 某某，等它完了再准备": another program holds the analysis lock.
+    const lockedText = holder => say('score.prepLocked', '{program} 正在分析 {song}，等它完了再准备')
+      .replace('{program}', (holder && holder.program) || 'XLD').replace('{song}', (holder && holder.song) || say('score.prepLockedSong', '一首歌'));
     function prepText() {
       if (!trackId || status !== 'ready') return null;
       const phase = prepare ? prepare.phase(trackId) : 'idle';
+      const locked = prepare && prepare.holder ? prepare.holder(trackId) : null;
+      if (locked && ['retrying', 'held', 'failed'].includes(phase)) return {text: lockedText(locked), retry: phase === 'failed'};
       if (phase === 'queued' || phase === 'running') return {text: say('score.prepRunning', '正在准备小节线和响度…')};
       if (phase === 'retrying' || phase === 'held') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
       if (phase === 'failed') return {text: say('score.prepFailed', '没准备成，点这里再试'), retry: true};
@@ -486,6 +491,7 @@
       }
       making = false;
       if (result && result.ok) { /* shown by the reload above */ }
+      else if (result && result.error === 'analysis-locked') hint = {text: lockedText(result.holder), until: root.performance.now() + 8000};
       else tell(result && result.error === 'analysis-busy' ? 'score.layersBusy' : 'score.layersFailed',
                 result && result.error === 'analysis-busy' ? '有别的分析正在跑，等它结束再试。' : `没有算出来：${String(result && (result.detail || result.error) || '').split('\n').pop().slice(0, 60)}`, 6);
     });

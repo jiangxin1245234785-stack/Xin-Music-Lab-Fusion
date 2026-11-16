@@ -520,7 +520,7 @@ function createService(options = {}) {
         // stays and the answer says why. Without a bin (XML, tests) it is removed as before, under the same rule.
         if (previous?.ok && previous.runId !== task.taskId) {
           const batches = require('./stem-batches.cjs');
-          const retired = await batches.createStemBatches({assets: derivedAssets}).retire(track, previous.runId, {current: task.taskId,
+          const retired = await batches.createStemBatches({assets: derivedAssets}).retire(track, previous.runId, {current: task.taskId, recycled: Boolean(options.trash),
             dispose: options.trash ? folder => options.trash(folder) : folder => fs.rm(folder, {recursive: true, force: true})})
             .catch(error => ({ok: false, error: error.message}));
           response.previousStems = retired.ok ? {runId: previous.runId, recycled: Boolean(options.trash), midi: retired.midi}

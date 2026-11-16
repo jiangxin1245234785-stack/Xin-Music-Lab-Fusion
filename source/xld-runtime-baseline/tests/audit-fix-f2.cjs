@@ -149,7 +149,9 @@ async function makeSong(root, {name = 'Song'} = {}) {
     const runs = await song.assets.midi.listRuns(song.track, 'bass');
     const gone = runs.find(r => r.runId === follower.runId);
     assert(gone && gone.status !== "current" && gone.stemsDeleted && !fs.existsSync(path.join(song.dir, "midi", "bass", follower.runId)), "its record stays (restorable), flagged as made from a removed batch: " + JSON.stringify(gone));
+    assert.equal(gone.recycled, true, 'and marked as in the Recycle Bin (recoverable), not as gone for good');
     assert.equal(runs.find(r => r.runId === current.runId).stemsDeleted, false);
+    assert.equal(runs.find(r => r.runId === current.runId).recycled, false);
     // Re-separation, through the service: the replaced batch and its follower go, the answer says so.
     assert(/stemsGone/.test(read('derived-controls.js')) && /runStemsDeletedFooter/.test(read('i18n/runtime-messages.js')), 'the version list hides them behind one footer line');
     assert(/previousStems/.test(read('core/analysis-service.cjs')) && /createStemBatches/.test(read('core/analysis-service.cjs')), 're-separation retires the replaced batch by the same rule');
@@ -186,6 +188,30 @@ async function makeSong(root, {name = 'Song'} = {}) {
     assert(midi.ok, 'and the MIDI (notes digest recomputed): ' + midi.error);
     assert(!relinkModule.listMissing(root).some(m => m.title === 'Moved'), 'no longer listed');
     assert(!fs.existsSync(path.join(root, done.folder, relinkModule.JOURNAL)), 'journal removed after success');
+    // Moved into another library folder (models.2 check 3): the app names the analysis folder from the file's library
+    // folder, so the analysis must move to the folder the app will look in, read WITHOUT a bridgePath shortcut.
+    {
+      const far = await makeSong(root, {name: 'Far'});
+      const farRun = await far.batch();
+      await far.assets.midi.activate(far.track, await far.midi(farRun));
+      const farPlace = path.join(base, 'far-' + path.basename(far.audio));
+      fs.renameSync(far.audio, farPlace);
+      const farItem = relinkModule.listMissing(root).find(m => m.title === 'Far');
+      const beforeFar = tree(path.join(root, farItem.folder));
+      const outside = await relink.relink(root, farItem.folder, farPlace, {targetDirFor: async () => null});
+      assert.equal(outside.error, 'relink-outside-library', 'a file the app cannot list is refused');
+      assert.deepEqual(tree(path.join(root, farItem.folder)), beforeFar, 'and nothing changes');
+      const farStat = fs.statSync(farPlace), farId = trackIdFor(path.resolve(farPlace), farStat);
+      const asListed = {...far.track, id: farId, filePath: path.resolve(farPlace), artist: 'Other Artist', album: 'Other Place', pathArtist: 'Other Artist', pathAlbum: 'Other Place'};
+      delete asListed.bridgePath;
+      const farDone = await relink.relink(root, farItem.folder, farPlace, {targetDirFor: async (file, stat, id) => { assert.equal(id, farId); return derived.trackDirectory(asListed, root); }});
+      assert(farDone.ok, JSON.stringify(farDone));
+      assert.equal(path.join(root, farDone.folder), derived.trackDirectory(asListed, root), 'the analysis is where the app looks for that file');
+      const farAssets = derived.createDerivedAssets({analysisRoot: root});
+      assert((await farAssets.readStems(asListed)).ok, 'stems read for the track as the library lists it');
+      assert((await farAssets.readMidi(asListed, 'bass')).ok, 'and its MIDI');
+      assert(!fs.existsSync(path.join(root, path.dirname(farItem.folder))) || fs.readdirSync(path.join(root, path.dirname(farItem.folder))).length > 0, 'an emptied old album folder goes');
+    }
     // Gone for good: the analysis goes to the bin.
     const lost = await makeSong(root, {name: 'Lost'});
     await lost.batch();

@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+// Isolated acceptance runs only: scripted answers for native dialogs (XLD_TEST=1 and XLD_TEST_DIALOG_ANSWERS set;
+// a normal start never sets XLD_TEST, so this never installs there - tests/test-dialogs.cjs).
+require('../core/test-dialogs.cjs').install(dialog);
 const { createDerivedAssets, trackDirectory } = require('../core/derived-assets.cjs');
 // No built-in default (audit fix 2 / item 7): a runtime that is not configured is missing, not an older install.
 const ANALYSIS_RUNTIME_ROOT = process.env.XLD_RUNTIME_ROOT || null;
@@ -1151,7 +1154,9 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
       filters:[{name:english?'Audio':'音频',extensions:[...AUDIO_EXTENSIONS].map(e=>e.slice(1))}]});
     if(pick.canceled||!pick.filePaths[0])return {ok:true,canceled:true};
     midiSourceChanging=true;
-    try{const result=await sourceRelink().relink(analysisRoot(),item.folder,pick.filePaths[0]);if(result.ok)await scanLibrary().catch(()=>{});return result;}
+    // The analysis folder goes where the app will look for that file: rescan, find its track, use its folder.
+    const targetDirFor=async(file,stat,id)=>{await scanLibrary().catch(()=>{});const known=trackIndex.get(id);return known?analysisDirectoryForTrack(known):null;};
+    try{const result=await sourceRelink().relink(analysisRoot(),item.folder,pick.filePaths[0],{targetDirFor});if(result.ok)await scanLibrary().catch(()=>{});return result;}
     finally{midiSourceChanging=false;}
   }));
   ipcMain.handle('storage:discard-source',storageReply(async payload=>{

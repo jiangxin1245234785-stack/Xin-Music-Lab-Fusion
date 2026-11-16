@@ -124,8 +124,11 @@ function refinementRekey(assets) {
 }
 
 function createSourceRelink({assets, trackIdFor, rekey = refinementRekey(assets)}) {
-  // Re-link the song folder `folder` (relative to root) to the audio file `file`.
-  async function relink(root, folder, file) {
+  // Re-link the song folder `folder` (relative to root) to the audio file `file`. targetDirFor(file, stat, newId) says
+  // which folder the app will look in for that file (it names folders from the file's library folder, so a file that
+  // moved to another folder needs another analysis folder); null means the app cannot see the file (outside the
+  // library). Without it the folder keeps its name and only the id changes (a file moved within its folder).
+  async function relink(root, folder, file, {targetDirFor = null} = {}) {
     root = path.resolve(root);
     const oldDir = await guarded(root, path.join(root, folder));
     const stems = JSON.parse(await fsp.readFile(path.join(oldDir, 'stems.json'), 'utf8'));
@@ -137,7 +140,14 @@ function createSourceRelink({assets, trackIdFor, rekey = refinementRekey(assets)
     if (!stat?.isFile()) return {ok: false, error: 'relink-file-missing'};
     if (stat.size !== oldSource.size) return {ok: false, error: 'relink-size-differs', recorded: oldSource.size, found: stat.size};
     const newId = trackIdFor(target, stat);
-    const newDir = path.join(path.dirname(oldDir), path.basename(oldDir).replace(/__[a-f0-9]{10}$/, '') + '__' + newId.slice(0, 10));
+    let newDir = path.join(path.dirname(oldDir), path.basename(oldDir).replace(/__[a-f0-9]{10}$/, '') + '__' + newId.slice(0, 10));
+    if (targetDirFor) {
+      const wanted = await targetDirFor(target, stat, newId);
+      if (!wanted) return {ok: false, error: 'relink-outside-library'};
+      newDir = path.resolve(wanted);
+      const inside = path.relative(root, newDir);
+      if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) return {ok: false, error: 'relink-outside-root'};
+    }
     if (newDir.toLowerCase() !== oldDir.toLowerCase() && fs.existsSync(newDir)) return {ok: false, error: 'relink-target-exists'};
     const newSource = {path: target, size: stat.size, mtimeMs: stat.mtimeMs};
     // Journal first (original text of every JSON), then the rename, then the rewrite.
@@ -154,7 +164,7 @@ function createSourceRelink({assets, trackIdFor, rekey = refinementRekey(assets)
       return {ok: false, error: 'relink-undone', why};
     };
     try {
-      if (newDir !== oldDir) await fsp.rename(oldDir, newDir);
+      if (newDir !== oldDir) { await fsp.mkdir(path.dirname(newDir), {recursive: true}); await fsp.rename(oldDir, newDir); }
       const context = {oldId, newId, oldDir, newDir, oldSource, newSource};
       let changed = 0;
       const texts = {};
@@ -188,6 +198,8 @@ function createSourceRelink({assets, trackIdFor, rekey = refinementRekey(assets)
         if (broken.length) return undo(`MIDI ${stem}: ${broken.map(r => r.reason).join(', ')}`);
       }
       await fsp.rm(path.join(newDir, JOURNAL), {force: true});
+      // The old album folder, if this was its last song, goes too (only when empty).
+      if (path.dirname(oldDir) !== path.dirname(newDir)) await fsp.rmdir(path.dirname(oldDir)).catch(() => {});
       return {ok: true, folder: path.relative(root, newDir), trackId: newId, changed, rekeyed: rekeyed?.length || 0};
     } catch (error) {
       return undo(error.message);

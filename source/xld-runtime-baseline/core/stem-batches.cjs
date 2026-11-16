@@ -16,6 +16,13 @@ const {guarded} = require('./storage.cjs');
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const MANUAL_ENGINE = 'manual-revision';
 
+// The marker a MIDI version leaves when its folder goes to the Recycle Bin with its stem batch.
+async function markRecycled(directory, stem, runId, batch) {
+  const folder = path.join(directory, 'midi', stem, 'recycled');
+  await fs.mkdir(folder, {recursive: true});
+  await fs.writeFile(path.join(folder, runId + '.json'), JSON.stringify({schemaVersion: 1, kind: 'midi-recycled', stem, runId, batch, to: 'recycle-bin', at: new Date().toISOString()}));
+}
+
 function createStemBatches({assets}) {
   const derived = require('./derived-assets.cjs');
   // {follow: [{stem, runId, folder}], hold: [{stem, runId, reason}]} for the MIDI versions made from batch `runId`.
@@ -50,7 +57,8 @@ function createStemBatches({assets}) {
   }
   // Retire batch `runId` of `track`: {ok: true, stems, midi: [runIds]} or {ok: false, kept: true, hold, refinement}.
   // `dispose(folder)` moves a folder to the bin (or removes it); `current` is the batch in use, never retired.
-  async function retire(track, runId, {dispose, current = null}) {
+  // `recycled`: dispose moves to the Recycle Bin - each follower gets a marker so its version reads as recoverable.
+  async function retire(track, runId, {dispose, current = null, recycled = false}) {
     if (!UUID.test(runId || '')) return {ok: false, error: 'stems-run-invalid'};
     if (runId === current) return {ok: false, kept: true, hold: [], reason: 'current'};
     const directory = assets.directory(track);
@@ -61,7 +69,11 @@ function createStemBatches({assets}) {
     if (fsSync.existsSync(batch)) await dispose(await guarded(directory, batch));
     const midi = [];
     for (const item of follow) {
-      try { await dispose(await guarded(directory, item.folder)); midi.push(item.runId); } catch (_) {}
+      try {
+        await dispose(await guarded(directory, item.folder));
+        midi.push(item.runId);
+        if (recycled) await markRecycled(directory, item.stem, item.runId, runId);
+      } catch (_) {}
     }
     return {ok: true, stems: runId, midi};
   }
@@ -76,4 +88,4 @@ function keptReason(result) {
   return [manual && `${manual} 个人工修订的 MIDI 版本`, kept && `${kept} 个标了保留的 MIDI 版本`, active && `${active} 个正在使用的 MIDI 版本`, refined && `${refined} 项细分结果`]
     .filter(Boolean).join('、') + ' 还在用它';
 }
-module.exports = {createStemBatches, keptReason, MANUAL_ENGINE};
+module.exports = {createStemBatches, keptReason, markRecycled, MANUAL_ENGINE};

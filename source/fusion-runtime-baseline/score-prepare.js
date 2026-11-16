@@ -74,6 +74,8 @@
         entry.error = null;
       } else {
         entry.error = String(result && (result.error || result.detail) || 'failed');
+        // Another program holds the analysis lock (XLD core/analysis-lock.cjs): who, and on which song.
+        entry.holder = result && result.error === 'analysis-locked' ? (result.holder || {}) : null;
         // An automatic run gets one more try after a pause; anything else waits for the user.
         if (entry.source === 'auto' && entry.attempts < 2 && entry.error !== 'analysis-cancelled') {
           entry.phase = 'retrying';
@@ -172,6 +174,7 @@
       auto, request, forgetWaiting, batch,
       phase: trackId => { const entry = job(String(trackId || '')); return entry ? entry.phase : 'idle'; },
       error: trackId => { const entry = job(String(trackId || '')); return entry ? entry.error : null; },
+      holder: trackId => { const entry = job(String(trackId || '')); return entry && entry.holder ? entry.holder : null; },
       attempts: trackId => { const entry = job(String(trackId || '')); return entry ? entry.attempts : 0; },
       running: () => current,
       waiting: () => queue.slice(),

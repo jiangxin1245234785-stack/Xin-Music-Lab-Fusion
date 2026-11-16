@@ -90,7 +90,7 @@ function createStorage({getRoot,isBusy=()=>false,trash,remove=directory=>fs.rm(d
    if(mode==='trash'){if(!trash)throw Error('回收站不可用');await trash(row.directory);}else await remove(row.directory);deleted++;removedBytes+=row.bytes;
    // The MIDI versions that only followed this stem batch go with it (their records stay: the version list shows them
    // as recycled, and a restore from the bin brings them back).
-   for(const folder of row.followers||[]){try{await guarded(fresh.root,folder);if(!(await fs.lstat(folder)).isDirectory())continue;let size=0;for(const name of await fs.readdir(folder)){const s=await fs.lstat(path.join(folder,name));if(s.isFile())size+=s.size;}if(mode==='trash')await trash(folder);else await remove(folder);removedBytes+=size;}catch(error){errors.push({id:row.id,error:'MIDI '+path.basename(folder)+': '+error.message});}}
+   for(const folder of row.followers||[]){try{await guarded(fresh.root,folder);if(!(await fs.lstat(folder)).isDirectory())continue;let size=0;for(const name of await fs.readdir(folder)){const s=await fs.lstat(path.join(folder,name));if(s.isFile())size+=s.size;}if(mode==='trash'){await trash(folder);await require('./stem-batches.cjs').markRecycled(path.dirname(path.dirname(path.dirname(folder))),path.basename(path.dirname(folder)),path.basename(folder),row.runId);}else await remove(folder);removedBytes+=size;}catch(error){errors.push({id:row.id,error:'MIDI '+path.basename(folder)+': '+error.message});}}
   }catch(error){errors.push({id:row.id,error:error.message});}}
   onChanged();return {ok:errors.length===0,deleted,bytes:removedBytes,mode,errors};
  });}
