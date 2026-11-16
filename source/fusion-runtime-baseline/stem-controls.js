@@ -64,7 +64,7 @@
       result = response?.ok ? response : null;
       const previous = select.value;
       resetOptions();
-      for (const name of ['bass', 'piano', 'guitar', 'drums', 'vocals', 'other','strings']) {
+      for (const name of ['bass', 'piano', 'guitar', 'drums', 'vocals', 'other','strings','winds']) {
         if (result?.stems?.some(stem => stem.name === name)) select.add(new Option(name, name));
       }
       if (Array.from(select.options).some(option => option.value === previous)) select.value = previous;

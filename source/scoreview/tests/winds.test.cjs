@@ -100,6 +100,8 @@ test('the adapter names wind instruments: by GM program, by MuScriptor name, els
   assert.equal(partLabel({program: 60}, '管乐'), '圆号');
   assert.equal(partLabel({program: 71}, '管乐'), '单簧管');
   assert.equal(partLabel({program: 999, name: 'tenor_sax'}, '管乐'), '次中音萨克斯');
+  assert.equal(partLabel({program: 72, name: 'flutes'}, '管乐'), '长笛', 'the name MuScriptor gave wins over its program (72 = piccolo)');
+  assert.equal(partLabel({program: 72}, '管乐'), '短笛');
   assert.equal(partLabel({name: 'French Horn'}, '管乐'), '圆号');
   assert.equal(partLabel({name: 'brass_section'}, '管乐'), '铜管组');
   assert.equal(partLabel({name: 'kazoo'}, '管乐'), '管乐·kazoo', '不认识的名字：声部名加原名');

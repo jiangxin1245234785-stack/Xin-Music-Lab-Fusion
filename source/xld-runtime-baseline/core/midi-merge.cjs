@@ -70,7 +70,7 @@ function createMidiMerge({analysisRoot,python}) {
       const manifest=JSON.parse(await fs.readFile(path.join(input.directory,'merge.json'),'utf8'));
       const midi=await fs.readFile(input.file);
       if(manifest.schemaVersion!==1 || manifest.kind!=='midi-merge' || manifest.fingerprint!==input.fingerprint || manifest.sha256!==hash(midi) || midi.toString('ascii',0,4)!=='MThd')throw Error('merge-invalid');
-      return {...input,noteCount:manifest.noteCount,instrumentCount:manifest.instrumentCount,provenance:manifest.provenance||input.provenance};
+      return {...input,noteCount:manifest.noteCount,instrumentCount:manifest.instrumentCount,folded:Array.isArray(manifest.folded)?manifest.folded:[],provenance:manifest.provenance||input.provenance};
     }catch(error){return {ok:false,error:error.code==='ENOENT'?'merge-missing':error.message,skipped:input?.skipped||[]};}
   }
   async function generate(track,{onChild,progress,cancelled}) {

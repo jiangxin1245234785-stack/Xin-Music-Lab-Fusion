@@ -68,9 +68,11 @@
       // without a voice is the case this exists for, so the notice must survive the success message.
       const left=(result?.merged?.skipped||[]).map(item=>mergeText('skippedItem',{stem:item.stem,reason:localizeError(item.reason)})).join(mergeText('skippedJoin'));
       const leftOut=left?' · '+mergeText('skipped',{list:left}):'';
+      // W1: a song with more pitched tracks than MIDI has channels: these parts each play one sound in the merged file.
+      const folded=result?.merged?.ok&&!inSourceScope(mergeMessage)&&result.merged.folded?.length?' · '+mergeText('folded',{list:result.merged.folded.join(mergeText('skippedJoin'))}):'';
       document.getElementById('midiMergeStatus').textContent=(inSourceScope(mergeMessage) ? mergeText(mergeMessage.key,{error:mergeMessage.error})
         : result?.merged?.ok ? mergeText('ready',{parts:result.merged.parts.length,notes:result.merged.noteCount})
-        : !getSelected()?mergeText('choose'):result?.merged?.error?.startsWith('merge-draft-')?localizeError(result.merged.error):parts.length<2?mergeText('needsParts'):mergeText('pending'))+leftOut;
+        : !getSelected()?mergeText('choose'):result?.merged?.error?.startsWith('merge-draft-')?localizeError(result.merged.error):parts.length<2?mergeText('needsParts'):mergeText('pending'))+folded+leftOut;
     }
 
     const stemModelsElement=document.getElementById('derivedStemModels');

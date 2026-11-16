@@ -10,6 +10,9 @@ const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createService: createXldAnalysisService } = require('./xld-analysis-service.cjs');
 const {readLatestTrack} = require('./refresh-track.cjs');
 const {writeRequest} = require('../../xld-runtime-baseline/core/open-request.cjs');
+// Scripted dialog answers for isolated acceptance runs only (XLD's hook: XLD_TEST=1 and XLD_TEST_DIALOG_ANSWERS);
+// a normal start never sets XLD_TEST, so this never installs there.
+require('../../xld-runtime-baseline/core/test-dialogs.cjs').install(dialog);
 // Section names come from XLD's one module; manifests written before segments carried `name` get it in memory.
 const {namedManifest} = require('../../xld-runtime-baseline/core/sections.cjs');
 const layersStateModule = require('./score-layers-state.cjs');
@@ -747,9 +750,13 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle('fusion:stems-read', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if(!track)return {ok:false,error:'track-missing'};
-    const base=await xldAnalysis.readStems(track),strings=await xldAnalysis.readMidi(track,'strings');
-    if(base.ok&&strings.ok&&strings.source?.path)return {...base,stems:[...base.stems,{name:'strings',audioUrl:pathToFileURL(strings.source.path).href}]};
-    return base;
+    const base=await xldAnalysis.readStems(track);
+    if(!base.ok)return base;
+    // Parts made from a refinement result (strings; winds dug out of what the strings left) are not stems: their audio
+    // is the dug-out file their current MIDI was made from. A song without winds has no winds MIDI, so no entry.
+    const dug=[];
+    for(const name of ['strings','winds']){const midi=await xldAnalysis.readMidi(track,name);if(midi.ok&&midi.source?.path)dug.push({name,audioUrl:pathToFileURL(midi.source.path).href});}
+    return dug.length?{...base,stems:[...base.stems,...dug]}:base;
   });
   ipcMain.handle('fusion:stems-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));

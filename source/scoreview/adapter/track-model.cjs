@@ -33,15 +33,16 @@ const PROGRAM_NAMES={0:'钢琴',24:'木吉他',25:'木吉他',26:'爵士吉他',
 const INSTRUMENT_NAMES={trumpet:'小号',trombone:'长号',tuba:'大号',french_horn:'圆号',brass_section:'铜管组',soprano_and_alto_sax:'高 / 中音萨克斯',
   tenor_sax:'次中音萨克斯',baritone_sax:'上低音萨克斯',oboe:'双簧管',english_horn:'英国管',bassoon:'巴松',clarinet:'单簧管',flutes:'长笛',flute:'长笛',
   violin:'小提琴',viola:'中提琴',cello:'大提琴',contrabass:'低音提琴',string_ensemble:'弦乐合奏',orchestral_harp:'竖琴'};
-// A part's name on screen: its program's, else its MuScriptor name's, else the stem's label with the raw name after it.
-const partLabel=(part,label)=>PROGRAM_NAMES[part.program]||INSTRUMENT_NAMES[String(part.name||'').trim().toLowerCase().replace(/[\s-]+/g,'_')]||
+// A part's name on screen: its MuScriptor name's (W3: MuScriptor's "flutes" carry program 72, piccolo), else its
+// program's, else the stem's label with the raw name after it.
+const partLabel=(part,label)=>INSTRUMENT_NAMES[String(part.name||'').trim().toLowerCase().replace(/[\s-]+/g,'_')]||PROGRAM_NAMES[part.program]||
   (part.name?`${label}·${part.name}`:label);
 
 const CONTRACT = 'xin.score-view/1';
 // Top to bottom on screen, as gate one settled it.
 const STEMS = [
   ['vocals', '人声', 'melody'], ['guitar', '吉他', 'pitched'], ['piano', '钢琴', 'pitched'],
-  ['strings', '弦乐', 'pitched'], ['bass', '贝斯', 'pitched'], ['drums', '鼓', 'drums']
+  ['strings', '弦乐', 'pitched'], ['winds', '管乐', 'pitched'], ['bass', '贝斯', 'pitched'], ['drums', '鼓', 'drums']
 ];
 // General MIDI percussion -> the seven rows of the drum lane (the same table memesynth uses).
 const DRUM_ROWS = ['kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride'];

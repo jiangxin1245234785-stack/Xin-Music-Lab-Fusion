@@ -29,7 +29,7 @@ function createService({root,readMidi,profileForResult,python=process.env.XLD_MI
  async function prepare(track,signal){
   if(!validId(track?.id))throw Error('track-missing');
   const inputs=[],skipped=[];
-  for(const stem of ['guitar','strings','drums','bass','piano']){
+  for(const stem of ['guitar','strings','winds','drums','bass','piano']){
    signal?.throwIfAborted();const record=await readMidi(track,stem);
    if(!record?.ok){skipped.push({stem,why:record?.error||'midi-missing'});continue;}
    const notesFile=path.join(record.directory,path.basename(record.notesFile)),raw=await fsp.readFile(notesFile),body=JSON.parse(raw);
