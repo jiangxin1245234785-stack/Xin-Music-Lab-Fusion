@@ -6,13 +6,14 @@
   'use strict';
   const STORAGE_KEY = 'xld.oneclick';
   const PRESETS = Object.freeze({
-    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, guitar:'muscriptor-medium', strings:'strings-muscriptor-medium', drums:'drums-adtof', vocals:true}),
-    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, guitar:'muscriptor-large', strings:'strings-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
+    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, piano:'piano-muscriptor-medium', bass:'bass-muscriptor-medium', guitar:'muscriptor-medium', strings:'strings-muscriptor-medium', drums:'drums-adtof', vocals:true}),
+    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, piano:'piano-muscriptor-large', bass:'bass-muscriptor-large', guitar:'muscriptor-large', strings:'strings-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
   });
-  // The same in both presets and not offered as a choice.
-  const FIXED = Object.freeze({piano:'piano-transkun', bass:'bass-highres'});
+  // MODELS-2: every part transcribed with MuScriptor (piano, bass, guitar, strings) is Medium in 效率 and Large in
+  // 质量; the manual default of each part (models.json defaultFor) must agree (tests/model-defaults.cjs).
   const OPTIONS = Object.freeze({
     separation: ['bs-roformer-sw', 'demucs-6s'], refine: [false, true],
+    piano: ['piano-muscriptor-medium', 'piano-muscriptor-large'], bass: ['bass-muscriptor-medium', 'bass-muscriptor-large'],
     guitar: ['muscriptor-medium', 'muscriptor-large'], strings: ['strings-muscriptor-medium', 'strings-muscriptor-large'],
     drums: ['drums-adtof', 'drums-adtof-stems'], vocals: [true, false]
   });
@@ -54,7 +55,7 @@
     return {preset: presetOf(choices), choices};
   }
   // The models the 转谱 panel is told to use (and then remembers): one per part.
-  const midiPicks = choices => ({bass: FIXED.bass, piano: FIXED.piano, guitar: choices.guitar, drums: choices.drums, strings: choices.strings});
+  const midiPicks = choices => ({bass: choices.bass, piano: choices.piano, guitar: choices.guitar, drums: choices.drums, strings: choices.strings});
 
   // env: {analysis:[{id,available}], separation:[{id,available}], refinement:[{id,available}], midi:[{id,stems,available}],
   //       derived: the track's readDerived answer (may be null), has: engine -> boolean (a section / chord result exists)}
@@ -170,7 +171,7 @@
     return {ok: !steps.some(step => step.state === 'failed'), cancelled: false, steps};
   }
 
-  const api = {STORAGE_KEY, PRESETS, FIXED, OPTIONS, KEYS, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, plan, run};
+  const api = {STORAGE_KEY, PRESETS, OPTIONS, KEYS, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, plan, run};
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.XldOneClickPlan = api;
 })(globalThis);

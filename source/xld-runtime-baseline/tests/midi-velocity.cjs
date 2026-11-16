@@ -21,7 +21,7 @@ const profileFor = id => profiles.find(profile => profile.id === id);
 // whoever added it, and every profile without it has to be on the exempt list below. A new
 // flat-velocity engine that forgets the pass therefore fails here instead of shipping flat.
 // piano- / bass-muscriptor-large (MODELS-1, 2026-11-15) run with guitar Large's settings, window included.
-const WINDOWS = {'muscriptor-medium': 0.08, 'muscriptor-large': 0.08, 'piano-muscriptor-large': 0.08, 'bass-muscriptor-large': 0.08, 'strings-muscriptor-medium': 0.15,
+const WINDOWS = {'muscriptor-medium': 0.08, 'muscriptor-large': 0.08, 'piano-muscriptor-medium': 0.08, 'piano-muscriptor-large': 0.08, 'bass-muscriptor-medium': 0.08, 'bass-muscriptor-large': 0.08, 'strings-muscriptor-medium': 0.15,
   'strings-muscriptor-large': 0.15, 'strings-muscriptor-large-raw': 0.15, 'strings-muscriptor-large-v04': 0.15,
   'yourmt3-plus': 0.10, 'drums-adtof': 0.08, 'vocals-pyin': 0.12};
 // Backends that return a real performance velocity, plus the DrumSep engine, which already measures

@@ -105,6 +105,13 @@
       if(choices.piano==='piano-highres')delete choices.piano;
       localStorage.setItem('xld.midi.models',JSON.stringify(choices));localStorage.setItem('xld.midi.piano-default','transkun-v2');
     }}catch(_){}
+    // One-time upgrade (models.2): piano and bass default to MuScriptor Medium after the user's listening verdict. A
+    // remembered choice of the old defaults (also what 一键分析 stored before) is dropped; other choices are kept.
+    try {if(localStorage.getItem('xld.midi.keys-bass-default')!=='muscriptor-v1'){
+      if(choices.piano==='piano-transkun')delete choices.piano;
+      if(choices.bass==='bass-highres')delete choices.bass;
+      localStorage.setItem('xld.midi.models',JSON.stringify(choices));localStorage.setItem('xld.midi.keys-bass-default','muscriptor-v1');
+    }}catch(_){}
     function candidates(stem=midiStem()) {return (models||[]).filter(model=>model.stems.includes(stem)).sort((a,b)=>Number(b.defaultFor===stem)-Number(a.defaultFor===stem));}
     function defaultModel(stem=midiStem()) {const list=candidates(stem);return list.find(model=>model.defaultFor===stem && model.available)||list.find(model=>model.id==='basic-pitch' && model.available)||list.find(model=>model.available)||list[0];}
     function selectedModel(stem=midiStem()) {return candidates(stem).find(model=>model.id===choices[stem])||defaultModel(stem);}
@@ -200,11 +207,12 @@
         const copy=document.createElement('span');copy.className='engine-copy';
         const title=document.createElement('strong');
         const guitar=midiStem()==='guitar' && ['muscriptor-medium','muscriptor-large'].includes(model.id);
-        const trial=/^(strings|drums|piano|bass)-muscriptor-/.test(model.id),size=model.id.includes('muscriptor-large')?'large':'medium';
+        const tier=/^(piano|bass)-muscriptor-(medium|large)$/.test(model.id);
+        const trial=/^(strings|drums)-muscriptor-/.test(model.id),size=model.id.includes('muscriptor-large')?'large':'medium';
         const stringsMode=midiStem()==='strings'?(model.id==='strings-muscriptor-large-v04'?'tempo':model.id==='strings-muscriptor-large'?'legato':model.id==='strings-muscriptor-large-raw'?'raw':null):null;
-        title.textContent=stringsMode?rt('runtime.assets.stringsUse.'+stringsMode):guitar?rt('runtime.assets.guitarUse.'+model.id):trial?rt('runtime.assets.'+(midiStem()==='strings'?'stringsUse.':'muscriptorTrial.')+size):model.name;
-        if(guitar||trial){const name=document.createElement('span');name.className='model-engine-name';name.textContent=model.name;copy.append(title,name);}else copy.append(title);
-        card.title=stringsMode?rt('runtime.assets.stringsHint.'+stringsMode):guitar?rt('runtime.assets.guitarHint.'+model.id):trial?rt('runtime.assets.muscriptorHint.'+midiStem()):model.name;
+        title.textContent=stringsMode?rt('runtime.assets.stringsUse.'+stringsMode):tier?rt('runtime.assets.guitarUse.muscriptor-'+size):guitar?rt('runtime.assets.guitarUse.'+model.id):trial?rt('runtime.assets.'+(midiStem()==='strings'?'stringsUse.':'muscriptorTrial.')+size):model.name;
+        if(guitar||trial||tier){const name=document.createElement('span');name.className='model-engine-name';name.textContent=model.name;copy.append(title,name);}else copy.append(title);
+        card.title=stringsMode?rt('runtime.assets.stringsHint.'+stringsMode):tier?rt('runtime.assets.muscriptorHint.'+midiStem()):guitar?rt('runtime.assets.guitarHint.'+model.id):trial?rt('runtime.assets.muscriptorHint.'+midiStem()):model.name;
         const status=document.createElement('span');status.textContent=cached?.ok?rt(active?(cached.matches===false?'runtime.assets.modelActiveSuperseded':'runtime.assets.modelActive'):cached.noteCount===0?'runtime.assets.modelEmpty':cached.matches===false?'runtime.assets.modelSuperseded':'runtime.assets.modelCached',{count:cached.noteCount}):rt(model.available?'runtime.assets.modelReady':'runtime.assets.modelMissing');
         copy.append(status);
         const badge=document.createElement('span');badge.className='engine-badge';badge.textContent=rt(model.id===preferred?.id?'runtime.assets.modelDefault':'runtime.assets.modelAlternative');

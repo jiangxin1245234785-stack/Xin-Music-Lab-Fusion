@@ -50,7 +50,6 @@
     "stems": [
       "piano"
     ],
-    "defaultFor": "piano",
     "model": "transkun-2.0.1-50a80010-aug-noext-v1",
     "backend": "transkun",
     "checkpoint": {
@@ -103,7 +102,6 @@
     "stems": [
       "bass"
     ],
-    "defaultFor": "bass",
     "model": "bass-highres-cbc792a1b6b6",
     "backend": "highres",
     "modelType": "Regress_onset_offset_frame_velocity_CRNN",
@@ -340,6 +338,44 @@
     }
   },
   {
+    "id": "piano-muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "piano"
+    ],
+    "defaultFor": "piano",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-keys-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_piano,electric_piano,organ,synth_lead,synth_pad",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
     "id": "piano-muscriptor-large",
     "name": "MuScriptor Large",
     "stems": [
@@ -360,6 +396,44 @@
       "preludeForcing": false,
       "sampling": false,
       "instruments": "acoustic_piano,electric_piano,organ,synth_lead,synth_pad",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.08,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
+    "id": "bass-muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "bass"
+    ],
+    "defaultFor": "bass",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-bass-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "acoustic_bass,electric_bass",
       "midiTempo": 120,
       "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
       "adapterVersion": 1,

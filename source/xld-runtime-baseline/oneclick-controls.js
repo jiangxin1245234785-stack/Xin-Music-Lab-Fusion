@@ -41,7 +41,7 @@
     });
     const customTag = document.createElement('span'); customTag.className = 'oneclick-custom'; presetBox.append(customTag);
     const rows = {};
-    const ROWS = [['separation', 'select'], ['refine', 'check'], ['guitar', 'select'], ['strings', 'select'], ['drums', 'select'], ['fixed', 'text'], ['vocals', 'check']];
+    const ROWS = [['separation', 'select'], ['refine', 'check'], ['piano', 'select'], ['bass', 'select'], ['guitar', 'select'], ['strings', 'select'], ['drums', 'select'], ['vocals', 'check']];
     for (const [key, kind] of ROWS) {
       const row = document.createElement('div'); row.className = 'oneclick-choice'; row.dataset.choice = key;
       const label = document.createElement('label'); const name = document.createElement('span'); name.className = 'oneclick-choice-name';
@@ -109,7 +109,6 @@
           input.value = choice.choices[key];
           input.disabled = Boolean(running) || (key === 'strings' && !choice.choices.refine);
         } else if (kind === 'check') { input.checked = Boolean(choice.choices[key]); input.disabled = Boolean(running); }
-        else row.fixedValue.textContent = modelName(P.FIXED.piano) + ' / ' + modelName(P.FIXED.bass);
         advice.textContent = t('advice.' + key, {
           roformer: M.roformer.secPerMin, roformerRuns: M.roformer.runs, roformerMb: M.roformer.mbPerMin, demucs: M.demucs.secPerMin, demucsRuns: M.demucs.runs,
           refine: M.refine.secPerMin, refineRuns: M.refine.runs, refineMb: M.refine.mbPerMin,

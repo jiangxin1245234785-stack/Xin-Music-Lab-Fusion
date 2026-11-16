@@ -1579,7 +1579,7 @@ window.XLD.onAnalysisTask(async task => {
     await refreshAnalysisSummary();
     if (state.selectedTrack?.id === task.trackId) {
       await loadTrackAnalysis(task.trackId);
-      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','strings-muscriptor-large-raw','strings-muscriptor-large-v04','drums-muscriptor-medium','drums-muscriptor-large','piano-muscriptor-large','bass-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53','score-vocals','vocals-rmvpe'].includes(task.engine)) await derivedControls.refresh();
+      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','strings-muscriptor-large-raw','strings-muscriptor-large-v04','drums-muscriptor-medium','drums-muscriptor-large','piano-muscriptor-medium','bass-muscriptor-medium','piano-muscriptor-large','bass-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53','score-vocals','vocals-rmvpe'].includes(task.engine)) await derivedControls.refresh();
     }
     // Keep the terminal result visible until it is dismissed or a new task starts.
   }
