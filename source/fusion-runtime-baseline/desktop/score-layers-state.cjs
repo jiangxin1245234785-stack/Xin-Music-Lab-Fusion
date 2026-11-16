@@ -46,6 +46,28 @@ function owed(state, status) {
   return state === 'current' ? null : 'layers';
 }
 
+// The vocal line (score-vocals.json), by XLD's own reader (core/score-vocals.cjs read): {state, due}.
+//   state 'no-stem' (no vocal stem) | 'missing' | 'stale' | 'split-missing' | 'current' | 'unreadable'
+// A song with no singing has a current result (XLD's runner writes one without a lane): not due, never re-run.
+async function vocalsState(directory) {
+  const fs = require('node:fs'), path = require('node:path');
+  if (!directory) return {state: 'no-stem', due: false};
+  let stems = null;
+  try { stems = JSON.parse(await fs.promises.readFile(path.join(directory, 'stems.json'), 'utf8')); } catch (_) { stems = null; }
+  const track = stems && stems.trackId && stems.source && typeof stems.source.path === 'string'
+    ? {id: stems.trackId, filePath: stems.source.path, bridgePath: path.join(directory, 'music-lab.json')} : null;
+  if (!track) return {state: 'no-stem', due: false};
+  try {
+    const assets = require('../../xld-runtime-baseline/core/derived-assets.cjs').createDerivedAssets({analysisRoot: path.dirname(path.dirname(directory))});
+    const read = await require('../../xld-runtime-baseline/core/score-vocals.cjs').read(assets, track, directory);
+    return {state: read.state, due: Boolean(read.due)};
+  } catch (error) {
+    return {state: 'unreadable', due: false, why: String(error && error.message || error)};
+  }
+}
+// 'vocals' when the vocal line should be prepared: the stems are readable and XLD says a run would make it.
+const vocalsOwed = (vocals, stemsKind) => (stemsKind === 'ready' && vocals && vocals.due ? 'vocals' : null);
+
 function engineName(engine, lang) {
   const id = String(engine || '');
   if (!id) return null;
@@ -55,4 +77,4 @@ function engineName(engine, lang) {
   return model && model.name ? model.name : id;
 }
 
-module.exports = {stemsStatus, layersState, owed, engineName, MANUAL_ENGINE, VOCALS_ENGINE};
+module.exports = {stemsStatus, layersState, owed, vocalsState, vocalsOwed, engineName, MANUAL_ENGINE, VOCALS_ENGINE};

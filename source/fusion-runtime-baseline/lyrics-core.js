@@ -99,6 +99,88 @@
     return {title, artist, album, duration};
   }
 
-  const api = {parseLrc, lineAt, normalize, artistsMatch, sameSong, query, MATCH};
+  // --- one whole-song offset (B7, 2026-11-15) ------------------------------------------------------------------
+  // Lyrics found online can be timed against another release of the song (a longer or shorter intro): every line is
+  // then early or late by the same amount (measured on 七里香: 2.1 s early from start to end; two English songs within
+  // 0.15 s). The vocal line's notes say when singing starts; the offset is the one shift that puts the most lyric lines
+  // on a phrase start. Only one number per song, never a per-line warp, and only when the answer is clear.
+  // Phrase starts: a sung note with at least `gap` seconds of no singing before it. Notes as the vocal line stores them
+  // ([start, duration, pitch, velocity], score-vocals.json lane.notes) or as {start, end | duration}.
+  function phraseStarts(notes, gap = 0.25) {
+    const span = n => Array.isArray(n) ? {start: Number(n[0]), end: Number(n[0]) + (Number(n[1]) || 0)}
+      : {start: Number(n?.start), end: Number.isFinite(Number(n?.end)) ? Number(n.end) : Number(n?.start) + (Number(n?.duration) || 0)};
+    const sorted = (Array.isArray(notes) ? notes : []).map(span).filter(n => Number.isFinite(n.start)).sort((a, b) => a.start - b.start);
+    const out = [];
+    let lastEnd = -Infinity;
+    for (const n of sorted) { if (n.start - lastEnd >= gap) out.push(n.start); lastEnd = Math.max(lastEnd, n.end); }
+    return out;
+  }
+  // Shift s (seconds; positive = the singing comes after the line's time, i.e. the lyrics are early and must be shown
+  // later) scored by how many timed lines have a phrase start in [t + s - early, t + s + late]. Scanned over +-range.
+  const ALIGN = Object.freeze({range: 6, step: 0.02, early: 0.15, late: 0.3, minLines: 6, minShare: 0.3, clearOf: 0.6, margin: 1.4, still: 0.3, peakShare: 0.7, introSung: 0.5});
+  function estimateOffset(lines, starts, options = {}) {
+    const o = {...ALIGN, ...options};
+    const times = (Array.isArray(lines) ? lines : []).filter(line => line && line.text).map(line => Number(line.time)).filter(Number.isFinite);
+    const s = (Array.isArray(starts) ? starts : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const answer = {shift: 0, sure: false, hits: 0, atZero: 0, of: times.length, runnerUp: 0, why: null};
+    if (times.length < o.minLines) return {...answer, why: 'too-few-lines'};
+    if (s.length < o.minLines) return {...answer, why: 'too-few-phrases'};
+    const hitsAt = shift => {
+      let hits = 0;
+      for (const t of times) {
+        const lo = t + shift - o.early, hi = t + shift + o.late;
+        let a = 0, b = s.length;                      // first start >= lo
+        while (a < b) { const m = (a + b) >> 1; if (s[m] < lo) a = m + 1; else b = m; }
+        if (a < s.length && s[a] <= hi) hits++;
+      }
+      return hits;
+    };
+    const steps = Math.round(o.range / o.step);
+    const scored = [];
+    for (let i = -steps; i <= steps; i++) { const shift = Math.round(i * o.step * 1000) / 1000; scored.push([shift, hitsAt(shift)]); }
+    const top = Math.max(...scored.map(([, h]) => h));
+    // The strong peaks (at least `peakShare` of the best, each more than clearOf from the others). A line often holds
+    // two sung phrases (七里香: about 2.4 s apart), so its second phrase makes a second peak. The intro tells them
+    // apart: no lyric line comes after singing has started, so a shift that would leave more than `introSung` seconds
+    // of singing before the first line is not the one (options.notes: the vocal line's notes).
+    const peaks = [];
+    for (const [shift, h] of scored.slice().sort((a, b) => b[1] - a[1] || Math.abs(a[0]) - Math.abs(b[0]))) {
+      if (h < o.peakShare * top) break;
+      if (!peaks.some(p => Math.abs(p[0] - shift) <= o.clearOf)) peaks.push([shift, h]);
+    }
+    const spans = (Array.isArray(o.notes) ? o.notes : []).map(n => Array.isArray(n) ? [Number(n[0]), Number(n[0]) + (Number(n[1]) || 0)]
+      : [Number(n?.start), Number.isFinite(Number(n?.end)) ? Number(n.end) : Number(n?.start) + (Number(n?.duration) || 0)]).filter(([a]) => Number.isFinite(a));
+    const sungBefore = time => spans.reduce((sum, [a, b]) => sum + Math.max(0, Math.min(b, time) - a), 0);
+    const sungAfter = time => spans.reduce((sum, [a, b]) => sum + Math.max(0, b - Math.max(a, time)), 0);
+    const firstLine = Math.min(...times), lastLine = Math.max(...times);
+    // The same at the end: the last line lasts about as long as a typical line (the median gap between lines); singing
+    // that goes on well past that means the lines were put too early.
+    const gaps = times.slice().sort((a, b) => a - b).map((t, i, all) => (i ? t - all[i - 1] : null)).filter(g => g > 0).sort((a, b) => a - b);
+    const lineLength = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+    // Singing outside the lyrics for a shift: before the first line, and after the last line has had its usual length.
+    // It only chooses between peaks: a song can have singing the lyrics do not cover (an outro, ad libs), so when every
+    // peak leaves some outside, the one that leaves the least is kept and judged like any other.
+    const outsideSung = shift => sungBefore(firstLine + shift - o.early - o.late) + (lineLength > 0 ? sungAfter(lastLine + shift + lineLength + o.late) : 0);
+    let ruledOut = spans.length ? peaks.filter(([shift]) => outsideSung(shift) > o.introSung) : [];
+    if (ruledOut.length === peaks.length) {
+      const least = peaks.slice().sort((a, b) => outsideSung(a[0]) - outsideSung(b[0]))[0];
+      ruledOut = peaks.filter(p => p !== least && outsideSung(p[0]) > outsideSung(least[0]) + o.introSung);
+    }
+    const kept = peaks.filter(p => !ruledOut.includes(p));
+    // The best of what is left; among equal counts, the middle of its plateau.
+    const [near, hits] = kept[0];
+    const run = scored.filter(([shift, h]) => h === hits && Math.abs(shift - near) <= o.clearOf).map(([shift]) => shift);
+    const best = Math.round(((run[0] + run[run.length - 1]) / 2) * 100) / 100;
+    const outside = shift => Math.abs(shift - best) > o.clearOf && !ruledOut.some(([r]) => Math.abs(shift - r) <= o.clearOf);
+    const runnerUp = Math.max(0, ...scored.filter(([shift]) => outside(shift)).map(([, h]) => h));
+    Object.assign(answer, {hits, atZero: hitsAt(0), runnerUp, ruledOut: ruledOut.map(([shift]) => shift)});
+    if (hits < Math.max(o.minLines * 0.67, o.minShare * times.length)) return {...answer, why: 'weak'};
+    if (hits < o.margin * runnerUp) return {...answer, why: 'unclear'};
+    if (Math.abs(best) < o.still) return {...answer, sure: true, shift: 0, why: 'aligned'};
+    if (hits < o.margin * Math.max(1, answer.atZero)) return {...answer, why: 'not-better-than-none'};
+    return {...answer, sure: true, shift: best};
+  }
+
+  const api = {parseLrc, lineAt, normalize, artistsMatch, sameSong, query, MATCH, phraseStarts, estimateOffset, ALIGN};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.XinLyricsCore = Object.freeze(api);
 })(typeof self !== 'undefined' ? self : this);

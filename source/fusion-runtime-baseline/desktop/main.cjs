@@ -126,7 +126,12 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   // Lyrics for the score (B6): the page names a track by id; the names sent out come from the library here, not the page.
   const lyricsModule=require('./lyrics.cjs');
   const lyrics=lyricsModule.createLyrics({root:lyricsModule.rootFor(app.getPath('appData'),app.getPath('userData'))});
-  ipcMain.handle('fusion:lyrics',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const duration=Number(track.duration)>0?Number(track.duration):(Number(payload?.duration)>0&&Number(payload.duration)<86400?Number(payload.duration):0);try{return await lyrics.get({id:track.id,title:track.title,artist:track.artist,album:track.album,duration,filePath:track.filePath});}catch(e){return {ok:false,reason:'error'};}});
+  ipcMain.handle('fusion:lyrics',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const duration=Number(track.duration)>0?Number(track.duration):(Number(payload?.duration)>0&&Number(payload.duration)<86400?Number(payload.duration):0);try{const answer=await lyrics.get({id:track.id,title:track.title,artist:track.artist,album:track.album,duration,filePath:track.filePath});if(!answer.ok)return answer;
+    // B7: one whole-song offset, estimated from the song's vocal line (score-vocals.json) when there is one, plus the user's nudges.
+    let vocal=null;try{const loaded=await loadFusionTrack(track.id);if(loaded.ok&&loaded.filePath){const line=JSON.parse(await fs.readFile(path.join(path.dirname(loaded.filePath),'score-vocals.json'),'utf8'));if(Array.isArray(line?.lane?.notes)&&line.lane.notes.length)vocal={id:String(line.source?.runId||'')+':'+line.lane.notes.length+':'+(line.duration||0),notes:line.lane.notes};}}catch(_){}
+    let offset={auto:0,sure:false,why:'unavailable',manual:0};try{offset=await lyrics.offsetFor(track.id,answer.lrc,vocal);}catch(_){}
+    return {...answer,offset};}catch(e){return {ok:false,reason:'error'};}});
+  ipcMain.handle('fusion:lyrics-nudge',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const delta=Number(payload?.delta);if(!(delta===0.1||delta===-0.1))return {ok:false,reason:'bad-step'};try{return {ok:true,offset:await lyrics.nudge(track.id,delta)};}catch(e){return {ok:false,reason:'error'};}});
   ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(
     __dirname,
@@ -633,7 +638,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       // stemRunId: which stems the verdict is about, so a song prepared earlier is looked at again after new stems.
       const layersHealth = {state: layersState, stems: stemsKind, stemsReady: stemsKind === 'ready', stemRunId: stemsNow?.ok ? (stemsNow.runId ?? null) : null,
                             owed: layersStateModule.owed(layersState, stemsKind)};
-      return {...built,health:{...built.health,layers:layersHealth,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
+      // The vocal line too (B7): XML prepares it after the layers when the song has a vocal stem and no current line.
+      const vocalsNow = await layersStateModule.vocalsState(loaded.filePath ? path.dirname(loaded.filePath) : null);
+      const vocalsHealth = {state: vocalsNow.state, owed: layersStateModule.vocalsOwed(vocalsNow, stemsKind)};
+      return {...built,health:{...built.health,layers:layersHealth,vocals:vocalsHealth,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
     } catch (error) {
       return { ok: false, error: 'score-adapter-failed', details: String(error?.message || error) };
     }
@@ -651,13 +659,15 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       try {
         const stems = await xldAnalysis.readStems(track).catch(error => ({ok: false, error: String(error?.message || error)}));
         const status = layersStateModule.stemsStatus(stems);
-        let state = 'missing';
+        let state = 'missing', vocals = {state: 'no-stem', due: false};
         if (status === 'ready') {
           const loaded = await loadFusionTrack(track.id);
           const body = loaded.ok && loaded.filePath ? await adapter.readLayers(path.dirname(loaded.filePath)) : null;
           state = layersStateModule.layersState(body, stems);
+          vocals = await layersStateModule.vocalsState(loaded.ok && loaded.filePath ? path.dirname(loaded.filePath) : null);
         }
-        rows.push({trackId: id, ok: true, stems: status, stemsReady: status === 'ready', state, owed: layersStateModule.owed(state, status)});
+        rows.push({trackId: id, ok: true, stems: status, stemsReady: status === 'ready', state, owed: layersStateModule.owed(state, status),
+                   vocals: vocals.state, vocalsOwed: layersStateModule.vocalsOwed(vocals, status)});
       } catch (error) {
         rows.push({trackId: id, ok: false, error: String(error?.message || error)});
       }

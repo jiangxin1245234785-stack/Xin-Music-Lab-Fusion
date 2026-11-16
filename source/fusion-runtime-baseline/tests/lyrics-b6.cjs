@@ -228,7 +228,8 @@ async function page() {
   ctl.render(); await flush(); ctl.render();
   assert.deepEqual(asked, [['a', 298.7]]);
   assert.equal(box.hidden, false);
-  const [from, before, current, after] = box.children;
+  const [head, before, current, after] = box.children;
+  const from = head.children[0];   // B7: the source line shares a row with the two 0.1 s nudges
   assert.deepEqual([current.textContent, before.textContent, after.textContent], ['two', 'one', 'three']);
   assert.equal(from.textContent, '歌词来自 LRCLIB', '看得出歌词来自哪');
   assert.equal(box.style.top, `${100 + 200 - api.GAP - 40}px`, '字的下沿在人声轨上沿之上（人声轨上面还有一条轨也一样）');

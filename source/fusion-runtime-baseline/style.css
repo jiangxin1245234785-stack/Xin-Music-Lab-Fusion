@@ -50,6 +50,10 @@ button { color: inherit; }
 .score-lyrics[hidden], .stage:not([data-effect="score"]) .score-lyrics { display: none; }
 .score-lyrics > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-lyrics > :empty { display: none; }
+/* B7: the source line with two small 0.1 s nudges; only the buttons take the pointer, the words never do. */
+.score-lyrics__head { display: flex; align-items: baseline; gap: calc(6px * var(--ui-scale, 1)); }
+.score-lyrics__nudge { pointer-events: auto; cursor: pointer; padding: 0 calc(4px * var(--ui-scale, 1)); border: 1px solid rgba(244,240,234,.22); border-radius: 3px; background: rgba(0,0,0,.25); color: rgba(244,240,234,.7); font: inherit; font-size: calc(9px * var(--ui-scale, 1)); line-height: 1.4; }
+.score-lyrics__nudge:hover { color: rgba(244,240,234,.95); border-color: rgba(244,240,234,.45); }
 .score-lyrics__from { opacity: .38; font-size: calc(8px * var(--ui-scale, 1)); letter-spacing: .02em; }
 .score-lyrics__near { opacity: .4; font-size: calc(10px * var(--ui-scale, 1)); }
 .score-lyrics__now { font-size: calc(14px * var(--ui-scale, 1)); font-weight: 500; }

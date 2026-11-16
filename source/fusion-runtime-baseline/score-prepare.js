@@ -10,10 +10,17 @@
 //     listens decides whether the result belongs to what is on screen (onDone carries the trackId);
 //   - a batch (an album, the whole library) goes through the same queue, one by one, and can be
 //     cancelled.
+//
+// B7 (2026-11-15): the vocal line (score-vocals) is prepared too. A job runs a list of steps one after another -
+// the layers first (quick), then the vocal line (slow, GPU) - and the score is reloaded after each step that
+// succeeded, so the bar lines appear before the vocal line has finished. A song whose vocal line is current (also
+// "no singing": XLD's runner writes a result without a lane, which reads as current) owes nothing.
 (function (root) {
   'use strict';
   const ENGINE = 'score-layers';
+  const VOCALS = 'score-vocals';
   const RETRY_MS = 30000;
+  const stepsOf = engines => (Array.isArray(engines) && engines.length ? engines.filter(e => e === ENGINE || e === VOCALS) : [ENGINE]);
 
   function create(options) {
     const run = options && options.run;
@@ -41,15 +48,17 @@
     function job(trackId) { return jobs.get(trackId) || null; }
     const keyOf = value => (value === undefined ? null : value);
 
-    function enqueue(trackId, source, batch, key) {
+    function enqueue(trackId, source, batch, key, engines) {
       const id = String(trackId || '');
       if (!id) return false;
       const known = job(id);
       if (known && (known.phase === 'queued' || known.phase === 'running')) return false;
       if (known && known.timer) clear(known.timer);
       const sameRun = known && known.key === keyOf(key);
+      const steps = engines === undefined && known ? known.steps : stepsOf(engines);
+      if (!steps.length) return false;
       jobs.set(id, {phase: 'queued', source, attempts: known && sameRun && source === 'auto' && known.source === 'auto' ? known.attempts : 0,
-                    error: null, batch: batch || null, timer: 0, key: keyOf(key)});
+                    error: null, batch: batch || null, timer: 0, key: keyOf(key), steps, step: null});
       queue.push(id);
       emit({type: 'queued', trackId: id});
       pump();
@@ -66,7 +75,14 @@
       entry.attempts++;
       emit({type: 'running', trackId: id});
       let result = null;
-      try { result = await run(id, ENGINE); } catch (error) { result = {ok: false, error: String(error && error.message || error)}; }
+      for (let index = 0; index < entry.steps.length; index++) {
+        entry.step = entry.steps[index];
+        if (index) emit({type: 'step', trackId: id, engine: entry.step});
+        try { result = await run(id, entry.step); } catch (error) { result = {ok: false, error: String(error && error.message || error)}; }
+        if (!(result && result.ok)) break;
+        // A step that succeeded with more to come: the score can show it already.
+        if (index < entry.steps.length - 1) emit({type: 'partial', trackId: id, ok: true, engine: entry.step, result});
+      }
       current = null;
       const ok = Boolean(result && result.ok);
       if (ok) {
@@ -99,20 +115,21 @@
     // A track the score is showing, with the stem run its verdict is about. Nothing happens if it is
     // queued, running or waiting to retry, or if it has already been prepared or given up on in this
     // session for the same stems (the user's retry is for that). New stems make it a new job.
-    function auto(trackId, key) {
+    // `engines`: what the song owes (owedEngines(health)); without it, the layers only (as before B7).
+    function auto(trackId, key, engines) {
       const known = job(String(trackId || ''));
       if (known && ['queued', 'running', 'retrying'].includes(known.phase)) return false;
       // A held retry for the same stems runs now, still as the one automatic retry (enqueue keeps the count).
-      if (known && known.phase === 'held' && known.key === keyOf(key)) return enqueue(trackId, 'auto', null, key);
+      if (known && known.phase === 'held' && known.key === keyOf(key)) return enqueue(trackId, 'auto', null, key, engines);
       if (known && ['done', 'failed'].includes(known.phase) && known.key === keyOf(key)) return false;
-      return enqueue(trackId, 'auto', null, key);
+      return enqueue(trackId, 'auto', null, key, engines);
     }
 
     // The user asked for this track (the retry on the score's line, or manual mode).
-    function request(trackId, key) {
+    function request(trackId, key, engines) {
       const known = job(String(trackId || ''));
       if (known && known.phase === 'retrying') { clear(known.timer); known.timer = 0; }
-      return enqueue(trackId, 'user', null, key === undefined && known ? known.key : key);
+      return enqueue(trackId, 'user', null, key === undefined && known ? known.key : key, engines);
     }
 
     // Automatic jobs for other songs that have not started yet are dropped when the user moves on;
@@ -129,7 +146,7 @@
 
     // Many tracks, one by one. `trackIds` should already be only the ones that need it (the caller
     // asks the main process which). onProgress({done, total, failed, current, cancelled, finished}).
-    function batch(trackIds, onProgress) {
+    function batch(trackIds, onProgress, enginesFor) {
       const ids = [...new Set((trackIds || []).map(String).filter(Boolean))];
       const state = {done: 0, failed: 0, total: ids.length, current: null, cancelled: false, finished: ids.length === 0, failures: []};
       const report = () => { try { onProgress && onProgress({...state, failures: state.failures.slice()}); } catch (_) {} };
@@ -165,7 +182,7 @@
         if (event.type === 'running' && job(event.trackId) && job(event.trackId).batch === handle) { state.current = event.trackId; report(); }
         if (state.finished) listeners.delete(follow);
       });
-      for (const id of mine) enqueue(id, 'batch', handle);
+      for (const id of mine) enqueue(id, 'batch', handle, undefined, typeof enginesFor === 'function' ? enginesFor(id) : undefined);
       if (!state.current) report();
       return handle;
     }
@@ -176,6 +193,8 @@
       error: trackId => { const entry = job(String(trackId || '')); return entry ? entry.error : null; },
       holder: trackId => { const entry = job(String(trackId || '')); return entry && entry.holder ? entry.holder : null; },
       attempts: trackId => { const entry = job(String(trackId || '')); return entry ? entry.attempts : 0; },
+      // The step a queued / running job is at (or will start with): 'score-layers' | 'score-vocals' | null.
+      step: trackId => { const entry = job(String(trackId || '')); return entry ? (entry.step || entry.steps[0] || null) : null; },
       running: () => current,
       waiting: () => queue.slice(),
       subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
@@ -194,8 +213,16 @@
     if (!layers || typeof layers !== 'object') return 'unknown';
     if (layers.owed === 'no-stems') return 'no-stems';
     if (layers.owed === 'stems-unreadable') return 'stems-unreadable';
-    if (layers.owed !== 'layers') return 'none';
+    if (!owedEngines(health).length) return 'none';
     return autoOn ? 'run' : 'manual';
+  }
+  // Which steps the song owes, in the order they run: the layers (health.layers.owed === 'layers'), then the vocal
+  // line (health.vocals.owed === 'vocals': it has a vocal stem and no current vocal line).
+  function owedEngines(health) {
+    const out = [];
+    if (health && health.layers && health.layers.owed === 'layers') out.push(ENGINE);
+    if (health && health.vocals && health.vocals.owed === 'vocals') out.push(VOCALS);
+    return out;
   }
 
   // Whether the score starts a preparation now: only while the score is the scene on screen and its
@@ -205,7 +232,8 @@
   const starts = ({active, ready, plan: decided}) => Boolean(active && ready && decided === 'run');
 
   // A finished job reloads the score only when it succeeded for the song that is on screen now.
-  const reloads = (event, shownTrackId) => Boolean(event && event.type === 'done' && event.ok && event.trackId && event.trackId === shownTrackId);
+  // A step that succeeded before the next one ('partial') reloads it too: the bar lines show while the vocal line runs.
+  const reloads = (event, shownTrackId) => Boolean(event && (event.type === 'done' || event.type === 'partial') && event.ok && event.trackId && event.trackId === shownTrackId);
 
   // Many songs at once (the library drawer, SPEC-B2 B), in two steps so a large batch can be shown
   // before it starts. survey(): `ask(trackIds)` is the main process's fusion:score-layers-state; only
@@ -222,11 +250,15 @@
     const known = new Set(rows.map(row => String(row.trackId)));
     const counts = {
       asked: ids.length,
-      ready: rows.filter(row => row.ok && !row.owed).length,
+      ready: rows.filter(row => row.ok && !row.owed && row.vocalsOwed !== 'vocals').length,
       notAnalysed: rows.filter(row => row.ok && row.owed === 'no-stems').length,
       unreadable: rows.filter(row => !row.ok || row.owed === 'stems-unreadable').length + ids.filter(id => !known.has(id)).length
     };
-    return {ok: true, owed: rows.filter(row => row.ok && row.owed === 'layers').map(row => String(row.trackId)), counts, error: null};
+    // A song owes the layers, the vocal line, or both (row.vocalsOwed from the main process, B7).
+    const owing = rows.filter(row => row.ok && (row.owed === 'layers' || (row.vocalsOwed === 'vocals' && row.stems === 'ready')));
+    const engines = {};
+    for (const row of owing) engines[String(row.trackId)] = [...(row.owed === 'layers' ? [ENGINE] : []), ...(row.vocalsOwed === 'vocals' ? [VOCALS] : [])];
+    return {ok: true, owed: owing.map(row => String(row.trackId)), engines, counts, error: null};
   }
 
   // startMany(): the owed songs into the queue, one by one. The counts come with every progress report.
@@ -237,7 +269,8 @@
       try { onProgress && onProgress(failed); } catch (_) {}
       return {cancel() {}, status: () => failed};
     }
-    const handle = queue.batch(surveyed.owed, progress => { try { onProgress && onProgress({...progress, ...counts}); } catch (_) {} });
+    const handle = queue.batch(surveyed.owed, progress => { try { onProgress && onProgress({...progress, ...counts}); } catch (_) {} },
+      id => (surveyed.engines && surveyed.engines[id]) || undefined);
     return {cancel: () => handle.cancel(), status: () => ({...handle.status(), ...counts})};
   }
 
@@ -251,7 +284,7 @@
     return album ? album.tracks.map(track => track.id) : [];
   }
 
-  const api = Object.freeze({create, plan, starts, reloads, survey, startMany, prepareMany, albumTrackIds, ENGINE, RETRY_MS});
+  const api = Object.freeze({create, plan, owedEngines, starts, reloads, survey, startMany, prepareMany, albumTrackIds, ENGINE, VOCALS, RETRY_MS});
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.XinScorePrepare = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

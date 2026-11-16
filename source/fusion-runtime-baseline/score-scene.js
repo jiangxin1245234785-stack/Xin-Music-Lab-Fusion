@@ -142,7 +142,7 @@
       prepPlan = Prepare ? Prepare.plan(health, autoLayers && Boolean(prepare)) : 'unknown';
       if (!active()) return;
       const layers = health && health.layers;
-      if (Prepare && Prepare.starts({active: active(), ready: status === 'ready', plan: prepPlan})) prepare.auto(trackId, layers ? layers.stemRunId : null);
+      if (Prepare && Prepare.starts({active: active(), ready: status === 'ready', plan: prepPlan})) prepare.auto(trackId, layers ? layers.stemRunId : null, Prepare.owedEngines ? Prepare.owedEngines(health) : undefined);
       if (prepPlan === 'no-stems' || prepPlan === 'stems-unreadable') noStemsUntil = root.performance.now() + 8000;
     }
     const autoInput = root.document.getElementById('scoreAutoLayers');
@@ -168,6 +168,8 @@
       const phase = prepare ? prepare.phase(trackId) : 'idle';
       const locked = prepare && prepare.holder ? prepare.holder(trackId) : null;
       if (locked && ['retrying', 'held', 'failed'].includes(phase)) return {text: lockedText(locked), retry: phase === 'failed'};
+      // Which step: the vocal line is the slow one (GPU), and says so.
+      if ((phase === 'queued' || phase === 'running') && prepare.step && prepare.step(trackId) === 'score-vocals') return {text: say('score.prepVocals', '正在准备人声线…')};
       if (phase === 'queued' || phase === 'running') return {text: say('score.prepRunning', '正在准备小节线和响度…')};
       if (phase === 'retrying' || phase === 'held') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
       if (phase === 'failed') return {text: say('score.prepFailed', '没准备成，点这里再试'), retry: true};
@@ -453,10 +455,11 @@
     (foot || stage).appendChild(more);
     let making = false, syncDocked = false;
     // Which of the two analyses this track has not had: the layers first, then the vocal line.
-    // With automatic preparation on, the layers are the queue's business and the button only offers the
-    // vocal line (unchanged, it stays the user's call). Off, it offers both, as before.
+    // With automatic preparation on, the layers and (B7) the vocal line are the queue's business, so the button
+    // offers nothing the queue will do; with an older main process (no health.vocals) it still offers the vocal
+    // line. Off, it offers both, as before.
     const layersOwed = () => (health.layers ? health.layers.owed === 'layers' : health.layersRun === false);
-    const owed = () => (health ? [!(autoLayers && prepare) && layersOwed() && 'score-layers', health.vocalsRun === false && 'score-vocals'].filter(Boolean) : []);
+    const owed = () => (health ? [!(autoLayers && prepare) && layersOwed() && 'score-layers', health.vocalsRun === false && !(autoLayers && prepare && health.vocals) && 'score-vocals'].filter(Boolean) : []);
     // The button's score-layers run goes through the same queue, so one song never runs twice at once.
     const prepareOnce = id => new Promise(resolve => {
       const off = prepare.subscribe(event => { if (event.type === 'done' && event.trackId === id) { off(); resolve(event.result || {ok: event.ok}); } });

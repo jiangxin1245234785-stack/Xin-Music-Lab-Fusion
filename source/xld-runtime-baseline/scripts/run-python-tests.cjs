@@ -3,19 +3,15 @@
 // (XLD_MIDI_PYTHON: the "basic" environment; every test here passes in it). Pass --runtime <runtime.json> to take the
 // interpreter from a release's runtime.json, or set XLD_MIDI_PYTHON.
 //
-// Three tests failed before this script existed (they were in no script, so nobody saw it): they still run and are
-// reported as known failures, without failing the run - fixing them is its own job. Any other failure fails the run.
+// A test that needs another environment says so in its first lines: `# xld-python: XLD_MUSCRIPTOR_PYTHON` (any XLD_*
+// variable naming an interpreter); it is then run with that one. Any failure fails the run. (B7, 2026-11-15: the three
+// tests once listed here as known failures were fixed - out of date, or run in the wrong environment - or removed.)
 //   npm run test:python -- --runtime ../../releases/<version>/runtime.json
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
 const HERE = path.resolve(__dirname, '..');
-const KNOWN = {
-  'muscriptor-gap-fill.py': 'fails at df1556a too (AssertionError); not wired anywhere before',
-  'muscriptor-parts.py': 'fails at df1556a too (the engine no longer supports that part); not wired anywhere before',
-  'yourmt3-guitar.py': 'fails at df1556a too (YourMT3+ is retired for guitar); not wired anywhere before'
-};
 const at = process.argv.indexOf('--runtime');
 if (at > 0) {
   const file = path.resolve(process.argv[at + 1]);
@@ -27,12 +23,16 @@ if (!python || !fs.existsSync(python)) { console.error('No interpreter: set XLD_
 const results = [];
 for (const name of fs.readdirSync(path.join(HERE, 'tests')).filter(n => n.endsWith('.py')).sort()) {
   const started = Date.now();
-  const run = spawnSync(python, ['-I', path.join('tests', name)], {cwd: HERE, encoding: 'utf8', timeout: 10 * 60 * 1000, windowsHide: true, env: {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1'}});
+  const head = fs.readFileSync(path.join(HERE, 'tests', name), 'utf8').split(/\r?\n/).slice(0, 5).join('\n');
+  const wanted = /^#\s*xld-python:\s*(XLD_[A-Z_]+)\s*$/m.exec(head);
+  const interpreter = wanted ? process.env[wanted[1]] : python;
+  if (!interpreter || !fs.existsSync(interpreter)) { results.push([name, 'FAIL', `0 s · no interpreter: ${wanted ? wanted[1] : 'XLD_MIDI_PYTHON'} (pass --runtime)`]); continue; }
+  const run = spawnSync(interpreter, ['-I', path.join('tests', name)], {cwd: HERE, encoding: 'utf8', timeout: 10 * 60 * 1000, windowsHide: true, env: {...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1'}});
   const tail = `${run.stdout || ''}${run.stderr || ''}`.trim().split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
-  const state = run.status === 0 ? (KNOWN[name] ? 'PASS (was known failing)' : 'PASS') : KNOWN[name] ? 'KNOWN' : 'FAIL';
-  results.push([name, state, `${((Date.now() - started) / 1000).toFixed(0)} s · ${(KNOWN[name] && run.status !== 0 ? KNOWN[name] : tail).slice(0, 140)}`]);
+  const state = run.status === 0 ? 'PASS' : 'FAIL';
+  results.push([name, state, `${((Date.now() - started) / 1000).toFixed(0)} s${wanted ? ' · ' + wanted[1] : ''} · ${tail.slice(0, 140)}`]);
 }
 for (const [name, state, note] of results) console.log(`${state.padEnd(5)} ${name}  ${note}`);
 const failed = results.filter(r => r[1] === 'FAIL').length;
-console.log(`${results.filter(r => r[1].startsWith('PASS')).length} passed, ${failed} failed, ${results.filter(r => r[1] === 'KNOWN').length} known failures`);
+console.log(`${results.filter(r => r[1] === 'PASS').length} passed, ${failed} failed`);
 process.exitCode = failed ? 1 : 0;

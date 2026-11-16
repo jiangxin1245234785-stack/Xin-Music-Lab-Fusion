@@ -15,6 +15,8 @@ const crypto = require('node:crypto');
 const core = require('../lyrics-core.js');
 
 const LRCLIB = 'https://lrclib.net/api/get';
+// The offset estimator's rules (lyrics-core.js estimateOffset): 2 = phrase starts + the intro rules out a second phrase.
+const METHOD = 2;
 const DEFAULTS = Object.freeze({timeoutMs: 5000, missDays: 7, retryMinutes: 10, userAgent: 'XML-score-lyrics/0.5'});
 const rootFor = (appData, userData) => path.join(path.dirname(require('./score-notes.cjs').notesRoot(appData, userData)), 'Lyrics Cache');
 
@@ -113,7 +115,46 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
     return job;
   }
 
-  return {get, counts: () => ({...counts, blockedUntil})};
+  // --- per-song offset (B7) ---------------------------------------------------------------------------------------
+  // offsets/<sha1(trackId)>.json: {auto: {shift, sure, why, hits, of, lrc, vocal}, manual}. `auto` is estimated once
+  // for a given lyrics text and vocal line (lrc / vocal say which) and kept; `manual` is the user's 0.1 s nudges, kept
+  // per song whatever the estimate. The shown time is the play time minus (auto shift + manual).
+  const offsetFile = trackId => path.join(root, 'offsets', crypto.createHash('sha1').update(String(trackId)).digest('hex') + '.json');
+  async function readOffset(trackId) {
+    try { const v = JSON.parse(await fs.readFile(offsetFile(trackId), 'utf8')); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; }
+  }
+  async function writeOffset(trackId, value) {
+    const file = offsetFile(trackId), temporary = file + '.' + process.pid + '.tmp';
+    await fs.mkdir(path.dirname(file), {recursive: true});
+    await fs.writeFile(temporary, JSON.stringify({schemaVersion: 1, trackId: String(trackId), ...value}));
+    await fs.rename(temporary, file);
+  }
+  const lrcHash = text => crypto.createHash('sha1').update(String(text || '')).digest('hex').slice(0, 16);
+  const shown = value => ({auto: value.auto && value.auto.sure ? Number(value.auto.shift) || 0 : 0, sure: Boolean(value.auto && value.auto.sure),
+    why: value.auto ? value.auto.why || null : null, manual: Number(value.manual) || 0});
+  // `vocal`: {id, notes} of the song's vocal line (null without one). Estimated again only when the lyrics text or the
+  // vocal line changed since the stored estimate.
+  async function offsetFor(trackId, lrc, vocal) {
+    const value = await readOffset(trackId);
+    const lrcKey = lrcHash(lrc), vocalKey = vocal ? String(vocal.id) : null;
+    // METHOD: the estimator's rules; a stored estimate made by other rules is made again.
+    if (!value.auto || value.auto.lrc !== lrcKey || value.auto.vocal !== vocalKey || value.auto.method !== METHOD) {
+      const estimate = vocal ? core.estimateOffset(core.parseLrc(lrc).lines, core.phraseStarts(vocal.notes), {notes: vocal.notes}) : {shift: 0, sure: false, why: 'no-vocal-line'};
+      value.auto = {shift: estimate.shift, sure: estimate.sure, why: estimate.why, hits: estimate.hits ?? 0, of: estimate.of ?? 0, lrc: lrcKey, vocal: vocalKey, method: METHOD, at: now()};
+      try { await writeOffset(trackId, value); } catch (_) {}
+    }
+    return shown(value);
+  }
+  async function nudge(trackId, delta) {
+    const value = await readOffset(trackId);
+    const step = Math.round(Number(delta) * 10) / 10;
+    if (!Number.isFinite(step) || !step) return shown(value);
+    value.manual = Math.max(-10, Math.min(10, Math.round(((Number(value.manual) || 0) + step) * 10) / 10));
+    await writeOffset(trackId, value);
+    return shown(value);
+  }
+
+  return {get, offsetFor, nudge, counts: () => ({...counts, blockedUntil})};
 }
 
 module.exports = {createLyrics, rootFor, DEFAULTS, LRCLIB};

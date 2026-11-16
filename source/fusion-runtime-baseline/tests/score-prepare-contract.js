@@ -251,6 +251,58 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   }
 
   // --- the wiring in the app -------------------------------------------------------------------
+  // B7: the vocal line is prepared after the layers, as one job; the layers show while it runs.
+  {
+    assert.deepEqual(Prepare.owedEngines({layers: {owed: 'layers'}, vocals: {owed: 'vocals'}}), ['score-layers', 'score-vocals']);
+    assert.deepEqual(Prepare.owedEngines({layers: {owed: 'layers'}}), ['score-layers'], 'an older main process: the layers only');
+    assert.equal(Prepare.plan({layers: {owed: null}, vocals: {owed: 'vocals'}}, true), 'run', 'only the vocal line owed still runs');
+    assert.equal(Prepare.plan({layers: {owed: null}, vocals: {owed: 'vocals'}}, false), 'manual', 'and waits for the user with the setting off');
+    assert.equal(Prepare.plan({layers: {owed: null}, vocals: {owed: null}}, true), 'none', 'a current vocal line (or "no singing") owes nothing');
+    assert.equal(Prepare.plan({layers: {owed: 'no-stems'}, vocals: {owed: 'vocals'}}, true), 'no-stems');
+    const bridge = standIn(), queue = Prepare.create({run: (id, engine) => bridge.run(id, engine)});
+    const events = []; queue.subscribe(event => events.push(event));
+    queue.auto('v', 's1', ['score-layers', 'score-vocals']);
+    await settle();
+    assert.deepEqual(bridge.calls, [['v', 'score-layers']]); assert.equal(queue.step('v'), 'score-layers');
+    bridge.finish('v', {ok: true});
+    await settle();
+    assert.deepEqual(bridge.calls, [['v', 'score-layers'], ['v', 'score-vocals']], 'the vocal line right after the layers');
+    assert.equal(queue.step('v'), 'score-vocals'); assert.equal(queue.phase('v'), 'running');
+    const partial = events.find(event => event.type === 'partial');
+    assert.ok(partial && Prepare.reloads(partial, 'v') && !Prepare.reloads(partial, 'other'), 'the layers are put on screen while the vocal line runs');
+    bridge.finish('v', {ok: true});
+    await settle();
+    assert.equal(queue.phase('v'), 'done');
+    assert.equal(queue.auto('v', 's1', ['score-vocals']), false, 'not again for the same stems');
+    // A failed first step stops the job; the vocal line is not run on its own after it.
+    const timers = clock(), failing = standIn(), q2 = Prepare.create({run: (id, engine) => failing.run(id, engine), setTimeout: (fn, ms) => timers.setTimeout(fn, ms), clearTimeout: id => timers.clearTimeout(id)});
+    q2.auto('w', 's', ['score-layers', 'score-vocals']);
+    await settle();
+    failing.finish('w', {ok: false, error: 'boom'});
+    await settle();
+    assert.deepEqual(failing.calls, [['w', 'score-layers']]); assert.equal(q2.phase('w'), 'retrying');
+    // Only the vocal line owed: only it runs; a "no singing" answer is a success.
+    const only = standIn(), q3 = Prepare.create({run: (id, engine) => only.run(id, engine)});
+    q3.auto('x', 's', ['score-vocals']);
+    await settle();
+    assert.deepEqual(only.calls, [['x', 'score-vocals']]);
+    only.finish('x', {ok: true, noSinging: true});
+    await settle();
+    assert.equal(q3.phase('x'), 'done');
+    // The library drawer: songs owing either step, each with its own steps.
+    const surveyed = await Prepare.survey(async () => ({ok: true, rows: [
+      {trackId: 'a', ok: true, stems: 'ready', owed: null, vocalsOwed: 'vocals'},
+      {trackId: 'b', ok: true, stems: 'ready', owed: 'layers', vocalsOwed: null},
+      {trackId: 'c', ok: true, stems: 'ready', owed: 'layers', vocalsOwed: 'vocals'},
+      {trackId: 'd', ok: true, stems: 'ready', owed: null, vocalsOwed: null}]}), ['a', 'b', 'c', 'd']);
+    assert.deepEqual(surveyed.owed, ['a', 'b', 'c']);
+    assert.deepEqual(surveyed.engines, {a: ['score-vocals'], b: ['score-layers'], c: ['score-layers', 'score-vocals']});
+    const many = standIn(), q4 = Prepare.create({run: (id, engine) => many.run(id, engine)});
+    Prepare.startMany(q4, surveyed, () => {});
+    await settle();
+    assert.deepEqual(many.calls, [['a', 'score-vocals']], 'a batch song runs its own steps');
+  }
+
   const read = file => fs.readFileSync(path.join(root, file), 'utf8');
   const html = read('index.html'), scene = read('score-scene.js'), main = read('desktop/main.cjs'), preload = read('desktop/preload.cjs');
   assert.ok(html.indexOf('<script src="./score-prepare.js"></script>') >= 0 && html.indexOf('./score-prepare.js') < html.indexOf('./score-scene.js'), 'loaded before the scene');

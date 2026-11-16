@@ -1,3 +1,4 @@
+# xld-python: XLD_MUSCRIPTOR_PYTHON
 from pathlib import Path
 import sys,json,uuid,tempfile
 from collections import Counter
@@ -18,7 +19,9 @@ with tempfile.TemporaryDirectory(prefix='xld-muscriptor-parts-') as temp:
   return midi,{}
  muscriptor_backend.predict=fake
  for size in ['medium','large']:
-  for stem in ['strings','drums']:
+  # B7 (2026-11-15): MuScriptor is retired for drums (models.json retiredFor); the drum exports this test once made are
+  # now refused by the runner (below). Strings stay: every target and both tiers.
+  for stem in ['strings']:
    engine=stem+'-muscriptor-'+size
    for target in (list(runner.STRING_PROGRAMS) if stem=='strings' else ['strings']):
     manifest=root/(str(uuid.uuid4())+'.json')
@@ -39,4 +42,10 @@ with tempfile.TemporaryDirectory(prefix='xld-muscriptor-parts-') as temp:
      names=muscriptor_backend.instrument_names(runner.PROFILES[engine],target)
      assert 'drums' not in names
      if target=='cello':assert names==['cello']
- print('PASS: 12 string target/tier exports, 2 drum tiers, source timbre, overlapping strings, rapid drum hits and GM channel 10')
+ for size in ['medium','large']:
+  try:
+   runner.transcribe(audio,root/'refused.json','track','drums',str(uuid.uuid4()),str(uuid.uuid4()),notify=lambda *a:None,engine='drums-muscriptor-'+size)
+   raise AssertionError('drums-muscriptor-'+size+' is retired for drums and must be refused')
+  except ValueError:
+   pass
+ print('PASS: 12 string target/tier exports, source timbre and overlapping strings; the retired drum tiers are refused')

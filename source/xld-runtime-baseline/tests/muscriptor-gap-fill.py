@@ -1,3 +1,4 @@
+# xld-python: XLD_MUSCRIPTOR_PYTHON
 """Official gap-fill integration: group protection, off switch, and MIDI round-trip."""
 import copy
 import json
@@ -11,10 +12,20 @@ profiles=json.loads((Path(__file__).resolve().parents[1]/'analysis-midi/models.j
 profile=next(p for p in profiles if p['id']=='strings-muscriptor-large')
 raw=next(p for p in profiles if p['id']=='strings-muscriptor-large-raw')
 assert profile['options']['gapFillMs']==50 and raw['options']['gapFillMs']==0
+# The strings Large entries pin their own code revisions on purpose (4c03caf for large / raw, 8a1ef88 for the 0.4
+# "tempo" variant added after this test was written, each in its own codeDirectory); every other MuScriptor entry runs
+# the shared 7f213af code in `upstream` (B7, 2026-11-15: the test predated v04 - the test was out of date, not the fill).
+pinned={'strings-muscriptor-large':'4c03caf','strings-muscriptor-large-raw':'4c03caf','strings-muscriptor-large-v04':'8a1ef88'}
 for p in profiles:
-    if p['backend']=='muscriptor' and p['id'] not in (profile['id'],raw['id']):
-        assert p['options']['codeRevision'].startswith('7f213af')
-        assert backend.code_root(p).name=='upstream'
+    if p['backend']!='muscriptor':
+        continue
+    if p['id'] in pinned:
+        assert p['options']['codeRevision'].startswith(pinned[p['id']]),p['id']
+        assert backend.code_root(p).name!='upstream' or p['options']['codeRevision'].startswith('7f213af'),p['id']
+    else:
+        assert p['options']['codeRevision'].startswith('7f213af'),p['id']
+        assert backend.code_root(p).name=='upstream',p['id']
+assert next(p for p in profiles if p['id']=='strings-muscriptor-large-v04')['options']['gapFillMs']==50
 midi=pretty_midi.PrettyMIDI(initial_tempo=120,resolution=960)
 for name,notes in [('violin',[(60,.1,.46),(62,.5,.7),(64,.8,.9)]),
                    ('cello',[(48,.1,.2),(50,.25,.5)])]:

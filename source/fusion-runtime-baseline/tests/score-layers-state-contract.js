@@ -61,7 +61,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   const scene = fs.readFileSync(path.join(root, 'score-scene.js'), 'utf8');
   const consider = scene.slice(scene.indexOf('function consider()'), scene.indexOf('const autoInput'));
   assert.match(consider, /if \(!active\(\)\) return;/, 'consider() does nothing while another scene is on screen');
-  assert.match(consider, /Prepare\.starts\(\{active: active\(\), ready: status === 'ready', plan: prepPlan\}\)\) prepare\.auto\(trackId, layers \? layers\.stemRunId : null\)/);
+  assert.match(consider, /Prepare\.starts\(\{active: active\(\), ready: status === 'ready', plan: prepPlan\}\)\) prepare\.auto\(trackId, layers \? layers\.stemRunId : null, Prepare\.owedEngines \? Prepare\.owedEngines\(health\) : undefined\)/, 'B7: with the steps the song owes');
   const wake = scene.slice(scene.indexOf('let wasActive = false;'), scene.indexOf('function showCover'));
   assert.match(wake, /if \(now && !wasActive && trackId && status === 'ready'\) consider\(\);/, 'switching to the score looks at the loaded song');
   // load() still calls consider() (it starts only when active, see above): the song shown in the score.
@@ -177,5 +177,19 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
     assert.match(fs.readFileSync(path.join(root, 'score-scene.js'), 'utf8'), /laneModels\(shownModel\.lanes, under, reading\.mergeTimbres !== false\)/);
   }
 
+  // B7: the vocal line's state, by XLD's reader; owed only with readable stems and a due run.
+  assert.equal(State.vocalsOwed({state: 'missing', due: true}, 'ready'), 'vocals');
+  assert.equal(State.vocalsOwed({state: 'stale', due: true}, 'ready'), 'vocals');
+  assert.equal(State.vocalsOwed({state: 'current', due: false}, 'ready'), null, 'current, or "no singing" (a current result without a lane)');
+  assert.equal(State.vocalsOwed({state: 'no-stem', due: false}, 'ready'), null, 'no vocal stem: nothing to run on');
+  assert.equal(State.vocalsOwed({state: 'missing', due: true}, 'missing'), null, 'not analysed in XLD: nothing');
+  assert.deepEqual(await State.vocalsState(null), {state: 'no-stem', due: false});
+  {
+    const scratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'xml-vocals-state-'));
+    try { assert.equal((await State.vocalsState(scratch)).state, 'no-stem', 'no stems.json'); } finally { fs.rmSync(scratch, {recursive: true, force: true}); }
+  }
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.cjs'), 'utf8');
+  assert.match(mainText, /vocals:vocalsHealth/, 'the score model carries health.vocals');
+  assert.match(mainText, /vocalsOwed: layersStateModule\.vocalsOwed\(vocals, status\)/, 'and the drawer rows carry vocalsOwed');
   console.log('score layers state contract ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
