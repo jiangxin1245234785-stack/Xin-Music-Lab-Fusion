@@ -141,10 +141,10 @@
   <div class="timeline-audition">
     <button type="button" id="timelineAudition" class="quiet-button" aria-pressed="false" disabled>试听本轨</button>
     <select id="timelineAuditionScope" aria-label="试听范围"><option value="mix">全部 MIDI</option><option value="single">当前乐器</option></select>
-    <select id="timelineMixPreset" aria-label="混播预设"><option value="custom" disabled>自定义</option><option value="midi">仅 MIDI</option><option value="wav">全部 WAV</option><option value="hybrid">MIDI 优先</option></select>
+    <select id="timelineMixPreset" aria-label="混播预设"><option value="custom" disabled>自定义</option><option value="midi">仅 MIDI</option><option value="wav">全部波形</option><option value="hybrid">MIDI 优先</option></select>
     <button type="button" id="timelineOriginal" class="quiet-button">原曲 A/B</button>
     <span id="timelineRefinements"></span>
-    <select id="timelineAuditionSource" aria-label="WAV / MIDI"><option value="midi">MIDI</option><option value="wav">WAV</option></select>
+    <select id="timelineAuditionSource" aria-label="音符 / 分轨"><option value="midi">MIDI</option><option value="wav">分轨</option></select>
     <button type="button" id="midiEditToggle" class="quiet-button" aria-pressed="false" disabled>编辑音符</button>
     <button type="button" id="timelineSelectNotes" class="quiet-button" aria-pressed="false" disabled>选择音符</button>
     <button type="button" id="timelineLoopChoose" class="quiet-button" aria-pressed="false" disabled>圈选区间</button>
@@ -208,9 +208,9 @@
 </div>
         <div class="derived-block derived-wav-block">
           <div class="stems-left-stack"><section class="base-stems-card">
-          <div class="derived-block-head"><span id="derivedWavHeading">WAV 分轨</span><small id="derivedWavScope">6 stems</small></div>
+          <div class="derived-block-head"><span id="derivedWavHeading">分轨</span><small id="derivedWavScope">6 stems</small></div>
           <div id="derivedStemModels" class="engine-list midi-engine-list" role="group" aria-label="分轨模型"></div>
-          <div class="derived-actions"><button id="derivedSeparate" class="secondary-button" disabled>分轨</button><button id="derivedWav" class="icon-text-button" disabled>打开 WAV 目录</button></div>
+          <div class="derived-actions"><button id="derivedSeparate" class="secondary-button" disabled>分轨</button><button id="derivedWav" class="icon-text-button" disabled>打开分轨目录</button></div>
           </section>
             <div id="refinementResult" class="refinement-result-card" hidden>
                 <div class="refinement-audition" role="group" aria-label="对照试听"><button data-refinement-audio="original" class="secondary-button">原始输入</button><button data-refinement-audio="target" class="secondary-button">目标音轨</button><button data-refinement-audio="residual" class="secondary-button">剩余音频</button></div>
@@ -234,12 +234,12 @@
             <div class="compact-field"><label id="midiStringsLabel" for="midiStringsSource">弦乐音源</label><div class="derived-choice"><select id="midiStringsSource" disabled><option value="">不加入弦乐</option></select></div></div>
             <small id="midiStringsHint" class="derived-hint" aria-live="polite"></small>
           </div>
-          <p id="workspaceMidiEmpty" class="workspace-notice" hidden><span data-workspace-copy="midiEmpty">先生成 WAV 分轨，再选择 bass、piano、guitar 或 drums 转谱。</span> <button type="button" class="quiet-button" data-workspace-go="stems" data-workspace-copy="toStems">去分轨</button></p>
+          <p id="workspaceMidiEmpty" class="workspace-notice" hidden><span data-workspace-copy="midiEmpty">先分轨，再选择 bass、piano、guitar 或 drums 转谱。</span> <button type="button" class="quiet-button" data-workspace-go="stems" data-workspace-copy="toStems">去分轨</button></p>
 
           <div class="midi-work-grid">
             <section class="midi-single-card" aria-labelledby="derivedMidiHeading">          <div class="derived-block-head"><span id="derivedMidiHeading">MIDI 转谱</span><small id="derivedMidiScope"></small></div>
           <div class="compact-field"><label id="derivedMidiSelectLabel" for="derivedMidiSelect">转谱声部</label>
-          <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听 WAV</button><button id="derivedMidiListen" class="secondary-button" disabled>试听 MIDI</button></div>
+          <div class="derived-choice"><select id="derivedMidiSelect" disabled></select><button id="derivedMidiAudition" class="secondary-button" disabled>试听分轨</button><button id="derivedMidiListen" class="secondary-button" disabled>试听 MIDI</button></div>
           </div><div id="derivedModels" class="engine-list midi-engine-list" role="group" aria-label="MIDI 模型"></div>
           <details class="compact-help"><summary data-workspace-copy="modelNotes">模型说明</summary><small id="derivedMidiHint" class="derived-hint">选择 bass、piano、guitar 或 drums 后生成 MIDI</small></details>
           <div id="derivedTempoPanel" class="compact-help" hidden><small id="derivedTempoStatus" class="derived-hint"></small><button id="derivedTempoExport" type="button" class="quiet-button">导出变速谱面</button></div>

@@ -51,7 +51,16 @@ button { color: inherit; }
 .score-lyrics > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-lyrics > :empty { display: none; }
 /* B7: the source line with two small 0.1 s nudges; only the buttons take the pointer, the words never do. */
-.score-lyrics__head { display: flex; align-items: baseline; gap: calc(6px * var(--ui-scale, 1)); }
+.score-lyrics__head { display: flex; align-items: baseline; gap: calc(6px * var(--ui-scale, 1)); pointer-events: auto; cursor: pointer; opacity: 0; transition: opacity .35s ease; }
+.score-lyrics.is-flash .score-lyrics__head, .score-lyrics.is-hover .score-lyrics__head, .score-lyrics.is-menu .score-lyrics__head { opacity: 1; }
+.score-lyrics__near, .score-lyrics__now { pointer-events: auto; cursor: pointer; }
+.score-lyrics.is-empty .score-lyrics__from { opacity: .3; }
+.score-lyrics__menu { pointer-events: auto; display: flex; flex-direction: column; align-items: flex-start; gap: calc(2px * var(--ui-scale, 1)); margin-top: calc(4px * var(--ui-scale, 1)); padding: calc(4px * var(--ui-scale, 1)); border: 1px solid rgba(244,240,234,.18); border-radius: 4px; background: rgba(12,14,18,.82); text-shadow: none; white-space: normal; }
+.score-lyrics__menu[hidden] { display: none; }
+.score-lyrics__item { cursor: pointer; padding: calc(2px * var(--ui-scale, 1)) calc(6px * var(--ui-scale, 1)); border: 0; border-radius: 3px; background: none; color: rgba(244,240,234,.86); font: inherit; font-size: calc(10px * var(--ui-scale, 1)); text-align: left; }
+.score-lyrics__item:hover:not(:disabled) { background: rgba(244,240,234,.1); }
+.score-lyrics__item:disabled { opacity: .45; cursor: default; }
+.score-lyrics__note { opacity: .6; font-size: calc(9px * var(--ui-scale, 1)); padding: 0 calc(6px * var(--ui-scale, 1)); }
 .score-lyrics__nudge { pointer-events: auto; cursor: pointer; padding: 0 calc(4px * var(--ui-scale, 1)); border: 1px solid rgba(244,240,234,.22); border-radius: 3px; background: rgba(0,0,0,.25); color: rgba(244,240,234,.7); font: inherit; font-size: calc(9px * var(--ui-scale, 1)); line-height: 1.4; }
 .score-lyrics__nudge:hover { color: rgba(244,240,234,.95); border-color: rgba(244,240,234,.45); }
 .score-lyrics__from { opacity: .38; font-size: calc(8px * var(--ui-scale, 1)); letter-spacing: .02em; }

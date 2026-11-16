@@ -11,7 +11,7 @@
       manage:['结果操作','Manage results'],drafts:['人工草稿','Manual drafts'],noDrafts:['本曲暂无草稿。选择时间轴声部后可编辑音符。','No drafts for this track. Select a timeline part to edit notes.'],
       export:['导出','Export'],exportHint:['导出使用已保存的完整声部；监听的 M/S 和音量不改变导出范围。','Exports use complete saved parts. Listening mute, solo and volume do not change the export scope.'],
       versions:['MIDI 版本 / 回退','MIDI versions / rollback'],batch:['一键 MIDI / 本曲目录','One-click MIDI / song folder'],refine:['细分 / 对照试听','Refine / compare audio'],section:['段落结果 / 标注','Sections / annotations'],harmony:['和弦结果 / 标注','Chords / annotations'],
-      analysis:['分析结果清理','Manage analysis results'],storage:['WAV 存储管理','WAV storage'],sweep:['全库结果清理','Library result cleanup'],logs:['任务日志','Task log'],merge:['融合 / 导出','Merge / export'],draftLink:['草稿 / 修订','Drafts / revisions']
+      analysis:['分析结果清理','Manage analysis results'],storage:['分轨存储管理','Stem storage'],sweep:['全库结果清理','Library result cleanup'],logs:['任务日志','Task log'],merge:['融合 / 导出','Merge / export'],draftLink:['草稿 / 修订','Drafts / revisions']
     };
     const buttons=[];let routeEpoch=0;
     function scrollTo(node){const panel=$('workbenchPanelBody');if(!node)return;panel.scrollTop+=node.getBoundingClientRect().top-panel.getBoundingClientRect().top-8;}

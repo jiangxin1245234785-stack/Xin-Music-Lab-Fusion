@@ -197,8 +197,8 @@
 
     function stemControls(stem){
       const controls=document.createElement('div');controls.className='tl-lane-mix tl-parent-mix';
-      const select=document.createElement('select');select.dataset.mixSource=stem;select.setAttribute('aria-label',stem+' WAV / MIDI');
-      for(const value of ['midi','wav','off']){const o=document.createElement('option');o.value=value;o.textContent=value==='off'?rt('runtime.hybrid.off'):value.toUpperCase();
+      const select=document.createElement('select');select.dataset.mixSource=stem;select.setAttribute('aria-label',stem+' · '+rt('runtime.mix.notes')+' / '+rt('runtime.mix.waveform'));
+      for(const value of ['midi','wav','off']){const o=document.createElement('option');o.value=value;o.textContent=value==='off'?rt('runtime.hybrid.off'):rt(value==='midi'?'runtime.mix.notes':'runtime.mix.waveform');
         o.disabled=value==='midi'?!mixMembers.some(l=>l.stem===stem&&l.notes?.length):value==='wav'?!mixMembers.some(l=>l.stem===stem&&l.sourceAudio):false;select.append(o);}
       select.value=sourceMode(mixMembers.find(l=>l.stem===stem)||{stem});select.disabled=scope!=='mix';
       select.addEventListener('change',()=>setSource(stem,select.value));controls.append(select,makeMixButton(parentKey(stem),'mute'),makeMixButton(parentKey(stem),'solo'));

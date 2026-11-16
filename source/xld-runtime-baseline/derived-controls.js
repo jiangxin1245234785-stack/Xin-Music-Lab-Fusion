@@ -27,9 +27,10 @@
     // `derived` defaults to the selected track's state; the one-click run passes another track's readDerived answer.
     const inputFor=(stem,derived=result)=>derived?.midiInputs?.[stem] || (derived?.ok && derived?.stems?.some(item=>item.name===stem)?{runId:derived.runId,audioUrl:derived.stems.find(item=>item.name===stem).audioUrl}:null);
     // vocals last: its first step may be the vocal line (score-vocals), and a failure there must not stop the others.
-    const supportedParts=(derived=result)=>['bass','piano','guitar','drums','strings','vocals'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && (stem!=='strings'||inputFor(stem,derived)));
+    // Strings and winds are transcribed from a fine-split result: offered only when the song has one (W1: winds).
+    const supportedParts=(derived=result)=>['bass','piano','guitar','drums','strings','winds','vocals'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && ((stem!=='strings'&&stem!=='winds')||inputFor(stem,derived)));
     const sourceKey=()=>result?.midiSourceKey || result?.runId;
-    const auditionStems=()=>[...(result?.stems||[]),...(result?.strings?.active?[{name:'strings',audioUrl:result.strings.active.audioUrl}]:[])];
+    const auditionStems=()=>[...(result?.stems||[]),...(result?.strings?.active?[{name:'strings',audioUrl:result.strings.active.audioUrl}]:[]),...(result?.winds?.active?[{name:'winds',audioUrl:result.winds.active.audioUrl}]:[])];
     const stringsSelect=document.getElementById('midiStringsSource');
     let stringsMessage=null;
     const stringLabel=source=>rt('runtime.assets.stringSourceLabel',{target:rt('runtime.assets.stringTarget.'+source.target),input:source.sourceStem,seconds:Math.round(source.duration),id:source.runId.slice(0,8)});

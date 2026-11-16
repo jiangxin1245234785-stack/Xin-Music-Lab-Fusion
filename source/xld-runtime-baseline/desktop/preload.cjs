@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('XLD', Object.freeze({
   readMidiNotes: (trackId, selection = null) => ipcRenderer.invoke('assets:midi-notes', { trackId, selection }),
   readWavChunk: (trackId, key, index) => ipcRenderer.invoke('assets:wav-chunk', { trackId, key, index }),
   selectStringsSource: (trackId, selection) => ipcRenderer.invoke('assets:strings-source', {trackId,selection}),
+  selectWindsSource: (trackId, selection) => ipcRenderer.invoke('assets:winds-source', {trackId,selection}),
+  adoptWinds: (trackId, runId, cacheKey) => ipcRenderer.invoke('assets:winds-adopt', {trackId,runId,cacheKey}),
   deleteMidi: payload => ipcRenderer.invoke('assets:delete-midi',payload),
   listMidiRuns: payload => ipcRenderer.invoke('assets:midi-runs',payload),
   activateMidiRun: payload => ipcRenderer.invoke('assets:activate-midi-run',payload),

@@ -131,6 +131,30 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     let vocal=null;try{const loaded=await loadFusionTrack(track.id);if(loaded.ok&&loaded.filePath){const line=JSON.parse(await fs.readFile(path.join(path.dirname(loaded.filePath),'score-vocals.json'),'utf8'));if(Array.isArray(line?.lane?.notes)&&line.lane.notes.length)vocal={id:String(line.source?.runId||'')+':'+line.lane.notes.length+':'+(line.duration||0),notes:line.lane.notes};}}catch(_){}
     let offset={auto:0,sure:false,why:'unavailable',manual:0};try{offset=await lyrics.offsetFor(track.id,answer.lrc,vocal);}catch(_){}
     return {...answer,offset};}catch(e){return {ok:false,reason:'error'};}});
+  // The lyrics menu (2026-11-15): 重新查找 / 换一份 (candidates, then choose) / 用本地文件… / 这首不显示歌词 (hide / show).
+  // The page names only the track and an action; the names sent to LRCLIB come from the library index, as above.
+  ipcMain.handle('fusion:lyrics-menu',async(event,payload)=>{
+    const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};
+    const duration=Number(track.duration)>0?Number(track.duration):(Number(payload?.duration)>0&&Number(payload.duration)<86400?Number(payload.duration):0);
+    const named={id:track.id,title:track.title,artist:track.artist,album:track.album,duration,filePath:track.filePath};
+    try{
+      switch(payload?.action){
+        case 'refresh':return await lyrics.refresh(named);
+        case 'candidates':return await lyrics.candidates(named);
+        case 'choose':return await lyrics.choose(named,payload?.id);
+        case 'file':{
+          const english=mainLocale.getState()?.locale==='en-US';
+          const pick=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:english?'Lyrics file for this song':'这首歌的歌词文件',
+            properties:['openFile'],filters:[{name:english?'Timed lyrics (.lrc)':'带时间的歌词（.lrc）',extensions:['lrc']}]});
+          if(pick.canceled||!pick.filePaths[0])return {ok:true,canceled:true};
+          return await lyrics.chooseFile(named,pick.filePaths[0]);
+        }
+        case 'hide':return await lyrics.hide(named,true);
+        case 'show':return await lyrics.hide(named,false);
+        default:return {ok:false,reason:'bad-action'};
+      }
+    }catch(e){return {ok:false,reason:'error'};}
+  });
   ipcMain.handle('fusion:lyrics-nudge',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const delta=Number(payload?.delta);if(!(delta===0.1||delta===-0.1))return {ok:false,reason:'bad-step'};try{return {ok:true,offset:await lyrics.nudge(track.id,delta)};}catch(e){return {ok:false,reason:'error'};}});
   ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(

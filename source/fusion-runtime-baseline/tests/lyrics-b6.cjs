@@ -203,7 +203,7 @@ async function page() {
   const elements = {};
   const el = tag => {
     const e = {tag, className: '', textContent: '', hidden: false, style: {}, dataset: {}, children: [], attrs: {}, offsetHeight: 40, offsetWidth: 0,
-      classList: {set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }},
+      classList: {set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }, toggle(c, on) { if (on) this.set.add(c); else this.set.delete(c); }, contains(c) { return this.set.has(c); }},
       setAttribute(k, v) { this.attrs[k] = v; }, append(...c) { this.children.push(...c); }, remove() {}, appendChild(c) { this.children.push(c); },
       listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }};
     return e;
@@ -244,9 +244,11 @@ async function page() {
   status = {...status, trackId: 'a'}; ctl.render();
   assert.equal(box.dataset.anchor, 'top'); assert.equal(box.style.top, `${100 + 120 - api.GAP - 40}px`, '没人声轨：第一条轨上方');
   view.lanes = () => [{group: 'vocals', visible: true, shown: true}];
-  // Not found: nothing shown.
+  // Not found: no words; since the lyrics menu (2026-11-15) only the faint 「没有找到歌词」 row, as the way in to the menu.
   status = {...status, trackId: 'b'}; ctl.render(); await flush(); ctl.render();
-  assert.equal(box.hidden, true);
+  assert.equal(box.hidden, false);
+  assert.equal(box.children[0].children[0].textContent, '没有找到歌词');
+  assert.deepEqual([box.children[1].textContent, box.children[2].textContent, box.children[3].textContent], ['', '', '']);
   // Score not on screen, or not ready: nothing asked, nothing shown.
   status = {active: false, status: 'ready', trackId: 'c'}; ctl.render(); await flush();
   status = {active: true, status: 'loading', trackId: 'd'}; ctl.render(); await flush();

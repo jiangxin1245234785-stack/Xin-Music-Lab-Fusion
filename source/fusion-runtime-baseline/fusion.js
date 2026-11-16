@@ -754,7 +754,7 @@
     else if (status === 'complete' || status === 'completed') {
       const engine = task?.engineName || task?.engine || '';
       if (['demucs-6s','bs-roformer-sw'].includes(task?.engine)) bindUiText(dom.analysisStatus, 'stems.complete', '分轨完成');
-      else if (['basic-pitch','guitar-gaps','piano-highres','bass-highres','yourmt3-plus','drums-adtof','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','piano-muscriptor-medium','bass-muscriptor-medium','piano-muscriptor-large','bass-muscriptor-large'].includes(task?.engine)) bindUiText(dom.analysisStatus, 'midi.complete', `${engine} 转谱完成`, { engine });
+      else if (task?.kind === 'midi') bindUiText(dom.analysisStatus, 'midi.complete', `${engine} 转谱完成`, { engine });
       else if (engine) bindUiText(dom.analysisStatus, 'fusion.runtime.engineComplete', `${engine} 分析完成`, { engine });
       else bindUiText(dom.analysisStatus, 'fusion.runtime.analysisComplete', '分析完成');
     }

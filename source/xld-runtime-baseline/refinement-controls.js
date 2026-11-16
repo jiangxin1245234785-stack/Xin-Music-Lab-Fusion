@@ -7,10 +7,11 @@
   deviceSelect.value=localStorage.getItem('xld.refinement.device')||'auto';if(!deviceSelect.value)deviceSelect.value='auto';
   scopeSelect.value=localStorage.getItem('xld.refinement.scope')||'full';if(!scopeSelect.value)scopeSelect.value='full';
   let sourceStem=localStorage.getItem('xld.refinement.source')||'other',group='strings';
-  const sources=['mix','other','guitar','piano','bass','drums','vocals'];
+  // W1: 'strings-residual' = what the strings step left (full song only), for digging out the winds after the strings.
+  const sources=['mix','other','guitar','piano','bass','drums','vocals','strings-residual'];
   if(!sources.includes(sourceStem))sourceStem='other';
   const sourceName=()=>engine==='mega-53'?sourceStem:'other';
-  const readySource=()=>Boolean(getSelected()&&(sourceName()==='mix'||source()?.ok&&source().stems?.some(stem=>stem.name===sourceName())));
+  const readySource=()=>Boolean(getSelected()&&(sourceName()==='mix'||(sourceName()==='strings-residual'?Boolean(source()?.strings?.active)&&scopeSelect.value==='full':source()?.ok&&source().stems?.some(stem=>stem.name===sourceName()))));
   const label=item=>document.documentElement.lang==='en-US'?item.nameEn:item.name;
   const details=()=>models.find(model=>model.id===engine)?.targetDetails||[];
   const targetName=()=>{const item=details().find(item=>item.id===target);return item?label(item):text('target.'+target);};
@@ -89,6 +90,8 @@
    try{response=await bridge.runRefinement(request);}catch(error){response={ok:false,error:String(error)};}
    finally{pending=false;}
    onTask(response.task||null);
+   // A wind group dug out of what the strings left becomes the song's winds source (or "this song has no winds").
+   if(response.ok&&request.sourceStem==='strings-residual'&&request.scope==='full'&&bridge.adoptWinds)try{await bridge.adoptWinds(request.trackId,response.result?.runId,response.result?.cacheKey);}catch(_){}
    if(key===route()){message=response.ok?null:{key:response.error==='analysis-cancelled'?'cancelled':'failed',error:response.detail||response.error};await refresh();}else render();
   };
   $('refinementCancel').onclick=async()=>{const task=getTask();if(refining(task))await bridge.cancelAnalysis(task.taskId);};

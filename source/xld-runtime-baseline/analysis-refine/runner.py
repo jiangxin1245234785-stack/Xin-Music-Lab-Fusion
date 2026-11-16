@@ -71,7 +71,9 @@ def run(input_path,output_path,engine,start,duration,run_id,track_id,parent_run,
     if not profile or target_name not in profile['targets'] or device not in ['auto','cpu','cuda']:raise ValueError('模型、目标或运行方式无效')
     if scope not in ['preview','full'] or (scope=='full' and engine!='mega-53'):raise ValueError('整曲细分目前仅支持 Mega 53')
     if scope=='preview' and (not math.isfinite(start) or not math.isfinite(duration) or start<0 or not 1<=duration<=30):raise ValueError('请选择有效的 1–30 秒片段')
-    if source_stem not in ['mix','other','guitar','piano','bass','drums','vocals'] or (engine!='mega-53' and source_stem!='other'):raise ValueError('refinement-source-invalid')
+    # W1: 'strings-residual' = what the strings step left (the winds are dug out of it); full songs only.
+    if source_stem not in ['mix','other','guitar','piano','bass','drums','vocals','strings-residual'] or (engine!='mega-53' and source_stem!='other'):raise ValueError('refinement-source-invalid')
+    if source_stem=='strings-residual' and scope!='full':raise ValueError('refinement-source-invalid')
     run_id=str(uuid.UUID(run_id))
     if source_stem=='mix':parent_run=None
     else:str(uuid.UUID(parent_run))
@@ -116,7 +118,19 @@ def run(input_path,output_path,engine,start,duration,run_id,track_id,parent_run,
     for offset in range(0,len(audio),sr*10):
         end=offset+sr*10;error=max(error,float(np.max(np.abs(audio[offset:end]-target[offset:end]-residual[offset:end]))))
     (folder/'README.txt').write_text('XLD · '+profile['name']+'\nTarget: '+target_name+'\nSource: '+source_stem+'\nScope: '+scope+'\n24-bit FLAC at half level (comment xld-gain=2; float WAV if a peak reaches 2.0); peaks may exceed 1.0. XLD applies shared audition gain at playback.\nInput references its exact base stem and sample range; decoded original songs retain original.wav.\n目标与剩余共同组成输入音轨，不叠加原输入。不同乐器目标可能重叠，不直接相加。\n',encoding='utf-8')
+    # W1 (2026-11-15): how much the target holds, for XLD's "this song has none of it" rule (full scope only).
+    level=None
+    if scope=='full':
+        hop=max(1,int(sr*0.01));frames=len(audio)//hop
+        def frame_db(x):
+            return 10*np.log10(np.mean(np.square(x[:frames*hop].reshape(frames,hop,-1) if x.ndim>1 else x[:frames*hop].reshape(frames,hop)),axis=tuple(range(1,(x.ndim>1)+2)))+1e-20)
+        source_energy=float(np.sum(np.square(audio,dtype=np.float64)));target_energy=float(np.sum(np.square(target,dtype=np.float64)))
+        loud=float(np.percentile(frame_db(audio),95)) if frames else 0.
+        level=dict(rmsVsInputDb=round(10*np.log10(max(target_energy,1e-20)/max(source_energy,1e-20)),2),
+                   within30dB=round(float(np.mean(frame_db(target)>loud-30)) if frames else 0.,4),method=1)
     result=dict(schemaVersion=3,kind='refinement',scope=scope,engine=engine,runId=run_id,trackId=track_id,parentRunId=parent_run,cacheKey=cache_key,target=target_name,requestedDevice=device,sourceStem=source_stem,timeOrigin=first/sr,duration=len(audio)/sr,sampleRate=sr,frames=len(audio),channels=audio.shape[1],backend=backend,files=files,playback=playback,reconstructionError=error)
+    if level is not None:
+        result['level']=level
     if source_stem!='mix':
         result['originalSource']=dict(kind='stem',runId=parent_run,stem=source_stem,startFrame=first,frames=len(audio),size=before.st_size,mtimeMs=before.st_mtime*1000)
     output_path.write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding='utf-8')

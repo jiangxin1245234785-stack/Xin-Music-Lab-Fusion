@@ -29,7 +29,7 @@ function createStemBatches({assets}) {
   async function dependents(track, runId) {
     const directory = assets.directory(track), follow = [], hold = [];
     for (const stem of derived.STEMS) {
-      if (stem === 'strings') continue;   // strings are made from refinement results, not from a stem batch
+      if (stem === 'strings' || stem === 'winds') continue;   // strings and winds are made from refinement results, not from a stem batch
       const runs = await assets.midi.listRuns(track, stem);
       for (const run of runs) {
         if (run.sourceRunId !== runId) continue;

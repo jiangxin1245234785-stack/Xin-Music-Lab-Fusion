@@ -688,6 +688,81 @@
     }
   },
   {
+    "id": "winds-muscriptor-medium",
+    "name": "MuScriptor Medium",
+    "stems": [
+      "winds"
+    ],
+    "defaultFor": "winds",
+    "model": "muscriptor-medium-f3223696-no-prelude-v1-winds-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "model.safetensors",
+      "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
+      "size": 1228144472,
+      "repository": "MuScriptor/muscriptor-medium",
+      "revision": "f32236969308476e01fd3aae67357de5feb05a2d"
+    },
+    "options": {
+      "batchSize": 4,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "trumpet,trombone,tuba,french_horn,brass_section,soprano_and_alto_sax,tenor_sax,baritone_sax,oboe,english_horn,bassoon,clarinet,flutes",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
+    "id": "winds-muscriptor-large",
+    "name": "MuScriptor Large",
+    "stems": [
+      "winds"
+    ],
+    "model": "muscriptor-large-8809fdfb-no-prelude-v1-winds-stemvel1",
+    "backend": "muscriptor",
+    "checkpoint": {
+      "file": "large/model.safetensors",
+      "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397",
+      "size": 5465642136,
+      "repository": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7"
+    },
+    "options": {
+      "batchSize": 1,
+      "cfg": 1,
+      "preludeForcing": false,
+      "sampling": false,
+      "instruments": "trumpet,trombone,tuba,french_horn,brass_section,soprano_and_alto_sax,tenor_sax,baritone_sax,oboe,english_horn,bassoon,clarinet,flutes",
+      "midiTempo": 120,
+      "codeRevision": "7f213afecf23bd6a1b8672aa223690ee9807cefb",
+      "adapterVersion": 1,
+      "velocityFromStem": {
+        "windowPostSeconds": 0.15,
+        "windowPreSeconds": 0.01,
+        "energyFrameSeconds": 0.005,
+        "onsetGroupSeconds": 0.01,
+        "velocityFloor": 32,
+        "velocityCeil": 127,
+        "percentileLow": 10,
+        "percentileHigh": 98,
+        "minimumOnsetsForScale": 4
+      }
+    }
+  },
+  {
     "id": "drums-muscriptor-medium",
     "name": "MuScriptor Medium",
     "stems": [

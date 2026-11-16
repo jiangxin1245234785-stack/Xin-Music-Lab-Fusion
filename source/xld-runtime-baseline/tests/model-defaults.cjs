@@ -17,17 +17,17 @@ const defaults = Object.fromEntries(PROFILES.filter(p => p.defaultFor).map(p => 
 assert.equal(PROFILES.filter(p => p.defaultFor).length, Object.keys(defaults).length, 'one default per part');
 const size = id => byId(id)?.backend === 'muscriptor' ? (byId(id).checkpoint.repository.endsWith('-large') ? 'large' : 'medium') : null;
 
-for (const preset of ['efficiency', 'quality']) for (const stem of ['piano', 'bass', 'guitar', 'strings', 'drums']) {
+for (const preset of ['efficiency', 'quality']) for (const stem of ['piano', 'bass', 'guitar', 'strings', 'winds', 'drums']) {
   const id = P.PRESETS[preset][stem];
   assert(byId(id), `${preset}.${stem}: ${id} is in models.json`);
   assert(byId(id).stems.includes(stem) && !(byId(id).retiredFor || []).includes(stem), `${preset}.${stem}: ${id} serves ${stem}`);
   assert.deepEqual(P.OPTIONS[stem], [P.PRESETS.efficiency[stem], P.PRESETS.quality[stem]], `${stem}: the one-click options are exactly the two presets`);
 }
-for (const stem of ['piano', 'bass', 'guitar', 'strings']) {
+for (const stem of ['piano', 'bass', 'guitar', 'strings', 'winds']) {
   assert.equal(size(P.PRESETS.efficiency[stem]), 'medium', `${stem}: 效率 = MuScriptor Medium`);
   assert.equal(size(P.PRESETS.quality[stem]), 'large', `${stem}: 质量 = MuScriptor Large`);
 }
-for (const stem of ['piano', 'bass', 'guitar']) assert.equal(defaults[stem], P.PRESETS.efficiency[stem], `${stem}: the manual default is the 效率 choice`);
+for (const stem of ['piano', 'bass', 'guitar', 'winds']) assert.equal(defaults[stem], P.PRESETS.efficiency[stem], `${stem}: the manual default is the 效率 choice`);
 for (const stem of ['strings', 'drums']) assert.equal(defaults[stem], P.PRESETS.quality[stem], `${stem}: the manual default is the 质量 choice`);
 for (const stem of ['piano', 'bass', 'guitar', 'strings', 'drums']) assert.equal(defaultEngine(stem), defaults[stem], `${stem}: the core reads the same default`);
 // The old defaults stay as alternatives.

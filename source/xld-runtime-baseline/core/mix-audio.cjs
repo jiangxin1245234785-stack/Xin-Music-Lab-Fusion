@@ -37,7 +37,9 @@ function createAudioReader({audioCache=require('./stem-audio.cjs').sharedCache()
     const b=Buffer.alloc(frames*h.align);await f.read(b,0,b.length,h.offset+start*h.align);
     let peak=0;for(let j=0;j<b.length;j+=h.bits/8)peak=Math.max(peak,Math.abs(sample(b,j,h)));waveform.push(Math.min(1,peak));
    }
-   const item={file,source,size:stat.size,mtime:stat.mtimeMs,h,trackId,public:{key,streamKey:key,url:pathToFileURL(file).href,stream:true,duration:h.duration,sampleRate:h.sampleRate,channels:h.channels,waveform}};
+   const item={file,source,size:stat.size,mtime:stat.mtimeMs,h,trackId,public:{key,streamKey:key,url:pathToFileURL(file).href,stream:true,duration:h.duration,sampleRate:h.sampleRate,channels:h.channels,waveform,
+    // The stored file's format (a FLAC stem is played from a decoded copy): for the row's tooltip.
+    format:/\.flac$/i.test(String(source))?'FLAC':'WAV'}};
    if(cache.size>=64)cache.delete(cache.keys().next().value);cache.set(key,item);entries.set(key,item);
    // Only retain source authorization for a bounded number of recently visited tracks.
    if(entries.size>256)entries.delete(entries.keys().next().value);
@@ -66,7 +68,7 @@ function createCatalog({assets,refinement,reader}){
  // refinement stands in for its parent: the lead carries the vocal notes, the backing is its own WAV row, and the two
  // sum back to the stem, so the mix stays whole.
  async function read(track,midi,selection=null,{vocalSplit=null}={}){
-  const base=await assets.readStems(track),directory=assets.directory(track),groups=[],warnings=[];
+  const base=await assets.readStems(track),directory=assets.directory(track),groups=[],warnings=[],chained=[];
   const folder=path.join(directory,'refinement');
   const names=await fs.readdir(folder).catch(()=>[]);
   for(const name of names){
@@ -77,6 +79,8 @@ function createCatalog({assets,refinement,reader}){
     const r=await refinement.read(track,{engine:saved.engine,scope:'full',sourceStem:saved.sourceStem,target:saved.target,device:saved.requestedDevice});
     if(!r.ok||r.cacheKey!==name.slice(0,-5)){warnings.push({parent:saved.sourceStem,target:saved.target,error:r.error||'source-changed'});continue;}
     if(r.timeOrigin!==0||r.reconstructionError>1e-5)throw Error('mix-timebase');
+    // W1: winds dug out of a strings result's residual hang under that strings result.
+    if(r.sourceStem==='strings-residual'){chained.push(r);continue;}
     groups.push({id:r.runId,parent:r.sourceStem,target:r.target,createdAt:r.createdAt,record:r});
    }catch(error){warnings.push({error:error.message});}
   }
@@ -99,7 +103,7 @@ function createCatalog({assets,refinement,reader}){
    lanes.push(m?{...m,sourceAudio:{...sourceAudio,key:m.sourceAudio?.key||sourceAudio.key},duration:sourceAudio.duration}:{stem,engineName,noteCount:0,notes:[],instruments:[],editable:false,wavOnly:true,duration:sourceAudio.duration,sourceAudio});
   }
   // Decode every FLAC this mix needs at once (one worker each) before the rows are registered one by one.
-  if(reader.prepare){const files=[];if(!chosen.some(g=>g.parent==='mix')&&base.ok)for(const stem of base.stems)files.push(fileURLToPath(stem.audioUrl));if(vocalSplit)files.push(vocalSplit.lead,vocalSplit.backing);for(const g of chosen)files.push(path.join(folder,g.record.files.target),path.join(folder,g.record.files.residual));await Promise.all(files.map(file=>reader.prepare(file)));}
+  if(reader.prepare){const files=[];if(!chosen.some(g=>g.parent==='mix')&&base.ok)for(const stem of base.stems)files.push(fileURLToPath(stem.audioUrl));if(vocalSplit)files.push(vocalSplit.lead,vocalSplit.backing);for(const g of chosen)files.push(path.join(folder,g.record.files.target),path.join(folder,g.record.files.residual));for(const c of chained)if(chosen.some(g=>g.id===c.parentRunId))files.push(path.join(folder,c.files.target),path.join(folder,c.files.residual));await Promise.all(files.map(file=>reader.prepare(file)));}
   if(!chosen.some(g=>g.parent==='mix')&&base.ok){
    for(const stem of base.stems){
     if(chosen.some(g=>g.parent===stem.name))continue;
@@ -119,7 +123,14 @@ function createCatalog({assets,refinement,reader}){
    // Raw complementary files share unity gain. The common output limiter handles peaks.
    // Independently normalized "listen-" files must never be substituted into this graph.
    await add(stem,path.join(folder,r.files.target),'Mega · '+g.target,r.runId,r.duration,targetMidi?'strings':null);
-   await add(g.parent+' / residual',path.join(folder,r.files.residual),'Mega · residual',r.runId,r.duration,null);
+   // The song's winds, when they were dug out of this result's residual: winds target, then what is left of them.
+   const winds=assets.windSources?await assets.windSources.current(track).catch(()=>null):null;
+   const w=winds&&chained.find(c=>c.runId===winds.runId&&c.parentRunId===r.runId);
+   if(w){
+    const windMidi=midi.find(l=>l.stem==='winds'&&l.sourceRunId===w.runId);
+    await add(windMidi?'winds':g.parent+' / '+w.target,path.join(folder,w.files.target),'Mega · '+w.target,w.runId,w.duration,windMidi?'winds':null);
+    await add(g.parent+' / residual',path.join(folder,w.files.residual),'Mega · residual',w.runId,w.duration,null);
+   }else await add(g.parent+' / residual',path.join(folder,r.files.residual),'Mega · residual',r.runId,r.duration,null);
   }
   // With no separation, valid MIDI is still useful; do not invent complementary WAVs.
   if(!base.ok&&!chosen.length)for(const l of midi)lanes.push({...l,sourceAudio:null});

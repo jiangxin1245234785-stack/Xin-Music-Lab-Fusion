@@ -41,7 +41,7 @@
     });
     const customTag = document.createElement('span'); customTag.className = 'oneclick-custom'; presetBox.append(customTag);
     const rows = {};
-    const ROWS = [['separation', 'select'], ['refine', 'check'], ['piano', 'select'], ['bass', 'select'], ['guitar', 'select'], ['strings', 'select'], ['drums', 'select'], ['vocals', 'check']];
+    const ROWS = [['separation', 'select'], ['refine', 'check'], ['piano', 'select'], ['bass', 'select'], ['guitar', 'select'], ['strings', 'select'], ['winds', 'select'], ['drums', 'select'], ['vocals', 'check']];
     for (const [key, kind] of ROWS) {
       const row = document.createElement('div'); row.className = 'oneclick-choice'; row.dataset.choice = key;
       const label = document.createElement('label'); const name = document.createElement('span'); name.className = 'oneclick-choice-name';
@@ -67,7 +67,7 @@
     function stepName(step) {
       if (step.kind === 'midi') return step.stem + ' · ' + modelName(step.engine);
       if (step.kind === 'merge') return t('step.merge');
-      if (step.kind === 'refine') return t('step.refine');
+      if (step.kind === 'refine') return t(step.id === 'refine-winds' ? 'step.refineWinds' : 'step.refine');
       return t('step.' + step.id) + ' · ' + modelName(step.engine);
     }
     function reasonText(reason) {
@@ -107,7 +107,7 @@
         if (kind === 'select') {
           for (const option of input.options) option.textContent = modelName(option.value) + (installed(option.value) ? '' : ' · ' + t('notInstalled'));
           input.value = choice.choices[key];
-          input.disabled = Boolean(running) || (key === 'strings' && !choice.choices.refine);
+          input.disabled = Boolean(running) || ((key === 'strings' || key === 'winds') && !choice.choices.refine);
         } else if (kind === 'check') { input.checked = Boolean(choice.choices[key]); input.disabled = Boolean(running); }
         advice.textContent = t('advice.' + key, {
           roformer: M.roformer.secPerMin, roformerRuns: M.roformer.runs, roformerMb: M.roformer.mbPerMin, demucs: M.demucs.secPerMin, demucsRuns: M.demucs.runs,
@@ -176,7 +176,20 @@
         },
         // The fine split the 细分 panel would start with its defaults (Mega 53, whole song, other -> strings), then the
         // 转谱 panel's strings source set to its result, which is how that panel learns a strings part exists.
-        refine: async () => {
+        refine: async step => {
+          // W1: the winds, dug out of what the strings step left, then adopted (or "this song has no winds").
+          if (step?.id === 'refine-winds') {
+            let device = 'auto'; try { device = storage?.getItem('xld.refinement.device') || 'auto'; } catch (_) {}
+            say('mega-53', t('step.refineWinds'));
+            let response; try { response = await bridge.runRefinement({trackId: track.id, engine: 'mega-53', target: 'wind', sourceStem: 'strings-residual', scope: 'full', device, start: 0, duration: 30}); }
+            catch (error) { response = {ok: false, error: 'request-failed', detail: String(error)}; }
+            onTask?.(response?.task || null);
+            if (!response?.ok) return response;
+            const adopted = await Promise.resolve(bridge.adoptWinds?.(track.id, response.result?.runId, response.result?.cacheKey)).catch(error => ({ok: false, error: String(error)}));
+            if (!adopted?.ok) return adopted || {ok: false, error: 'request-failed'};
+            await derived.refresh?.();
+            return {ok: true, cached: Boolean(response.result?.cached), none: Boolean(adopted.none)};
+          }
           const before = await Promise.resolve(bridge.readDerived(track.id)).catch(() => null);
           if (before?.strings?.active) return {ok: true, cached: true};
           let device = 'auto'; try { device = storage?.getItem('xld.refinement.device') || 'auto'; } catch (_) {}

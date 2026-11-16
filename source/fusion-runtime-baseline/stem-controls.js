@@ -24,7 +24,7 @@
       reveal.disabled = !result?.ok;
     }
     function showEmptyStatus() {
-      bind(status, getTrack() ? 'stems.notGenerated' : 'stems.empty', getTrack() ? '尚未分轨，可在 XLD 中生成 WAV' : '选择曲目后读取分轨');
+      bind(status, getTrack() ? 'stems.notGenerated' : 'stems.empty', getTrack() ? '尚未分轨，可在 XLD 中分轨' : '选择曲目后读取分轨');
     }
     async function refreshMidi() {
       const request = ++midiSequence, track = getTrack(), stem = select.value;

@@ -116,6 +116,9 @@ function createService(options = {}) {
     trackTitle: task.track.title,
     album: task.track.album,
     engine: task.engine,
+    // What kind of task (W1): 'stems' | 'midi' | 'refine' | 'merge' | 'analysis'. Hosts ask this instead of keeping
+    // their own lists of engine ids.
+    kind: task.kind || 'analysis',
     engineName: task.engineName,
     status: task.status,
     progress: task.progress,
@@ -250,7 +253,7 @@ function createService(options = {}) {
   const midiRetention = require('./midi-retention.cjs').createMidiRetention({assets: derivedAssets, getRoot: () => analysisRoot, trash: options.trash});
 
   async function runRefinement(track, engine, runOptions, onTask) {
-    const task={taskId:crypto.randomUUID(),track,engine,engineName:require('./refinement.cjs').profileFor(engine).name,status:'starting',progress:0,phase:'refine',message:'准备 '+(runOptions.sourceStem||'other')+(runOptions.scope==='full'?' 整曲':' 片段'),startedAt:new Date().toISOString(),startedAtMs:Date.now(),child:null,cancelled:false,onTask};
+    const task={taskId:crypto.randomUUID(),kind:'refine',track,engine,engineName:require('./refinement.cjs').profileFor(engine).name,status:'starting',progress:0,phase:'refine',message:'准备 '+(runOptions.sourceStem||'other')+(runOptions.scope==='full'?' 整曲':' 片段'),startedAt:new Date().toISOString(),startedAtMs:Date.now(),child:null,cancelled:false,onTask};
     activeTask=task;emitTask(task,onTask);
     try {
       const result=await refinement.generate(track,{...runOptions,engine},{runId:task.taskId,onChild:child=>{task.child=child;if(task.cancelled)child.kill();},cancelled:()=>task.cancelled,
@@ -263,7 +266,7 @@ function createService(options = {}) {
   }
 
   async function runMerge(track, onTask) {
-    const task = {taskId:crypto.randomUUID(),track,engine:'midi-merge',engineName:'MIDI 融合',
+    const task = {taskId:crypto.randomUUID(),kind:'merge',track,engine:'midi-merge',engineName:'MIDI 融合',
       status:'starting',progress:0,phase:'merge',message:'正在读取 MIDI',startedAt:new Date().toISOString(),startedAtMs:Date.now(),child:null,cancelled:false,onTask};
     activeTask = task;
     emitTask(task,onTask);
@@ -342,7 +345,7 @@ function createService(options = {}) {
     const runner = runnerFor(engine);
     if (!isMidi && !isStems && (!python || !fsSync.existsSync(runner))) return { ok: false, error: 'runtime-missing' };
     const task = {
-      taskId: crypto.randomUUID(), track, engine, engineName: runOptions.engineName || (isStems ? '分轨' : isMidi ? `${midiStem} MIDI` : engine),
+      taskId: crypto.randomUUID(), kind: isStems ? 'stems' : isMidi ? 'midi' : 'analysis', track, engine, engineName: runOptions.engineName || (isStems ? '分轨' : isMidi ? `${midiStem} MIDI` : engine),
       status: 'starting', progress: 0, phase: 'starting', message: '正在启动分析器',
       startedAt: new Date().toISOString(), startedAtMs: Date.now(), child: null, cancelled: false, onTask
     };

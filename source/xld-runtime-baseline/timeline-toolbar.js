@@ -26,7 +26,7 @@
     return {text: rt('runtime.timeline.more') + (mode ? ' · ' + rt(MODE_KEYS[mode]) : '') + ' ▾', mode};
   }
 
-  function create({document: doc = root.document, rt, onCheckAll, onApplyAll, onLaneStep, onPitch, onIssue} = {}) {
+  function create({document: doc = root.document, rt, onCheckAll, onApplyAll, onLaneStep, onPitch, onIssue, merged, onMerge} = {}) {
     const $ = id => doc.getElementById(id);
     const main = $('timelineAudition')?.parentElement;
     if (!main || $('timelineMore')) return null;
@@ -52,6 +52,14 @@
     const slot = make('span', {id: 'timelineMoreProperties'});
     slot.hidden = true;
     menu.append($('timelineProperties') || slot);
+    // 合并同类乐器声部 (W1): the switch XML has, here for the timeline's lanes.
+    const merge = make('label', {className: 'timeline-more-check'});
+    const mergeBox = make('input', {type: 'checkbox', id: 'timelineMergeTimbres'});
+    const mergeText = make('span', {id: 'timelineMergeTimbresLabel'});
+    merge.append(mergeBox, mergeText);
+    mergeBox.checked = Boolean(merged ? merged() : true);
+    mergeBox.addEventListener('change', () => onMerge?.(Boolean(mergeBox.checked)));
+    menu.append(merge);
     let checkAll = null, applyAll = null, allStatus = null;
     if ($('timelineEvidenceCheck')) {
       checkAll = make('button', {type: 'button', id: 'timelineEvidenceCheckAll', className: 'quiet-button'});
@@ -174,6 +182,9 @@
       view = next || {};
       arrange(Boolean(view.focused));
       const label = moreLabel(view, rt);
+      setText(mergeText, rt('runtime.timeline.mergeTimbres')); merge.title = rt('runtime.timeline.mergeTimbresHint');
+      if (merged) mergeBox.checked = Boolean(merged());
+      merge.hidden = Boolean(view.focused);   // the lane page shows one lane: nothing to merge there
       if (more.textContent !== label.text) more.textContent = label.text;
       more.classList.toggle('active', Boolean(label.mode));
       more.dataset.mode = label.mode || '';

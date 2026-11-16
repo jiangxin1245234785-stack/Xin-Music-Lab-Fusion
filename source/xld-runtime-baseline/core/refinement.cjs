@@ -7,6 +7,8 @@ const profileFor=id=>PROFILES.find(profile=>profile.id===id);
 // context() or the cache key, so every run a retired engine ever produced stays readable and stays deletable.
 const isRetired=id=>Boolean(profileFor(id)?.retired);
 const idPattern=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+// W1: a full Mega 53 run may take the strings result's residual as its input (winds dug out after the strings).
+const CHAINED='strings-residual';
 // `profiles` is injectable for the same reason `python`, `spawnProcess` and `probeAudio` are: the guards below
 // (scope-invalid, source-invalid, target validation) describe a preview-only engine, and no engine that ships
 // today is one. A test must be able to define that shape without the product carrying a model to keep it alive.
@@ -29,6 +31,17 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
   if(probeCache.size>=32)probeCache.clear();probeCache.set(key,info);return info;
  }
  const directory=track=>path.join(assets.directory(track),'refinement');
+ // The residual file of the strings result the song uses now (pointer midi/strings-source.json -> refinement/<key>.json).
+ async function chainedInput(track){
+  const folder=directory(track);
+  let pointer;try{pointer=JSON.parse(await fs.readFile(path.join(assets.directory(track),'midi','strings-source.json'),'utf8'));}catch(_){pointer=null;}
+  if(!pointer?.runId||!/^[a-f0-9]{64}$/.test(pointer.cacheKey||''))throw Error('refinement-chain-missing');
+  const saved=JSON.parse(await fs.readFile(path.join(folder,pointer.cacheKey+'.json'),'utf8'));
+  if(saved.runId!==pointer.runId||saved.engine!=='mega-53'||saved.scope!=='full'||typeof saved.files?.residual!=='string')throw Error('refinement-chain-missing');
+  const file=path.join(folder,saved.files.residual);
+  await require('./storage.cjs').guarded(assets.directory(track),file);
+  return {runId:saved.runId,file};
+ }
  async function context(track,options={}) {
   const engine=options.engine||profiles.find(profile=>profile.default)?.id||profiles[0].id,scope=options.scope||'preview';
   let start=Number(options.start??0),duration=Number(options.duration??30);
@@ -38,9 +51,17 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
   if(!profile.targets.includes(target)||!['auto','cuda','cpu'].includes(device))throw Error('refinement-options-invalid');
   if(scope==='preview'&&(!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<1||duration>30))throw Error('请选择有效的 1–30 秒片段');
   const sourceStem=options.sourceStem||'other';
-  if(!['mix','other','guitar','piano','bass','drums','vocals'].includes(sourceStem)||(engine!=='mega-53'&&sourceStem!=='other'))throw Error('refinement-source-invalid');
+  if(!['mix','other','guitar','piano','bass','drums','vocals',CHAINED].includes(sourceStem)||(engine!=='mega-53'&&sourceStem!=='other'))throw Error('refinement-source-invalid');
+  if(sourceStem===CHAINED&&scope!=='full')throw Error('refinement-source-invalid');
   let parent=null,stem,input,stat;
-  if(sourceStem==='mix'){
+  if(sourceStem===CHAINED){
+   // W1 (2026-11-15): what the strings step left - the residual of the strings result the song uses now
+   // (midi/strings-source.json). Its run is this result's parent, so new strings make it a new result.
+   const chained=await chainedInput(track);
+   parent={runId:chained.runId};input=chained.file;stat=await fs.stat(input);
+   const h=await audio.probe(input).catch(()=>null);if(!audio.isStemFormat(h))throw Error('refinement-source-stale');
+   stem={frames:h.frames,channels:h.channels,sampleRate:h.sampleRate};
+  }else if(sourceStem==='mix'){
    input=path.resolve(track.filePath);stat=await fs.stat(input);stem=await probe(input,engine,stat);
   }else{
    parent=await assets.readStems(track);if(!parent.ok)throw Error('请先生成 WAV 分轨，或选择原曲作为来源');

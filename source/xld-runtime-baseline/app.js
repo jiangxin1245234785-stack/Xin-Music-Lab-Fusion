@@ -1579,7 +1579,7 @@ window.XLD.onAnalysisTask(async task => {
     await refreshAnalysisSummary();
     if (state.selectedTrack?.id === task.trackId) {
       await loadTrackAnalysis(task.trackId);
-      if (['demucs-6s','bs-roformer-sw','basic-pitch','guitar-gaps','muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','strings-muscriptor-large-raw','strings-muscriptor-large-v04','drums-muscriptor-medium','drums-muscriptor-large','piano-muscriptor-medium','bass-muscriptor-medium','piano-muscriptor-large','bass-muscriptor-large','yourmt3-plus','piano-highres','piano-transkun','bass-highres','midi-merge','drums-adtof','drums-adtof-stems','mega-53','score-vocals','vocals-rmvpe'].includes(task.engine)) await derivedControls.refresh();
+      if (['stems', 'midi', 'refine', 'merge'].includes(task.kind) || task.engine === 'score-vocals') await derivedControls.refresh();
     }
     // Keep the terminal result visible until it is dismissed or a new task starts.
   }
@@ -1732,14 +1732,14 @@ function setupPlayback(){
   sources:{
    main:{
     info:()=>({track:state.currentTrack,trackId:state.currentTrack?.id,available:Boolean(state.currentTrack&&main.getAttribute('src')),playing:!main.paused,loading:Boolean(cancelPendingMetadata),time:Number(main.currentTime)||0,start:0,end:total(state.currentTrack,main.duration),
-      label:state.currentTrack&&derivedControls.playingStem(state.currentTrack)?'WAV · '+derivedControls.playingStem(state.currentTrack):rt('runtime.transport.original')}),
+      label:state.currentTrack&&derivedControls.playingStem(state.currentTrack)?rt('runtime.transport.stem',{stem:derivedControls.playingStem(state.currentTrack)}):rt('runtime.transport.original')}),
     play:()=>{if(!state.currentTrack||state.selectedTrack?.id!==state.currentTrack.id)return playTrack(state.selectedTrack||state.selectedAlbum?.tracks[0],state.selectedAlbum?.tracks||[]);return main.play();},
     pause:()=>{playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;main.pause();},stop:()=>{playbackSequence++;cancelPendingMetadata?.();cancelPendingMetadata=null;main.pause();},seek:t=>{main.currentTime=t;},volume:v=>{main.volume=v;}
    },
    audition:{
     scheduledLoop:true,currentLoop:()=>auditionControls.loop(),
     info:()=>{const lane=timelineControls.laneFor(auditionControls.laneId()||timelineControls.focus()),track=state.selectedTrack,mix=auditionControls.mixInfo(),mixed=mix.scope==='mix';return {track,trackId:track?.id,available:mixed?mix.available:Boolean(lane),playing:auditionControls.playing(),loading:auditionControls.loading(),time:auditionControls.time()||0,start:0,end:total(track,mixed?mix.duration:lane?.duration),
-      label:mixed?(mix.wav?'WAV / MIDI · ':'MIDI · ')+rt('runtime.mix.source',{count:mix.audible})+(mix.isDraft?' · '+rt('runtime.transport.draft'):''):(auditionControls.mode()==='midi'?'MIDI':'WAV')+' · '+(lane?.instrument?.name||lane?.stem||'')+(auditionControls.mode()==='wav'? ' · '+rt('runtime.transport.groupWav') : lane?.isDraft?' · '+rt('runtime.transport.draft'):' · '+rt('runtime.transport.saved'))};},
+      label:mixed?(mix.wav?rt('runtime.transport.mixedWave')+' · ':'MIDI · ')+rt('runtime.mix.source',{count:mix.audible})+(mix.isDraft?' · '+rt('runtime.transport.draft'):''):(auditionControls.mode()==='midi'?'MIDI':'WAV')+' · '+(lane?.instrument?.name||lane?.stem||'')+(auditionControls.mode()==='wav'? ' · '+rt('runtime.transport.groupWav') : lane?.isDraft?' · '+rt('runtime.transport.draft'):' · '+rt('runtime.transport.saved'))};},
     play:()=>auditionControls.toggle(),pause:()=>auditionControls.pause(),stop:()=>auditionControls.stop(),seek:t=>auditionControls.seek(t),volume:v=>auditionControls.setVolume(v),
     loop:value=>{const old=auditionControls.loop();if(!value){if(old)auditionControls.clearLoop();}else if(!old||old.start!==value.start||old.end!==value.end||old.enabled!==value.enabled)auditionControls.setLoop(value.start,value.end,value.enabled);}
    },

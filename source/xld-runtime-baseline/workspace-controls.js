@@ -133,8 +133,8 @@
         elements.card.dataset.ready = String(Boolean(selected && summary.ready));
         elements.card.disabled = !selected;
         const task = state.activeTask;
-        const ids = key==='section'?sections:key==='harmony'?harmonies:key==='stems'?['demucs-6s','bs-roformer-sw']:['muscriptor-medium','muscriptor-large','strings-muscriptor-medium','strings-muscriptor-large','drums-muscriptor-medium','drums-muscriptor-large','piano-muscriptor-medium','bass-muscriptor-medium','piano-muscriptor-large','bass-muscriptor-large','yourmt3-plus','drums-adtof','drums-adtof-stems','basic-pitch','guitar-gaps','piano-highres','piano-transkun','bass-highres','vocals-rmvpe'];
-        if (task && selected && task.trackId===selected.id && ids.includes(task.engine)) elements.status.textContent = copy('running')+' '+Math.round((task.progress||0)*100)+'%';
+        const ids = key==='section'?sections:key==='harmony'?harmonies:null; // stems and MIDI: by the task's kind (W1)
+        if (task && selected && task.trackId===selected.id && (ids ? ids.includes(task.engine) : task.kind === (key==='stems'?'stems':'midi'))) elements.status.textContent = copy('running')+' '+Math.round((task.progress||0)*100)+'%';
       }
       $('workspaceMidiEmpty').hidden = Boolean(derived?.ok || derived?.strings?.active);
       $('derivedHeading').textContent = copy(active === 'midi' ? 'midiTitle':'stemsTitle');

@@ -62,7 +62,9 @@ def available_engines():
             ready = score_vocals_ready(profile)
         results.append({'id': profile['id'], 'available': bool(ready)})
     return results
-STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48, "vocals": 53}
+# W1 (2026-11-15): winds - every wind instrument MuScriptor hears keeps its own track and program; 56 (trumpet) is
+# only the fallback for a backend that returns one part.
+STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48, "vocals": 53, "winds": 56}
 STRING_PROGRAMS = {"strings": 48, "strings-all": 48, "violin": 40, "viola": 41, "cello": 42, "double-bass": 43}
 
 
@@ -107,7 +109,7 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
         raise ValueError("无效弦乐音源")
     options = profile["options"]
     if stem not in STEMS:
-        raise ValueError("请选择 bass、piano、guitar、drums、strings 或 vocals")
+        raise ValueError("请选择 bass、piano、guitar、drums、strings、winds 或 vocals")
     run_id, source_run_id = str(uuid.UUID(run_id)), str(uuid.UUID(source_run_id))
     started = time.monotonic()
     input_path = input_path.resolve()
@@ -207,10 +209,12 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
         midi.instruments.append(instrument)
     for part in midi.instruments:
         part.notes.sort(key=lambda n: (n.start, n.pitch, n.end))
-    if profile['backend'] == 'yourmt3' or (profile['backend'] == 'muscriptor' and stem == 'strings'):
+    if profile['backend'] == 'yourmt3' or (profile['backend'] == 'muscriptor' and stem in ('strings', 'winds')):
         from yourmt3 import preserve_overlapping_notes
         backend.update(preserve_overlapping_notes(midi))
-        backend['programMode'] = 'source-string-timbre; native groups retained' if stem == 'strings' else 'source-guitar-timbre; native groups combined, all notes retained'
+        backend['programMode'] = ('source-string-timbre; native groups retained' if stem == 'strings'
+                                  else 'native wind programs; one track per instrument' if stem == 'winds'
+                                  else 'source-guitar-timbre; native groups combined, all notes retained')
     if profile['backend']=='muscriptor' and stem=='strings' and 'gapFillMs' in options:
         from muscriptor_backend import finish_timing
         backend.update(finish_timing(midi,profile))

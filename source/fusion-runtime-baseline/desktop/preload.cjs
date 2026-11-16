@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('XinsMusicLabFusion', Object.freeze({
   scoreLayersState: trackIds => ipcRenderer.invoke('fusion:score-layers-state', { trackIds }),
   lyrics: (trackId, duration) => ipcRenderer.invoke('fusion:lyrics', { trackId, duration }),
   lyricsNudge: (trackId, delta) => ipcRenderer.invoke('fusion:lyrics-nudge', { trackId, delta }),
+  lyricsMenu: (trackId, action, extra = {}) => ipcRenderer.invoke('fusion:lyrics-menu', { trackId, action, id: extra.id, duration: extra.duration }),
   scoreDynamics: payload => ipcRenderer.invoke('fusion:score-dynamics',payload),
   scoreExport: payload => ipcRenderer.invoke('fusion:score-export', payload),
   cancelScoreExport: () => ipcRenderer.invoke('fusion:score-export-cancel'),

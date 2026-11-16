@@ -53,4 +53,21 @@ with tempfile.TemporaryDirectory() as temporary:
     for bend in [100,-100]:
         p=pretty_midi.Instrument(24);p.notes=[pretty_midi.Note(100,60,0,2)];p.pitch_bends=[pretty_midi.PitchBend(bend,1)];expressive.instruments.append(p)
     assert len(module.compact_plain_tracks(expressive,expressive))==2
-print('Channel compaction: PASS (same-timbre grouping, overlapping notes, exact timing, expression isolation)')
+    # W1: more pitched tracks than a MIDI file has channels (winds, one track per instrument, beside the rest): the part
+    # with the most is folded onto its most-used program; every note is kept; the result says which part was folded.
+    winds=pretty_midi.PrettyMIDI()
+    for i,program in enumerate([56,57,58,60,61,64,66,67,68,69,70,71,73]):
+        p=pretty_midi.Instrument(program,name='wind %d'%i);p.notes=[pretty_midi.Note(80,60+i,i*.5,i*.5+(3 if i==0 else .4))]
+        if i==0:p.notes.append(pretty_midi.Note(80,62,.2,.9))
+        winds.instruments.append(p)
+    other=pretty_midi.PrettyMIDI()
+    for program in [0,24,33]:
+        p=pretty_midi.Instrument(program);p.notes=[pretty_midi.Note(90,50,0,1)];other.instruments.append(p)
+    wf=root/'winds.mid';winds.write(str(wf));of=root/'band.mid';other.write(str(of))
+    summary=module.merge([{'stem':'band','path':str(of)},{'stem':'winds','path':str(wf)}],root/'folded.mid')
+    assert summary['folded']==['winds'],summary
+    assert {p['stem']:p['noteCount'] for p in summary['parts']}=={'band':3,'winds':14},'every note kept'
+    saved=pretty_midi.PrettyMIDI(str(root/'folded.mid'))
+    assert sum(not i.is_drum for i in saved.instruments)<=15
+    assert {i.program for i in saved.instruments if i.name.startswith('winds')}=={56},'the winds play with their most-used program'
+print('Channel compaction: PASS (same-timbre grouping, overlapping notes, exact timing, expression isolation, folding when channels run out)')

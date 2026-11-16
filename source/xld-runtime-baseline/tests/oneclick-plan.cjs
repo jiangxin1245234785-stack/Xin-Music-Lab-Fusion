@@ -9,8 +9,8 @@ const P = require('../oneclick-plan.js');
 {
   const eff = P.applyPreset('efficiency'), q = P.applyPreset('quality');
   assert.equal(eff.preset, 'efficiency'); assert.equal(q.preset, 'quality');
-  assert.deepEqual(eff.choices, {separation: 'bs-roformer-sw', refine: false, piano: 'piano-muscriptor-medium', bass: 'bass-muscriptor-medium', guitar: 'muscriptor-medium', strings: 'strings-muscriptor-medium', drums: 'drums-adtof', vocals: true});
-  assert.deepEqual(q.choices, {separation: 'bs-roformer-sw', refine: true, piano: 'piano-muscriptor-large', bass: 'bass-muscriptor-large', guitar: 'muscriptor-large', strings: 'strings-muscriptor-large', drums: 'drums-adtof-stems', vocals: true});
+  assert.deepEqual(eff.choices, {separation: 'bs-roformer-sw', refine: false, piano: 'piano-muscriptor-medium', bass: 'bass-muscriptor-medium', guitar: 'muscriptor-medium', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium', drums: 'drums-adtof', vocals: true});
+  assert.deepEqual(q.choices, {separation: 'bs-roformer-sw', refine: true, piano: 'piano-muscriptor-large', bass: 'bass-muscriptor-large', guitar: 'muscriptor-large', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large', drums: 'drums-adtof-stems', vocals: true});
   assert.equal(P.choose(eff, 'piano', 'piano-transkun'), eff, 'Transkun is a manual alternative, not a one-click choice');
   assert.equal(P.choose(eff, 'bass', 'bass-muscriptor-large').preset, 'custom');
   // A choice stored before piano / bass were choices takes the stored preset's piano / bass.
@@ -27,12 +27,12 @@ const P = require('../oneclick-plan.js');
   assert.deepEqual(P.load(storage), custom);
   store.set('xld.oneclick', '{broken'); assert.deepEqual(P.load(storage), eff, 'broken storage falls back');
   store.set('xld.oneclick', JSON.stringify({preset: 'quality', choices: {guitar: 'nonsense'}})); assert.deepEqual(P.load(storage), q, 'unknown values take the preset');
-  assert.deepEqual(P.midiPicks(q.choices), {bass: 'bass-muscriptor-large', piano: 'piano-muscriptor-large', guitar: 'muscriptor-large', drums: 'drums-adtof-stems', strings: 'strings-muscriptor-large'});
-  assert.deepEqual(P.midiPicks(eff.choices), {bass: 'bass-muscriptor-medium', piano: 'piano-muscriptor-medium', guitar: 'muscriptor-medium', drums: 'drums-adtof', strings: 'strings-muscriptor-medium'});
+  assert.deepEqual(P.midiPicks(q.choices), {bass: 'bass-muscriptor-large', piano: 'piano-muscriptor-large', guitar: 'muscriptor-large', drums: 'drums-adtof-stems', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large'});
+  assert.deepEqual(P.midiPicks(eff.choices), {bass: 'bass-muscriptor-medium', piano: 'piano-muscriptor-medium', guitar: 'muscriptor-medium', drums: 'drums-adtof', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium'});
 }
 
 // --- the plan ----------------------------------------------------------------------------------------------
-const midiModels = ['bass-muscriptor-medium', 'bass-muscriptor-large', 'piano-muscriptor-medium', 'piano-muscriptor-large', 'muscriptor-medium', 'muscriptor-large', 'strings-muscriptor-medium', 'strings-muscriptor-large', 'drums-adtof', 'drums-adtof-stems', 'vocals-rmvpe']
+const midiModels = ['bass-muscriptor-medium', 'bass-muscriptor-large', 'piano-muscriptor-medium', 'piano-muscriptor-large', 'muscriptor-medium', 'muscriptor-large', 'strings-muscriptor-medium', 'strings-muscriptor-large', 'winds-muscriptor-medium', 'winds-muscriptor-large', 'drums-adtof', 'drums-adtof-stems', 'vocals-rmvpe']
   .map(id => ({id, available: true}));
 const fullEnv = (over = {}) => ({analysis: [{id: 'songformer', available: true}, {id: 'chord-chordmini', available: true}, {id: 'chord-btc', available: true}],
   separation: [{id: 'bs-roformer-sw', available: true}, {id: 'demucs-6s', available: true}], refinement: [{id: 'mega-53', available: true}],
@@ -46,8 +46,13 @@ const states = steps => Object.fromEntries(steps.map(step => [step.id, step.stat
   assert.equal(eff.find(s => s.id === 'chords').engine, 'chord-chordmini');
   assert(eff.every(s => s.state === 'pending'));
   const q = P.plan(P.PRESETS.quality, fullEnv());
-  assert.deepEqual(ids(q), ['sections', 'chords', 'stems', 'refine', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:strings', 'midi:vocals', 'merge'], 'quality: fine split and strings');
-  assert.deepEqual(q.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-large', 'piano-muscriptor-large', 'muscriptor-large', 'drums-adtof-stems', 'strings-muscriptor-large', 'vocals-rmvpe']);
+  assert.deepEqual(ids(q), ['sections', 'chords', 'stems', 'refine', 'refine-winds', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:strings', 'midi:winds', 'midi:vocals', 'merge'], 'quality: fine split, strings, then the winds from what the strings left');
+  assert.deepEqual(q.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-large', 'piano-muscriptor-large', 'muscriptor-large', 'drums-adtof-stems', 'strings-muscriptor-large', 'winds-muscriptor-large', 'vocals-rmvpe']);
+  // W1: a song with a winds source needs no winds fine split; a song found to have no winds has no winds steps at all.
+  assert.ok(!ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('refine-winds'));
+  assert.ok(ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('midi:winds'));
+  const none = ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {none: {level: {}}}}})));
+  assert.ok(!none.includes('refine-winds') && !none.includes('midi:winds'), 'no winds: no winds steps');
   // A strings source already chosen: strings is a part even without the fine split (as in 一键生成 MIDI).
   assert(ids(P.plan(P.PRESETS.efficiency, fullEnv({derived: {strings: {active: {runId: 'x'}}}}))).includes('midi:strings'));
   // Vocals off.
@@ -62,7 +67,7 @@ const states = steps => Object.fromEntries(steps.map(step => [step.id, step.stat
   assert.equal(states(P.plan(P.PRESETS.efficiency, fullEnv({analysis: [], has: id => id === 'songformer'}))).sections, 'pending', 'an existing result is still answered without the runtime');
   const noStems = states(P.plan(P.PRESETS.quality, fullEnv({separation: [{id: 'bs-roformer-sw', available: false}]})));
   assert.equal(noStems.stems, 'unavailable:engine-missing');
-  for (const id of ['refine', 'midi:bass', 'midi:vocals', 'merge']) assert.equal(noStems[id], 'unavailable:needs-stems', id);
+  for (const id of ['refine', 'refine-winds', 'midi:bass', 'midi:vocals', 'merge']) assert.equal(noStems[id], 'unavailable:needs-stems', id);
   const keptStems = states(P.plan(P.PRESETS.efficiency, fullEnv({separation: [{id: 'bs-roformer-sw', available: false}], derived: {stemVariants: {'bs-roformer-sw': {ok: true}}}})));
   assert.equal(keptStems.stems, 'pending', 'stems on disk are answered without the separation runtime');
   const noMega = states(P.plan(P.PRESETS.quality, fullEnv({refinement: [{id: 'mega-53', available: false}]})));

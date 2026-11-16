@@ -103,7 +103,7 @@ async function store() {
 // --- the page: one subtraction, the line says how far it was moved, the nudges ask the main process -----------------
 async function page() {
   const el = tag => ({tag, className: '', textContent: '', title: '', type: '', hidden: false, style: {}, dataset: {}, children: [], attrs: {}, offsetHeight: 40,
-    classList: {add() {}, remove() {}}, setAttribute(k, v) { this.attrs[k] = v; }, append(...c) { this.children.push(...c); }, remove() {},
+    classList: {set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }, toggle(c, on) { if (on) this.set.add(c); else this.set.delete(c); }, contains(c) { return this.set.has(c); }}, setAttribute(k, v) { this.attrs[k] = v; }, append(...c) { this.children.push(...c); }, remove() {},
     listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }});
   const box = {};
   const doc = {createElement: el, getElementById: () => null};

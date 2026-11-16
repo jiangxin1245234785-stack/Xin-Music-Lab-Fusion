@@ -108,7 +108,8 @@ assert.deepEqual(ids(bar), ['timelineAudition', 'timelineOriginal', 'timelineZoo
 assert.equal(bar.nextSibling ?? card.children[card.children.indexOf(bar) + 1], row2, 'row 2 sits right under row 1');
 assert.deepEqual(ids(row2), ['timelineFocusExit', 'midiEditToggle', 'timelineEvidenceCheck', 'timelineEvidenceApply', 'midiExport', 'timelineEvidenceStatus'],
   'row 2: back, edit, check, refine, export, status');
-assert.deepEqual(ids(menu), ['timeline-strip', 'timelineAnnotate', 'timelineSelectNotes', 'timelineMoreProperties', 'timelineEvidenceCheckAll', 'timelineEvidenceApplyAll', 'timeline-more-check', 'timelineEvidenceAllStatus'],
+// W1: 合并同类乐器声部 (a label, so it shows by its class) right after the 属性 slot.
+assert.deepEqual(ids(menu), ['timeline-strip', 'timelineAnnotate', 'timelineSelectNotes', 'timelineMoreProperties', 'timeline-more-check', 'timelineEvidenceCheckAll', 'timelineEvidenceApplyAll', 'timeline-more-check', 'timelineEvidenceAllStatus'],
   'menu: strip, annotate, select, properties slot, check all, refine all, lengthen, status');
 assert.equal(zoom.hidden, true, 'the emptied header group is hidden');
 assert.equal(extendLabel.getAttribute('style'), null, 'the lengthen label loses its inline layout to the menu style');

@@ -101,10 +101,12 @@ async function writeAtomic(file, value) {
 const cleanMidi = ({ok,directory,identity,matches,...value}) => value;
 const cleanStems = ({ok,directory,...value}) => ({...value,stems:value.stems.map(({audioUrl,...stem})=>stem)});
 
-function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
+function createMidiAssets({ analysisDirectory, readStems, readStringSource, readWindsSource }) {
   async function source(track, stem) {
     if (!STEMS.includes(stem)) throw new Error('midi-stem-unsupported');
     if(stem==='strings'){const selected=await readStringSource?.(track);if(!selected)throw Error('midi-missing');return selected;}
+    // W1: the winds are transcribed from the winds source (Mega 53 "wind", dug out of what the strings step left).
+    if(stem==='winds'){const selected=await readWindsSource?.(track);if(!selected)throw Error('midi-missing');return selected;}
     const result = await readStems(track);
     if (!result.ok) throw new Error('midi-needs-stems');
     const item = result.stems.find(item => item.name === stem);
@@ -355,7 +357,7 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource }) {
         active: activeRead.ok && activeRead.runId === runId, kept: kept.has(runId),
         // The stem batch (or, for strings, the refinement result) it was made from is gone: the version cannot be
         // checked or played any more, so the version list does not show it unless asked (audit fix 1, item 5).
-        stemsDeleted: validId(raw.sourceRunId) && !fsSync.existsSync(path.join(analysisDirectory(track), stem === 'strings' ? 'refinement' : 'stems', raw.sourceRunId)),
+        stemsDeleted: validId(raw.sourceRunId) && !fsSync.existsSync(path.join(analysisDirectory(track), stem === 'strings' || stem === 'winds' ? 'refinement' : 'stems', raw.sourceRunId)),
         // Its folder went to the Recycle Bin with its stem batch (core/stem-batches.cjs): recoverable from the bin.
         recycled: fsSync.existsSync(path.join(analysisDirectory(track), 'midi', stem, 'recycled', runId + '.json')) && !fsSync.existsSync(path.join(analysisDirectory(track), 'midi', stem, runId))};
       try {
@@ -425,7 +427,8 @@ function createDerivedAssets({analysisRoot}) {
    } catch(error) {return {ok:false,error:error.message,stems:[]};}
  }
  const stringSources=require('./string-source.cjs').createStringSource({assets:{directory:analysisDirectory,readStems}});
- const midi = createMidiAssets({analysisDirectory, readStems,readStringSource:stringSources.current});
+ const windSources=require('./string-source.cjs').createPartSource({assets:{directory:analysisDirectory,readStems},part:'winds'});
+ const midi = createMidiAssets({analysisDirectory, readStems,readStringSource:stringSources.current,readWindsSource:windSources.current});
  async function activateStems(track, value) {
    const result = cleanStems(value), profile = separationForResult(result);
    await validateStems(result, track, profile?.id);
@@ -451,7 +454,7 @@ function createDerivedAssets({analysisRoot}) {
    }
    return {ok:false,error:'midi-missing'};
  }
- return {stringSources,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
+ return {stringSources,windSources,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
 }
 
 module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, MANUAL, MANUAL_ENGINE, profileFor, profileForResult, defaultEngine, identityOf, engineOf, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};

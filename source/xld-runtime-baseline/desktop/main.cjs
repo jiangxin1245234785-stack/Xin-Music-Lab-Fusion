@@ -934,6 +934,17 @@ app.whenReady().then(async () => {
     midiSourceChanging=true;
     try{return await derivedAssets.stringSources.select(track,payload.selection);}catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
   });
+  // A finished winds fine split: the winds source, or "this song has no winds" when it holds (nearly) nothing.
+  ipcMain.handle('assets:winds-adopt',async(_event,payload)=>{
+    const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    try{return await derivedAssets.windSources.adopt(track,{runId:payload?.runId,cacheKey:payload?.cacheKey});}catch(error){return {ok:false,error:error.message};}
+  });
+  ipcMain.handle('assets:winds-source',async(_event,payload)=>{
+    if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
+    const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
+    midiSourceChanging=true;
+    try{return await derivedAssets.windSources.select(track,payload.selection);}catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
+  });
   ipcMain.handle('assets:delete-midi',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
@@ -1075,6 +1086,8 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     if (!track) return {ok: false, error: 'track-missing', stems: [], midi: {}};
     const stems = await derivedAssets.readStems(track);
     const strings=await derivedAssets.stringSources.list(track);
+    // W1: the winds source (Mega 53 "wind" dug out of what the strings step left), or "this song has no winds".
+    const winds=await derivedAssets.windSources.list(track);
     const midi = {};
     if (stems.ok || strings.active) for (const name of require('../core/derived-assets.cjs').STEMS) midi[name] = await derivedAssets.readMidi(track, name);
     const variants = {};
@@ -1089,7 +1102,8 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     const merged=await analysisService.readMidiMerge(track);
     const midiInputs=Object.fromEntries((stems.ok?stems.stems:[]).filter(item=>require('../core/derived-assets.cjs').STEMS.includes(item.name)).map(item=>[item.name,{runId:stems.runId,audioUrl:item.audioUrl}]));
     if(strings.active)midiInputs.strings=strings.active;
-    const midiSourceKey=JSON.stringify([stems.ok?stems.runId:null,strings.active?.runId||null]);
+    if(winds.active)midiInputs.winds=winds.active;
+    const midiSourceKey=JSON.stringify([stems.ok?stems.runId:null,strings.active?.runId||null,winds.active?.runId||null]);
     // Whether 生成 MIDI for vocals has to make the vocal line first (`due`, core/score-vocals.cjs), whether the song
     // has singing at all, and the digest of the current line, which a vocals-rmvpe run must have been converted from
     // to count as reusable. The state name is shown, never the result.
@@ -1099,7 +1113,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     // A few file checks: the one-click analysis marks vocals unavailable up front (when a run is owed, or will be once the
     // track is separated) instead of failing on that step.
     if(vocals.state!=='current')vocals.missing=require('../core/score-vocals.cjs').addonsMissing();
-    return {...stems, midi, variants, stemVariants, merged,strings,midiInputs,midiSourceKey,vocals};
+    return {...stems, midi, variants, stemVariants, merged,strings,winds,midiInputs,midiSourceKey,vocals};
   });
   ipcMain.handle('assets:reveal', async (_event, payload) => {
     const track = trackIndex.get(String(payload?.trackId || ''));

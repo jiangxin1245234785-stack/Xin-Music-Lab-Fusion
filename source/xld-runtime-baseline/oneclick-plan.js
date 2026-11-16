@@ -6,8 +6,8 @@
   'use strict';
   const STORAGE_KEY = 'xld.oneclick';
   const PRESETS = Object.freeze({
-    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, piano:'piano-muscriptor-medium', bass:'bass-muscriptor-medium', guitar:'muscriptor-medium', strings:'strings-muscriptor-medium', drums:'drums-adtof', vocals:true}),
-    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, piano:'piano-muscriptor-large', bass:'bass-muscriptor-large', guitar:'muscriptor-large', strings:'strings-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
+    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, piano:'piano-muscriptor-medium', bass:'bass-muscriptor-medium', guitar:'muscriptor-medium', strings:'strings-muscriptor-medium', winds:'winds-muscriptor-medium', drums:'drums-adtof', vocals:true}),
+    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, piano:'piano-muscriptor-large', bass:'bass-muscriptor-large', guitar:'muscriptor-large', strings:'strings-muscriptor-large', winds:'winds-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
   });
   // MODELS-2: every part transcribed with MuScriptor (piano, bass, guitar, strings) is Medium in 效率 and Large in
   // 质量; the manual default of each part (models.json defaultFor) must agree (tests/model-defaults.cjs).
@@ -15,10 +15,11 @@
     separation: ['bs-roformer-sw', 'demucs-6s'], refine: [false, true],
     piano: ['piano-muscriptor-medium', 'piano-muscriptor-large'], bass: ['bass-muscriptor-medium', 'bass-muscriptor-large'],
     guitar: ['muscriptor-medium', 'muscriptor-large'], strings: ['strings-muscriptor-medium', 'strings-muscriptor-large'],
+    winds: ['winds-muscriptor-medium', 'winds-muscriptor-large'],
     drums: ['drums-adtof', 'drums-adtof-stems'], vocals: [true, false]
   });
   const KEYS = Object.keys(OPTIONS);
-  const PARTS = ['bass', 'piano', 'guitar', 'drums', 'strings', 'vocals'];
+  const PARTS = ['bass', 'piano', 'guitar', 'drums', 'strings', 'winds', 'vocals'];
   // Measured on this machine (GPU), read from the real analysis root on 2026-11-14: logs/analysis.jsonl and
   // analysis.dev-root-20261113.jsonl "finish" events that were not cache reads (elapsedSeconds), divided by the
   // track length from its stems manifest; fine split from refinement/<key>.json backend.elapsedSeconds and the size of
@@ -55,7 +56,7 @@
     return {preset: presetOf(choices), choices};
   }
   // The models the 转谱 panel is told to use (and then remembers): one per part.
-  const midiPicks = choices => ({bass: choices.bass, piano: choices.piano, guitar: choices.guitar, drums: choices.drums, strings: choices.strings});
+  const midiPicks = choices => ({bass: choices.bass, piano: choices.piano, guitar: choices.guitar, drums: choices.drums, strings: choices.strings, winds: choices.winds});
 
   // env: {analysis:[{id,available}], separation:[{id,available}], refinement:[{id,available}], midi:[{id,stems,available}],
   //       derived: the track's readDerived answer (may be null), has: engine -> boolean (a section / chord result exists)}
@@ -87,10 +88,20 @@
       if (noStems) off(refine, 'needs-stems');
       else if (!stringsSource && !usable(env.refinement, 'mega-53') && !derived?.strings?.choices?.length) off(refine, 'engine-missing');
     }
+    // W1: the winds, dug out of what the strings step left. Already there (a winds source, or "no winds") = nothing to do.
+    const windsSource = Boolean(derived?.winds?.active), noWinds = Boolean(derived?.winds?.none);
+    let refineWinds = null;
+    if (choices.refine && !windsSource && !noWinds) {
+      refineWinds = add({id: 'refine-winds', kind: 'refine', engine: 'mega-53', target: 'wind'});
+      if (noStems) off(refineWinds, 'needs-stems');
+      else if (refine?.state === 'unavailable') off(refineWinds, 'needs-strings');
+      else if (!usable(env.refinement, 'mega-53')) off(refineWinds, 'engine-missing');
+    }
 
     const picks = midiPicks(choices);
     for (const stem of PARTS) {
       if (stem === 'strings' && !choices.refine && !stringsSource) continue;
+      if (stem === 'winds' && ((!choices.refine && !windsSource) || noWinds)) continue;
       if (stem === 'vocals' && !choices.vocals) continue;
       const engine = stem === 'vocals' ? 'vocals-rmvpe' : picks[stem];
       const step = add({id: 'midi:' + stem, kind: 'midi', stem, engine});
@@ -100,6 +111,7 @@
       else if (!model) off(step, 'engine-missing');
       else if (!model.available && !(kept?.ok && kept.matches !== false)) off(step, 'engine-missing');
       else if (stem === 'strings' && !stringsSource && refine?.state === 'unavailable') off(step, 'needs-strings');
+      else if (stem === 'winds' && !windsSource && refineWinds?.state === 'unavailable') off(step, 'needs-winds');
       else if (stem === 'vocals' && derived?.vocals?.state !== 'current' && derived?.vocals?.missing?.length) off(step, 'addons', {list: derived.vocals.missing.join('、')});
     }
     const merge = add({id: 'merge', kind: 'merge', engine: 'midi-merge'});
@@ -134,7 +146,11 @@
         set(step, 'running');
         let response; try { response = await ops[step.kind](step); } catch (error) { response = {ok: false, error: 'request-failed', detail: String(error)}; }
         if (isCancel(response)) { skipRest('cancelled'); return {ok: false, cancelled: true, steps}; }
-        if (response?.ok) { set(step, response.cached ? 'existing' : 'done'); continue; }
+        if (response?.ok) {
+          set(step, response.cached ? 'existing' : 'done');
+          if (step.id === 'refine-winds' && response.none) { const row = steps.find(item => item.id === 'midi:winds'); if (row && row.state === 'pending') set(row, 'done', {code: 'no-winds'}); }
+          continue;
+        }
         set(step, 'failed', why(response));
         if (step.kind === 'stems') { skipRest('needs-stems'); return {ok: false, cancelled: false, steps}; }
         continue;
@@ -142,7 +158,7 @@
       if ((step.kind === 'midi' || step.kind === 'merge') && !midiDone) {
         midiDone = true;
         const rows = steps.filter(item => item.kind === 'midi' || item.kind === 'merge');
-        const exclude = rows.filter(item => item.kind === 'midi' && item.state === 'unavailable').map(item => item.stem);
+        const exclude = rows.filter(item => item.kind === 'midi' && (item.state === 'unavailable' || item.reason?.code === 'no-winds')).map(item => item.stem);
         const rowOf = batchStep => rows.find(item => batchStep.kind === 'merge' ? item.kind === 'merge' : item.stem === batchStep.stem);
         let outcome;
         try {

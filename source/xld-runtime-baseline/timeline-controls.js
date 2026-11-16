@@ -207,8 +207,10 @@
     const evidenceFor = lane => { const found = evidence.get(lane?.stem); return found && found.runId === lane.runId ? found : null; };
 
 
-    let layout=window.XldTrackLayout.create(),groupCache=new Map(),editTargets=new Map(),dragRow=null;
-    function loadLayout(){let value;try{value=JSON.parse(localStorage.getItem('xld:track-layout:'+trackId)||'null');}catch(_){}layout=window.XldTrackLayout.create(value);groupCache.clear();editTargets.clear();}
+    // 合并同类乐器声部 (W1): one lane per part, or one per instrument. XLD's own setting, on by default as in XML.
+    let mergeTimbres=true;try{mergeTimbres=localStorage.getItem('xld:merge-timbres')!=='off';}catch(_){}
+    let layout=window.XldTrackLayout.create(null,()=>mergeTimbres),groupCache=new Map(),editTargets=new Map(),dragRow=null;
+    function loadLayout(){let value;try{value=JSON.parse(localStorage.getItem('xld:track-layout:'+trackId)||'null');}catch(_){}layout=window.XldTrackLayout.create(value,()=>mergeTimbres);groupCache.clear();editTargets.clear();}
     function saveLayout(){try{localStorage.setItem('xld:track-layout:'+trackId,JSON.stringify(layout.snapshot()));}catch(_){}}
     const groupId=stem=>'@stem:'+stem;
     const partsFor=stem=>layout.children(stem,lanes.filter(l=>l.stem===stem));
@@ -233,6 +235,13 @@
       return part||null;
     }
     function setEditInstrument(stem,index){editTargets.set(stem,Number(index));selectionKeys.clear();cancelNoteGesture?.();render();}
+    // The switch: every part with several instruments folded (merged) or unfolded, and the choice remembered.
+    function setMergeTimbres(value){
+      mergeTimbres=Boolean(value);try{localStorage.setItem('xld:merge-timbres',mergeTimbres?'on':'off');}catch(_){}
+      cancelNoteGesture?.();selectionKeys.clear();gestureEpoch++;
+      for(const stem of new Set(lanes.map(l=>l.stem)))if(partsFor(stem).length>1)layout.fold(stem,mergeTimbres);
+      saveLayout();render();
+    }
     function setCollapsed(stem,value){
       const parts=partsFor(stem);if(parts.length<2)return;
       const focused=lookup(focusStem),wasSelecting=noteSelecting;
@@ -1168,7 +1177,7 @@
       const lane = lookup(focusStem);
       if (!lane) return {};
       const state = getState(), list = issueList();
-      const count = lane.wavOnly ? 'WAV' : rt('runtime.timeline.notes', {count: lane.noteCount});
+      const count = lane.wavOnly ? rt('runtime.timeline.waveform') : rt('runtime.timeline.notes', {count: lane.noteCount});
       return {lanes: pageLaneIds().length,
         title: [state.selectedTrack?.title, laneName(lane) + ' · ' + engineLabelOf(lane) + (lane.isDraft ? ' *' : ''), count].filter(Boolean).join(' · '),
         pitch: {row: focusRow, min: LP?.ZOOM_ROW.min, max: LP ? rowMax() : undefined, zoomed: rowZoomed, off: Boolean(lane.wavOnly || !LP)},
@@ -1393,14 +1402,22 @@
         head.type = 'button';
         head.className = 'tl-row-head tl-row-toggle';
         head.title = rt(detailed ? 'runtime.timeline.focusExit' : 'runtime.timeline.focus');
-        const subtitle = lane.status === 'none' ? rt('runtime.timeline.vocalsNone') : lane.wavOnly ? rt('runtime.hybrid.waveform') : laneSubtitle(lane);
-        const engineLabel = engineLabelOf(lane);
-        head.innerHTML = `<strong>${escapeHtml(laneName(lane))} · ${escapeHtml(engineLabel)}${lane.isDraft ? ' *' : ''}</strong>`
-          + `<span>${escapeHtml(lane.wavOnly?'WAV':rt('runtime.timeline.notes', { count: lane.noteCount }))}${subtitle ? ' · ' + escapeHtml(subtitle) : ''}`
-          + `${detailed && spans ? ' · ' + escapeHtml(roleMix(spans, total)) : ''}</span>`;
+        // Line 1 the part, line 2 the model in full and then what can be cut (count, range); the tooltip has both whole.
+        const engineLabel = engineLabelOf(lane), part = laneName(lane) + (lane.isDraft ? ' *' : '');
+        const emptyPart = lane.wavOnly && lane.noteCount === 0 && lane.runId;
+        const model = lane.status === 'none' || emptyPart ? '' : engineLabel;
+        const rest = lane.status === 'none' ? rt('runtime.timeline.vocalsNone')
+          : emptyPart ? rt('runtime.timeline.emptyShowsWave')
+          : lane.wavOnly ? rt('runtime.timeline.waveform')
+          : [rt('runtime.timeline.notes', { count: lane.noteCount }), laneSubtitle(lane), detailed && spans ? roleMix(spans, total) : ''].filter(Boolean).join(' · ');
+        head.innerHTML = `<strong>${escapeHtml(part)}</strong>`
+          + `<span class="tl-head-sub">${model ? `<b class="tl-head-model">${escapeHtml(model)}</b>` : ''}<span class="tl-head-rest">${model && rest ? ' · ' : ''}${escapeHtml(rest)}</span></span>`;
+        const format = lane.wavOnly && lane.sourceAudio?.format ? ' · ' + lane.sourceAudio.format : '';
+        head.dataset.full = `${part} · ${engineLabel}${format}`;
+        head.title = head.dataset.full + (detailed ? '' : '\n' + rt('runtime.timeline.focus'));
         // On the lane page this head is the keyboard: clicking it does nothing (← 返回 and Esc leave the page).
         head.addEventListener('click', () => { if (!detailed) setFocus(lane.laneId); });
-        if (detailed) head.title = '';
+        if (detailed) head.title = head.dataset.full || '';
         const body = document.createElement('div');
         body.className = 'tl-row-body';
         if(lane.groupHeader){
@@ -1903,7 +1920,8 @@
       toolbar = globalThis.XldTimelineToolbar?.create({document, rt,
         onCheckAll: () => { if (!focusStem) checkEvidence(); },
         onApplyAll: () => { if (!focusStem) applyEvidence(); },
-        onLaneStep: direction => stepLane(direction), onPitch: direction => stepPitch(direction), onIssue: direction => jumpIssue(direction)}) || null;
+        onLaneStep: direction => stepLane(direction), onPitch: direction => stepPitch(direction), onIssue: direction => jumpIssue(direction),
+        merged: () => mergeTimbres, onMerge: value => setMergeTimbres(value)}) || null;
       $('timelineSelectionClear')?.addEventListener('click', clearSelection);
       $('timelineAnnotate')?.addEventListener('click', () => setAnnotating(!annotating));
       $('timelineLocate')?.addEventListener('click', () => locatePlayhead());

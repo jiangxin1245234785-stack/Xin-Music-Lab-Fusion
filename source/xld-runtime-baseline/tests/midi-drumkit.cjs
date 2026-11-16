@@ -47,8 +47,9 @@ const drums = read('analysis-midi/drums.py');
 assert(drums.includes('def activations(') && drums.includes("'velocityMode': 'fixed'"), 'ADTOF adapter keeps its fixed-velocity output');
 
 // Renderer lists, hint and i18n.
-assert(read('app.js').includes("'drums-adtof','drums-adtof-stems'"), 'app refresh list knows the engine');
-assert(read('workspace-controls.js').includes("'drums-adtof','drums-adtof-stems'"), 'workspace controls know the engine');
+// W1: the hosts no longer keep lists of engine ids; every analysis task says its kind (core/analysis-service.cjs).
+assert(read('app.js').includes("['stems', 'midi', 'refine', 'merge'].includes(task.kind)"), 'app refreshes after any MIDI task, by its kind');
+assert(read('workspace-controls.js').includes("task.kind === (key==='stems'?'stems':'midi')"), 'workspace controls show a running MIDI task by its kind');
 assert(read('derived-controls.js').includes("'drums-adtof-stems'?rt('runtime.assets.drumStemsHint')"), 'hint wired');
 const messages = read('i18n/runtime-messages.js');
 assert.equal((messages.match(/"runtime\.assets\.drumStemsHint"/g) || []).length, 2, 'hint present in both locales');
