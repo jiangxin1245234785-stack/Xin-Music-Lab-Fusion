@@ -230,3 +230,17 @@ test('without lyrics the teleprinter prints the track sheet: title and artist fi
   assert.ok(late.every(s => s.done));
   assert.deepEqual(frame(20).motion.teleprinter, frame(20).motion.teleprinter, 'a function of song time');
 });
+
+test('the rating plate reads 蒋 and 鑫 from the telegraph table; the song sits in the teleprinter\'s title row; a host\'s facts list prints in its order', () => {
+  assert.equal(Telegraph.code('蒋'), '5592');
+  assert.equal(Telegraph.code('鑫'), '9515');
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}];
+  const plain = post(steady(lanes, 64, {track: {...song.track, title: '七里香', artist: '周杰伦', album: '', duration: 64}})).frame(5).motion;
+  assert.equal(plain.plate.line1, 'RESISTANCE 5592–9515 OHMS');
+  assert.equal(plain.plate.line2, 'MFD. BY & THE BLESSING INSTR. CO.');
+  assert.ok(plain.plate.size2 >= 12, 'the second line stays readable');
+  assert.equal(plain.teleTitle, '七里香 · 周杰伦');
+  const facts = [{name: 'Composer', value: '周杰伦'}, {name: 'RELEASED', value: '2004-08-03'}, {name: 'LABEL', value: ''}];
+  const listed = post(steady(lanes, 64, {track: {...song.track, title: 'X', duration: 64, facts}})).frame(63).motion.teleprinter;
+  assert.deepEqual(listed.fields, [['COMPOSER', '周杰伦'], ['RELEASED', '2004-08-03']], 'the list as given, empty values left out, nothing added');
+});

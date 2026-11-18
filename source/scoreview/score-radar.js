@@ -391,16 +391,31 @@
 
     function top(data, env, bars, now, out) {
       panel(18, 16, 1404, 82);
-      rect(44, 26, 232, 62, '#2a2c25', '#55574b', 1.5);
-      write('ECHO POST · MK II', 60, 48, 22, C.stamp, 'stamp', 'left', 206, 'bold');
-      const track = env.model.track || {};
-      const line = [track.title, clean(track.artist)].filter(Boolean).join(' · ');
-      out.plate = write(line || '— NO SIGNAL —', 60, 73, 12, C.stampDim, 'mono', 'left', 206);
-      lamp(303, 50, 8, 1, '#c8ffd0', C.green);
-      write('PWR', 303, 72, 10, C.stampFaint, 'stamp', 'center');
-      rect(333, 38, 60, 38, null || '#2c2e27', '#55574b', 1);
-      write('SER 0417', 340, 50, 10, C.stampFaint, 'mono');
-      write('24V DC', 340, 65, 10, C.stampFaint, 'mono');
+      // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from the
+      // bundled table, read here, not copied.
+      const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
+      rect(30, 24, 300, 66, '#2a2c25', '#55574b', 1.5);
+      screw(37, 31); screw(323, 31); screw(37, 83); screw(323, 83);
+      write('RATING', 46, 33, 8, C.stampFaint, 'mono', 'left');
+      const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
+      const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('stamp', k); if (p.measureText(text).width <= width) break; } return k; };
+      const size1 = fit(line1, 20, 12, 268), size2 = fit(line2, Math.min(size1, 17), 12, 268);
+      write(line1, 46, 51, size1, C.stamp, 'stamp', 'left', 270);
+      write(line2, 46, 73, size2, C.stamp, 'stamp', 'left', 270);
+      out.plate = {line1, line2, size1, size2};
+      lamp(350, 50, 8, 1, '#c8ffd0', C.green);
+      write('PWR', 350, 72, 10, C.stampFaint, 'stamp', 'center');
+      // The small plate: owner cell scratched out, type, date code, inspection stamp.
+      rect(370, 26, 114, 62, '#2c2e27', '#55574b', 1);
+      write('PROP. OF', 376, 36, 9, C.stampFaint, 'mono', 'left');
+      p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
+      for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
+      p.restore();
+      write('TYPE 6R-7C/88', 376, 54, 10, C.stampDim, 'mono', 'left');
+      write('5947', 376, 74, 11, C.stampDim, 'mono', 'left');
+      circle(462, 72, 12, null, '#8f8b78', 1.2);
+      write('INSP.', 462, 68, 7, C.stampDim, 'mono', 'center');
+      write('08', 462, 77, 8, C.stampDim, 'mono', 'center');
       // Section lamps: the current kind lit, the previous one fading out over .35 s.
       const fade = .35, light = SECTION_LAMPS.map(() => 0);
       const i = lower(data.sections, now + 1e-6, s => s.start) - 1;
@@ -412,7 +427,7 @@
         light[at] = Math.max(light[at], Math.min(into, left));
       }
       SECTION_LAMPS.forEach((name, k) => {
-        const x = 438 + k * 88, y = 40, w = 82, h = 36, v = light[k], has = data.kinds.has(name);
+        const x = 496 + k * 82, y = 40, w = 77, h = 36, v = light[k], has = data.kinds.has(name);
         rect(x, y, w, h, '#1a1712', '#4a3d2c', 1.5);
         if (v > .01) {
           const g = p.createLinearGradient(x, y, x, y + h);
@@ -902,10 +917,19 @@
 
     // The lyric tape: one line moving left past a fixed print head; each character prints its telegraph code first
     // and its character half a step later. Its position is a function of song time.
+    // The teleprinter's title row: the song being taken down, in its own language, cut to fit; the key under the paper.
+    function teleTitle(env, key, out) {
+      const t = env.model.track || {}, song = [t.title, clean(t.artist)].filter(Boolean).join(' · ');
+      write('TELEPRINTER', 970, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
+      font('stamp', 15);
+      const left = 970 + p.measureText('TELEPRINTER').width + 12;
+      const han = /\p{Script=Han}/u.test(song);
+      out.teleTitle = write(song || '— NO SIGNAL —', left, 778, 13, C.stamp, han ? 'hanzi' : 'mono', 'left', 1404 - left, 'bold');
+      write(key, 970, 877, 10, C.stampFaint, 'mono', 'left');
+    }
     function teleprinter(env, now, out) {
       panel(950, 754, 472, 130);
-      write('TELEPRINTER', 970, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
-      write('UPPER = CODE · LOWER = CLEAR', 1404, 777, 11, C.stampFaint, 'mono', 'right');
+      teleTitle(env, 'UPPER = CODE · LOWER = CLEAR', out);
       const x = 970, y = 796, w = 316, h = 74, head = x + w - 6;
       rect(x, y, w, h, C.paper, '#8d8670', 1);
       rect(x + w, y - 2, 30, h + 4, '#1f201b', '#4a4c42', 1);
@@ -973,11 +997,9 @@
       return items;
     }
     function trackSheet(env, now, out, {x, y, w, h, head}) {
-      // The panel's own title says what the tape holds now.
-      rect(966, 766, 240, 22, C.panel);
-      write('TELEPRINTER · TRACK SHEET', 970, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
-      rect(1180, 766, 228, 22, C.panel);
-      write('UPPER = FIELD · LOWER = VALUE', 1404, 777, 11, C.stampFaint, 'mono', 'right');
+      // The title row (the song) was written by teleprinter(); the key under the paper says what the tape holds.
+      rect(966, 871, 444, 12, C.panel);
+      write('TRACK SHEET · UPPER = FIELD · LOWER = VALUE', 970, 877, 10, C.stampFaint, 'mono', 'left');
       const items = sheetOf(env), shown = [];
       // What has printed by now, as pieces laid right to left from the head: each a field, then a dot.
       const pieces = [];
