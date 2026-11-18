@@ -196,7 +196,9 @@ function createTrackInfo({root, fetch: fetchImpl = globalThis.fetch, now = () =>
     for (const recording of result.body.recordings || []) {
       const seconds = Number(recording.length) > 0 ? recording.length / 1000 : 0;
       const got = {title: recording.title, artist: credit(recording['artist-credit']), duration: seconds};
-      if (!core.sameTitle(q.title, got.title) || !core.artistsMatch(q.artist, got.artist)) continue;
+      // The artist: the same name, or MusicBrainz's own artist match for a query that required this artist (its aliases
+      // cover scripts and spellings: 周杰伦 finds recordings credited 周杰倫), scored 90 or more.
+      if (!core.sameTitle(q.title, got.title) || !(core.artistsMatch(q.artist, got.artist) || Number(recording.score) >= 90)) continue;
       if (q.duration > 0 && seconds > 0 && Math.abs(q.duration - seconds) > core.MATCH.durationSeconds) continue;
       // Bootlegs, promotions and the like are left out (a release without a status is kept).
       for (const release of recording.releases?.length ? recording.releases : [{}]) {
