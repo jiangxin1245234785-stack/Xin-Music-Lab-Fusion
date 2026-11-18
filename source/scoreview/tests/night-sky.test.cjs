@@ -17,7 +17,7 @@ function frame(options, time = 10.3, model = fullModel()) {
 }
 
 test('night sky: off by default, booleans only, bounded amounts; off draws exactly what the starry core drew', () => {
-  assert.equal(ScoreView.VERSION, '0.31.2');
+  assert.equal(ScoreView.VERSION, '0.32.0');
   assert.equal(ScoreView.DEFAULTS.nightSky, false);
   assert.equal(ScoreView.DEFAULTS.starDim, .48, '0.30.1：用户挑的 C');
   assert.equal(ScoreView.DEFAULTS.meteorTail, 1.5);

@@ -8,6 +8,7 @@ Xin Music Lab 原创代码采用 MIT，见 PROJECT-LICENSE.txt。第三方组件
 - Butterchurn 2.6.7 and Butterchurn Presets 2.4.7: MIT notices in resources/apps/fusion-runtime-baseline/vendor/LICENSE-butterchurn*.txt.
 - OpenMIRLab overlap-add helper: retained MIT notice in resources/apps/xld-runtime-baseline/analysis-separation/THIRD_PARTY_LICENSES.txt.
 - Original Glitch visualizer runtime: part of Xin Music Lab's original code.
+- Chinese telegraph code table (score view, radar look): generated from the Unicode Unihan database (Unihan_OtherMappings.txt, kMainlandTelegraph / kTaiwanTelegraph); Unicode License v3 notice in resources/apps/scoreview/score-telegraph.js.
 
 AI vendor source trees, including the historical ADTOF port and BTC source copy, are excluded from this interface-only package. Some optional adapters therefore require independently installed upstream source as well as weights and Python dependencies. Availability is not implied by a model's appearance in the menu.
 

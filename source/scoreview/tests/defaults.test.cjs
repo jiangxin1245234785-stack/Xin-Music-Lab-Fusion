@@ -40,7 +40,7 @@ function frames(core, model, options, times) {
 }
 
 test('the defaults are the chosen look: icon, line, mark, clear (and the backdrop follows the loudness)', () => {
-  assert.equal(ScoreView.VERSION, '0.31.2');
+  assert.equal(ScoreView.VERSION, '0.32.0');
   for (const [key, value] of Object.entries(CHOSEN)) assert.equal(ScoreView.DEFAULTS[key], value, key);
   const surface = mockCanvas(800, 400);
   const view = ScoreView.create(surface.canvas, markedModel(), () => 0);

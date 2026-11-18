@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.31.2';
+  const VERSION = '0.32.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -126,6 +126,7 @@
     // light); 0 inks both sides of the needle as 0.30.1 did.
     paperPress: 1.5,        // 1.5 since 0.31.2 (the user: 压痕纸加深; 1.1 in 0.31.1)
     pressTint: 0,           // 0.31.1: a faint grey inside the groove (0–0.3)
+    radarFall: .6, radarEcho: 1,  // 0.32.0, the echo post: needle fall (full scale per second, .2–2), echo life in turns (.25–1)
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
@@ -1468,6 +1469,8 @@ function canonicalOnsets(rows) {
       if (finite(patch.mistFog) && patch.mistFog >= 0 && patch.mistFog <= .5) next.mistFog = patch.mistFog;
       if (finite(patch.paperPress) && patch.paperPress >= 0 && patch.paperPress <= 2) next.paperPress = patch.paperPress;
       if (finite(patch.pressTint) && patch.pressTint >= 0 && patch.pressTint <= .3) next.pressTint = patch.pressTint;
+      if (finite(patch.radarFall) && patch.radarFall >= .2 && patch.radarFall <= 2) next.radarFall = patch.radarFall;
+      if (finite(patch.radarEcho) && patch.radarEcho >= .25 && patch.radarEcho <= 1) next.radarEcho = patch.radarEcho;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
       if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));
