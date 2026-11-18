@@ -100,15 +100,15 @@
   const renderStyle=value=>value==='theatre'?'theatre':root.XinScoreMood?.normalize(value)||'starry';
   function create(canvas,model,clock,initial={}){
     const normal=Core.create(canvas,translated(model),clock,{...initial,meteorMotion:true}),ctx=canvas.getContext('2d');
-    let options={...normal.options(),scoreStyle:renderStyle(initial.scoreStyle),presentationLayout:initial.presentationLayout===true},movie=null,filmCanvas=null,cover=null,lyrics=null,last=null,raf=null;
+    let options={...normal.options(),scoreStyle:renderStyle(initial.scoreStyle),presentationLayout:initial.presentationLayout===true,lang:initial.lang},movie=null,filmCanvas=null,cover=null,lyrics=null,last=null,raf=null;
     let surface=null;const surfaceStyle=()=>root.XinScoreSurface?.styles.includes(options.scoreStyle);const ensureSurface=()=>surface||(surface=root.XinScoreSurface.create(canvas,model,clock,options,layoutSource));
     let mist = null;
     const mistStyle = () => options.scoreStyle === 'mist' && root.XinScoreMist;
     const ensureMist = () => mist || (mist = root.XinScoreMist.create(canvas, model, clock, options, layoutSource));
     let mood=null;const ensureMood=()=>mood||(mood=root.XinScoreMood.create(canvas,model,clock,options));
     const moodStyle = () => ['glass','overprint','theatre'].includes(options.scoreStyle) && root.XinScoreMood;
-    const terrainStyle = () => options.scoreStyle === 'terrain' && root.XinArt?.terrain;
-    let terrainFrame = null, terrainScene = null;
+    const artRenderer = () => root.XinArt?.[options.scoreStyle];
+    let artFrame = null, artScene = null;
     let variation = null, variationEnabled = initial.variationEnabled === true;
     let variationSelection = variationSnapshot(initial.variation, model.track.id);
     let variationLang = initial.variationLang;
@@ -139,8 +139,11 @@
     function presentationOptions() {
       const pair = variationController()?.pair;
       // The live lyric overlay asks for timeAt(width * playhead).
-      const detail = terrainStyle() && terrainScene?.detail;
-      const reading = detail ? {playhead:(detail.playheadX-detail.left)/(detail.right-detail.left),windowSeconds:detail.span} : {};
+      const detail = artRenderer() && artScene?.detail;
+      const reading = detail ? {
+        playhead:options.scoreStyle === 'flag' ? detail.playheadX / artFrame.w : (detail.playheadX-detail.left)/(detail.right-detail.left),
+        windowSeconds:detail.span
+      } : {};
       return {...options, ...reading, hidden:options.hidden.slice(),
         variation: pair ? {trackId:model.track.id,aId:pair.a.id,bId:pair.b.id} : null};
     }
@@ -173,32 +176,36 @@
         ? {view:movie, canvas:filmCanvas, unit:1.5, top:12}
         : {view:normal, canvas, unit:1080/(canvas.clientHeight||720), top:0};
     }
-    function terrainTime(at) {
+    function artTime(at) {
       return Math.max(0, Math.min(model.track.duration, (Number.isFinite(at) ? at : clock()) + (options.offsetSeconds || 0)));
     }
-    function drawTerrain(at, locating) {
+    function drawArt(renderer, at, locating) {
       resize();
       const ratio = Math.max(1, Math.min(2.5, Number(root.devicePixelRatio) || 1));
       // World-space grain and type use the same composition in immersive playback and export.
       const w = options.presentationLayout ? metrics.width : canvas.clientWidth || canvas.width / ratio;
       const h = options.presentationLayout ? metrics.height : canvas.clientHeight || canvas.height / ratio;
-      const time = terrainTime(at);
-      const section = sectionLabel((model.sections || []).find(row => row[0] <= time && time < row[1])?.[2]);
+      const time = artTime(at);
+      const sectionName = (model.sections || []).find(row => row[0] <= time && time < row[1])?.[2];
+      const flag = options.scoreStyle === 'flag';
+      const section = flag && /^zh\b/i.test(options.lang) ? String(sectionName || '') : sectionLabel(sectionName);
       const lyric = lyricAt(lyrics, time, section);
-      terrainFrame = {w, h, song:model, key:model.track.id, time, duration:model.track.duration, playing:!locating,
-        section, lyric, cover, presentationLayout:options.presentationLayout, albumLayout:options.albumLayout};
+      artFrame = {w, h, song:model, key:model.track.id, time, duration:model.track.duration, playing:!locating,
+        section, lyric, cover, presentationLayout:options.presentationLayout, albumLayout:options.albumLayout,
+        ...(flag ? {lang:options.lang, hidden:options.hidden, focusGroup:options.focusGroup} : {})};
       ctx.save();
       try {
         ctx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
-        terrainScene = root.XinArt.terrain.draw(ctx, terrainFrame);
+        artScene = renderer.draw(ctx, artFrame);
       } finally { ctx.restore(); }
-      const detail = terrainScene?.detail;
-      last = {time, style:'terrain', notes:detail?.notes.length || 0, section, window:detail ? [detail.start,detail.end] : [time,time],
-        presentation:{section,lyric}, overview:terrainScene?.overview, locating:Boolean(locating)};
+      const detail = artScene?.detail;
+      last = {time, style:options.scoreStyle, notes:detail?.notes?.length || 0, section, window:detail ? [detail.start,detail.end] : [time,time],
+        presentation:{section,lyric}, overview:artScene?.overview, locating:Boolean(locating)};
       return last;
     }
     function draw(at, locating = false){
-      if (terrainStyle()) return drawTerrain(at, locating);
+      const renderer = artRenderer();
+      if (renderer) return drawArt(renderer, at, locating);
       const painter = variationController() ? paintVariation : undefined;
       if (mistStyle() || surfaceStyle() || moodStyle()) {
         const renderer = mistStyle() ? ensureMist() : surfaceStyle() ? ensureSurface() : ensureMood();
@@ -216,9 +223,15 @@
       ctx.setTransform(1,0,0,1,0,0);return last;
     }
     function setOptions(patch = {}) {
+      const priorStyle = options.scoreStyle, priorLayout = options.presentationLayout;
       normal.setOptions({...patch,meteorMotion:true});
       options = {...normal.options(),scoreStyle:renderStyle(patch.scoreStyle??options.scoreStyle),
-        presentationLayout:typeof patch.presentationLayout==='boolean'?patch.presentationLayout:options.presentationLayout};
+        presentationLayout:typeof patch.presentationLayout==='boolean'?patch.presentationLayout:options.presentationLayout,
+        lang:typeof patch.lang==='string'?patch.lang:options.lang};
+      if (options.scoreStyle !== priorStyle || options.presentationLayout !== priorLayout) {
+        artFrame = null;
+        artScene = null;
+      }
       if (typeof patch.variationEnabled === 'boolean') variationEnabled = patch.variationEnabled;
       if (Object.hasOwn(patch, 'variation')) {
         variationSelection = variationSnapshot(patch.variation, model.track.id);
@@ -231,24 +244,24 @@
     }
     function setModel(next) {
       model=next;lyrics=null;variation=null;variationSelection=null;comparisonLyrics=null;
-      terrainFrame=null;terrainScene=null;
+      artFrame=null;artScene=null;
       mood?.setModel(next);surface?.setModel(next);mist?.setModel(next);
       normal.setModel(translated(next));if(movie)movie.setModel(translated(next));
     }
     function setCover(image,measure){cover=image;const ok=normal.setCover(image,measure);if(movie)movie.setCover(image,measure);return ok;}
     const active=()=>options.presentationLayout?(ensureMovie(),movie):normal;
-    const terrainScale=()=>options.presentationLayout?metrics.scale:1;
+    const artScale=()=>options.presentationLayout?metrics.scale:1;
     function timeAt(x,at) {
-      if (terrainStyle() && terrainScene) {
-        const {playheadX,pxPerSecond}=terrainScene.detail;
-        return terrainTime(at)+(x/terrainScale()-playheadX)/pxPerSecond;
+      if (artRenderer() && artScene?.detail) {
+        const {playheadX,pxPerSecond}=artScene.detail;
+        return artTime(at)+(x/artScale()-playheadX)/pxPerSecond;
       }
       return active().timeAt(options.presentationLayout?x/metrics.scale:x,at);
     }
     function xOf(time,at) {
-      if (terrainStyle() && terrainScene) {
-        const {playheadX,pxPerSecond}=terrainScene.detail;
-        return (playheadX+(time-terrainTime(at))*pxPerSecond)*terrainScale();
+      if (artRenderer() && artScene?.detail) {
+        const {playheadX,pxPerSecond}=artScene.detail;
+        return (playheadX+(time-artTime(at))*pxPerSecond)*artScale();
       }
       return active().xOf(time,at)*(options.presentationLayout?metrics.scale:1);
     }
@@ -258,10 +271,11 @@
       setLyrics:value=>{lyrics=value?.trackId===model.track.id&&!value?.hidden?value:null},lastFrame:()=>last?{...last}:normal.lastFrame(),
       timeAt,xOf,
       hit:(x,y)=>{
-        if (terrainStyle()) {
-          if (!terrainFrame) return null;
-          const scale=terrainScale();
-          const time = root.XinArt.terrain.timeAt(x/scale,y/scale,terrainFrame);
+        const renderer = artRenderer();
+        if (renderer) {
+          if (!artFrame) return null;
+          const scale=artScale();
+          const time = renderer.timeAt(x/scale,y/scale,artFrame);
           return Number.isFinite(time) ? {kind:'time',time:Math.max(0,Math.min(model.track.duration,time-(options.offsetSeconds || 0)))} : null;
         }
         return moodStyle()?ensureMood().hit(x,y):active().hit(options.presentationLayout?x/metrics.scale:x,options.presentationLayout?y/metrics.scale-8:y);

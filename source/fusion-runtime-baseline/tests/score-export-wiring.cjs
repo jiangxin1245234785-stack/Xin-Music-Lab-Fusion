@@ -115,6 +115,11 @@ async function channel() {
     }
   }
   done.push('两档分辨率逐次转发视频码率，无效值不打开保存对话框');
+  const flag = await channel.start({sender}, {trackId:'x', presentationLook:{scoreStyle:'flag', lang:'en-US'}});
+  assert.ok(flag.ok);
+  assert.equal(asked.at(-1).look.scoreStyle, 'flag');
+  assert.equal(asked.at(-1).look.lang, 'zh-CN');
+  assert.equal(asked.at(-1).look.presentationLayout, true);
 }
 
 // --- 2. the kept effects setting ----------------------------------------------------------------------
@@ -209,6 +214,52 @@ async function laneNamesAndLanguage() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(asked.length, 2);
   done.push('英文界面悬停名是英文；切换语言立刻重读谱面');
+}
+
+async function keptScoreStyle() {
+  const styles = require('../../scoreview/score-style.cjs');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const exportPage = fs.readFileSync(path.join(root, '..', 'scoreview', 'export', 'export-page.html'), 'utf8');
+  const picker = html.match(/<select id="scoreStyle">(.*?)<\/select>/s)[1];
+  const options = Array.from(picker.matchAll(/value="([a-z]+)"/g), match => match[1]);
+  assert.deepEqual(options, ['starry','overprint','glass','paper','ember','water','mist','terrain','flag']);
+  assert.deepEqual(styles.styles, options);
+  for (const page of [html, exportPage]) assert.match(page, /score-flag\.js[\s\S]*score-presentation\.js/);
+  const storage = new Map([['xin-score-style-v1', 'terrain']]);
+  const mount = () => {
+    const p = page({lang:'en-US'});
+    const select = p.element('select'), stage = p.element(), canvas = p.element('canvas');
+    p.byId.set('scoreStyle', select);
+    p.win.localStorage = {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value)};
+    p.doc.currentScript = {src:'file:///scoreview/score-mood.js'};
+    p.win.URL = URL;
+    p.run('../scoreview/score-mood.js');
+    p.run('score-scene.js');
+    assert.deepEqual(Array.from(p.win.XinScoreMood.styles), options);
+    let look = {};
+    p.win.XinScoreView.create = (canvas, model, clock, opts) => {
+      look = opts;
+      return {options: () => look, setOptions: patch => { look = {...look, ...patch}; }, setCover() {}};
+    };
+    const scene = p.win.XinScoreScene.create({bridge:{scoreModel: async () => ({ok:true, model:{}})}, audio:p.element('audio'), stage, canvas});
+    return {scene, select, look: () => look};
+  };
+  const first = mount();
+  assert.equal(first.select.value, 'terrain');
+  await first.scene.load('track-1');
+  first.select.value = 'flag';
+  first.select.fire('change');
+  assert.equal(first.look().scoreStyle, 'flag');
+  assert.equal(storage.get('xin-score-style-v1'), 'flag');
+  const resumed = mount();
+  assert.equal(resumed.select.value, 'flag');
+  await resumed.scene.load('track-1');
+  assert.equal(resumed.look().scoreStyle, 'flag');
+  assert.equal(resumed.look().lang, 'en-US');
+  storage.set('xin-score-style-v1', 'theatre');
+  assert.equal(mount().select.value, 'starry');
+  assert.equal(storage.get('xin-score-style-v1'), 'theatre');
+  done.push('旗帜工坊沿用谱面风格偏好，中英导出接线保留，既有八款与纸偶归档路径兼容');
 }
 
 // The panel estimates decimal MB using the encoding tier's nominal video and audio rates.
@@ -351,6 +402,7 @@ async function scoreSnapshot() {
   await channel();
   keptSetting();
   await laneNamesAndLanguage();
+  await keptScoreStyle();
   await exportSettingsAtStart();
   sizeEstimate();
   await mainWiring();

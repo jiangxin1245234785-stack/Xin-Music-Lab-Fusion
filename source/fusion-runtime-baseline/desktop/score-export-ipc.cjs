@@ -42,9 +42,10 @@ function createScoreExport(deps) {
     if (!Number.isFinite(look.offsetSeconds) || Math.abs(look.offsetSeconds)>1) look.offsetSeconds=0;
     look.scoreStyle=require('../../scoreview/score-style.cjs').normalize(payload?.presentationLook?.scoreStyle);
     look.presentationLayout = true;
+    look.lang = lang === 'en' ? 'en-US' : 'zh-CN';
     if (look.scoreStyle === 'starry' || look.scoreStyle === 'paper') {
       look.variation = Presentation.variationSnapshot(payload?.presentationLook?.variation, built.model.track.id);
-      look.variationLang = lang === 'en' ? 'en-US' : 'zh-CN';
+      look.variationLang = look.lang;
     }
     const lyrics = Presentation.lyricsSnapshot(payload?.lyrics, built.model.track.id, Boolean(look.variation));
     if (PRESETS.includes(payload?.fxPreset)) look.fxPreset = payload.fxPreset;

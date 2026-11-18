@@ -397,7 +397,7 @@
         if (!held) {
           view.setLyrics?.(root.XinScoreLyricsView?.snapshot?.(trackId));
           view.resize();
-          const draw = scoreStyle === 'terrain' ? view.draw(undefined, audio.paused || audio.seeking) : view.draw();
+          const draw = view.draw(undefined, audio.paused || audio.seeking);
           compare?.update(draw?.time);
           if (albumLayout) showAlbumCaption(view.options().presentationLayout ? '' : draw?.caption || '');
         }
@@ -479,6 +479,7 @@
       options.presentationLayout = stage.classList.contains('is-immersive');
       Object.assign(options,transients?.values(),directions?.values(),compare?.options(trackId, scoreStyle));
       options.albumSidebarGap = albumSidebarGap;
+      options.lang = shownLang;
       if (view) { view.setModel(result.model); view.setOptions(options); }
       else view = (root.XinScorePresentation || core).create(canvas, result.model, () => clock.now(), options);
       shownModel = result.model;

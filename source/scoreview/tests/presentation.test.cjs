@@ -63,3 +63,71 @@ test('leaving immersive restores the ordinary raster at the same paused time and
   assert.deepEqual(background.args,[0,0,canvas.width,canvas.height],'first background covers the entire backing raster');
  }
 });
+
+test('Flag Workshop follows the same timestamp and coordinates in listening, full screen and export', () => {
+  const {mockCanvas,fullModel} = require('./helpers.cjs');
+  const prior = {art:globalThis.XinArt, mood:globalThis.XinScoreMood, ratio:globalThis.devicePixelRatio};
+  const model = fullModel();
+  const frames = [];
+  const detail = frame => ({left:40, right:frame.w - 40, playheadX:frame.w * .6,
+    pxPerSecond:50, notes:[{}], start:frame.time - 2, end:frame.time + 4, span:6});
+  const renderer = {
+    draw(ctx, frame) { frames.push(frame); return {detail:detail(frame)}; },
+    timeAt(x, y, frame) { return y >= 0 && y < frame.h ? frame.time + (x - detail(frame).playheadX) / 50 : null; }
+  };
+  const canvasAt = (width, height) => {
+    const {canvas} = mockCanvas(width,height);
+    canvas.ownerDocument = {createElement:() => mockCanvas().canvas};
+    return canvas;
+  };
+  try {
+    globalThis.XinArt = {flag:renderer};
+    globalThis.XinScoreMood = require('../score-style.cjs');
+    globalThis.devicePixelRatio = 1.5;
+    const canvas = canvasAt(960,720);
+    const settings = {scoreStyle:'flag', lang:'zh-CN', hidden:['bass'], focusGroup:'guitar', offsetSeconds:-.125};
+    const lyric = {trackId:model.track.id, enabled:true, offset:0, lines:[{time:25,text:'当下这一句'}]};
+    const cover = {width:80,height:80};
+    const live = P.create(canvas, model, () => 32.125, settings);
+    live.setLyrics(lyric);
+    live.setCover(cover);
+    const paused = live.draw(undefined,true);
+    assert.equal(paused.style, 'flag');
+    assert.equal(paused.time, 32);
+    assert.equal(paused.locating, true);
+    assert.equal(paused.presentation.lyric, '当下这一句');
+    assert.equal(frames.at(-1).section, '主歌 1');
+    assert.equal(frames.at(-1).cover, cover);
+    assert.equal(frames.at(-1).playing, false);
+    assert.deepEqual(frames.at(-1).hidden, ['bass']);
+    assert.equal(frames.at(-1).focusGroup, 'guitar');
+    assert.equal(live.timeAt(canvas.clientWidth * live.options().playhead), 32);
+    assert.deepEqual(live.hit(live.xOf(34),600), {kind:'time',time:34.125});
+    assert.equal(live.hit(1,-1), null);
+
+    canvas.clientWidth = 1280;
+    live.setOptions({presentationLayout:true,lang:'en-US'});
+    assert.equal(live.hit(1,1), null, 'geometry from the old layout is no longer available');
+    const fullScreen = live.draw();
+    const fullScreenFrame = frames.at(-1);
+    assert.equal(fullScreenFrame.section, 'Verse 1');
+    assert.equal(fullScreenFrame.playing, true);
+    assert.deepEqual([canvas.width,canvas.height], [1920,1080]);
+
+    const output = canvasAt(1920,1080);
+    output.clientWidth = output.clientHeight = 0;
+    const exportView = P.create(output, model, () => 0, live.options());
+    exportView.setLyrics(lyric);
+    exportView.setCover(cover);
+    assert.deepEqual(exportView.draw(32.125), fullScreen);
+    assert.deepEqual(frames.at(-1), fullScreenFrame);
+    assert.deepEqual([output.width,output.height], [1920,1080]);
+
+    live.setOptions({scoreStyle:'starry',presentationLayout:false});
+    assert.equal(live.draw().style, 'starry');
+  } finally {
+    globalThis.XinArt = prior.art;
+    globalThis.XinScoreMood = prior.mood;
+    globalThis.devicePixelRatio = prior.ratio;
+  }
+});
