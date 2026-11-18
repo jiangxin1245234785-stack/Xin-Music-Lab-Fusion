@@ -11,6 +11,12 @@
 // out (CSS classes set on those events only - nothing is worked out per frame for it). Clicking the row or the words
 // opens a small menu: 重新查找 / 换一份 / 用本地文件… / 这首不显示歌词 (显示歌词 to undo). A song with no lyrics found shows
 // the same row, faint, reading 「没有找到歌词」, on the same terms; a song with no singing shows nothing.
+//
+// Track facts (2026-11-18): next to the lyrics, the song's facts in the outside world are asked for the same way
+// (desktop/track-info.cjs: a hand-written .info.txt beside the song, the user's choice, the tags, then MusicBrainz) and
+// handed over, not drawn: status().trackInfo, trackInfo(id) and snapshot().trackInfo carry {state, items: [{key, value,
+// from}], source}. The radar's ticker tape prints them for a song without lyrics. The lyrics menu has a 「歌曲资料…」
+// page: 重新查找 / 换一份 / 用本地文件… / 这首不显示 (显示 to undo).
 (function (root) {
   'use strict';
   const KEY = 'xin-score-lyrics';
@@ -121,6 +127,19 @@
 
     function hide() { if (!box.hidden) box.hidden = true; shownIndex = null; closeMenu(); }
 
+    const infoByTrack = new Map();
+    function askInfo(id) {
+      if (!id || infoByTrack.has(id) || typeof bridge?.trackInfo !== 'function') return;
+      const pending = {state: 'pending'};
+      infoByTrack.set(id, pending);
+      const duration = Number(audio?.duration);
+      pending.promise = Promise.resolve(bridge.trackInfo(id, Number.isFinite(duration) ? duration : 0)).then(answer => {
+        if (infoByTrack.get(id) !== pending) return;
+        infoByTrack.set(id, answer?.ok ? {state: 'ready', items: Array.isArray(answer.items) ? answer.items : [], source: answer.source || null}
+          : {state: answer?.hidden ? 'hidden' : 'none', items: [], reason: answer?.reason || 'none', source: null});
+      }, () => { if (infoByTrack.get(id) === pending) infoByTrack.set(id, {state: 'none', items: [], reason: 'error', source: null}); });
+    }
+    const infoOf = id => { const v = infoByTrack.get(id); return v ? {state: v.state, items: (v.items || []).map(i => ({...i})), source: v.source ? JSON.parse(JSON.stringify(v.source)) : null, reason: v.reason || null} : {state: 'unknown', items: [], source: null, reason: null}; };
     function ask(id) {
       if (byTrack.has(id) || typeof bridge?.lyrics !== 'function') return;
       const pending = {lines: null, pending: true};
@@ -247,10 +266,53 @@
       drawMenu();
       menu.querySelector?.('input:not([disabled]),button:not([disabled])')?.focus();
     }
+    let infoList = null;
+    function infoAct(action, extra = {}) {
+      const id = trackId;
+      if (!id || busy || typeof bridge?.trackInfoMenu !== 'function') return Promise.resolve(null);
+      const request = ++menuRequest;
+      busy = true; drawMenu();
+      const duration = Number(audio?.duration);
+      return Promise.resolve(bridge.trackInfoMenu(id, action, {...extra, duration: Number.isFinite(duration) ? duration : 0}))
+        .then(answer => answer, () => ({ok: false, reason: 'error'}))
+        .then(answer => {
+          const currentMenu = request === menuRequest && id === trackId && !menu.hidden;
+          if (currentMenu) busy = false;
+          if (answer?.ok && !answer.canceled && action !== 'candidates') { infoByTrack.delete(id); infoList = null; askInfo(id); }
+          if (currentMenu) drawMenu(answer && !answer.ok ? failText(answer.reason) : (answer?.ok && action !== 'candidates' && !answer.canceled ? say('score.infoDone', '资料已更新') : ''));
+          return currentMenu ? answer : null;
+        });
+    }
+    function drawInfoPage() {
+      const info = infoByTrack.get(trackId) || {};
+      const where = info.source?.kind ? say('score.infoFrom.' + info.source.kind, info.source.kind) : '';
+      menu.append(note(info.state === 'ready' ? say('score.infoCount', '歌曲资料 · {count} 项', {count: (info.items || []).length}) + (where ? ' · ' + where : '')
+        : info.state === 'hidden' ? say('score.infoHidden', '这首不显示歌曲资料') : say('score.infoNone', '没有找到歌曲资料'), 'score-lyrics__result'));
+      if (infoList) {
+        if (!infoList.length) menu.append(note(say('score.infoNoOther', 'MusicBrainz 上没有别的版本')));
+        for (const c of infoList) {
+          const label = [c.album || c.title, c.date, c.country, clockText(c.duration)].filter(Boolean).join(' · ');
+          const choice = item(label, () => infoAct('choose', {id: c.id}), {note: label});
+          choice.dataset.infoChoice = String(c.id); menu.append(choice);
+        }
+        menu.append(item(say('score.lyricsBack', '返回'), () => { infoList = null; drawMenu(); }));
+        return;
+      }
+      menu.append(item(say('score.infoRefresh', '重新查找资料'), () => infoAct('refresh')));
+      if (info.state !== 'hidden') menu.append(item(say('score.infoOther', '换一份资料'), () => infoAct('candidates').then(answer => { if (answer?.ok) { infoList = answer.candidates || []; drawMenu(); } })));
+      menu.append(item(say('score.infoFile', '用本地资料文件…'), () => infoAct('file')));
+      menu.append(info.state === 'hidden' ? item(say('score.infoShow', '显示歌曲资料'), () => infoAct('show')) : item(say('score.infoHide', '这首不显示歌曲资料'), () => infoAct('hide')));
+      menu.append(item(say('score.lyricsBack', '返回'), () => { menuPage = 'home'; infoList = null; drawMenu(); }));
+    }
     function drawMenu(message = '') {
       if (menu.hidden) return;
       const found = byTrack.get(trackId) || {};
       menu.replaceChildren();
+      if (menuPage === 'info') {
+        drawInfoPage();
+        if (message || busy) { const status = note(busy ? say('score.lyricsWorking', '正在处理…') : message); status.setAttribute('role','status'); menu.append(status); }
+        return;
+      }
       if (menuPage === 'search' || menuPage === 'netease') {
         if (menuPage === 'search' || !preview) menu.append(menuForm(menuPage));
         if (candidateList) {
@@ -300,6 +362,10 @@
         menu.append(found.hidden ? item(say('score.lyricsShow', '显示歌词'), () => act('show'))
           : item(say('score.lyricsHide', '这首不显示歌词'), () => act('hide')));
       }
+      if (menuPage === 'home' && !candidateList && typeof bridge?.trackInfoMenu === 'function') {
+        const facts = item(say('score.infoMenu', '歌曲资料…'), () => { menuPage = 'info'; infoList = null; drawMenu(); });
+        facts.dataset.infoMenu = '1'; menu.append(facts);
+      }
       if (message || busy) {
         const status = note(busy ? say('score.lyricsWorking', '正在处理…') : message);
         status.setAttribute('role','status'); menu.append(status);
@@ -307,7 +373,7 @@
     }
     function toggleMenu() {
       if (!menu.hidden) { closeMenu(); return; }
-      candidateList = null; preview = null; menuPage = 'home'; menu.hidden = false;
+      candidateList = null; preview = null; infoList = null; menuPage = 'home'; menu.hidden = false;
       entry.setAttribute('aria-expanded', 'true');
       box.hidden = false; box.classList.add('is-menu'); drawMenu();
     }
@@ -391,7 +457,7 @@
       if (asked?.lines && asked.offset && asked.offset.why === 'no-vocal-line' && !reasked.has(trackId) && status.health?.contour?.ok) {
         reasked.add(trackId); byTrack.delete(trackId);
       }
-      ask(trackId);
+      ask(trackId); askInfo(trackId);
       const found = byTrack.get(trackId);
       showEntry(stateFor(found), slot);
       const view = scene.viewHandle?.();
@@ -466,7 +532,7 @@
       const found = byTrack.get(id);
       const available = !found?.hidden && Boolean(found?.lines?.length);
       return {trackId: id, enabled: enabled && !found?.hidden, alignment: available,
-        offset: shiftOf(found), lines: available ? found.lines : []};
+        offset: shiftOf(found), lines: available ? found.lines : [], trackInfo: infoOf(id)};
     }
     async function exportData(id = trackId) {
       if (enabled && id) { ask(id); await byTrack.get(id)?.promise; }
@@ -476,13 +542,14 @@
     frame = raf(loop);
     return Object.freeze({
       render, snapshot, exportData,
+      trackInfo: (id = trackId) => { askInfo(id); return infoOf(id); },
       openMenu: () => { if (menu.hidden) toggleMenu(); },
       menuItems: () => [...menu.querySelectorAll?.('.score-lyrics__item') || []].map(b => b.textContent),
       status: () => ({enabled, trackId, asks, shown: !box.hidden, state: stage.dataset?.scoreLyricState, anchor: anchor ? {...anchor} : null,
         lines: trackId && byTrack.get(trackId)?.lines ? byTrack.get(trackId).lines.length : 0, source: trackId ? byTrack.get(trackId)?.source || null : null,
         offset: trackId && byTrack.get(trackId)?.offset ? {...byTrack.get(trackId).offset} : null, from: from.textContent,
         rowShown: box.classList.contains('is-flash') || box.classList.contains('is-hover') || box.classList.contains('is-menu'),
-        menuOpen: !menu.hidden, hidden: Boolean(trackId && byTrack.get(trackId)?.hidden),
+        menuOpen: !menu.hidden, hidden: Boolean(trackId && byTrack.get(trackId)?.hidden), trackInfo: trackId ? infoOf(trackId) : null,
         now: current.textContent, before: before.textContent, after: after.textContent}),
       destroy: () => { if (frame && root.cancelAnimationFrame) root.cancelAnimationFrame(frame); if (flashTimer) cancel(flashTimer); box.remove(); entry.remove(); }
     });
