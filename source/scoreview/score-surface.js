@@ -1,5 +1,8 @@
 // Material strokes consume the core's own prepared lanes, contours and geometry.
 (function(root){'use strict';const styles=['paper','ember','water'];
+// The core's drum kit: the page's XinScoreView, or the module under node.
+const coreOf=()=>root.XinScoreView||(typeof require==='function'?require('./score-view.js'):null);
+const kitOf=()=>coreOf().drumKit;
 function create(target,model,clock,initial,layoutSource){
  let W=1920;
  const H=1080;
@@ -85,7 +88,8 @@ function paperBounds(time) {
       for(let i=0;i<set.count;i++){
         const t=set.time[i];if(t<past||t>future)continue;
         const row=box.lane.rowIndex.get(set.row[i]);if(!Number.isFinite(row))continue;
-        events.push({group:'drums',drum:box.lane.rows[row].name,start:t,end:t+.03,velocity:set.vel[i],x:NEEDLE+(t-NOW)*PPS,y:top+unit*(box.top+box.height*(row+.5)/box.lane.rows.length),box});
+        const drum=box.lane.rows[row].name,kit=kitOf();
+        events.push({group:'drums',drum,start:t,end:t+.03,velocity:set.vel[i],x:NEEDLE+(t-NOW)*PPS,y:top+unit*(box.top+box.height*kit.center(drum)),size:unit*kit.size(box.height,set.vel[i]),box});
       }
     } else {
       for(const attack of attacksFor(box)){
@@ -308,7 +312,7 @@ function paper(data, paintVariation) {
     if (event.group === 'drums') {
       if (event.x >= (NEEDLE*.15625) && event.x < W - 16 && event.start >= since) {
         ink.beginPath();
-        ink.arc(event.x, event.y, 1.45, 0, Math.PI * 2);
+        kitOf().mark(ink, event.drum, event.x, event.y, event.size);
         ink.fill();
       }
       continue;
@@ -396,8 +400,8 @@ function paper(data, paintVariation) {
       const age=NOW-event.start;
       if(age>=0&&age<.26){
         ctx.fillStyle='rgba(208,140,85,'+(.8*(1-age/.26))+')';
-        ctx.beginPath();ctx.ellipse(event.x,event.y,2.4,1.5,0,0,Math.PI*2);ctx.fill();
-      } else if(age<0)smallMark(ctx,event,'ember');
+        ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size*1.1);ctx.fill();
+      } else if(age<0){ctx.fillStyle='rgba(146,153,152,.58)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
       continue;
     }
     ctx.save();clipLane(ctx,event);
@@ -673,8 +677,9 @@ function paper(data, paintVariation) {
   for(const event of events){
     if(event.group==='drums'){
       const age=NOW-event.start;
-      if(age<0){ctx.fillStyle='rgba(123,150,170,.48)';ctx.fillRect(event.x-1,event.y-1,2,2);}
-      else if(age<.32){ctx.fillStyle='rgba(166,195,210,'+(.6*(1-age/.32))+')';ctx.beginPath();ctx.ellipse(event.x,event.y,2.4+age*2,1.2,0,0,Math.PI*2);ctx.fill();}
+      if(age<0){ctx.fillStyle='rgba(123,150,170,.5)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
+      else if(age<.32){ctx.fillStyle='rgba(166,195,210,'+(.6*(1-age/.32))+')';ctx.beginPath();ctx.ellipse(event.x,event.y,2.4+age*6,1.2+age*2,0,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(196,219,230,'+(.75*(1-age/.32))+')';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
       continue;
     }
     ctx.save();clipLane(ctx,event);
@@ -707,6 +712,18 @@ function paper(data, paintVariation) {
   }
  }
 
+ // A short note's round head (the core's shortHead / SHORT_NOTE), in the look's own ink: played, sounding, to come.
+ function shortHeads(style){
+  const core=coreOf();if(!core||!core.SHORT_NOTE)return;
+  const radius=(Number.isFinite(options.shortHead)?options.shortHead:core.DEFAULTS?.shortHead||0)*unit;if(!(radius>0))return;
+  const limit=core.SHORT_NOTE.seconds;
+  const ink=style==='paper'?['58,64,66','75,85,87']:style==='ember'?['214,122,72','150,158,160']:['166,195,210','123,150,170'];
+  for(const e of events){
+   if(e.group==='drums'||e.part?.contour||e.end-e.start>=limit||e.x<NEEDLE*.15625||e.x>W-16)continue;
+   const past=e.start<=NOW,a=past?(e.end>NOW?1:Math.max(.18,ageAlpha(e)))*.86:.66;
+   ctx.fillStyle='rgba('+(past?ink[0]:ink[1])+','+a+')';ctx.beginPath();ctx.arc(e.x,e.y,radius*(past&&e.end>NOW?1.15:1),0,Math.PI*2);ctx.fill();
+  }
+ }
  function draw(t,next,paintVariation){
   options=next||options;
   const {frame,data}=collect(Math.max(0,Math.min(model.track.duration||86400,Number(t)||0)));
@@ -716,6 +733,7 @@ function paper(data, paintVariation) {
   ctx.lineWidth=1;ctx.shadowBlur=0;ctx.shadowOffsetX=ctx.shadowOffsetY=0;
   let variation;
   if(style==='paper')variation=paper(data,paintVariation);else if(style==='ember')ember(data);else water(data);
+  shortHeads(style);
   const out=target.getContext('2d');out.setTransform(1,0,0,1,0,0);
   out.clearRect(0,0,target.width,target.height);
   out.drawImage(canvas,0,0,target.width,target.height);

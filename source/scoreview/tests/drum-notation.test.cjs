@@ -60,7 +60,9 @@ test('each kit voice keeps its mark when rows are reordered; simultaneous and un
   assert.deepEqual(all.commands, single.flat());
   const unknown = marks(['woodblock', 'cowbell'], [[10, 0, 100], [10, 1, 100]]);
   assert.equal(unknown.stats.hits, 2);
-  assert.equal(new Set(unknown.commands.filter(c => c[0] === 'moveTo').map(c => c[2])).size, 2);
+  // 0.29.0: a kind the kit does not know is drawn in the toms' row (DRUM_KIT), as a dot; both are drawn.
+  assert.equal(new Set(unknown.commands.filter(c => c[0] === 'moveTo').map(c => c[2])).size, 1);
+  assert.equal(unknown.commands.filter(c => c[0] === 'arc').length, 2);
   assert.equal(marks(voices, []).stats.lanes, 0);
   function kickWidth(velocity) { return marks(['kick'], [[10, 0, velocity]]).commands.find(c => c[0] === 'roundRect')[3]; }
   assert.ok(kickWidth(127) > kickWidth(8));

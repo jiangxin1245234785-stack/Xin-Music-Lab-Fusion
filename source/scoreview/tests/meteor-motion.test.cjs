@@ -228,7 +228,7 @@ test('each drum strike keeps just its local symbol until the shared boundary, in
     assert.ok(start>=0);
     const end=frame.calls.findIndex((c,j)=>j>start && c.name==='restore');
     const marks=frame.calls.slice(start+1,end).filter(c=>
-      ['lineTo','moveTo','quadraticCurveTo','rect','arc'].includes(c.name));
+      ['lineTo','moveTo','quadraticCurveTo','rect','roundRect','arc'].includes(c.name));
     assert.ok(marks.length,name);
     const next=280+(12-5.4)*50;
     assert.ok(marks.every(c=>Math.min(Math.abs(c.args[0]-x),Math.abs(c.args[0]-next))<12),name+' has a trailing mark');

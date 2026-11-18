@@ -1,6 +1,8 @@
 // Measured recording density and score geometry share the same timeline.
 (function (root) {
   'use strict';
+  // The core's drum kit: the page's XinScoreView, or the module under node.
+  const kitOf = () => (root.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null)).drumKit;
 
   const HEIGHT = 1080;
   const EMISSION_STEP = .21;
@@ -353,38 +355,30 @@
           silver.addColorStop(1, 'rgba(221,233,244,0)');
         }
         if (lane.kind === 'drums') {
-          const set = lane.hits;
+          const set = lane.hits, kit = kitOf();
           for (let i = lowerBound(set.time, start); i < set.count && set.time[i] <= end; i++) {
             const time = set.time[i], index = lane.rowIndex.get(set.row[i]);
             if (!Number.isFinite(index)) continue;
-            const y = py(box.top + box.height * (index + .5) / lane.rows.length), x = xAt(time);
             const row = lane.rows[index].name;
+            const y = py(box.top + box.height * kit.center(row)), x = xAt(time);
             const active = now >= time && now - time < .08;
-            const size = active ? 4.8 : 3;
+            const size = py(box.top + kit.size(box.height, set.vel[i])) - py(box.top);
             const a = x < needle ? .64 : .47;
             ctx.globalAlpha = dim * (active ? .79 + .20 * exposure : a * (.65 + (set.vel[i] || 80) / 340));
-            ctx.lineWidth = active ? 1.25 + exposure : 1.25;
+            // The kit's mark (the core's drumKit), in the mist's own ink; a strike swells a little.
             ctx.beginPath();
-            if (row === 'kick') {
-              ctx.ellipse(x, y, size * 1.15, size * .48, 0, 0, Math.PI * 2);
-              ctx.fill();
-            } else if (row === 'snare') {
-              ctx.moveTo(x, y - size);
-              ctx.lineTo(x + size * .65, y);
-              ctx.lineTo(x, y + size);
-              ctx.lineTo(x - size * .65, y);
-              ctx.closePath();
-              ctx.stroke();
-            } else {
-              ctx.moveTo(x - size * .58, y + size * .58);
-              ctx.lineTo(x + size * .58, y - size * .58);
-              ctx.stroke();
-            }
+            kit.mark(ctx, row, x, y, size * (active ? 1.25 : 1));
+            ctx.fill();
             if (active) sounding.add(lane.id);
             hits++;
           }
         } else {
           const drawnContours = new Set();
+          // A short note's round head (the core's shortHead / SHORT_NOTE), looked up once a lane.
+          const core = root.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null);
+          const headLimit = core && core.SHORT_NOTE ? core.SHORT_NOTE.seconds : 0;
+          const headRadius = Number.isFinite(options.shortHead) ? options.shortHead : core && core.DEFAULTS ? core.DEFAULTS.shortHead || 0 : 0;
+          const headSize = py(box.top + headRadius) - py(box.top);
           for (const part of data.parts(box)) {
             const set = part.set;
             const first = lowerBound(cachedEnds(set), start);
@@ -403,6 +397,8 @@
               ctx.beginPath();
               ctx.moveTo(x0, y);
               ctx.lineTo(Math.max(x0 + 1.7, x1), y);
+              // A short note's round head (the core's shortHead / SHORT_NOTE).
+              if (headSize > 0 && set.dur[i] < headLimit) { ctx.moveTo(x0 + headSize, y); ctx.arc(x0, y, headSize, 0, Math.PI * 2); }
               // A tiny vertical tooth distinguishes a written attack from the held span.
               const tooth = isHeld ? 2.6 : 1.9;
               ctx.moveTo(x0, y - tooth);
