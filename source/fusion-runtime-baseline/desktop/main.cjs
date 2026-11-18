@@ -164,6 +164,36 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       }
     }catch(e){return {ok:false,reason:'error'};}
   });
+  // Track facts (2026-11-18, the radar's ticker tape for a song without lyrics): desktop/track-info.cjs, the lyrics way.
+  // Only title, artist, album and length leave this machine; tags are read here from the song's own file.
+  const trackInfoModule=require('./track-info.cjs');
+  const lyricsRoot=lyricsModule.rootFor(app.getPath('appData'),app.getPath('userData'));
+  const trackInfo=trackInfoModule.createTrackInfo({root:trackInfoModule.rootFor(app.getPath('appData'),app.getPath('userData')),userAgent:trackInfoModule.agentFor(app.getVersion()),readTags:file=>file?readAudioTags(file):null,
+    neteaseIdFor:async trackId=>{try{const c=JSON.parse(await fs.readFile(path.join(lyricsRoot,'choices',crypto.createHash('sha1').update(String(trackId)).digest('hex')+'.json'),'utf8'));return c?.netease?.id||null;}catch(_){return null;}}});
+  const trackNamed=(track,payload)=>({id:track.id,title:track.title,artist:track.artist,album:track.album,number:track.number,filePath:track.filePath,
+    duration:Number(track.duration)>0?Number(track.duration):(Number(payload?.duration)>0&&Number(payload.duration)<86400?Number(payload.duration):0)});
+  ipcMain.handle('fusion:track-info',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};try{return await trackInfo.get(trackNamed(track,payload));}catch(e){return {ok:false,reason:'error'};}});
+  ipcMain.handle('fusion:track-info-menu',async(event,payload)=>{
+    const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};
+    const named=trackNamed(track,payload);
+    try{
+      switch(payload?.action){
+        case 'refresh':return await trackInfo.refresh(named);
+        case 'candidates':return await trackInfo.candidates(named);
+        case 'choose':return await trackInfo.choose(named,payload?.id);
+        case 'file':{
+          const english=mainLocale.getState()?.locale==='en-US';
+          const pick=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:english?'Track facts file for this song':'这首歌的资料文件',
+            properties:['openFile'],filters:[{name:english?'Track facts (.txt, one "name: value" per line)':'歌曲资料（.txt，每行「项名: 值」）',extensions:['txt']}]});
+          if(pick.canceled||!pick.filePaths[0])return {ok:true,canceled:true};
+          return await trackInfo.chooseFile(named,pick.filePaths[0]);
+        }
+        case 'hide':return await trackInfo.hide(named,true);
+        case 'show':return await trackInfo.hide(named,false);
+        default:return {ok:false,reason:'bad-action'};
+      }
+    }catch(e){return {ok:false,reason:'error'};}
+  });
   ipcMain.handle('fusion:lyrics-nudge',async(_event,payload)=>{const track=fusionTrackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,reason:'track-missing'};const delta=Number(payload?.delta);if(!(delta===0.1||delta===-0.1))return {ok:false,reason:'bad-step'};try{return {ok:true,offset:await lyrics.nudge(track.id,delta)};}catch(e){return {ok:false,reason:'error'};}});
   ipcMain.handle('fusion:listening-save',async(_event,value)=>{if(!fusionTrackIndex.has(String(value?.trackId||'')))return {ok:false,error:'track-missing'};try{return {ok:true,value:await listeningState.save(value)};}catch(e){return {ok:false,error:String(e.message||e)};}});
   const generatorEditorEntry = path.join(
@@ -654,9 +684,13 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       let dynamicsHealth={enabled:payload?.useDynamics===true,state:'original',applied:[]};
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
       const layersBody = await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null);
+      // Track facts for the radar's track sheet (model.track.facts, ordered [{name, value}], desktop/track-info.cjs): the
+      // cache answers at once; a first lookup is waited for at most 2.5 s and otherwise finishes on its own for next time.
+      let facts=null;
+      try{const found=await Promise.race([trackInfo.get(trackNamed(track,{})),new Promise(resolve=>setTimeout(()=>resolve(null),2500))]);if(found?.ok)facts=trackInfoModule.factsOf(found.items);}catch(_){}
       const built=adapter.modelFrom({
         track: { id: track.id, title: track.title, artist: track.artist, album: track.album, number: track.number,
-                 date: track.date, albumArtist: track.albumArtist, genre: track.genre, composer: track.composer },
+                 date: track.date, albumArtist: track.albumArtist, genre: track.genre, composer: track.composer, ...(facts&&facts.length?{facts}:{}) },
         duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
         stems,
         layers: layersBody,
