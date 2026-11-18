@@ -213,3 +213,20 @@ test('without bar lines the drum panel rolls the last sixteen beats; without bea
   const bare = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120}, lanes: [drums]}).frame(7.2).motion;
   assert.equal(bare.drums.mode, 'lamps');
 });
+
+test('without lyrics the teleprinter prints the track sheet: title and artist first, then the rest over the song; fields the tags lack are left out', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}];
+  const model = steady(lanes, 64, {track: {...song.track, title: 'MEGURI', artist: "world's end girlfriend", album: '', number: 4, genre: 'Post-rock', duration: 64}});
+  const {frame} = post(model);
+  const start = frame(.1).motion.teleprinter;
+  assert.equal(start.mode, 'sheet');
+  assert.deepEqual(start.fields.map(f => f[0]), ['TITLE', 'ARTIST', 'TRACK', 'GENRE', 'LENGTH'], 'no ALBUM (empty), no fields the tags lack');
+  assert.deepEqual(start.fields.find(f => f[0] === 'LENGTH'), ['LENGTH', '1:04']);
+  assert.deepEqual(start.shown, [], 'nothing before half a second');
+  const early = frame(3.5).motion.teleprinter.shown;
+  assert.deepEqual(early.map(s => [s.field, s.value, s.done]), [['TITLE', 'MEGURI', true], ['ARTIST', "world's end girlfriend", true]]);
+  const late = frame(63.9).motion.teleprinter.shown;
+  assert.deepEqual(late.map(s => s.field), ['TITLE', 'ARTIST', 'TRACK', 'GENRE', 'LENGTH']);
+  assert.ok(late.every(s => s.done));
+  assert.deepEqual(frame(20).motion.teleprinter, frame(20).motion.teleprinter, 'a function of song time');
+});

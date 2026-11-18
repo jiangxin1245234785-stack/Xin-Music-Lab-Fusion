@@ -911,6 +911,7 @@
       rect(x + w, y - 2, 30, h + 4, '#1f201b', '#4a4c42', 1);
       circle(1378, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(1378, 832, 10, null, '#8d8a7c', 3);
       const tape = tapeOf(env);
+      if (!tape) { trackSheet(env, now, out, {x, y, w, h, head}); return; }
       const telegraph = root.XinScoreTelegraph;
       let printing = false;
       const glyphs = [];
@@ -940,7 +941,69 @@
         p.restore();
       }
       lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
-      out.teleprinter = {printing, newest: glyphs.slice(0, 6), lines: tape ? tape.lines : 0};
+      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape ? tape.lines : 0};
+    }
+    // The track sheet: the fields of model.track that are there, in this order. Values as the tags give them.
+    const SHEET = Object.freeze([
+      ['TITLE', t => t.title], ['ARTIST', t => clean(t.artist)], ['ALBUM', t => clean(t.album)], ['ALBUM ARTIST', t => clean(t.albumArtist)],
+      ['DATE', t => t.date || t.year], ['TRACK', t => t.number ? (t.trackTotal ? t.number + ' / ' + t.trackTotal : String(t.number)) : ''],
+      ['DISC', t => t.disc ? (t.discTotal ? t.disc + ' / ' + t.discTotal : String(t.disc)) : ''], ['GENRE', t => t.genre],
+      ['COMPOSER', t => t.composer], ['LYRICS BY', t => t.lyricist], ['ARRANGER', t => t.arranger], ['LABEL', t => t.label],
+      ['LENGTH', t => Number(t.duration) > 0 ? Math.floor(t.duration / 60) + ':' + String(Math.floor(t.duration % 60)).padStart(2, '0') : '']]);
+    const SHEET_CHAR = .08;   // seconds a character takes to print
+    let sheetCache = null, sheetKey = null;
+    function sheetOf(env) {
+      const t = env.model.track || {}, key = JSON.stringify(t);
+      if (sheetKey === key) return sheetCache;
+      const fields = SHEET.map(([name, get]) => [name, String(get(t) ?? '').trim()]).filter(([, value]) => value);
+      // Title and artist print at once; the others start evenly over the song after them.
+      const duration = Math.max(1, Number(t.duration) || 1), items = [];
+      let at = .5;
+      fields.forEach(([name, value], i) => {
+        const chars = Array.from(value);
+        if (i >= 2) at = Math.max(at, 2 + (duration - 8) * (i - 1) / Math.max(1, fields.length - 1));
+        items.push({name, value, chars, start: at, end: at + chars.length * SHEET_CHAR, han: chars.some(isHan)});
+        at += chars.length * SHEET_CHAR + .4;
+      });
+      sheetCache = items; sheetKey = key;
+      return items;
+    }
+    function trackSheet(env, now, out, {x, y, w, h, head}) {
+      // The panel's own title says what the tape holds now.
+      rect(966, 766, 240, 22, C.panel);
+      write('TELEPRINTER · TRACK SHEET', 970, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
+      rect(1180, 766, 228, 22, C.panel);
+      write('UPPER = FIELD · LOWER = VALUE', 1404, 777, 11, C.stampFaint, 'mono', 'right');
+      const items = sheetOf(env), shown = [];
+      // What has printed by now, as pieces laid right to left from the head: each a field, then a dot.
+      const pieces = [];
+      for (const item of items) {
+        if (item.start > now) break;
+        const count = clamp(Math.floor((now - item.start) / SHEET_CHAR) + 1, 0, item.chars.length);
+        const value = item.chars.slice(0, count).join('');
+        font(item.han ? 'hanzi' : 'mono', item.han ? 24 : 20, 'bold');
+        const valueW = p.measureText(value).width;
+        font('mono', 12);
+        const nameW = p.measureText(item.name).width;
+        pieces.push({item, value, width: Math.max(valueW, count === item.chars.length ? nameW : 0) + 4});
+        if (count === item.chars.length && now >= item.end + .2) pieces.push({dot: true, width: 18});
+        shown.push({field: item.name, value, done: count === item.chars.length});
+      }
+      p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
+      let right = head - 4;
+      for (let k = pieces.length - 1; k >= 0 && right > x - 400; k--) {
+        const piece = pieces[k], left = right - piece.width;
+        if (piece.dot) circle(left + piece.width / 2, y + h / 2 + 8, 2.5, C.paperInk);
+        else {
+          write(piece.item.name, left, y + 17, 12, C.paperFaint === undefined ? C.paperInk : '#6b6656', 'mono', 'left');
+          write(piece.value, left, y + 49, piece.item.han ? 24 : 20, C.paperInk, piece.item.han ? 'hanzi' : 'mono', 'left', 0, 'bold');
+        }
+        right = left - 6;
+      }
+      p.restore();
+      const printing = items.some(item => now >= item.start && now < item.end);
+      lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
+      out.teleprinter = {mode: 'sheet', printing, fields: items.map(item => [item.name, item.value]), shown, lines: 0};
     }
     // The lyric lines as print cells: each line's characters spread evenly over its time, a dot between lines.
     let tapeCache = null, tapeKey = null;

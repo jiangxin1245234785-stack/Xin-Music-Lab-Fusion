@@ -277,7 +277,7 @@ function modelFrom(input) {
   const model = {
     contract: CONTRACT,
     track: {id: String(track.id || ''), title: String(track.title || ''), artist: String(track.artist || ''),
-            album: String(track.album || ''), duration},
+            album: String(track.album || ''), duration, ...(finite(Number(track.number)) && Number(track.number) > 0 ? {number: Number(track.number)} : {})},
     audio: {src: String(input.audioUrl || ''), offset: 0},
     lanes
   };

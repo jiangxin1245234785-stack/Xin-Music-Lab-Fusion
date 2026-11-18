@@ -652,7 +652,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
       const layersBody = await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null);
       const built=adapter.modelFrom({
-        track: { id: track.id, title: track.title, artist: track.artist, album: track.album },
+        track: { id: track.id, title: track.title, artist: track.artist, album: track.album, number: track.number },
         duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
         stems,
         layers: layersBody,

@@ -46,7 +46,7 @@ test('a track becomes a model the core accepts, with the layers the track has', 
   assert.equal(layers.skippedLanes.length, 0);
   assert.ok(layers.chords && layers.chordTones && layers.sections && layers.cover);
   assert.ok(!layers.bars && layers.captions && !layers.energy && !layers.levels && !layers.contour);
-  assert.deepEqual(built.model.track, {id: 'abc', title: '歌', artist: '人', album: '专辑', duration: 60});
+  assert.deepEqual(built.model.track, {id: 'abc', title: '歌', artist: '人', album: '专辑', duration: 60, number: 1});
   assert.equal(built.health.lanes.bass.ok, false);
   assert.equal(built.health.bars.ok, false);
 });
