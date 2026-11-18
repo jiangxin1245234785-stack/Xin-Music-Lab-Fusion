@@ -28,12 +28,17 @@ function stemsStatus(stems) {
 
 // 'missing' | 'stale' | 'current'. `layers` is the body of score-layers.json (or null), `stems` what the
 // analysis service's readStems(track) answered.
+const panOwed = layers => Boolean(layers.levels && typeof layers.levels === 'object' && layers.levels.groups && !('pan' in layers.levels));
+
 function layersState(layers, stems) {
   if (!layers || layers.kind !== 'score-layers') return 'missing';
   const made = layers.source && layers.source.stemRunId !== undefined ? layers.source.stemRunId : null;
   const now = stems && stems.ok ? (stems.runId ?? null) : null;
   // Also made by the current model (XLD core/score-identity.cjs); a result without a recorded identity stays valid.
   if (made === now && !require('../../xld-runtime-baseline/core/score-identity.cjs').isCurrent(layers, 'score-layers')) return 'stale';
+  // Stem levels without the left/right difference (score layers before version 2): stale once, so the radar's PAN gets
+  // its data. Version 2 always writes `levels.pan` (null parts when there was nothing to measure), so it never loops.
+  if (made === now && panOwed(layers)) return 'stale';
   return made === now ? 'current' : 'stale';
 }
 
