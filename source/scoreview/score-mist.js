@@ -26,7 +26,7 @@
   const amount = db => Math.pow(clamp((db - FLOOR_DB) / (PEAK_DB - FLOOR_DB), 0, 1), 1.65);
   // The fog bed (0.31.0): sampled every `step` pixels; at its thinnest `least` of the lane's half height where it sounds;
   // `ahead` of its light ahead of the needle.
-  const FOG = Object.freeze({step: 16, least: .18, ahead: .6, scale: 4, hop: .05, lead: 4});
+  const FOG = Object.freeze({step: 16, least: .18, ahead: .6, scale: 4, hop: .05, lead: 4, blend: .5, fade: .08, layers: 6, layerAlpha: .3, edge: 48, edgeSteps: 8});
   const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
   const mix = (a, b, t) => a + (b - a) * t;
   const smooth = x => x * x * (3 - 2 * x);
@@ -364,32 +364,62 @@
         const fog = fogStrip.canvas.getContext('2d');
         fog.setTransform(1, 0, 0, 1, 0, 0); fog.clearRect(0, 0, small[0], small[1]);
         fog.setTransform(1 / FOG.scale, 0, 0, 1 / FOG.scale, 0, 0);
+        let thinnest = Infinity;
         for (const layer of layers) {
           const {box, group, level, weight, dim} = layer;
           const half = (box.bottom - box.top) * unit / 2, center = py((box.top + box.bottom) / 2);
-          const xs = [], as = [], grid = fogGrid(level);
+          const xs = [], raw = [], grid = fogGrid(level);
           for (let x = floor; x <= span + FOG.step; x += FOG.step) {
             const at = Math.min(x, span);
-            xs.push(at); as.push(fogAt(grid, anchor + (at - needle) / pps) * weight * dim);
+            xs.push(at); raw.push(fogAt(grid, anchor + (at - needle) / pps) * weight * dim);
           }
-          if (!as.some(a => a > .01)) continue;
+          if (!raw.some(a => a > .01)) continue;
+          // 0.31.1: smoothed along time (a triangle FOG.blend seconds wide each side), so the band swells and thins
+          // without steps where the per-second level changes.
+          const reach = Math.max(1, Math.round(FOG.blend * pps / FOG.step)), as = raw.map((_, i) => {
+            let sum = 0, total = 0;
+            for (let j = -reach; j <= reach; j++) {
+              const k = i + j;
+              if (k < 0 || k >= raw.length) continue;
+              const w = reach + 1 - Math.abs(j);
+              sum += raw[k] * w; total += w;
+            }
+            return sum / total;
+          });
           const light = fog.createLinearGradient(floor, 0, span, 0), [smoke] = colorOf(group);
           for (let i = 0; i < xs.length; i += 2) {
             light.addColorStop(clamp((xs[i] - floor) / Math.max(1, span - floor), 0, 1), fogInk(smoke, strength * Math.min(1, .25 + .75 * as[i])));
           }
+          // Thickness goes to nothing continuously as the level fades (no cliff where the stem falls silent).
+          const thick = as.map(a => half * (FOG.least + (1 - FOG.least) * a) * smooth(clamp(a / FOG.fade, 0, 1)));
           const band = scale => {
             fog.beginPath();
-            fog.moveTo(xs[0], center - half * scale * (FOG.least + (1 - FOG.least) * as[0]));
-            for (let i = 1; i < xs.length; i++) fog.lineTo(xs[i], center - half * scale * (FOG.least + (1 - FOG.least) * as[i]) * (as[i] > .01 ? 1 : 0));
-            for (let i = xs.length - 1; i >= 0; i--) fog.lineTo(xs[i], center + half * scale * (FOG.least + (1 - FOG.least) * as[i]) * (as[i] > .01 ? 1 : 0));
+            fog.moveTo(xs[0], center - thick[0] * scale);
+            for (let i = 1; i < xs.length; i++) fog.lineTo(xs[i], center - thick[i] * scale);
+            for (let i = xs.length - 1; i >= 0; i--) fog.lineTo(xs[i], center + thick[i] * scale);
             fog.closePath(); fog.fill();
           };
+          // 0.31.1: FOG.layers thin bands nested from the edge in, each a little light, then blurred as a whole below:
+          // dense in the middle, fading smoothly to the edge, no visible second slab.
           fog.fillStyle = light;
-          fog.globalAlpha = .55; band(1);
-          fog.globalAlpha = 1; band(.5);
+          fog.globalAlpha = FOG.layerAlpha;
+          for (let j = 0; j < FOG.layers; j++) band(1 - j / FOG.layers);
+          thinnest = Math.min(thinnest, half);
           fogStrip.drawn++;
         }
         fog.globalAlpha = 1;
+        if (fogStrip.drawn) {
+          // Soften the whole strip once per repaint (every FOG.lead / 2 seconds of song time, or on a layout change).
+          if (!fogStrip.soft || fogStrip.soft.width !== small[0] || fogStrip.soft.height !== small[1]) {
+            fogStrip.soft = target.ownerDocument.createElement('canvas');
+            fogStrip.soft.width = small[0]; fogStrip.soft.height = small[1];
+          }
+          const soft = fogStrip.soft.getContext('2d');
+          soft.setTransform(1, 0, 0, 1, 0, 0); soft.clearRect(0, 0, small[0], small[1]);
+          soft.filter = 'blur(' + clamp(thinnest / FOG.scale / FOG.layers * 1.6, .8, 5).toFixed(2) + 'px)';
+          soft.drawImage(fogStrip.canvas, 0, 0);
+          soft.filter = 'none';
+        }
       }
       if (!fogStrip.drawn) return 0;
       // Lay on the slice for now: what the strip held `shift` pixels to the right. Up to the needle at full light,
@@ -398,11 +428,24 @@
       const lay = (from, to, alpha) => {
         if (to <= from) return;
         ctx.globalAlpha = alpha;
-        ctx.drawImage(fogStrip.canvas, (from + offset) / k, 0, (to - from) / k, small[1], from, 0, to - from, small[1] * k);
+        ctx.drawImage(fogStrip.soft || fogStrip.canvas, (from + offset) / k, 0, (to - from) / k, small[1], from, 0, to - from, small[1] * k);
       };
       ctx.imageSmoothingEnabled = true;
-      lay(floor, needle, 1);
-      lay(needle, right, FOG.ahead);
+      // 0.31.1: both ends fade over FOG.edge pixels in FOG.edgeSteps slices, so the band has no vertical cut.
+      const edge = Math.min(FOG.edge, (right - floor) / 3), lightAt = x => x < needle ? 1 : FOG.ahead;
+      const cuts = [floor, floor + edge, needle, right - edge, right].sort((a, b) => a - b);
+      for (let i = 0; i + 1 < cuts.length; i++) {
+        const from = cuts[i], to = cuts[i + 1];
+        if (to <= from) continue;
+        const fading = from < floor + edge - .01 || to > right - edge + .01;
+        if (!fading) { lay(from, to, lightAt(from)); continue; }
+        const step = (to - from) / FOG.edgeSteps;
+        for (let k = 0; k < FOG.edgeSteps; k++) {
+          const a = from + k * step, mid = a + step / 2;
+          const ramp = smooth(clamp(Math.min(mid - floor, right - mid) / edge, 0, 1));
+          lay(a, a + step, lightAt(mid) * ramp);
+        }
+      }
       ctx.globalAlpha = 1;
       return fogStrip.drawn;
     }

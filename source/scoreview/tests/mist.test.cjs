@@ -142,7 +142,7 @@ test('smoothed dB follows its source time and repeated seeks produce the same fr
 
 test('0.31.0: the fog bed runs along the whole timeline for each sounding stem; mistFog 0 leaves the mist as it was', () => {
   const ScoreView = require('../score-view.js');
-  assert.equal(ScoreView.DEFAULTS.mistFog, .16);
+  assert.equal(ScoreView.DEFAULTS.mistFog, .24);
   const {view} = listening(fullModel());
   view.setOptions({scoreStyle: 'mist'});
   const on = view.draw(11);
@@ -151,4 +151,6 @@ test('0.31.0: the fog bed runs along the whole timeline for each sounding stem; 
   assert.equal(view.draw(11).mist.bed, 0, 'mistFog 0：没有雾床');
   view.setOptions({mistFog: 2});
   assert.equal(view.options().mistFog, 0, '超出范围的值不收');
+  view.setOptions({pressTint: .1}); assert.equal(view.options().pressTint, .1);
+  view.setOptions({pressTint: .5}); assert.equal(view.options().pressTint, .1, 'pressTint 超出 0–0.3 不收');
 });

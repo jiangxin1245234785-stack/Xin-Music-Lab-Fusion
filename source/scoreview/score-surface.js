@@ -378,6 +378,9 @@ function paper(data, paintVariation) {
     const p=paperPressMask.getContext('2d');
     p.globalCompositeOperation='source-in';
     p.fillStyle='rgba(70,76,70,1)';p.fillRect(0,0,W,H);
+    // 0.31.1: pressTint lays a very faint grey inside the groove itself.
+    const tint=Number.isFinite(options.pressTint)?options.pressTint:0;
+    if(tint>0){ctx.globalAlpha=tint;ctx.drawImage(paperPressMask,0,0);}
     ctx.globalAlpha=Math.min(1,.26*press);ctx.drawImage(paperPressMask,0,-.7*unit);
     p.fillStyle='rgba(252,252,244,1)';p.fillRect(0,0,W,H);
     ctx.globalAlpha=Math.min(1,.7*press);ctx.drawImage(paperPressMask,0,.9*unit);
@@ -741,7 +744,7 @@ function paper(data, paintVariation) {
  }
 
  // A short note's round head (the core's shortHead / SHORT_NOTE), in the look's own ink: played, sounding, to come.
- const pressOf=()=>Number.isFinite(options.paperPress)?options.paperPress:.8;
+ const pressOf=()=>Number.isFinite(options.paperPress)?options.paperPress:1.1;
  function shortHeads(style){
   const core=coreOf();if(!core||!core.SHORT_NOTE)return;
   const radius=(Number.isFinite(options.shortHead)?options.shortHead:core.DEFAULTS?.shortHead||0)*unit;if(!(radius>0))return;
