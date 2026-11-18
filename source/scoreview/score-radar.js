@@ -955,7 +955,11 @@
     function sheetOf(env) {
       const t = env.model.track || {}, key = JSON.stringify(t);
       if (sheetKey === key) return sheetCache;
-      const fields = SHEET.map(([name, get]) => [name, String(get(t) ?? '').trim()]).filter(([, value]) => value);
+      // A host's ordered list (model.track.facts: [{name, value}]) is printed as it is, in its order; without one, the
+      // tag fields above.
+      const given = Array.isArray(t.facts) ? t.facts.filter(f => f && typeof f.name === 'string' && f.name.trim() && f.value != null && String(f.value).trim()) : [];
+      const fields = given.length ? given.map(f => [f.name.trim().toUpperCase(), String(f.value).trim()])
+        : SHEET.map(([name, get]) => [name, String(get(t) ?? '').trim()]).filter(([, value]) => value);
       // Title and artist print at once; the others start evenly over the song after them.
       const duration = Math.max(1, Number(t.duration) || 1), items = [];
       let at = .5;

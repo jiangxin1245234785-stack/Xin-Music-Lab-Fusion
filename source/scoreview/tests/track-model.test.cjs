@@ -327,3 +327,9 @@ test('radar PAN: a version 2 layers file brings left minus right per frame; an o
   broken.levels.pan = {hop: 0, mix: [1]};
   assert.equal(modelFrom(input({layers: broken})).model.levels.pan, undefined);
 });
+
+test('radar track sheet: the host\'s facts list reaches the model in order, strings only, bounded', () => {
+  const built = modelFrom(input({track: {id: 'abc', title: '歌', facts: [{name: 'COMPOSER', value: '人'}, {name: '', value: 'x'}, {name: 'YEAR', value: 2004}, {name: 'BAD', value: {}}]}}));
+  assert.deepEqual(built.model.track.facts, [{name: 'COMPOSER', value: '人'}, {name: 'YEAR', value: '2004'}]);
+  assert.equal(modelFrom(input()).model.track.facts, undefined);
+});
