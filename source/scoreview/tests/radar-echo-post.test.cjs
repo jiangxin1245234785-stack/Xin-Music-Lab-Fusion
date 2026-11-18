@@ -201,3 +201,15 @@ test('the drum grid stands on the song\'s own bar lines: three beats = twelve st
   assert.deepEqual(loose.drums.hits, ['', '', '', '', '']);
   assert.equal(loose.barBeat, '---·-');
 });
+
+test('without bar lines the drum panel rolls the last sixteen beats; without beats it keeps the five lamps', () => {
+  const drums = {id: 'd', kind: 'drums', group: 'drums', rows: ['kick', 'snare'], hits: [[6, 0, 100], [6.5, 1, 100], [1, 0, 100]]};
+  const beats = Array.from({length: 121}, (_, i) => i / 2);
+  const loose = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beats, downbeats: [], steady: false}, lanes: [drums]}).frame(7.2).motion;
+  assert.equal(loose.drums.mode, 'roll');
+  assert.equal(loose.drums.nowBeat, 14.4);
+  assert.deepEqual(loose.drums.rolled[4], [2, 12], 'kicks at beats 2 and 12 (1.0 s and 6.0 s), both within the last 16 beats');
+  assert.deepEqual(loose.drums.rolled[3], [13], 'the snare at beat 13 (6.5 s)');
+  const bare = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120}, lanes: [drums]}).frame(7.2).motion;
+  assert.equal(bare.drums.mode, 'lamps');
+});

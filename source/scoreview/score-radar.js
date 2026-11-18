@@ -37,7 +37,8 @@
     hold: 4,
     glow: .3                // every lamp rises and falls over this many seconds
   });
-  const FREE_TURN = 8;      // seconds a turn of the disc takes when the song has no beats
+  const FREE_TURN = 8;
+  const ROLL_BEATS = 16;    // the drum strip of a song without bar lines: this many beats back from now      // seconds a turn of the disc takes when the song has no beats
   const C = Object.freeze({
     void: '#0b0c0a', panel: '#33362d', panelHi: '#40433a', panelLo: '#25271f', seam: '#1a1b16', screw: '#5b5d52',
     stamp: '#d8d3bd', stampDim: '#8e8b7a', stampFaint: '#5f5e53',
@@ -752,8 +753,10 @@
       // grid would invent bars (every four beats from the first), so only the five lamps are shown.
       const per = bars && bars.source === 'downbeats' && env.beats.length >= 2 && [2, 3, 4].includes(bars.perBar) ? bars.perBar : 0;
       const steps = per * 4;
-      write('DRUMS · THIS BAR', 1028, 407, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
-      write(steps ? steps + ' STEPS' : 'NO BAR LINES · LAMPS ONLY', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
+      // Without bar lines but with beats: the last ROLL_BEATS beats roll right to left, beats marked, no bars.
+      const roll = !steps && env.beats.length >= 2;
+      write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 407, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
+      write(steps ? steps + ' STEPS' : roll ? 'NO BAR LINES · BEATS ONLY' : 'NO BEATS · LAMPS ONLY', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
       rect(1028, 420, 376, 122, '#1f201b', '#4a4c42', 1);
       let barStart = null, barEnd = null, step = -1;
       const cells = DRUM_ROWS.map(() => new Array(steps).fill(0));
@@ -773,6 +776,33 @@
       }
       // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
       const cellPitch = steps ? Math.min(24, 286 / steps) : 0, cellSize = Math.max(8, cellPitch - 3);
+      // The rolling strip: x from the beat position, the newest beat at the right edge; a faint line on every beat
+      // (none heavier: no bars), each hit a short bar, brighter the more recent.
+      const rolled = DRUM_ROWS.map(() => []);
+      const left = 1112, width = 286, nowBeat = roll ? env.beatAt(now) : 0, perBeat = width / ROLL_BEATS;
+      const xOf = beat => left + width - (nowBeat - beat) * perBeat;
+      if (roll) {
+        for (let k = Math.ceil(nowBeat - ROLL_BEATS); k <= Math.floor(nowBeat); k++) {
+          const x = xOf(k);
+          p.beginPath(); p.moveTo(x, 428); p.lineTo(x, 536); p.strokeStyle = '#34352d'; p.lineWidth = 1; p.stroke();
+        }
+        p.beginPath(); p.moveTo(left + width, 426); p.lineTo(left + width, 538); p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.stroke();
+      }
+      function rollRow(r, y) {
+        const shown = [];
+        rect(left, y, width, 15, '#24251f');
+        const from = env.timeAtBeat ? env.timeAtBeat(nowBeat - ROLL_BEATS) : now - 8;
+        for (let k = lower(data.drums, from - .01, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
+          const d = data.drums[k];
+          if (d.row !== r) continue;
+          const beat = env.beatAt(d.time), age = nowBeat - beat;
+          if (age < 0 || age > ROLL_BEATS) continue;
+          const x = xOf(beat);
+          rect(x - 2, y + 1, 4, 13, mixHex('#6a4426', '#ffc06a', clamp(1 - age / ROLL_BEATS, 0, 1) * .8 + .2));
+          shown.push(+beat.toFixed(2));
+        }
+        return shown;
+      }
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
         write(row.label, 1040, y + 7, 12, C.stamp, 'mono', 'left', 0, 'bold');
@@ -781,6 +811,7 @@
         let v = 0;
         for (let k = j; k >= 0 && now - data.drums[k].time < .15; k--) if (data.drums[k].row === r) { v = 1 - (now - data.drums[k].time) / .15; break; }
         lamp(1094, y + 7, 6, v);
+        if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
           const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
           const fill = state === 2 ? (s === step ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : '#2c2d26';
@@ -788,7 +819,8 @@
           if (s === step) { p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.strokeRect(x - .5, y - .5, cellSize + 1, 16); }
         }
       });
-      out.drums = {steps, step, bar: barStart, hits: cells.map(row => row.join(''))};
+      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')),
+        ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
     }
 
     function recorder(data, now, out) {
