@@ -90,3 +90,19 @@ test('layout survives a second listener, a different song, resize, seek and a re
   assert.equal(first.frame(10).hash, refA);
   assert.equal(second.frame(30).hash, refB);
 });
+
+test('0.29.1: kicks played close together keep a gap between their marks; a lone kick keeps its full width', () => {
+  const model = (hits) => ({contract: 'xin.score-view/1', track: {duration: 50}, audio: {src: ''},
+    lanes: [{id: 'drums', group: 'drums', kind: 'drums', label: '鼓', rows: ['kick'], hits}]});
+  const kicks = (hits) => {
+    const scene = listener(model(hits), {drumNotation: true, fxPreset: 'off', showBackdrop: false});
+    scene.frame(12);
+    return scene.surface.calls.filter(c => c.name === 'roundRect').map(c => c.args).sort((a, b) => a[0] - b[0]);
+  };
+  const run = kicks(Array.from({length: 24}, (_, i) => [12 + i * 0.125, 0, 100]));
+  assert.ok(run.length > 10);
+  for (let i = 1; i < run.length; i++) assert.ok(run[i][0] - (run[i - 1][0] + run[i - 1][2]) >= 1.6 - 1e-6, `第 ${i} 下和前一下之间的缝`);
+  const lone = kicks([[12, 0, 100]])[0];
+  assert.ok(lone[2] > run[0][2], '单独的一下不收窄');
+  assert.equal(ScoreView.DEFAULTS.shortHead, 1.6);
+});

@@ -367,7 +367,7 @@
             ctx.globalAlpha = dim * (active ? .79 + .20 * exposure : a * (.65 + (set.vel[i] || 80) / 340));
             // The kit's mark (the core's drumKit), in the mist's own ink; a strike swells a little.
             ctx.beginPath();
-            kit.mark(ctx, row, x, y, size * (active ? 1.25 : 1));
+            kit.mark(ctx, row, x, y, size * (active ? 1.25 : 1), set.kitGap ? set.kitGap[i] * pps / 2 : Infinity);
             ctx.fill();
             if (active) sounding.add(lane.id);
             hits++;

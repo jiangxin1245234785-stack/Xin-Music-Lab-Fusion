@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.29.0';
+  const VERSION = '0.29.1';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -114,7 +114,7 @@
     drumNotation: false,    // fixed drum positions and compact articulation marks
     // The radius in pixels of the round head a short note (under SHORT_NOTE.seconds) gets at its onset, in every shared
     // look (0.29.0, work/score-depth-20261118/SPEC.md batch 1); 0 draws short notes as before.
-    shortHead: 2.2,
+    shortHead: 1.6,         // 0.29.1: the user's pick of three (A); 0.29.0 had 2.2
     meteorMotion: false,    // starry score, stored under the original preference for existing installations
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
@@ -470,6 +470,8 @@
   // smaller when soft. A look only chooses the material: colour, light, softness. Exported as XinScoreView.drumKit.
   const DRUM_KIT = Object.freeze({rows: Object.freeze(['cymbal', 'hat', 'tom', 'snare', 'kick']),
     row: Object.freeze({crash: 0, ride: 0, hihat: 1, openhat: 1, tom: 2, snare: 3, kick: 4}), mark: 0.62, least: 1.6, most: 4.2, soft: 0.25});
+  // The least gap, in pixels, left between two neighbouring marks of one row (0.29.1).
+  const KIT_GAP = 1.6;
   const kitRow = name => (Object.prototype.hasOwnProperty.call(DRUM_KIT.row, name) ? DRUM_KIT.row[name] : DRUM_KIT.row.tom);
   // A row's middle as a share of the drum lane's height, from its top.
   const kitCenter = name => (kitRow(name) + 0.5) / DRUM_KIT.rows.length;
@@ -480,10 +482,27 @@
     const ink = Math.max(0.95, h * 0.42);
     path.moveTo(left, y + h); path.lineTo(right, y - h); path.lineTo(right + ink, y - h); path.lineTo(left + ink, y + h); path.closePath();
   }
-  // One mark into a path (filled by the caller): `h` is half its height.
-  function kitMark(path, name, x, y, h) {
+  // For each hit of a drum lane ({count, time, row}), the seconds to the nearest other hit in the same kit row (a hi-hat
+  // and an open hat share theirs), Infinity when alone: a mark is never wider than leaves a gap to its neighbour.
+  function kitGaps(hits, rowNames) {
+    const gaps = new Float32Array(hits.count).fill(Infinity), last = new Map();
+    for (let i = 0; i < hits.count; i++) {
+      const row = kitRow(rowNames[hits.row[i]]), before = last.get(row);
+      if (before !== undefined) {
+        const gap = hits.time[i] - hits.time[before];
+        if (gap > 0) { gaps[i] = Math.min(gaps[i], gap); gaps[before] = Math.min(gaps[before], gap); }
+      }
+      last.set(row, i);
+    }
+    return gaps;
+  }
+  // One mark into a path (filled by the caller): `h` is half its height; `room` (pixels, optional) half the distance to
+  // the nearest hit of the same row. A mark wider than that is narrowed to leave a gap of at least KIT_GAP pixels, but
+  // never below 0.45 of its height, so every hit can still be counted.
+  function kitMark(path, name, x, y, h, room = Infinity) {
+    const fit = width => Math.max(h * 0.45, Math.min(width, room - KIT_GAP / 2));
     // The kick is the widest mark, but narrow enough that sixteenth kicks at a normal zoom stay apart.
-    const w = h * 1.15;
+    const w = fit(h * 1.15);
     if (name === 'kick') {
       if (path.roundRect) path.roundRect(x - w, y - h * 0.62, 2 * w, h * 1.24, h * 0.6);
       else path.rect(x - w, y - h * 0.62, 2 * w, h * 1.24);
@@ -1211,6 +1230,7 @@ function canonicalOnsets(rows) {
         entry.hits = {count, time: new Float32Array(count), row: new Uint8Array(count), vel: new Uint8Array(count)};
         lane.hits.forEach((hit, i) => { entry.hits.time[i] = hit[0]; entry.hits.row[i] = hit[1]; entry.hits.vel[i] = hit[2]; });
         entry.hits.accent = drumAccents(entry.hits, entry.rowNames);
+        entry.hits.kitGap = kitGaps(entry.hits, entry.rowNames);
         return;
       }
       let raw = visible.length === 1 ? visible[0].notes : [].concat(...visible.map(lane => lane.notes));
@@ -2740,7 +2760,7 @@ function canonicalOnsets(rows) {
       if (!lane.notationRows) lane.notationRows = lane.rowNames.map(name => ({name: DRUM_DISPLAY.includes(name) ? name : 'unknown', center: kitCenter(name) * 8}));
       return lane.notationRows;
     }
-    const drumMark = (path,name,x,y,h) => kitMark(path,name,x,y,h);
+    const drumMark = (path,name,x,y,h,room) => kitMark(path,name,x,y,h,room);
     function drawDrumNotation(box,now,line,pps,stats) {
       const {lane} = box, hits = lane.hits, rows = notationRows(lane);
       const right = now + (size.width-line)/pps, step = box.height / 8;
@@ -2756,7 +2776,7 @@ function canonicalOnsets(rows) {
           context.fillStyle = colors[phase]; path = beginGeometry(); batch = phase;
         }
         const h = kitSize(box.height, hits.vel[i]);
-        drumMark(path,row.name,line+(t-now)*pps,box.top+step*row.center,h);
+        drumMark(path,row.name,line+(t-now)*pps,box.top+step*row.center,h,hits.kitGap ? hits.kitGap[i]*pps/2 : Infinity);
         stats.hits++;
         if (phase === 1) stats.active++;
       }
@@ -2785,7 +2805,7 @@ function canonicalOnsets(rows) {
         }
         const x=line+(t-now)*pps,y=box.top+step*row.center;
         const strength=hits.vel[i]/127, h=kitSize(box.height, hits.vel[i]);
-        drumMark(path,row.name,x,y,h*(phase===1 ? 1.12 : 1)*(strength>.67 && row.name==='snare' ? 1.06 : 1));
+        drumMark(path,row.name,x,y,h*(phase===1 ? 1.12 : 1)*(strength>.67 && row.name==='snare' ? 1.06 : 1),hits.kitGap ? hits.kitGap[i]*pps/2 : Infinity);
         stats.hits++;if(phase===1)stats.active++;
       }
       if(batch>=0)fillGeometry(path);
@@ -4135,7 +4155,7 @@ function canonicalOnsets(rows) {
   return Object.freeze({
     create, swellOf, canonicalOnsets, simplifyNotes,
     SHORT_NOTE,
-    drumKit: Object.freeze({rows: DRUM_KIT.rows, center: kitCenter, size: kitSize, mark: kitMark, row: kitRow}), drumAccents, smoothChords, toneNames, noteName, transientTiming, CONTRACT, VERSION,
+    drumKit: Object.freeze({gaps: kitGaps, rows: DRUM_KIT.rows, center: kitCenter, size: kitSize, mark: kitMark, row: kitRow}), drumAccents, smoothChords, toneNames, noteName, transientTiming, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
     COVER_ADAPT, TEXTURE_ADAPT, measureCover, GROUP_COLORS: Object.freeze({...GROUP_COLORS}),
     // Checks a model the way `create` would, without a canvas.

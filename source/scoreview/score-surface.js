@@ -89,7 +89,7 @@ function paperBounds(time) {
         const t=set.time[i];if(t<past||t>future)continue;
         const row=box.lane.rowIndex.get(set.row[i]);if(!Number.isFinite(row))continue;
         const drum=box.lane.rows[row].name,kit=kitOf();
-        events.push({group:'drums',drum,start:t,end:t+.03,velocity:set.vel[i],x:NEEDLE+(t-NOW)*PPS,y:top+unit*(box.top+box.height*kit.center(drum)),size:unit*kit.size(box.height,set.vel[i]),box});
+        events.push({group:'drums',drum,start:t,end:t+.03,velocity:set.vel[i],x:NEEDLE+(t-NOW)*PPS,y:top+unit*(box.top+box.height*kit.center(drum)),size:unit*kit.size(box.height,set.vel[i]),room:set.kitGap?set.kitGap[i]*PPS/2:Infinity,box});
       }
     } else {
       for(const attack of attacksFor(box)){
@@ -312,7 +312,7 @@ function paper(data, paintVariation) {
     if (event.group === 'drums') {
       if (event.x >= (NEEDLE*.15625) && event.x < W - 16 && event.start >= since) {
         ink.beginPath();
-        kitOf().mark(ink, event.drum, event.x, event.y, event.size);
+        kitOf().mark(ink, event.drum, event.x, event.y, event.size, event.room);
         ink.fill();
       }
       continue;
@@ -400,8 +400,8 @@ function paper(data, paintVariation) {
       const age=NOW-event.start;
       if(age>=0&&age<.26){
         ctx.fillStyle='rgba(208,140,85,'+(.8*(1-age/.26))+')';
-        ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size*1.1);ctx.fill();
-      } else if(age<0){ctx.fillStyle='rgba(146,153,152,.58)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
+        ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size*1.1,event.room);ctx.fill();
+      } else if(age<0){ctx.fillStyle='rgba(146,153,152,.58)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size,event.room);ctx.fill();}
       continue;
     }
     ctx.save();clipLane(ctx,event);
@@ -677,9 +677,9 @@ function paper(data, paintVariation) {
   for(const event of events){
     if(event.group==='drums'){
       const age=NOW-event.start;
-      if(age<0){ctx.fillStyle='rgba(123,150,170,.5)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
+      if(age<0){ctx.fillStyle='rgba(123,150,170,.5)';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size,event.room);ctx.fill();}
       else if(age<.32){ctx.fillStyle='rgba(166,195,210,'+(.6*(1-age/.32))+')';ctx.beginPath();ctx.ellipse(event.x,event.y,2.4+age*6,1.2+age*2,0,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle='rgba(196,219,230,'+(.75*(1-age/.32))+')';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size);ctx.fill();}
+        ctx.fillStyle='rgba(196,219,230,'+(.75*(1-age/.32))+')';ctx.beginPath();kitOf().mark(ctx,event.drum,event.x,event.y,event.size,event.room);ctx.fill();}
       continue;
     }
     ctx.save();clipLane(ctx,event);
