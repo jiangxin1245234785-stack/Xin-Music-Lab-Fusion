@@ -1,6 +1,7 @@
 /* All selectors are score-scoped: the same DOM returns to the original scene untouched. */
 .stage[data-effect="score"] { transition:background 0s; --theme-accent:#a4becf; --theme-hover:#34434e; --theme-on-accent:#10212c; --theme-radius:13px; --theme-font:"Segoe UI","Microsoft YaHei",sans-serif; }
-.stage[data-effect="score"][data-score-style="starry"] { --album-panel:#20262d; --album-ink:#e6edf1; --album-muted:#a1b1bc; --album-line:#3a4854; --theme-accent:#b6cfdf; --theme-hover:#334653; background:#1a1d21; }
+.stage[data-effect="score"][data-score-style="starry"],
+.stage[data-effect="score"][data-score-style="plain"] { --album-panel:#20262d; --album-ink:#e6edf1; --album-muted:#a1b1bc; --album-line:#3a4854; --theme-accent:#b6cfdf; --theme-hover:#334653; background:#1a1d21; }
 .stage[data-effect="score"][data-score-style="terrain"] { --album-panel:#1c2a30; --album-ink:#f1e1c5; --album-muted:#b4b3a9; --album-line:#475458; --theme-accent:#dfbe8d; --theme-hover:#414c4c; --theme-on-accent:#202a2c; --theme-radius:4px; background:#14202a; }
 .stage[data-effect="score"][data-score-style="flag"] { --album-panel:#2c2525; --album-ink:#f2e4ce; --album-muted:#c2ada0; --album-line:#5a4541; --theme-accent:#edc48e; --theme-hover:#4f3d37; --theme-on-accent:#30201c; --theme-radius:4px; background:#17171d; }
 .stage[data-effect="score"][data-score-style="paper"] { --album-panel:#ddded4; --album-ink:#4b524d; --album-muted:#70786e; --album-line:#b7bcb0; --theme-accent:#667469; --theme-on-accent:#fbfaf0; --theme-hover:#c8cec0; --theme-radius:3px; background:#ddded4; }

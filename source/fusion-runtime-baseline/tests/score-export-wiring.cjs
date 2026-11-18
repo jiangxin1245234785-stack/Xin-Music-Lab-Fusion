@@ -222,7 +222,7 @@ async function keptScoreStyle() {
   const exportPage = fs.readFileSync(path.join(root, '..', 'scoreview', 'export', 'export-page.html'), 'utf8');
   const picker = html.match(/<select id="scoreStyle">(.*?)<\/select>/s)[1];
   const options = Array.from(picker.matchAll(/value="([a-z]+)"/g), match => match[1]);
-  assert.deepEqual(options, ['starry','overprint','glass','paper','ember','water','mist','terrain','flag']);
+  assert.deepEqual(options, ['starry','plain','overprint','glass','paper','ember','water','mist','terrain','flag']);
   assert.deepEqual(styles.styles, options);
   for (const page of [html, exportPage]) assert.match(page, /score-flag\.js[\s\S]*score-presentation\.js/);
   const storage = new Map([['xin-score-style-v1', 'terrain']]);

@@ -99,7 +99,8 @@
   // Previously saved film jobs may still explicitly request the archived stage.
   const renderStyle=value=>value==='theatre'?'theatre':root.XinScoreMood?.normalize(value)||'starry';
   function create(canvas,model,clock,initial={}){
-    const normal=Core.create(canvas,translated(model),clock,{...initial,meteorMotion:true}),ctx=canvas.getContext('2d');
+    // 星空 is the night sky (the core's nightSky); 「原样」 ('plain') is the same core with it off, as 星空 drew until 0.30.0.
+    const normal=Core.create(canvas,translated(model),clock,{...initial,meteorMotion:true,nightSky:renderStyle(initial.scoreStyle)==='starry'}),ctx=canvas.getContext('2d');
     let options={...normal.options(),scoreStyle:renderStyle(initial.scoreStyle),presentationLayout:initial.presentationLayout===true,lang:initial.lang},movie=null,filmCanvas=null,cover=null,lyrics=null,last=null,raf=null;
     let surface=null;const surfaceStyle=()=>root.XinScoreSurface?.styles.includes(options.scoreStyle);const ensureSurface=()=>surface||(surface=root.XinScoreSurface.create(canvas,model,clock,options,layoutSource));
     let mist = null;
@@ -224,7 +225,7 @@
     }
     function setOptions(patch = {}) {
       const priorStyle = options.scoreStyle, priorLayout = options.presentationLayout;
-      normal.setOptions({...patch,meteorMotion:true});
+      normal.setOptions({...patch,meteorMotion:true,nightSky:renderStyle(patch.scoreStyle??options.scoreStyle)==='starry'});
       options = {...normal.options(),scoreStyle:renderStyle(patch.scoreStyle??options.scoreStyle),
         presentationLayout:typeof patch.presentationLayout==='boolean'?patch.presentationLayout:options.presentationLayout,
         lang:typeof patch.lang==='string'?patch.lang:options.lang};

@@ -2,7 +2,7 @@
 // Their layout is rebuilt for the available canvas, never letterboxed to a poster.
 (function(root) {
   'use strict';
-  const styles=['starry','overprint','glass','paper','ember','water','mist','terrain','flag'];
+  const styles=['starry','plain','overprint','glass','paper','ember','water','mist','terrain','flag'];
   const assetRoot=new URL('./assets/mood/',root.document.currentScript.src);
   const assets={};
   let theatreAssets;

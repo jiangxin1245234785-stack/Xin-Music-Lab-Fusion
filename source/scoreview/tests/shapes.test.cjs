@@ -59,7 +59,7 @@ function paths(calls) {
 const fills = frame => frame.surface.filter(call => call.name === 'fill').map(call => [call.fillStyle, call.state.shadowColor, call.state.shadowBlur, call.alpha]);
 
 test('the default is off; showShapes takes booleans only; the version moved up a step', () => {
-  assert.equal(ScoreView.VERSION, '0.29.1');
+  assert.equal(ScoreView.VERSION, '0.30.0');
   assert.equal(ScoreView.DEFAULTS.showShapes, false);
   const view = ScoreView.create(mockCanvas().canvas, oneLane('piano'), () => 0);
   assert.equal(view.options().showShapes, false);

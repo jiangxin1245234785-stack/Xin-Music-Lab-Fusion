@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.29.1';
+  const VERSION = '0.30.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -116,6 +116,10 @@
     // look (0.29.0, work/score-depth-20261118/SPEC.md batch 1); 0 draws short notes as before.
     shortHead: 1.6,         // 0.29.1: the user's pick of three (A); 0.29.0 had 2.2
     meteorMotion: false,    // starry score, stored under the original preference for existing installations
+    // The starry score as a night sky (0.30.0, work/score-depth-20261118/SPEC.md batch 2), only with meteorMotion: a still
+    // sky tinted by the cover, dim stars for the notes to come (`starDim`, their light), meteors whose tails are gone
+    // `meteorTail` seconds after the note ends, the play line a horizon, the 「其它」 band a Milky Way. Off: as 0.29.1.
+    nightSky: false, starDim: .34, meteorTail: 1.5,
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
     meteorDirectionDegrees: 0, meteorBassDirection: true,
@@ -456,6 +460,10 @@
   // (positive toward white, negative toward the background).
   const SHADES = [0, 0.3, -0.25, 0.5, -0.4, 0.15];
   const BACKGROUND = '#1a1d21';   // the studio's ground
+  // The night sky (nightSky): a deep blue-black, `tint` of the way toward the cover's average hue at the sky's own
+  // brightness (a bright cover tints it, never lifts it); the Milky Way's pale
+  // light; the horizon's glow (`halo` half-width in pixels, `glow` its light, `line` the fine line's).
+  const NIGHT = Object.freeze({sky: Object.freeze([11, 14, 24]), tint: .45, milky: Object.freeze([200, 206, 230]), halo: 9, glow: .11, line: .5});
   const FONT = 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif';
 
   const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1449,6 +1457,9 @@ function canonicalOnsets(rows) {
       if (typeof patch.drumNotation === 'boolean') next.drumNotation = patch.drumNotation;
       if (finite(patch.shortHead) && patch.shortHead >= 0 && patch.shortHead <= 4) next.shortHead = patch.shortHead;
       if (typeof patch.meteorMotion === 'boolean') next.meteorMotion = patch.meteorMotion;
+      if (typeof patch.nightSky === 'boolean') next.nightSky = patch.nightSky;
+      if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
+      if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));
       if (typeof patch.releaseFocus === 'boolean') next.releaseFocus = patch.releaseFocus;
       if (typeof patch.spacedLanes === 'boolean') next.spacedLanes = patch.spacedLanes;
@@ -1514,6 +1525,31 @@ function canonicalOnsets(rows) {
 
     // One bounded raster per current picture. Clamp the image at its edges before the Gaussian
     // blur so that its perimeter never fades to transparent. Returning to a preset reuses it.
+    // The cover's average colour, once per cover, for the night sky's tint (null where no canvas can read it).
+    function coverAverage() {
+      if (!cover) return null;
+      if (cover.average !== undefined) return cover.average;
+      cover.average = null;
+      try {
+        const sample = typeof host.OffscreenCanvas === 'function' ? new host.OffscreenCanvas(8, 8) : null;
+        const reader = sample && sample.getContext('2d', {willReadFrequently: true});
+        if (reader && reader.getImageData) {
+          reader.drawImage(cover.image, 0, 0, 8, 8);
+          const data = reader.getImageData(0, 0, 8, 8).data, sum = [0, 0, 0];
+          for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += data[i + c];
+          cover.average = sum.map(v => v / 64);
+        }
+      } catch (_) { cover.average = null; }
+      return cover.average;
+    }
+    const nightSkyOn = () => options.nightSky && options.meteorMotion;
+    function skyColour() {
+      const average = coverAverage();
+      if (!average) return NIGHT.sky.slice();
+      // The cover's colour brought down to the sky's brightness: only its hue is taken.
+      const level = lumaOf(NIGHT.sky) / Math.max(lumaOf(average), 1e-3);
+      return NIGHT.sky.map((v, c) => Math.round(clamp(v + (average[c] * level - v) * NIGHT.tint, 0, 255)));
+    }
     function prepareSoftCover() {
       const {image, width, height} = cover;
       const soft = cover.soft = {image, veil: COVER_VEIL};
@@ -2209,7 +2245,7 @@ function canonicalOnsets(rows) {
     function drawFlight(box, part, index, now, line, pps, brush, ink) {
       const set = part.set, start = set.start[index], end = start + set.dur[index];
       const age = Math.max(0, now - start), release = Math.max(0, now - end);
-      const lifetime = options.pluckReleaseSeconds;
+      const lifetime = nightSkyOn() ? options.meteorTail : options.pluckReleaseSeconds;
       if (release >= history.seconds || (lifetime > 0 && release >= lifetime-1e-9)) return false;
       const afterRelease = lifetime > 0 ? transientLight(release,lifetime) : 1;
       const velocity = set.vel[index] / 127, lane = box.lane;
@@ -2351,7 +2387,8 @@ function canonicalOnsets(rows) {
         const stop=lowerBound(set.start,set.count,right);
         // Forecast starts at the greater of onset and now, including the unsounded
         // remainder of a note whose attack has already crossed.
-        context.strokeStyle=rgba(ink.preview,.56);context.lineWidth=Math.max(.81,Math.min(1.25,box.semitone*.40));
+        // A night sky draws only a faint thread for the length; the star is the point at the onset below.
+        context.strokeStyle=rgba(ink.preview,nightSkyOn() ? options.starDim*.42 : .56);context.lineWidth=Math.max(.81,Math.min(1.25,box.semitone*.40));
         context.beginPath();
         for(let i=first;i<stop;i++) {
           const t=set.start[i], end=t+set.dur[i];
@@ -2371,7 +2408,7 @@ function canonicalOnsets(rows) {
           }
         }
         if(meteor) {
-          context.fillStyle=rgba(ink.preview,.78);context.beginPath();
+          context.fillStyle=rgba(ink.preview,nightSkyOn() ? options.starDim : .78);context.beginPath();
           const r=geometry.lanes.length>=12 ? .9 : 1.2;
           for(let i=lowerBound(set.start,set.count,now);i<stop;i++) {
             const t=set.start[i];if(t<=now)continue;
@@ -2982,12 +3019,15 @@ function canonicalOnsets(rows) {
       if (!geometry.lanes.length) return;
       const band = geometry.texture;
       const bottom = band ? Math.max(lanesBottom, band.bottom) : lanesBottom;
+      // The edges fade into the ground: the studio's, or the night sky's (0.30.0).
+      const ground = nightSkyOn() ? skyColour() : BACKGROUND_RGB, groundKey = ground.join();
+      if (geometry.fadeGround !== groundKey) { geometry.leftFade = geometry.rightFade = null; geometry.fadeGround = groundKey; }
       let leftFade = options.drumNotation && geometry.leftFade;
       if (!leftFade) {
         leftFade = context.createLinearGradient(0, 0, gutter + 26, 0);
-        leftFade.addColorStop(0, rgba(BACKGROUND_RGB, 0.96));
-        leftFade.addColorStop(0.62, rgba(BACKGROUND_RGB, 0.8));
-        leftFade.addColorStop(1, rgba(BACKGROUND_RGB, 0));
+        leftFade.addColorStop(0, rgba(ground, 0.96));
+        leftFade.addColorStop(0.62, rgba(ground, 0.8));
+        leftFade.addColorStop(1, rgba(ground, 0));
         if (options.drumNotation) geometry.leftFade = leftFade;
       }
       context.fillStyle = leftFade;
@@ -2995,8 +3035,8 @@ function canonicalOnsets(rows) {
       let rightFade = options.drumNotation && geometry.rightFade;
       if (!rightFade) {
         rightFade = context.createLinearGradient(width - 46, 0, width, 0);
-        rightFade.addColorStop(0, rgba(BACKGROUND_RGB, 0));
-        rightFade.addColorStop(1, rgba(BACKGROUND_RGB, 0.9));
+        rightFade.addColorStop(0, rgba(ground, 0));
+        rightFade.addColorStop(1, rgba(ground, 0.9));
         if (options.drumNotation) geometry.rightFade = rightFade;
       }
       context.fillStyle = rightFade;
@@ -3909,7 +3949,7 @@ function canonicalOnsets(rows) {
       stops.sort((a, b) => a[0] - b[0]);
       for (const [offset, value] of stops) {
         const weight = history && offset<at ? lightAt(offset*width) : 1;
-        light.addColorStop(offset, rgba(texture.color,value*weight));
+        light.addColorStop(offset, rgba(nightSkyOn() ? NIGHT.milky : texture.color,value*weight));
       }
       // Soft edges: the whole outline faintly, and a core half as thick at the full light.
       const outline = scale => {
@@ -3926,6 +3966,7 @@ function canonicalOnsets(rows) {
       };
       paint.save();
       paint.fillStyle = light;
+      if (nightSkyOn()) { paint.globalAlpha = TEXTURE.edge * .45; outline(1.7); }
       paint.globalAlpha = TEXTURE.edge;
       outline(1);
       paint.globalAlpha = 1;
@@ -3943,6 +3984,22 @@ function canonicalOnsets(rows) {
 
     function drawPlayhead(line) {
       const {top, bottom} = geometry;
+      if (nightSkyOn()) {
+        // A horizon: a still, soft glow with a fine line in it, where the stars are lit. No marker, no pulse.
+        const glow = geometry.horizon && geometry.horizon.line === line ? geometry.horizon.fill : null;
+        let fill = glow;
+        if (!fill) {
+          fill = context.createLinearGradient(line - NIGHT.halo, 0, line + NIGHT.halo, 0);
+          fill.addColorStop(0, 'rgba(214,224,255,0)'); fill.addColorStop(.5, `rgba(214,224,255,${NIGHT.glow})`); fill.addColorStop(1, 'rgba(214,224,255,0)');
+          geometry.horizon = {line, fill};
+        }
+        context.fillStyle = fill;
+        context.fillRect(line - NIGHT.halo, top - 7, 2 * NIGHT.halo, bottom - top + 11);
+        context.strokeStyle = `rgba(232,238,255,${NIGHT.line})`;
+        context.lineWidth = 1;
+        context.beginPath(); context.moveTo(line, top - 7); context.lineTo(line, bottom + 4); context.stroke();
+        return;
+      }
       context.strokeStyle = 'rgba(255,255,255,0.88)';
       context.lineWidth = 1.5;
       context.beginPath();
@@ -3985,7 +4042,9 @@ function canonicalOnsets(rows) {
       if (frameMark) stats.mark = null;
       if (!width || !height) { last = stats; return stats; }
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if(guidesOnly)context.clearRect(0,0,width,height);else{context.fillStyle=BACKGROUND;context.fillRect(0,0,width,height);drawBackdrop(now,stats);}
+      if(guidesOnly)context.clearRect(0,0,width,height);
+      else if(nightSkyOn()){const sky=skyColour();context.fillStyle=rgba(sky,1);context.fillRect(0,0,width,height);stats.backdrop={sky};}
+      else{context.fillStyle=BACKGROUND;context.fillRect(0,0,width,height);drawBackdrop(now,stats);}
       stats.heights = Object.fromEntries(geometry.lanes.map(box => [box.lane.id, Math.round(box.height * 100) / 100]));
       const pps = width / options.windowSeconds;
       const line = Math.round(width * options.playhead);
@@ -4029,7 +4088,7 @@ function canonicalOnsets(rows) {
       const band = geometry.texture;
       if (!guidesOnly && options.focusGroup && (geometry.lanes.some(box => groupOf(box.lane) === options.focusGroup) || (band && prepared.texture.group === options.focusGroup))) {
         stats.focus = options.focusGroup;
-        context.fillStyle = rgba(BACKGROUND_RGB, FOCUS_VEIL);
+        context.fillStyle = rgba(nightSkyOn() ? skyColour() : BACKGROUND_RGB, FOCUS_VEIL);
         for (const box of geometry.lanes) {
           if (groupOf(box.lane) !== options.focusGroup) context.fillRect(0, box.top, width, box.height);
         }
@@ -4154,7 +4213,7 @@ function canonicalOnsets(rows) {
 
   return Object.freeze({
     create, swellOf, canonicalOnsets, simplifyNotes,
-    SHORT_NOTE,
+    SHORT_NOTE, NIGHT,
     drumKit: Object.freeze({gaps: kitGaps, rows: DRUM_KIT.rows, center: kitCenter, size: kitSize, mark: kitMark, row: kitRow}), drumAccents, smoothChords, toneNames, noteName, transientTiming, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
     COVER_ADAPT, TEXTURE_ADAPT, measureCover, GROUP_COLORS: Object.freeze({...GROUP_COLORS}),
