@@ -371,8 +371,11 @@ function wording() {
   assert.match(timelineSource, /lane\.stem === 'vocals \/ backing'\) return rt\('runtime\.timeline\.backing'\)/, 'the backing row is called 和声 / Backing');
   assert.match(timelineSource, /lane\.stem === 'vocals \/ backing' \? rt\('runtime\.timeline\.splitEngine'\)/, 'and its engine is said in words');
   const css = read('xld-studio.css');
-  assert.ok(css.includes('.tl-notes-row[data-stem="vocals / backing"] { --lamp: var(--t-vocals); }'), 'the backing row has the vocals colour bar');
-  assert.ok(css.includes('.tl-notes-row[data-stem="vocals / backing"] .tl-row-toggle strong::before'), 'and the vocals icon');
+  // The lane styles are grouped by instrument family since the restyle: the backing row sits in the vocals group,
+  // which sets the colour bar and the icon together.
+  const vocalsGroup = css.match(/\.tl-notes-row:is\(([^)]*\[data-stem="vocals \/ backing"\][^)]*)\)\s*\{([^}]*)\}/);
+  assert.ok(vocalsGroup && /\[data-stem="vocals"\]/.test(vocalsGroup[1]) && /--lamp:\s*var\(--t-vocals\)/.test(vocalsGroup[2]), 'the backing row has the vocals colour bar');
+  assert.ok(vocalsGroup && /--tl-icon:\s*url\(/.test(vocalsGroup[2]), 'and the vocals icon');
   const messages = require('../i18n/runtime-messages.js');
   for (const locale of ['zh-CN', 'en-US']) for (const key of ['runtime.timeline.backing', 'runtime.timeline.splitEngine', 'runtime.midiBatch.vocalsDone', 'runtime.midiBatch.vocalsNone', 'runtime.midiBatch.vocalsFailed'])
     assert.ok(!messages.translateRuntime(locale, key, {why: 'x'}).startsWith('runtime.'), `${key} in ${locale}`);

@@ -122,7 +122,8 @@ const LP = require('../lane-page.js');
   assert(/"runtime\.timeline\.focusExit": "← 返回"/.test(messages), '← 返回');
   // the stem loudness strip: read only, same WAV as 核对原声, computed in the main process
   const main = read('desktop/main.cjs'), preload = read('desktop/preload.cjs'), envelope = read('core/stem-envelope.cjs'), evidence = read('core/midi-evidence.cjs');
-  assert(/ipcMain\.handle\('assets:stem-envelope'[\s\S]{0,400}midiEvidence\.sourceWav\([\s\S]{0,200}stemEnvelopes\.envelope\(/.test(main), 'main: the envelope of the file the check reads');
+  // The handler may be registered directly or through trackMutationIpc (track removal wraps the handlers that read a track).
+  assert(/(?:ipcMain\.handle|trackMutationIpc)\('assets:stem-envelope'[\s\S]{0,400}midiEvidence\.sourceWav\([\s\S]{0,200}stemEnvelopes\.envelope\(/.test(main), 'main: the envelope of the file the check reads');
   assert(/readStemEnvelope: payload => ipcRenderer\.invoke\('assets:stem-envelope',payload\)/.test(preload), 'exposed to the page');
   assert(/async function sourceWav[\s\S]{0,200}parentOf\(track, stem, runId\)[\s\S]{0,160}record\.source\?\.path/.test(evidence), 'the same lookup as check(): the run\'s recorded, still-bound source');
   assert(!/writeFile|writeAtomic|mkdir|rename|unlink|appendFile|createWriteStream/.test(envelope), 'the envelope module writes nothing');
