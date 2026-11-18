@@ -25,6 +25,61 @@ const HOSTS = [
 const NEVER = ['showRoles', 'shapeLinks', 'pitchWeight', 'coverAdapt', 'textureAdapt'];
 const SHAPE_NAMES = ['showShapes', 'shapeSet'];
 
+test('the approved text and drum looks are enabled by the XML listening scene only', () => {
+  const [scene, ...exports] = HOSTS;
+  const sceneCode = fs.readFileSync(scene[1], 'utf8');
+  assert.match(sceneCode, /quietText: true/);
+  assert.match(sceneCode, /drumNotation: true/);
+  assert.equal((sceneCode.match(/\bdrumNotation\b/g) || []).length, 1);
+  for (const [name, file] of exports) {
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /quietText|drumNotation/, name);
+  }
+});
+
+test('the listening score and video use permanent starry rendering while the independent core stays configurable', () => {
+  const [scene, , ...engine] = HOSTS;
+  const source = fs.readFileSync(scene[1], 'utf8');
+  assert.match(source, /const meteorMotion\s*=\s*true/);
+  assert.doesNotMatch(source, /getItem\(METEOR_KEY\)/, 'the retired on/off preference cannot disable the listening score');
+  assert.match(source, /meteorMotion,scoreStyle/);
+  const main=fs.readFileSync(engine[0][1],'utf8'),render=fs.readFileSync(engine[1][1],'utf8');
+  assert.doesNotMatch(main, /\blocalStorage\b/, 'offline export does not read device preferences');
+  assert.match(render, /\.\.\.job\.look,\s*meteorMotion:\s*true/);
+  assert.doesNotMatch(render, /\blocalStorage\b/);
+  const {ScoreView,mockCanvas,fullModel}=require('./helpers.cjs');
+  const view=ScoreView.create(mockCanvas().canvas,fullModel(),()=>0);
+  assert.equal(view.options().meteorMotion,false);
+  view.setOptions({meteorMotion:true});assert.equal(view.options().meteorMotion,true);
+  view.setOptions({meteorMotion:false});assert.equal(view.options().meteorMotion,false);
+  view.destroy();
+});
+
+test('the listening theme is restored, normalized and persisted without reviving the retired meteor switch', () => {
+  const vm=require('node:vm'),theme=require('../score-style.cjs');
+  const source=fs.readFileSync(HOSTS[0][1],'utf8');
+  for(const legacy of [null,'off','on'])for(const saved of [null,'paper','water','ember','theatre','invalid']){
+    const storage=new Map([['xin-score-meteor-motion',legacy],['xin-score-style-v1',saved]]),handlers={};
+    const element=()=>({hidden:false,style:{},classList:{add(){},contains:()=>false},dataset:{},addEventListener(){},appendChild(){},append(){},
+      getBoundingClientRect:()=>({top:0,bottom:0,left:0,height:0,width:0}),querySelectorAll:()=>[],options:[],clientWidth:800,clientHeight:400});
+    const select={value:'',addEventListener:(name,fn)=>handlers[name]=fn};
+    const env={
+      localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value))},
+      document:{getElementById:id=>id==='scoreStyle'?select:null,querySelector:()=>null,createElement:element,documentElement:{lang:'zh-CN'}},
+      XinScoreMood:theme,XinScoreView:{create(){}},XinMediaClock:{create:()=>({now:()=>0,destroy(){}})},
+      MutationObserver:class{observe(){}disconnect(){}},addEventListener(){},removeEventListener(){},dispatchEvent(){},
+      CustomEvent:class{},requestAnimationFrame:()=>0,cancelAnimationFrame(){},setTimeout:()=>0,clearTimeout(){},performance:{now:()=>0},devicePixelRatio:1
+    };
+    vm.runInNewContext(source,env);
+    const scene=env.XinScoreScene.create({bridge:{scoreModel:async()=>({ok:false})},audio:element(),stage:element(),canvas:element()});
+    assert.equal(scene.status().meteorMotion,true,`legacy ${legacy} must not disable starry rendering`);
+    assert.equal(select.value,theme.normalize(saved));
+    select.value='paper';handlers.change();assert.equal(storage.get('xin-score-style-v1'),'paper');
+    select.value='invalid';handlers.change();assert.equal(storage.get('xin-score-style-v1'),'starry');
+    assert.equal(storage.get('xin-score-meteor-motion'),legacy);
+    scene.destroy();
+  }
+});
+
 test('no host passes showRoles, shapeLinks, pitchWeight, coverAdapt or textureAdapt', () => {
   for (const [name, file] of HOSTS) {
     assert.ok(fs.existsSync(file), `${name}：${file} 不在，这条守卫读不到`);
@@ -54,7 +109,7 @@ test('the guard reads the files that really build the options', () => {
   // The scene's options and the export's look are there, and the shapes go into them.
   const scene = fs.readFileSync(HOSTS[0][1], 'utf8');
   assert.match(scene, /showTexture: true/);
-  assert.match(scene, /showTexture: true,\.\.\.shapeOptions\(shapes\),/);
+  assert.match(scene, /showTexture: true,liveTextureRaster: true,\.\.\.shapeOptions\(shapes\),/);
   assert.match(fs.readFileSync(HOSTS[1][1], 'utf8'), /look\.showTexture = true/);
   assert.match(fs.readFileSync(HOSTS[2][1], 'utf8'), /const LOOK = Object\.freeze\(/);
 });

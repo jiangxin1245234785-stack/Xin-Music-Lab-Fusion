@@ -129,7 +129,11 @@ function lanesOf(stems, health) {
       const parts=Array.isArray(entry.instruments)&&entry.instruments.reduce((n,p)=>n+(p.notes||[]).length,0)===(entry.notes||[]).length?entry.instruments.filter(p=>p.notes.length):[];
       if(parts.length>1)for(const part of parts){
         lanes.push({id:stem+'/'+part.index,label:partLabel(part,label),kind,group:stem,groupLabel:label,notes:notesOf(part.notes),meta:{...meta,instrumentIndex:part.index,program:part.program,instrumentName:part.name}});
-      }else lanes.push({id: stem, label, kind, group: stem, groupLabel: label, notes, meta});
+      }else {
+        const part=parts[0];
+        const timbre=part ? {...meta,instrumentIndex:part.index,program:part.program,instrumentName:part.name} : meta;
+        lanes.push({id: stem, label, kind, group: stem, groupLabel: label, notes, meta:timbre});
+      }
       health.lanes[stem] = {ok: true, engine: meta.engine, notes: notes.length,instruments:parts.length||1,velocity:meta.velocity,instrumentError:entry.instrumentError||null};
     }
   }

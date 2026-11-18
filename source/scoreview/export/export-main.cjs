@@ -20,14 +20,15 @@ const {fileURLToPath} = require('node:url');
 const LOOK = Object.freeze({fxPreset: 'clear', laneLabels: 'icon', sectionStyle: 'line', captionStyle: 'mark', mergeTimbres: true, simplify: true, backdropLevel: 'steady'});
 
 // Two sizes only. Both lay the score out on the same 1280 × 720 page; 1080p draws it at 1.5×.
-// Bit rates are averages the encoder aims at (variable rate); audio is AAC-LC. The GPU's
-// encoder is used when there is one: it keeps to the rate. Chromium's software encoder does
-// not (on this content about 480 kbps at 1080p and 245 kbps at 720p whatever is asked), so
-// without a GPU encoder the files come out larger. Measured in work/score-export-20261114/probe.
+// The 1080p default was calibrated on real exports of Qilixiang and Satan Veludo Children
+// to target roughly half the previous file size. H.264's actual rate varies with the picture.
 const TIERS = Object.freeze({
-  '1080p': Object.freeze({width: 1920, height: 1080, ratio: 1.5, videoBitrate: 420000, audioBitrate: 128000, keySeconds: 10, codec: 'avc1.640028'}),
+  '1080p': Object.freeze({width: 1920, height: 1080, ratio: 1.5, videoBitrate: 1650000, audioBitrate: 128000, keySeconds: 10, codec: 'avc1.640028'}),
   '720p': Object.freeze({width: 1280, height: 720, ratio: 1, videoBitrate: 200000, audioBitrate: 96000, keySeconds: 10, codec: 'avc1.64001f'})
 });
+function validVideoBitrate(value) {
+  return Number.isInteger(value) && value >= 50000 && value <= 16000000;
+}
 const FPS = 30;
 const SAMPLE_RATE = 44100;
 // Samples of encoder delay at the start of the AAC stream, skipped by an edit list. Chromium's
@@ -40,6 +41,7 @@ const PRELOAD = path.join(__dirname, 'export-preload.cjs');
 
 const MESSAGES = {
   zh: {
+    'invalid-video-bitrate': '视频码率须在 0.05 到 16 Mbps 之间，并可换算为整数比特/秒。',
     'no-model': '这首歌还没有分析结果，导不出谱面视频。',
     'audio-missing': '找不到这首歌的音频文件，导不出来。',
     'audio-decode': '这首歌的音频读不出来，导不出来。',
@@ -55,6 +57,7 @@ const MESSAGES = {
     'failed': '导出失败，没有留下文件。'
   },
   en: {
+    'invalid-video-bitrate': 'Choose a video bitrate from 0.05 to 16 Mbps that converts to a whole number of bits per second.',
     'no-model': 'This song has no analysis yet, so there is no score to export.',
     'audio-missing': "Can't find this song's audio file.",
     'audio-decode': "Can't read this song's audio.",
@@ -129,13 +132,16 @@ function wire(ipcMain) {
 
 // Every export window in this process at once is allowed; the caller decides whether to queue.
 async function exportVideo(request) {
-  const {BrowserWindow, ipcMain} = require('electron');
   const lang = request && request.lang;
   const result = (ok, extra) => ok ? {ok: true, ...extra} : {ok: false, error: extra.error, message: say(extra.error, lang), details: extra.details || null};
   const model = request && request.model;
   if (!model || !Array.isArray(model.lanes) || !model.lanes.length || !(model.track && model.track.duration > 0)) return result(false, {error: 'no-model'});
-  const tier = TIERS[request.tier || '1080p'];
-  if (!tier) return result(false, {error: 'failed', details: `unknown tier ${request.tier}`});
+  const tierName = request.tier || '1080p';
+  if (!Object.hasOwn(TIERS, tierName)) return result(false, {error: 'failed', details: `unknown tier ${request.tier}`});
+  const videoBitrate = request.videoBitrate;
+  if (videoBitrate != null && !validVideoBitrate(videoBitrate)) return result(false, {error: 'invalid-video-bitrate'});
+  const preset = TIERS[tierName];
+  const tier = videoBitrate == null ? preset : {...preset, videoBitrate};
   const outFile = request.outFile && path.resolve(request.outFile);
   if (!outFile) return result(false, {error: 'write-failed', details: 'no output file'});
   if ((request.forbidden || []).some(root => inside(outFile, root))) return result(false, {error: 'forbidden-folder'});
@@ -147,6 +153,7 @@ async function exportVideo(request) {
   let audioBytes;
   try { audioBytes = await fs.promises.readFile(audioPath); } catch (error) { return result(false, {error: 'audio-missing', details: String(error.message)}); }
 
+  const {BrowserWindow, ipcMain} = require('electron');
   wire(ipcMain);
   const partFile = `${outFile}.part-${process.pid}`;
   let handle = null, written = 0, finished = false;
@@ -192,7 +199,7 @@ async function exportVideo(request) {
     }
 
     jobs.set(id, {
-      payload: () => ({mode: 'export', model, look: {...LOOK, ...(request.look || {})}, tier, fps: FPS, sampleRate: SAMPLE_RATE,
+      payload: () => ({mode: 'export', model, lyrics: request.lyrics || null, look: {...LOOK, ...(request.look || {})}, tier, fps: FPS, sampleRate: SAMPLE_RATE,
                        audioPriming: Number.isFinite(request.audioPriming) ? request.audioPriming : AUDIO_PRIMING, acceleration: request.acceleration || 'auto',
                        audioBytes: audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.byteLength),
                        coverUrl: request.coverUrl || null}),
@@ -236,4 +243,4 @@ async function exportVideo(request) {
   });
 }
 
-module.exports = {exportVideo, fileNameFor, defaultFolder, inside, LOOK, TIERS, FPS, SAMPLE_RATE, AUDIO_PRIMING, MESSAGES};
+module.exports = {exportVideo, fileNameFor, defaultFolder, inside, validVideoBitrate, LOOK, TIERS, FPS, SAMPLE_RATE, AUDIO_PRIMING, MESSAGES};

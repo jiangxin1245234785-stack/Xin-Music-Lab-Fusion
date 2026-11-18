@@ -140,7 +140,25 @@ test('two tiers only, same page layout, the chosen look', () => {
   assert.equal(exporter.FPS, 30);
   // Sound: AAC 128k in the sharp size, 96k in the small one (2026-11-14: 128k alone is about 1 MB a minute).
   assert.deepEqual([exporter.TIERS['1080p'].audioBitrate, exporter.TIERS['720p'].audioBitrate], [128000, 96000]);
-  assert.deepEqual([exporter.TIERS['1080p'].videoBitrate, exporter.TIERS['720p'].videoBitrate], [420000, 200000]);
+  assert.equal(exporter.TIERS['1080p'].videoBitrate, 1650000);
+  assert.equal(exporter.TIERS['720p'].videoBitrate, 200000);
+});
+
+test('custom video bps are integer values in range; old callers can omit the override', async () => {
+  const model = {track:{duration:1}, lanes:[{}]};
+  for (const name of ['720p', '1080p']) {
+    for (const videoBitrate of ['4000000', {}, false, 0, 49999, 50000.1, 16000001, NaN, Infinity]) {
+      const rejected = await exporter.exportVideo({tier:name, model, videoBitrate, lang:'en'});
+      assert.equal(rejected.error, 'invalid-video-bitrate');
+      assert.match(rejected.message, /0\.05 to 16 Mbps/);
+    }
+    for (const videoBitrate of [50000, 2738291, 16000000, undefined, null]) {
+      const valid = await exporter.exportVideo({tier:name, model, videoBitrate});
+      assert.equal(valid.error, 'write-failed', 'valid bitrate proceeds to output-file validation');
+    }
+  }
+  assert.equal(exporter.TIERS['1080p'].videoBitrate, 1650000);
+  assert.equal(exporter.TIERS['720p'].videoBitrate, 200000);
 });
 
 test('a packaged XML carries what the export and the marks need', () => {
@@ -152,6 +170,14 @@ test('a packaged XML carries what the export and the marks need', () => {
   // Every file the export page loads is listed (paths relative to the scoreview folder).
   const page = fs.readFileSync(path.join(__dirname, '..', 'export-page.html'), 'utf8');
   for (const [, src] of page.matchAll(/<script src="([^"]+)"/g)) assert.ok(listed.includes(path.posix.normalize(`export/${src}`)), `导出页加载的 ${src} 不在打包清单里`);
+  const mood = fs.readFileSync(path.join(__dirname, '..', '..', 'score-mood.js'), 'utf8');
+  for (const [, file] of mood.matchAll(/\['[^']+','([^']+\.png)'\]/g)) {
+    assert.ok(listed.includes(`assets/mood/${file}`), `舞台实际引用的 ${file} 不在打包清单里`);
+  }
+  const ipc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'fusion-runtime-baseline', 'desktop', 'score-export-ipc.cjs'), 'utf8');
+  for (const [, file] of ipc.matchAll(/require\(['"]\.\.\/\.\.\/scoreview\/([^'"]+)['"]\)/g)) {
+    assert.ok(listed.includes(file), `导出通道实际加载的 ${file} 不在打包清单里`);
+  }
   for (const file of listed) assert.ok(fs.existsSync(path.join(__dirname, '..', '..', file)), `清单里的 ${file} 不存在`);
 });
 

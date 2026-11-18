@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.23.1';
+  const VERSION = '0.28.3';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -41,6 +41,8 @@
     plainSections: 'letters', // sections that only have a cluster letter: 'letters' | 'numbered' | 'hidden'
     showContour: true,      // the sung pitch as a thin line over the vocal notes
     showCaptions: true,     // the listening captions at the top left
+    quietText: false,       // Compact title/chord row and song-timed section cue, selected for the XML scene.
+    albumLayout: false,     // The listening window owns the track details and captions.
     // 'mark': a caption row that carries a fifth item (adapter/cues.cjs) is drawn as an
     // "object · event" mark, dim ahead of its moment and lit at it, the object as its lane's
     // icon or name; 'sentence': every row is drawn as text, exactly as 0.9.2 drew it.
@@ -59,6 +61,8 @@
     // as before). A lane whose group has no icon, or that shares its group with another lane
     // on screen, keeps its name. PRESETS-SPEC.md §5. The default since 0.11.0 (chosen at gate9).
     laneLabels: 'icon',
+    liveTextureRaster: false, // Alternative band rendering used during interactive playback.
+    denseLaneLabels: false, // XML can stagger compact track heads in the existing label gutter.
     // 'line': each section a thin line with its name beside it, a name that does not fit left
     // out whole ('block': the filled blocks, as before). PRESETS-SPEC.md §6. The default since 0.11.0.
     sectionStyle: 'line',
@@ -107,6 +111,17 @@
     // With the cover as backdrop and its measure: the texture band's light raised so it stands out from the cover
     // behind it as it does from the plain ground (TEXTURE_ADAPT). Off by default. SPEC-6 part 3 B.
     textureAdapt: false,
+    drumNotation: false,    // fixed drum positions and compact articulation marks
+    meteorMotion: false,    // starry score, stored under the original preference for existing installations
+    pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
+    drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
+    meteorDirectionDegrees: 0, meteorBassDirection: true,
+    releaseFocus: false,    // Fade released notes over two song seconds.
+    spacedLanes: false,     // Separate instrument rows with quiet bands and clip their note marks.
+    softCover: false,       // Prepare one softened cover and hold it back more behind the notes.
+    attackWeight: false,    // Ease each pitched attack using its own start in the song.
+    weakNoteHints: false,   // Reduce piano marks only where the local stem supports it.
+    balancedLanes: false,   // Equalise the ink of note families without changing hue.
     fxHit: true,          // S1: a note lights up and a short halo opens on the line where it starts
     fxAfterglow: true,      // S2: a played note dims slowly; a held one has light running along it
     fxPlayline: true,       // S3: the line is a soft column that lights notes near it, and jumps a little on a downbeat
@@ -443,6 +458,21 @@
   const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
   const finite = value => typeof value === 'number' && Number.isFinite(value);
+  const drumSeconds = Object.freeze({hihat:.20, snare:.35, kick:.45, openhat:.50, ride:.50, crash:.50, tom:.40, unknown:.35});
+  function transientTiming(raw) {
+    const result = {};
+    for (const [key,low,high] of [['pluckReleaseSeconds',.25,3],['drumDecayScale',.5,4]]) {
+      const value = raw?.[key];
+      if (finite(value) && value >= 0) result[key] = value === 0 ? 0 : clamp(value,low,high);
+    }
+    if (finite(raw?.meteorDirectionDegrees)) result.meteorDirectionDegrees=clamp(raw.meteorDirectionDegrees,0,12);
+    if (typeof raw?.meteorBassDirection==='boolean') result.meteorBassDirection=raw.meteorBassDirection;
+    return result;
+  }
+  function transientLight(age, lifetime) {
+    const u = clamp(1-age/lifetime,0,1);
+    return u*u*(3-2*u);
+  }
 
   function fail(message) {
     const error = new Error('[score-view] ' + message);
@@ -473,6 +503,65 @@
   }
 
   const rgba = (rgb, alpha) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+  // Hold a and b fixed in OKLab (equivalently C and h in OKLCH). Walk only L until the
+  // displayed sRGB ink has the target grey, stopping at the gamut boundary for saturated inks.
+  function balancedInk(rgb, target) {
+    const linear = rgb.map(v => v <= 10 ? v / 3294.6 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+    const [r, g, b] = linear;
+    const l = Math.cbrt(.4122214708*r + .5363325363*g + .0514459929*b);
+    const m = Math.cbrt(.2119034982*r + .6806995451*g + .1073969566*b);
+    const s = Math.cbrt(.0883024619*r + .2817188376*g + .6299787005*b);
+    const initial = .2104542553*l + .793617785*m - .0040720468*s;
+    const a = 1.9779984951*l - 2.428592205*m + .4505937099*s;
+    const bb = .0259040371*l + .7827717662*m - .808675766*s;
+    let good = initial, limit = lumaOf(rgb) < target ? 1 : 0, best = rgb;
+    const lighter = limit === 1;
+    for (let i = 0; i < 16; i++) {
+      const L = (good + limit) * .5;
+      const x = (L + .3963377774*a + .2158037573*bb) ** 3;
+      const y = (L - .1055613458*a - .0638541728*bb) ** 3;
+      const z = (L - .0894841775*a - 1.291485548*bb) ** 3;
+      const channels = [4.0767416621*x - 3.3077115913*y + .2309699292*z,
+                       -1.2684380046*x + 2.6097574011*y - .3413193965*z,
+                       -.0041960863*x - .7034186147*y + 1.707614701*z];
+      if (channels.some(v => v < -1e-7 || v > 1.0000001)) { limit = L; continue; }
+      const encoded = channels.map(v => 255 * (v <= .0031308 ? 12.92*v : 1.055*v**(1/2.4)-.055));
+      if ((lumaOf(encoded) < target) === lighter) { good = L; best = encoded; }
+      else limit = L;
+    }
+    return best.map(v => clamp(Math.round(v), 0, 255));
+  }
+
+  // No confidence score is supplied by these transcribers. Require independent stem evidence
+  // even for a short, weak note. A missing, coarsely sampled or truncated row asserts nothing.
+  function weakPianoNotes(notes, levels) {
+    const row = levels && levels.groups && levels.groups.piano, hop = levels && levels.hop;
+    if (!Array.isArray(row) || !finite(hop) || hop <= 0 || hop > 1) return null;
+    let flags = null;
+    for (let i = 0; i < notes.length; i++) {
+      const [start, duration, , velocity] = notes[i];
+      const first = Math.max(0, Math.floor((start - hop) / hop));
+      const last = Math.floor((start + duration + hop) / hop);
+      if (last >= row.length) continue;
+      let peak = -Infinity;
+      for (let j = first; j <= last; j++) {
+        if (!finite(row[j])) { peak = Infinity; break; }
+        peak = Math.max(peak, row[j]);
+      }
+      // At this resolution even a real transient can sit inside a very quiet one-second bin.
+      // Treat silence alone as evidence only at the pipeline's measurement floor (−100.7).
+      if (peak > -100 && !(peak <= -65 && duration <= .11 && velocity <= 40)) continue;
+      if (!flags) flags = new Uint8Array(notes.length);
+      flags[i] = 1;
+    }
+    return flags;
+  }
+
+  function attackOpacity(age) {
+    const elapsed = clamp(age < .075 ? age / .075 : (age - .075) / .4, 0, 1);
+    const smooth = elapsed * elapsed * (3 - 2 * elapsed);
+    return age < .075 ? .34 + .66*smooth : 1 - .13*smooth;
+  }
   const toHex = rgb => '#' + rgb.map(channel => channel.toString(16).padStart(2, '0')).join('');
 
   // --- notes ---------------------------------------------------------------
@@ -751,6 +840,21 @@
   // The song's slow rise and fall, 0..1 every `hop` seconds (SWELL says how). Computed once
   // from the model: the value at a moment depends on that moment alone, never on what was drawn
   // before it or on the wall clock. Null without a loudness envelope (the swell is then 0.5).
+function canonicalOnsets(rows) {
+  const ordered=rows.map(row=>({...row})).sort((a,b)=>a.start-b.start||a.pitch-b.pitch);
+  const latest=new Map(),result=[];
+  for(const row of ordered){
+    const key=String(row.markGroup??row.group)+'|'+row.pitch,previous=latest.get(key);
+    const sameEvent=previous&&Math.abs(row.start-previous.start)<.001;
+    const crossLane=previous&&row.lane!==previous.lane&&row.start-previous.start<=.025;
+    if(sameEvent||crossLane){
+      previous.end=Math.max(previous.end,row.end);
+      previous.velocity=Math.max(previous.velocity,row.velocity);
+    } else {result.push(row);latest.set(key,row);}
+  }
+  return result;
+}
+
   function swellOf(energy) {
     if (!isObject(energy) || !Array.isArray(energy.db) || !finite(energy.hop) || energy.hop <= 0) return null;
     const db = energy.db.map(value => (finite(value) ? value : -120));
@@ -889,7 +993,13 @@
       // The lane's lead lines (MODEL.md), kept only beside usable roles: [start, end] pairs in seconds.
       const leadLines = lane.kind === 'pitched' && notes.some(note => note.length > 4) && Array.isArray(lane.leadLines)
         ? lane.leadLines.filter(item => Array.isArray(item) && finite(item[0]) && finite(item[1]) && item[1] > item[0]).map(item => [item[0], item[1]]) : null;
-      return leadLines && leadLines.length ? {...base, notes, contour, leadLines} : {...base, notes, contour};
+      const instrument = lane.meta || {};
+      const name = [instrument.instrumentName, lane.label, id].join(' ');
+      const pluckedString = /pizz(?:icato)?\b|\bharp\b|orchestral_harp|拨奏|拨弦|竖琴/i.test(name) ||
+        instrument.program === 45 || instrument.program === 46;
+      const skyVoice = STRUCK_GROUPS.includes(group) || (SPINDLE_GROUPS.includes(group) && pluckedString)
+        ? 'meteor' : group === 'winds' ? 'wind' : group === 'strings' || group === 'violin' ? 'bow' : 'line';
+      return {...base, notes, contour, skyVoice, ...(leadLines && leadLines.length ? {leadLines} : {})};
     }
     if (lane.kind === 'texture') {
       const level = isObject(lane.level) && finite(lane.level.hop) && lane.level.hop > 0 && Array.isArray(lane.level.db) && lane.level.db.length
@@ -999,11 +1109,13 @@
       lanes, skipped, chords, chordToneNames, beat, sections,
       // Captions: `[start, end, text, source]`, one on screen at a time.
       // A fifth item makes the row a mark: `{object, word, at, preview, ...}` (MODEL.md).
-      captions: validSpans(model.captions).map(row => ({start: row[0], end: row[1], text: row[2], cue: markOf(row[4], row[0], row[1])})),
+      captions: validSpans(model.captions).map(row => ({start: row[0], end: row[1], text: row[2], source: row[3], cue: markOf(row[4], row[0], row[1])})),
       glow: glowOf(model.energy),
+      skySourceLevels: model.levels,
       texture,
       swell: swellOf(model.energy),
       stretches: stretchesOf(model.levels, sections, duration),
+      localLevels: model.levels,
       // Bar lines exist only on a grid that was judged steady (plan decision D4).
       downbeats: bars && bars.steady && Array.isArray(bars.downbeats) ? bars.downbeats.filter(finite).sort((a, b) => a - b) : [],
       // What the model carries beyond the lanes; DRAWN_LAYERS says which of it is drawn.
@@ -1038,6 +1150,10 @@
                      members: members.map(lane => lane.id),
                      visible: visible.length > 0, count: 0, shown: 0, removed: null};
       display.push(entry);
+      if (options.balancedLanes) {
+        entry.ink = balancedInk(color, .57);
+        entry.litInk = balancedInk(entry.lit, .80);
+      }
       if (kind === 'drums') {
         const lane = members[0];
         entry.count = entry.shown = lane.hits.length;
@@ -1070,6 +1186,7 @@
       }
       entry.shown = notes.length;
       entry.set = noteSet(notes);
+      if (options.weakNoteHints && entry.group === 'piano') entry.weak = weakPianoNotes(notes, prepared.localLevels);
       entry.strands = SPINDLE_GROUPS.includes(entry.group) ? strandsOf(entry.set) : null;
       // The shapes showRoles draws, made once here from the notes as shown: blocks, and links between lead notes.
       if (entry.set.role) Object.assign(entry, shapesOf(entry.set, [].concat(...visible.map(lane => lane.leadLines || []))));
@@ -1214,6 +1331,8 @@
     // flip should pay for joining and sorting several thousand notes.
     const built = new Map();
     let size = {width: 0, height: 0, ratio: 1};
+    let guidesOnly=false;
+    let materialIcons=null;
     let frame = null, last = {time: 0, lanes: 0, notes: 0, hits: 0, active: 0};
     // The effects of the frame being drawn (see effectsFor), or null while they are off.
     let frameFx = null;
@@ -1238,11 +1357,22 @@
       if (PLAIN_SECTIONS.includes(patch.plainSections)) next.plainSections = patch.plainSections;
       if (typeof patch.showContour === 'boolean') next.showContour = patch.showContour;
       if (typeof patch.showCaptions === 'boolean') next.showCaptions = patch.showCaptions;
+      if (typeof patch.quietText === 'boolean' && patch.quietText !== options.quietText) {
+        next.quietText = patch.quietText;
+        geometry = null;
+      }
+      if (typeof patch.albumLayout === 'boolean' && patch.albumLayout !== options.albumLayout) {
+        next.albumLayout = patch.albumLayout;
+        geometry = null;
+      }
+      if (finite(patch.albumSidebarGap)) next.albumSidebarGap = Math.max(0, patch.albumSidebarGap);
       if (patch.captionStyle === 'mark' || patch.captionStyle === 'sentence') next.captionStyle = patch.captionStyle;
       if (typeof patch.showBackdrop === 'boolean') next.showBackdrop = patch.showBackdrop;
       if (patch.backdrop === 'section' || patch.backdrop === 'cover') next.backdrop = patch.backdrop;
       if (patch.backdropLevel === 'loudness' || patch.backdropLevel === 'steady') next.backdropLevel = patch.backdropLevel;
       if (patch.laneHeights === 'fixed' || patch.laneHeights === 'loudness') next.laneHeights = patch.laneHeights;
+      if (typeof patch.liveTextureRaster === 'boolean') next.liveTextureRaster = patch.liveTextureRaster;
+      if (typeof patch.denseLaneLabels === 'boolean') next.denseLaneLabels = patch.denseLaneLabels;
       if (patch.laneLabels === 'icon' || patch.laneLabels === 'text') next.laneLabels = patch.laneLabels;
       if (patch.sectionStyle === 'line' || patch.sectionStyle === 'block') next.sectionStyle = patch.sectionStyle;
       if (patch.fxDynamics === 'song' || patch.fxDynamics === 'off') next.fxDynamics = patch.fxDynamics;
@@ -1255,6 +1385,14 @@
       if (typeof patch.pitchWeight === 'boolean') next.pitchWeight = patch.pitchWeight;
       if (typeof patch.coverAdapt === 'boolean') next.coverAdapt = patch.coverAdapt;
       if (typeof patch.textureAdapt === 'boolean') next.textureAdapt = patch.textureAdapt;
+      if (typeof patch.drumNotation === 'boolean') next.drumNotation = patch.drumNotation;
+      if (typeof patch.meteorMotion === 'boolean') next.meteorMotion = patch.meteorMotion;
+      Object.assign(next, transientTiming(patch));
+      if (typeof patch.releaseFocus === 'boolean') next.releaseFocus = patch.releaseFocus;
+      if (typeof patch.spacedLanes === 'boolean') next.spacedLanes = patch.spacedLanes;
+      for (const key of ['softCover', 'attackWeight', 'weakNoteHints', 'balancedLanes']) {
+        if (typeof patch[key] === 'boolean') next[key] = patch[key];
+      }
       if (EFFECT_LEVELS.includes(patch.effects)) { next.effects = patch.effects; next.fxPreset = LEVEL_PRESET[patch.effects]; }
       // A preset given with a level wins. A preset that is no level reads as 'light' (on).
       if (Object.prototype.hasOwnProperty.call(FX_PRESETS, patch.fxPreset)) {
@@ -1267,10 +1405,14 @@
         const span = patch.loop;
         next.loop = Array.isArray(span) && finite(span[0]) && finite(span[1]) && span[1] > span[0] ? [span[0], span[1]] : null;
       }
-      if (next.showTexture !== options.showTexture || next.textureAt !== options.textureAt) geometry = null;
+      if (next.showTexture !== options.showTexture || next.textureAt !== options.textureAt || next.spacedLanes !== options.spacedLanes) geometry = null;
+      if (next.meteorMotion !== options.meteorMotion || next.drumNotation !== options.drumNotation || next.denseLaneLabels !== options.denseLaneLabels ||
+          ((next.denseLaneLabels || options.denseLaneLabels) && next.laneLabels !== options.laneLabels)) geometry = null;
       const rebuild = next.simplify !== options.simplify || next.mergeTimbres !== options.mergeTimbres ||
+        next.weakNoteHints !== options.weakNoteHints || next.balancedLanes !== options.balancedLanes ||
         next.hidden.join('\n') !== options.hidden.join('\n');
       options = next;
+      if (options.softCover && cover && !cover.soft) prepareSoftCover();
       if (rebuild) { display = null; geometry = null; }
       return getOptions();
     }
@@ -1285,15 +1427,58 @@
     // once into the veil and the band's light (they never change frame to frame).
     function setCover(image, measure) {
       const wide = image && (image.naturalWidth || image.width), tall = image && (image.naturalHeight || image.height);
+      // A host can reassign an Image's src or repaint the same mutable canvas between calls.
+      // Reuse only an identifiable, unchanged image source on explicit resubmission.
+      const source = image && (image.currentSrc || image.src);
+      const reuse = source && cover && cover.image === image && cover.source === source &&
+        cover.width === wide && cover.height === tall ? cover.soft : null;
       cover = finite(wide) && finite(tall) && wide > 0 && tall > 0 ? {image, width: wide, height: tall} : null;
+      if (cover) cover.source = source;
       if (cover && measure && finite(measure.mean) && finite(measure.spread)) {
-        const ground = lumaOf(BACKGROUND_RGB), most = COVER_FAINT + COVER_SWELL;
-        const brightEnd = clamp(measure.mean + COVER_ADAPT.spread * measure.spread, 0, 1);
-        const allowed = brightEnd > COVER_ADAPT.bright ? (COVER_ADAPT.bright - ground) / (brightEnd - ground) : Infinity;
-        cover.veil = round3(clamp(1 - allowed / most, COVER_ADAPT.low, COVER_ADAPT.high));
+        cover.veil = measuredVeil(measure);
         cover.measure = {mean: measure.mean, spread: measure.spread};
       }
+      if (cover && reuse) cover.soft = reuse;
+      if (cover && options.softCover && !cover.soft) prepareSoftCover();
       return Boolean(cover);
+    }
+
+    function measuredVeil(measure) {
+      const ground = lumaOf(BACKGROUND_RGB), most = COVER_FAINT + COVER_SWELL;
+      const brightEnd = clamp(measure.mean + COVER_ADAPT.spread * measure.spread, 0, 1);
+      const allowed = brightEnd > COVER_ADAPT.bright ? (COVER_ADAPT.bright - ground) / (brightEnd - ground) : Infinity;
+      return round3(clamp(1 - allowed / most, COVER_ADAPT.low, COVER_ADAPT.high));
+    }
+
+    // One bounded raster per current picture. Clamp the image at its edges before the Gaussian
+    // blur so that its perimeter never fades to transparent. Returning to a preset reuses it.
+    function prepareSoftCover() {
+      const {image, width, height} = cover;
+      const soft = cover.soft = {image, veil: COVER_VEIL};
+      if (typeof host.OffscreenCanvas !== 'function') return;
+      const scale = Math.min(1, 600 / Math.max(width, height));
+      const w = Math.max(1, Math.round(width*scale)), h = Math.max(1, Math.round(height*scale));
+      const sigma = Math.max(.5, Math.max(w,h)*.015), pad = Math.ceil(sigma*3);
+      try {
+        const sample = new host.OffscreenCanvas(64, 64);
+        const reader = sample.getContext('2d', {willReadFrequently: true});
+        reader.drawImage(image, 0, 0, 64, 64);
+        const measure = measureCover(reader.getImageData(0, 0, 64, 64).data, 64, 64);
+        if (measure) soft.veil = measuredVeil(measure);
+      } catch (_) { /* An unreadable image can still be drawn and softened. */ }
+      try {
+        const padded = new host.OffscreenCanvas(w + 2*pad, h + 2*pad);
+        const out = new host.OffscreenCanvas(w, h), src = padded.getContext('2d'), dest = out.getContext('2d');
+        if (!src || !dest || !('filter' in dest)) return;
+        const xs = [[0,1,0,pad], [0,width,pad,w], [width-1,1,pad+w,pad]];
+        const ys = [[0,1,0,pad], [0,height,pad,h], [height-1,1,pad+h,pad]];
+        for (const [x, sw, dx, dw] of xs) for (const [y, sh, dy, dh] of ys) {
+          src.drawImage(image, x,y,sw,sh, dx,dy,dw,dh);
+        }
+        dest.filter = `blur(${sigma}px)`;
+        dest.drawImage(padded, -pad, -pad);
+        soft.image = out;
+      } catch (_) { /* Unsupported image sources keep the original and use only the veil. */ }
     }
     // The band's light against this cover with this veil (textureAdapt), or the plain one: raised by how much cover
     // shows behind it (COVER_FAINT + COVER_SWELL, less the veil) times how much it stands off the ground and how busy it
@@ -1305,10 +1490,12 @@
       return round3(Math.min(TEXTURE_ADAPT.high, TEXTURE.alpha * (1 + TEXTURE_ADAPT.gain * shows * clutter)));
     }
     // The veil behind the lanes this frame: the cover's own with coverAdapt, else the fixed one.
-    const veilOf = picture => options.coverAdapt && picture && finite(picture.veil) ? picture.veil : COVER_VEIL;
+    const veilOf = picture => (options.coverAdapt || options.softCover) && picture && finite(picture.veil) ? picture.veil
+      : options.softCover && picture && picture.soft ? picture.soft.veil : COVER_VEIL;
 
     function setModel(next) {
       prepared = prepare(next);
+      skyLevels.clear();
       built.clear();
       smoothed.clear();
       display = null; geometry = null;
@@ -1351,23 +1538,28 @@
 
     function currentDisplay() {
       if (display) return display;
-      const key = `${options.simplify ? 1 : 0}${options.mergeTimbres ? 1 : 0}|${options.hidden.slice().sort().join('\n')}`;
+      const key = `${+options.simplify}${+options.mergeTimbres}${+options.weakNoteHints}${+options.balancedLanes}|${options.hidden.slice().sort().join('\n')}`;
       display = built.get(key);
-      if (!display) {
+      if (display) {
+        built.delete(key);
+      } else {
         display = buildDisplay(prepared, options);
-        if (built.size >= 16) built.delete(built.keys().next().value);
-        built.set(key, display);
+        if (built.size >= 4) built.delete(built.keys().next().value);
       }
+      built.set(key, display);
       return display;
     }
 
     function resize() {
-      const ratio = clamp(finite(host.devicePixelRatio) ? host.devicePixelRatio : 1, 1, 2.5);
+      const ratio = clamp(finite(canvas.scoreRenderRatio) ? canvas.scoreRenderRatio : finite(host.devicePixelRatio) ? host.devicePixelRatio : 1, 1, 2.5);
       const width = canvas.clientWidth || canvas.width / ratio || 0;
       const height = canvas.clientHeight || canvas.height / ratio || 0;
-      if (width === size.width && height === size.height && ratio === size.ratio) return;
-      size = {width, height, ratio};
       const pixelWidth = Math.max(1, Math.round(width * ratio)), pixelHeight = Math.max(1, Math.round(height * ratio));
+      // The presentation renderer shares this canvas and can change its backing raster
+      // while our CSS geometry is unchanged (notably when leaving native fullscreen).
+      if (width === size.width && height === size.height && ratio === size.ratio &&
+          canvas.width === pixelWidth && canvas.height === pixelHeight) return;
+      size = {width, height, ratio};
       if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
       if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
       geometry = null;
@@ -1406,7 +1598,22 @@
       return boxes;
     }
 
-    function place(area, factors) {
+    // Reserve enough CSS pixels for seven kit voices and a narrow space for unclassified
+    // percussion. The existing relative-height calculation distributes the remaining room.
+    const drumMinimum = () => size.height < 450 ? 32 : 44;
+    function reserveDrumHeight(heights, lanes, room) {
+      const kits = lanes.filter(lane => lane.kind === 'drums').length;
+      if (!kits) return heights;
+      const other = lanes.length - kits;
+      const floor = Math.min(drumMinimum(), (other ? room * 0.56 : room) / kits);
+      const noteFloor = other ? Math.min(6, Math.max(0, (room - floor * kits) / other)) : 0;
+      const floors = lanes.map(lane => lane.kind === 'drums' ? floor : noteFloor);
+      const short = heights.reduce((total,h,i) => total + Math.max(0,floors[i] - h),0);
+      if (!short) return heights;
+      const spare = heights.reduce((total,h,i) => total + Math.max(0,h - floors[i]),0);
+      return heights.map((h,i) => h <= floors[i] || spare <= short ? floors[i] : h - short * (h - floors[i]) / spare);
+    }
+    function place(area, factors, reserve = options.drumNotation || options.meteorMotion) {
       const {top, bottom, gap, lanes} = area;
       const room = Math.max(0, bottom - top - gap * (lanes.length - 1));
       const weights = lanes.map((lane, index) => {
@@ -1418,6 +1625,7 @@
       const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
       let heights = weights.map(weight => room * weight / total);
       if (options.laneLabels === 'icon') heights = roomForIcons(heights, room, lanes);
+      if (reserve) heights = reserveDrumHeight(heights, lanes, room);
       let y = top;
       return lanes.map((lane, index) => {
         const laneHeight = heights[index];
@@ -1439,9 +1647,14 @@
     // share of the loudness of the lanes on screen, where an equal share is 1. The square
     // root keeps a dominant stem from taking everything; a silent one keeps a thin strip.
     function sharesIn(stretch, lanes) {
+      // Each stretch has a fixed set of powers. A new visible lane arrangement owns a fresh cache.
+      const cache = options.drumNotation && geometry && (geometry.stretchShares || (geometry.stretchShares = new WeakMap()));
+      if (cache && cache.has(stretch)) return cache.get(stretch);
       const power = lanes.map(lane => stretch.power[lane.group] || 0);
       const total = power.reduce((sum, value) => sum + value, 0);
-      return power.map(value => (total > 0 ? clamp(Math.sqrt(value / total * lanes.length), SHARE_FLOOR, SHARE_CEILING) : 1));
+      const shares = power.map(value => (total > 0 ? clamp(Math.sqrt(value / total * lanes.length), SHARE_FLOOR, SHARE_CEILING) : 1));
+      if (cache) cache.set(stretch, shares);
+      return shares;
     }
 
     // The same, at a moment: inside a stretch its own shares, and across a boundary a
@@ -1464,7 +1677,7 @@
     // With `backdrop: 'cover'` and a picture, the cover fills the canvas (cropped, never
     // stretched), faded, under a lighter wash. It stays between sections; only the wash goes.
     function drawBackdrop(now, stats) {
-      const picture = options.backdrop === 'cover' ? cover : null;
+      const picture = options.backdrop === 'cover' && !options.albumLayout ? cover : null;
       if (!options.showBackdrop || (!prepared.sections.length && !prepared.glow && !picture)) return;
       let red = 0, green = 0, blue = 0, present = 0;
       const samples = 5;
@@ -1477,12 +1690,15 @@
       const colour = present ? [Math.round(red / present), Math.round(green / present), Math.round(blue / present)] : [128, 146, 200];
       const weight = prepared.sections.length ? present / samples : 1;
       let level = 0.5;
-      if (prepared.glow && options.backdropLevel !== 'steady') {
+      if (!options.meteorMotion && prepared.glow && options.backdropLevel !== 'steady') {
         const at = clamp(now / prepared.glow.hop, 0, prepared.glow.values.length - 1);
         const low = Math.floor(at), high = Math.min(prepared.glow.values.length - 1, low + 1);
         level = prepared.glow.values[low] + (prepared.glow.values[high] - prepared.glow.values[low]) * (at - low);
       }
-      const strength = (0.12 + 0.3 * level) * weight * (picture ? COVER_WASH : 1);
+      // With the jacket in the album panel the score shares the shell's dark ground.
+      // Leave a hint of the existing section colour underneath the playing parts.
+      const washLevel = options.albumLayout ? .10 : (picture ? COVER_WASH : 1);
+      const strength = (0.12 + 0.3 * level) * weight * washLevel;
       const shown = picture ? COVER_FAINT + COVER_SWELL * level : 0;
       const held = veilOf(picture);
       stats.backdrop = {colour, level: Math.round(level * 1000) / 1000, strength: Math.round(strength * 1000) / 1000,
@@ -1492,16 +1708,31 @@
         const scale = Math.max(size.width / picture.width, size.height / picture.height);
         const wide = picture.width * scale, tall = picture.height * scale;
         context.globalAlpha = shown;
-        context.drawImage(picture.image, (size.width - wide) / 2, (size.height - tall) / 2, wide, tall);
+        context.drawImage(options.softCover && picture.soft ? picture.soft.image : picture.image,
+                          (size.width - wide) / 2, (size.height - tall) / 2, wide, tall);
         context.globalAlpha = 1;
         const top = geometry.area.top, bottom = geometry.area.bottom;
         const from = Math.max(0, top - COVER_SOFT), to = Math.min(size.height, bottom + COVER_SOFT);
         if (bottom > top && to > from) {
-          const veil = context.createLinearGradient(0, from, 0, to);
-          veil.addColorStop(0, rgba(BACKGROUND_RGB, 0));
-          veil.addColorStop((top - from) / (to - from), rgba(BACKGROUND_RGB, held));
-          veil.addColorStop((bottom - from) / (to - from), rgba(BACKGROUND_RGB, held));
-          veil.addColorStop(1, rgba(BACKGROUND_RGB, 0));
+          const upper = options.softCover ? held + (1 - held)*.10 : held;
+          const lower = options.softCover ? held + (1 - held)*.24 : held;
+          if (options.softCover) {
+            stats.backdrop.laneVeil = [round3(upper), round3(lower)];
+            stats.backdrop.behindNotes = round3(shown * (1 - (upper + lower)/2));
+          }
+          // The soft veil depends only on this layout and the current cover's brightness.
+          let veil = options.softCover && geometry.veilBrightness === held && geometry.softVeil;
+          if (!veil) {
+            veil = context.createLinearGradient(0, from, 0, to);
+            veil.addColorStop(0, rgba(BACKGROUND_RGB, 0));
+            veil.addColorStop((top - from) / (to - from), rgba(BACKGROUND_RGB, upper));
+            veil.addColorStop((bottom - from) / (to - from), rgba(BACKGROUND_RGB, lower));
+            veil.addColorStop(1, rgba(BACKGROUND_RGB, 0));
+            if (options.softCover) {
+              geometry.softVeil = veil;
+              geometry.veilBrightness = held;
+            }
+          }
           context.fillStyle = veil;
           context.fillRect(0, from, size.width, to - from);
         }
@@ -1522,14 +1753,18 @@
       const {width, height} = size;
       const narrow = width < 520;
       const hasHeader = Boolean(prepared.track.title || prepared.track.album || prepared.track.artist);
-      const header = hasHeader ? clamp(height * 0.1, 30, 48) : 10;
+      const header = options.albumLayout ? (prepared.has.sections || prepared.has.chords ? clamp(height * .08, 34, 50) : 8)
+        : options.quietText ? (prepared.track.title || prepared.has.chords ? clamp(height * 0.07, 28, 38) : 8)
+        : hasHeader ? clamp(height * 0.1, 30, 48) : 10;
       const side = narrow ? 10 : 16;
       // Under the header, a band for "where we are and what is sounding": the section name
       // on the left, the chord on the right. At the foot, the section bar. Each is there
       // only when the model has something to put in it.
       // A song with captions gets a taller band: a caption is a sentence, not a label.
-      const band = prepared.has.captions ? clamp(height * 0.21, 74, 124) : clamp(height * 0.17, 58, 104);
-      const info = prepared.has.chords || prepared.has.sections || prepared.has.captions
+      const band = options.quietText ? clamp(height * 0.075, 34, 52)
+        : prepared.has.captions ? clamp(height * 0.21, 74, 124) : clamp(height * 0.17, 58, 104);
+      const info = options.albumLayout ? {top: 0, bottom: header, left: side, right: width - side}
+        : prepared.has.chords || prepared.has.sections || prepared.has.captions
         ? {top: header + 2, bottom: header + 2 + band, left: side, right: width - side} : null;
       const barHeight = clamp(height * 0.07, 22, 34);
       const bar = prepared.has.sections
@@ -1548,6 +1783,27 @@
       const texture = options.showTexture && prepared.texture && lanes.length && bottom - top > tall * 4
         ? {at: options.textureAt, height: tall} : null;
       const placeArea = texture ? {top, bottom: bottom - tall - TEXTURE.gap, gap, lanes} : area;
+      if (options.spacedLanes && lanes.length > 1) {
+        const share = (placeArea.bottom - top) / lanes.length;
+        // Spacious scores can spare a larger margin. In split view the original fixed
+        // gutters can use up the height of the notes themselves. Reserve a quarter
+        // of each row (3–24 px) and keep the rest available for pitch.
+        area.gap = placeArea.gap = clamp(share * 0.25, 3, 24);
+      }
+      // A short, purely melodic stack can otherwise spend every pixel between lanes.
+      // Keep a real hit area for every visible track in the opt-in layout.
+      if (options.denseLaneLabels && options.laneLabels === 'icon' && lanes.length > 1) {
+        const free = placeArea.bottom - top;
+        const minRow = Math.min(4, Math.max(0, free) / lanes.length);
+        placeArea.gap = Math.max(0, Math.min(gap, (free - minRow * lanes.length) / (lanes.length - 1)));
+      }
+      if ((options.drumNotation || options.meteorMotion) && lanes.some(lane => lane.kind === 'drums') && lanes.length > 1) {
+        const kits = lanes.filter(lane => lane.kind === 'drums').length;
+        const needed = kits * drumMinimum() + (lanes.length - kits) * 8;
+        const original = place(placeArea,null,false);
+        const shortage = original.reduce((sum,box) => sum + (box.lane.kind === 'drums' ? Math.max(0,drumMinimum()-box.height) : 0),0);
+        placeArea.gap = Math.max(1,Math.min(placeArea.gap-shortage/(lanes.length-1),(placeArea.bottom-top-needed)/(lanes.length-1)));
+      }
       const placed = arrange(placeArea, null, texture);
       return {
         width, height, narrow, header, info, bar, ruler, side, area: texture && texture.at === 'below' ? placeArea : area, placeArea, texture, lanes: placed,
@@ -1558,6 +1814,20 @@
 
     const pitchY = (box, pitch) =>
       box.bottom - (clamp(pitch, box.lane.range.low, box.lane.range.high) - box.lane.range.low + 0.5) * box.semitone;
+
+    const contourY = (box, pitch) => box.bottom - (pitch - box.lane.range.low + .5) * box.semitone;
+
+    // Path2D collects the same CSS-space coordinates without a canvas-state transition per vertex.
+    // The immediate path remains available to Canvas implementations without Path2D and other modes.
+    function beginGeometry() {
+      if (options.drumNotation && typeof host.Path2D === 'function') return new host.Path2D();
+      context.beginPath();
+      return context;
+    }
+    function fillGeometry(path) {
+      if (path === context) context.fill();
+      else context.fill(path);
+    }
 
     function fillBars(rects, style, radius) {
       if (!rects.length) return;
@@ -1577,32 +1847,41 @@
     // How wide a drum dot is on this screen (drawDrums: half a drum row, 2 to 4 pixels tall, 1.6 times as wide); with no
     // drum lane on screen, the widest a dot can be.
     function drumDotWidth() {
+      // The release and attack envelopes may draw several individual note heads from one lane.
+      // Their cap uses the same drum-row width until a fresh arrangement replaces the boxes.
+      const reuse = options.releaseFocus || options.attackWeight;
+      if (reuse && geometry.dotLanes === geometry.lanes) return geometry.dotWidth;
       const drums = geometry.lanes.find(item => item.lane.kind === 'drums');
-      return 1.6 * (drums ? clamp(drums.rowHeight * 0.5, 2, 4) : 4);
+      const width = 1.6 * (drums ? clamp(drums.rowHeight * 0.5, 2, 4) : 4);
+      if (reuse) {
+        geometry.dotLanes = geometry.lanes;
+        geometry.dotWidth = width;
+      }
+      return width;
     }
 
     function fillShapes(rects, style, shape, box, pps) {
       if (!rects.length) return;
       const dot = drumDotWidth();
       context.fillStyle = style;
-      context.beginPath();
+      const shapePath = beginGeometry();
       for (let i = 0; i < rects.length; i += 4) {
         const x = rects[i], width = rects[i + 2], base = rects[i + 3], centre = rects[i + 1] + base / 2;
         const full = shape === 'bass' && !options.pitchWeight ? Math.min(base * SHAPES.bass, base + box.semitone * SHAPES.bassCap) : base;
         const head = Math.max(full + SHAPES.headOver, Math.min(full * SHAPES.head, full + box.semitone * SHAPES.headCap, dot));
         const tail = Math.max(SHAPES.tailMin, full * SHAPES.tail);
-        context.rect(x, centre - head / 2, head, head);
+        shapePath.rect(x, centre - head / 2, head, head);
         if (width <= head) continue;
         const reach = Math.min(width, SHAPES.taper * pps);
-        context.moveTo(x, centre - full / 2);
-        context.lineTo(x + reach, centre - tail / 2);
-        context.lineTo(x + width, centre - tail / 2);
-        context.lineTo(x + width, centre + tail / 2);
-        context.lineTo(x + reach, centre + tail / 2);
-        context.lineTo(x, centre + full / 2);
-        context.closePath();
+        shapePath.moveTo(x, centre - full / 2);
+        shapePath.lineTo(x + reach, centre - tail / 2);
+        shapePath.lineTo(x + width, centre - tail / 2);
+        shapePath.lineTo(x + width, centre + tail / 2);
+        shapePath.lineTo(x + reach, centre + tail / 2);
+        shapePath.lineTo(x, centre + full / 2);
+        shapePath.closePath();
       }
-      context.fill();
+      fillGeometry(shapePath);
     }
 
     // One layer of spindles (SPINDLE) for a bucket of note rectangles [x, y, width, thickness, ...]: one path, one
@@ -1612,7 +1891,7 @@
     function fillSpindles(rects, style, layer, pps, ends) {
       if (!rects.length) return;
       context.fillStyle = style;
-      context.beginPath();
+      const shapePath = beginGeometry();
       for (let i = 0; i < rects.length; i += 4) {
         const x = rects[i], width = rects[i + 2], base = rects[i + 3], centre = rects[i + 1] + base / 2;
         const full = layer === 'halo' ? base * SPINDLE.swell : Math.min(base, Math.max(SPINDLE.coreMin, base * SPINDLE.core));
@@ -1621,39 +1900,489 @@
         const top = centre - full / 2, bottom = centre + full / 2;
         const joined = layer === 'core' && ends ? ends[i / 4] : 0;
         if (joined) {
-          if (joined & 1) context.moveTo(x + ramp, top);
-          else { context.moveTo(x, centre - tip / 2); context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top); }
-          context.lineTo(end - ramp, top);
-          if (joined & 2) context.lineTo(end - ramp, bottom);
+          if (joined & 1) shapePath.moveTo(x + ramp, top);
+          else { shapePath.moveTo(x, centre - tip / 2); shapePath.quadraticCurveTo(x + ramp / 2, top, x + ramp, top); }
+          shapePath.lineTo(end - ramp, top);
+          if (joined & 2) shapePath.lineTo(end - ramp, bottom);
           else {
-            context.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);
-            context.lineTo(end, centre + tip / 2);
-            context.quadraticCurveTo(end - ramp / 2, bottom, end - ramp, bottom);
+            shapePath.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);
+            shapePath.lineTo(end, centre + tip / 2);
+            shapePath.quadraticCurveTo(end - ramp / 2, bottom, end - ramp, bottom);
           }
-          context.lineTo(x + ramp, bottom);
-          if (!(joined & 1)) context.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);
-          context.closePath();
+          shapePath.lineTo(x + ramp, bottom);
+          if (!(joined & 1)) shapePath.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);
+          shapePath.closePath();
           continue;
         }
-        context.moveTo(x, centre - tip / 2);
-        context.quadraticCurveTo(x + ramp / 2, top, x + ramp, top);
-        context.lineTo(end - ramp, top);
-        context.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);
-        context.lineTo(end, centre + tip / 2);
-        context.quadraticCurveTo(end - ramp / 2, bottom, end - ramp, bottom);
-        context.lineTo(x + ramp, bottom);
-        context.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);
-        context.closePath();
+        shapePath.moveTo(x, centre - tip / 2);
+        shapePath.quadraticCurveTo(x + ramp / 2, top, x + ramp, top);
+        shapePath.lineTo(end - ramp, top);
+        shapePath.quadraticCurveTo(end - ramp / 2, top, end, centre - tip / 2);
+        shapePath.lineTo(end, centre + tip / 2);
+        shapePath.quadraticCurveTo(end - ramp / 2, bottom, end - ramp, bottom);
+        shapePath.lineTo(x + ramp, bottom);
+        shapePath.quadraticCurveTo(x + ramp / 2, bottom, x, centre + tip / 2);
+        shapePath.closePath();
       }
-      context.fill();
+      fillGeometry(shapePath);
     }
 
     // Past notes are bright, notes still to come are dim, and a note lying across the play
     // line is lit. `pps` is pixels per second, `line` the x of the play line.
-    function drawPitched(box, now, line, pps, stats) {
+    // A lane owns its precise clip geometry. Static stretches reuse the same boxes.
+    // Canvas implementations without Path2D take the original immediate path.
+    function clipContents(box) {
+      context.save();
+      if (typeof host.Path2D === 'function') {
+        if (!box.contentClip) {
+          box.contentClip = new host.Path2D();
+          box.contentClip.rect(0, box.top, size.width, box.height);
+        }
+        context.clip(box.contentClip);
+      } else {
+        context.beginPath();
+        context.rect(0, box.top, size.width, box.height);
+        context.clip();
+      }
+    }
+
+    // A clip wholly outside the painted pixels has no visible effect. Use the largest
+    // note head or spindle halo plus a two-CSS-pixel antialias margin. All other layers,
+    // labels and onset shadows retain the clip, with the original row boundary.
+    function notesReachClip(rects, stride, box) {
+      for (let i = 0; i < rects.length; i += stride) {
+        const base = rects[i + 3], middle = rects[i + 1] + base / 2;
+        const radius = Math.max(base * SPINDLE.swell / 2, (base * SHAPES.bass * SHAPES.head + SHAPES.headOver) / 2) + 2;
+        if (middle - radius <= box.top || middle + radius >= box.bottom ||
+            (stride === 6 && rects[i + 4] < 0.14)) return true;
+      }
+      return false;
+    }
+
+    // The soft meteor study: real onsets, track colour and velocity. The trajectory uses only
+    // the song clock, so a pause, seek, or mid-note toggle reconstructs the same state.
+    let meteorBrushes;
+    function meteorBrush(lane) {
+      if (!meteorBrushes) meteorBrushes = new WeakMap();
+      if (meteorBrushes.has(lane)) return meteorBrushes.get(lane);
+      const color = lane.color;
+      // Unit gradients are transformed to the exact trajectory, size and orientation at paint time.
+      const wake = context.createLinearGradient(0, 0, 1, 0);
+      wake.addColorStop(0, rgba(mix(color, .55), 1));
+      wake.addColorStop(.18, rgba(mix(color, .16), .95));
+      wake.addColorStop(.58, rgba(color, .65));
+      wake.addColorStop(1, rgba(color, 0));
+      const halo = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+      halo.addColorStop(0, rgba(mix(color, .35), .9));
+      halo.addColorStop(.27, rgba(color, .55));
+      halo.addColorStop(.65, rgba(color, .12));
+      halo.addColorStop(1, rgba(color, 0));
+      // Keep a little of the instrument hue in the bright head, including at a
+      // simultaneous crossing where the larger, softer halos can overlap.
+      const brush = {wake, halo, core:rgba(mix(color, lane.group==='guitar'?.64:lane.group==='piano'?.72:.90), 1)};
+      meteorBrushes.set(lane, brush);
+      return brush;
+    }
+
+    const skyPartsCache = new WeakMap();
+    const skyLevels = new Map();
+    const historyBrushes = new WeakMap();
+    const historyAlpha = [0, .44, .75, .94, 1];
+    let history = null;
+
+    // The album panel sits just outside the canvas. In a full-width view the canvas
+    // edge itself is the reference. All sounding marks share this spatial envelope.
+    function historyFor(line, pps) {
+      const gap = options.albumLayout ? options.albumSidebarGap || 0 : 0;
+      const span = Math.min(line, .60 * (line + gap));
+      return {left:line-span, line, span, seconds:span/pps};
+    }
+
+    function lightAt(x) {
+      const step = clamp((x-history.left)/Math.max(history.span,1e-9),0,1) * (historyAlpha.length-1);
+      const i = Math.floor(step), j = Math.min(i+1,historyAlpha.length-1);
+      return historyAlpha[i] + (historyAlpha[j]-historyAlpha[i]) * (step-i);
+    }
+
+    // The needle writes fresh light at its right edge. Every point to the left has a
+    // known age in song seconds, including when paused, seeking or exporting a frame.
+    function historyBrush(lane) {
+      const {left, line} = history, previous = historyBrushes.get(lane);
+      if (previous && previous.left === left && previous.line === line && previous.ratio === size.ratio) return previous;
+      function fade(color) {
+        const ink = context.createLinearGradient(left, 0, line, 0);
+        historyAlpha.forEach((alpha,i) => ink.addColorStop(i/(historyAlpha.length-1), rgba(color,alpha)));
+        return ink;
+      }
+      const brush = {left, line, ratio:size.ratio, color:fade(lane.color), lit:fade(lane.lit), preview:mix(lane.color,.10)};
+      historyBrushes.set(lane, brush);
+      return brush;
+    }
+
+    // A measured, monophonic contour can run across several simultaneous MIDI
+    // notes. Draw it once in each sounding interval, with a gap at every real rest.
+    function soundingSpans(set) {
+      const spans = [];
+      for (let i=0; i<set.count; i++) {
+        const start = set.start[i], end = start + set.dur[i], last = spans[spans.length-1];
+        if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+        else spans.push([start, end]);
+      }
+      return spans;
+    }
+
+    function heldIntervals(set) {
+      const last=new Map(), spans=[];
+      let overlap=false;
+      for(let i=0;i<set.count;i++) {
+        const start=set.start[i],end=start+set.dur[i],pitch=set.pitch[i],prior=last.get(pitch);
+        if(prior && start<prior[0]+prior[1]) {
+          prior[1]=Math.max(prior[0]+prior[1],end)-prior[0];
+          overlap=true;
+        } else {
+          const row=[start,end-start,pitch,100];last.set(pitch,row);spans.push(row);
+        }
+      }
+      return overlap ? noteSet(spans) : set;
+    }
+
+    function skyParts(lane) {
+      if (skyPartsCache.has(lane)) return skyPartsCache.get(lane);
+      const members = prepared.lanes.filter(item => lane.members.includes(item.id) && !options.hidden.includes(item.id));
+      const groups=new Map();
+      for(const item of members) {
+        // A recorded contour belongs to its own timbre. Compatible timbres in a
+        // merged lane can share the same light without painting their unisons twice.
+        const key=item.contour ? item : item.skyVoice;
+        if(!groups.has(key))groups.set(key,[]);
+        groups.get(key).push(item);
+      }
+      const parts = Array.from(groups.values(),items => {
+        const item=items[0], pluckedInBowLane = item.skyVoice === 'meteor' && !STRUCK_GROUPS.includes(lane.group);
+        let set = lane.set;
+        if (groups.size > 1 || (pluckedInBowLane && options.simplify)) {
+          const raw=items.length===1 ? item.notes : items.flatMap(v=>v.notes).sort((a,b)=>a[0]-b[0]||a[2]-b[2]);
+          set = noteSet(options.simplify ? simplifyNotes(raw, {struck:item.skyVoice === 'meteor'}).notes : raw);
+        }
+        const held=item.skyVoice==='wind'||item.skyVoice==='bow';
+        let bends=null;
+        if(item.contour && item.skyVoice==='meteor') {
+          bends=new Uint8Array(set.count);
+          let previousEnd=-Infinity;
+          for(let i=0;i<set.count;i++) {
+            const start=set.start[i],end=start+set.dur[i];
+            bends[i]=previousEnd<=start+1e-5 && (i+1===set.count || set.start[i+1]>=end-1e-5);
+            previousEnd=Math.max(previousEnd,end);
+          }
+        }
+        const contourSpans = held && item.contour && set.count ? soundingSpans(set) : null;
+        return {voice:item.skyVoice, set, contour:item.contour, contourSpans, bends, glow:held ? heldIntervals(set) : null};
+      });
+      skyPartsCache.set(lane, parts);
+      return parts;
+    }
+
+    // Only stem loudness is available across a held note. All its simultaneous notes share
+    // the same halo; their attacks retain their own velocities. Missing frames are neutral.
+    function skyLevelFor(group) {
+      if (skyLevels.has(group)) return skyLevels.get(group);
+      const levels = prepared.skySourceLevels;
+      const db = levels && levels.groups && (levels.groups[group] || (group === 'violin' && levels.groups.strings));
+      let curve = null;
+      if (Array.isArray(db) && db.length > 1 && finite(levels.hop) && levels.hop > 0) {
+        const scale = textureScale(db);
+        if (scale.low !== null && scale.range > 0) {
+          const values = scale.amount;
+          for (let i = 0; i < db.length; i++) if (!finite(db[i])) values[i] = .5;
+          curve = {hop:levels.hop, values};
+        }
+      }
+      skyLevels.set(group, curve);
+      return curve;
+    }
+
+    function skyAmount(curve, time) {
+      if (!curve || time < 0 || time > (curve.values.length - 1) * curve.hop) return .5;
+      const at = time / curve.hop, i = Math.floor(at), next = Math.min(curve.values.length - 1, i + 1);
+      return curve.values[i] + (curve.values[next] - curve.values[i]) * (at - i);
+    }
+
+    function recordedPitchAt(contour,time) {
+      const at=(time-(finite(contour.start)?contour.start:0))/contour.hop;
+      if(at<0 || at>contour.midi.length-1) return null;
+      const i=Math.floor(at),a=contour.midi[i],b=contour.midi[Math.ceil(at)];
+      return finite(a) && finite(b) ? a+(b-a)*(at-i) : null;
+    }
+
+    // One repeatable direction per attack, across pitches and split/merged timbres.
+    // Group from the original song attacks so hiding a lane or seeking cannot reroll a strum.
+    let directionModel, directionGroups;
+    function directionAt(group, start) {
+      if (directionModel!==prepared) {directionModel=prepared; directionGroups=new Map();}
+      if (!directionGroups.has(group)) {
+        const times=[];
+        for (const lane of prepared.lanes) {
+          if (lane.group===group && lane.skyVoice==='meteor') {
+            for (const note of lane.notes) times.push(Math.round(Math.fround(note[0])*1000));
+          }
+        }
+        times.sort((a,b)=>a-b);
+        const seedText=[prepared.track.artist,prepared.track.album,prepared.track.title,group].join('|');
+        let seed=2166136261;
+        for (let i=0;i<seedText.length;i++) seed=Math.imul(seed^seedText.charCodeAt(i),16777619);
+        const starts=[], factors=[];
+        for (const ms of times) {
+          if (starts.length && ms-starts[starts.length-1]<=30) continue;
+          let h=Math.imul(ms^seed,0x85ebca6b);
+          h=Math.imul(h ^ (h>>>13),0xc2b2ae35);
+          starts.push(ms);factors.push(((h ^ (h>>>16))>>>0)/0xffffffff*2-1);
+        }
+        directionGroups.set(group,{starts,factors});
+      }
+      const {starts,factors}=directionGroups.get(group);
+      const ms=Math.round(Math.fround(start)*1000);
+      return factors[lowerBound(starts,starts.length,ms+1)-1] || 0;
+    }
+
+    function drawFlight(box, part, index, now, line, pps, brush, ink) {
+      const set = part.set, start = set.start[index], end = start + set.dur[index];
+      const age = Math.max(0, now - start), release = Math.max(0, now - end);
+      const lifetime = options.pluckReleaseSeconds;
+      if (release >= history.seconds || (lifetime > 0 && release >= lifetime-1e-9)) return false;
+      const afterRelease = lifetime > 0 ? transientLight(release,lifetime) : 1;
+      const velocity = set.vel[index] / 127, lane = box.lane;
+      const crowded = lowerBound(set.start,set.count,start+.15) - lowerBound(set.start,set.count,start-.15);
+      const exposure = 1 / Math.sqrt(1 + .13 * Math.max(0,crowded-3));
+      const packed = geometry.lanes.length >= 12;
+      const base = pitchY(box,set.pitch[index]);
+      const drop = Math.max(0,Math.min(box.semitone*.40,box.height*.13,box.bottom-base-.3,packed?2.5:5));
+      const bends=options.showContour && part.bends && part.bends[index];
+      const yAt = a => {
+        const pitch=bends ? recordedPitchAt(part.contour,now-a) : null;
+        return (pitch===null?base:pitchY(box,pitch)) + drop * (a*a / (.58 + a*a));
+      };
+      const headX = line - age * pps, tailX = line - release * pps;
+      const headY = yAt(age), tailY = yAt(release);
+      const bass = lane.group === 'bass' ? 1.22 : 1;
+      const scale = clamp(size.width/1000,.78,1.18) * (packed ? .84 : 1) * bass;
+      const thickness = scale * (.71+.37*velocity);
+      if (age > release) {
+        const headAge = Math.min(age,history.seconds);
+        const sx = line-headAge*pps;
+        context.beginPath();
+        context.moveTo(sx,yAt(headAge));
+        if(bends) {
+          const step=Math.max(part.contour.hop,2/pps);
+          for(let t=now-headAge+step;t<now-release;t+=step) context.lineTo(line+(t-now)*pps,yAt(now-t));
+          context.lineTo(tailX,tailY);
+        } else {
+          const midAge=(headAge+release)*.5;
+          context.quadraticCurveTo((sx+tailX)*.5,2*yAt(midAge)-(yAt(headAge)+tailY)*.5,tailX,tailY);
+        }
+        context.strokeStyle=ink.color;
+        context.globalAlpha=.57*(.72+.28*exposure)*afterRelease;
+        context.lineWidth=Math.max(.8,thickness);
+        context.stroke();
+      }
+      if (headX <= history.left) {context.globalAlpha=1; return true;}
+      // The brighter wake is short. The fine note body above continues all the way to the needle.
+      const wakeAge = Math.max(release,age-(.15+.15*velocity)*exposure);
+      const dx=(age-wakeAge)*pps;
+      let dy=yAt(wakeAge)-headY;
+      if (dx>0 && options.meteorDirectionDegrees>0 && (lane.group!=='bass' || options.meteorBassDirection)) {
+        const degrees=directionAt(lane.group,start)*options.meteorDirectionDegrees*(lane.group==='bass' ? 1/3 : 1);
+        const cap=Math.min(4,box.semitone*.5);
+        const drift=clamp(dx*Math.tan(degrees*Math.PI/180),-cap,cap);
+        dy+=clamp(drift,Math.min(0,box.top+.25-headY-dy),Math.max(0,box.bottom-.25-headY-dy));
+      }
+      const span=Math.hypot(dx,dy);
+      const ratio=size.ratio;
+      const attack=lifetime > 0 ? .40+.60*Math.exp(-age/.26) : .82+.18*Math.exp(-age*2);
+      const mix=options.fxDynamics==='song'?.78+.44*swellAt(start):1;
+      const strength=lightAt(headX)*(.54+.46*velocity)*exposure*attack*afterRelease*mix;
+      if (span>.4) {
+        context.setTransform(dx*ratio,dy*ratio,-dy/span*ratio,dx/span*ratio,headX*ratio,headY*ratio);
+        context.globalAlpha=strength;context.fillStyle=brush.wake;
+        context.beginPath();context.moveTo(0,-1.35*thickness);context.quadraticCurveTo(.48,-.83*thickness,1,0);
+        context.quadraticCurveTo(.48,.83*thickness,0,1.35*thickness);context.closePath();context.fill();
+      }
+      const radius=(packed?5.2:7.6)*thickness;
+      context.setTransform(radius*ratio,0,0,radius*.76*ratio,headX*ratio,headY*ratio);
+      context.fillStyle=brush.halo;context.globalAlpha=strength*.74;context.fillRect(-1,-1,2,2);
+      context.setTransform(ratio,0,0,ratio,0,0);
+      context.fillStyle=brush.core;context.globalAlpha=strength;
+      const guitar=lane.group==='guitar',piano=lane.group==='piano';
+      // Direction controls the wake only; the attack face stays on its true
+      // time/pitch axes even when the tail takes a slanted trajectory.
+      context.beginPath();context.ellipse(headX,headY,(guitar?2.38:piano?1.68:2.25)*thickness,
+        (guitar?.87:piano?1.34:1.19)*thickness,0,0,Math.PI*2);
+      if(guitar){
+        // A small drawn tip, rather than another halo, reads as a pluck.
+        // Fill its union with the ellipse once so the tip cannot darken itself.
+        context.moveTo(headX-3.2*thickness,headY);
+        context.lineTo(headX-.8*thickness,headY-.83*thickness);
+        context.lineTo(headX-.8*thickness,headY+.83*thickness);context.closePath();
+      }else if(piano){
+        // A blunt leading face gives the shorter piano head a struck edge.
+        context.rect(headX-1.72*thickness,headY-1.05*thickness,.78*thickness,2.1*thickness);
+      }
+      context.fill();
+      context.globalAlpha=1;
+      return true;
+    }
+
+    function drawSkyHeld(box, part, i, from, to, now, line, pps, curve, ink, glowOnly=false) {
+      const set=glowOnly ? part.glow : part.set, lane=box.lane, wind=part.voice==='wind', held=wind || part.voice==='bow';
+      const y=pitchY(box,set.pitch[i]), velocity=set.vel[i]/127;
+      const levelAt=time=>options.fxDynamics==='song'?.65*skyAmount(curve,time)+.35*swellAt(time):skyAmount(curve,time);
+      const x0=line+(from-now)*pps, x1=line+(to-now)*pps;
+      if (x1<=x0) return;
+      const unit=Math.max(.36,Math.min(1.08,box.semitone*.45));
+      const stride=held && curve ? curve.hop*Math.max(1,Math.ceil(4/(pps*curve.hop))) : 0;
+      const firstSample=stride ? Math.floor(from/stride)+1 : 0;
+      const count=stride ? 1+Math.max(0,Math.ceil(to/stride)-firstSample) : 1;
+      const sampleAt=n=>n===0 ? from : n===count ? to : (firstSample+n-1)*stride;
+      const edge=amount=> wind ? (.80+2.85*amount)*unit : (.62+1.46*amount)*unit;
+      // A ribbon records each sample at its original horizontal position. It does not resize
+      // the whole note when the current frame is louder. The sharp core stays on pitch.
+      if (held && (glowOnly || part.glow===part.set)) {
+        const shape = (factor,alpha) => {
+          context.beginPath();
+          for (let n=0;n<=count;n++) {
+            const t=sampleAt(n), x=line+(t-now)*pps;
+            const top=y-edge(levelAt(t))*factor;
+            if(n) context.lineTo(x,top); else context.moveTo(x,top);
+          }
+          for (let n=count;n>=0;n--) {
+            const t=sampleAt(n);
+            context.lineTo(line+(t-now)*pps,y+edge(levelAt(t))*factor);
+          }
+          context.closePath();context.fillStyle=ink.color;context.globalAlpha=alpha;context.fill();
+        };
+        shape(wind ? 1.21 : 1.0,wind ? .15 : .18);
+        shape(wind ? .65 : .56,wind ? .32 : .44);
+        context.globalAlpha=1;
+        if(to===now && set.start[i]+set.dur[i]>now) {
+          const energy=levelAt(now),reach=Math.min(x1-x0,(wind?9:6)*unit*(.55+.7*energy));
+          context.fillStyle=rgba(lane.lit,.21+.16*energy);
+          context.beginPath();context.moveTo(x1-reach,y);
+          context.lineTo(x1,y-edge(energy)*.40);context.lineTo(x1,y+edge(energy)*.40);
+          context.closePath();context.fill();
+        }
+      }
+      if(glowOnly)return;
+      context.beginPath();context.moveTo(x0,y);context.lineTo(x1,y);
+      context.lineWidth=Math.max(.80,(held?1.12:1.03)*unit*(.85+.3*velocity));
+      context.strokeStyle=ink.lit;context.globalAlpha=held ? .82 : part.contour ? .36 : .78;
+      context.stroke();context.globalAlpha=1;
+    }
+
+    function drawSkyPitched(box, now, line, pps, stats) { if(guidesOnly)return;
+      const lane=box.lane, left=now-line/pps, right=now+(size.width-line)/pps;
+      context.save();context.beginPath();context.rect(history.left,box.top,size.width-history.left,box.height);context.clip();
+      context.lineCap='butt';context.lineJoin='round';context.globalAlpha=1;
+      const parts=skyParts(lane);
+      const ink=historyBrush(lane), pastStart=now-history.seconds;
+      for (const part of parts) {
+        const {set,voice}=part, meteor=voice==='meteor';
+        const first=lowerBound(set.start,set.count,left-set.maxDur);
+        const stop=lowerBound(set.start,set.count,right);
+        // Forecast starts at the greater of onset and now, including the unsounded
+        // remainder of a note whose attack has already crossed.
+        context.strokeStyle=rgba(ink.preview,.56);context.lineWidth=Math.max(.81,Math.min(1.25,box.semitone*.40));
+        context.beginPath();
+        for(let i=first;i<stop;i++) {
+          const t=set.start[i], end=t+set.dur[i];
+          if(end<=now) continue;
+          const y=pitchY(box,set.pitch[i]);
+          context.moveTo(line+(Math.max(t,now)-now)*pps,y);
+          context.lineTo(Math.min(size.width+2,line+(end-now)*pps),y);
+        }
+        context.stroke();
+        const brush=meteor ? meteorBrush(lane) : null;
+        const curve=voice==='bow' || voice==='wind' ? skyLevelFor(lane.group) : null;
+        if(part.glow && part.glow!==set) {
+          const glow=part.glow;
+          for(let g=lowerBound(glow.start,glow.count,pastStart-glow.maxDur);g<glow.count && glow.start[g]<=now;g++) {
+            const end=glow.start[g]+glow.dur[g];
+            if(end>pastStart)drawSkyHeld(box,part,g,Math.max(pastStart,glow.start[g]),Math.min(end,now),now,line,pps,curve,ink,true);
+          }
+        }
+        if(meteor) {
+          context.fillStyle=rgba(ink.preview,.78);context.beginPath();
+          const r=geometry.lanes.length>=12 ? .9 : 1.2;
+          for(let i=lowerBound(set.start,set.count,now);i<stop;i++) {
+            const t=set.start[i];if(t<=now)continue;
+            const x=line+(t-now)*pps,y=pitchY(box,set.pitch[i]);
+            context.moveTo(x+r,y);context.arc(x,y,r,0,Math.PI*2);
+          }
+          context.fill();
+        }
+        for(let i=first;i<stop;i++) {
+          const t=set.start[i],end=t+set.dur[i];
+          if(end>left)stats.notes++;
+          if(t>now) continue;
+          if(end>now)stats.active++;
+          if(meteor) {
+            if(drawFlight(box,part,i,now,line,pps,brush,ink)) stats.meteors=(stats.meteors||0)+1;
+          } else if(end>pastStart) {
+            drawSkyHeld(box,part,i,Math.max(t,pastStart),Math.min(end,now),now,line,pps,curve,ink);
+          }
+        }
+        if(part.contour && options.showContour && !meteor) {
+          if (part.contourSpans) {
+            const spans = part.contourSpans;
+            const firstSpan = Math.max(0, startedBy(spans,pastStart,span=>span[0]));
+            for (let j=firstSpan; j<spans.length && spans[j][0]<right; j++) {
+              const from = Math.max(pastStart,spans[j][0]), to = Math.min(right,spans[j][1]);
+              if (from<to) drawSkyContour(box,part.contour,now,line,pps,stats,from,to,ink);
+            }
+          } else {
+            drawSkyContour(box,part.contour,now,line,pps,stats,pastStart,right,ink);
+          }
+        }
+      }
+      context.restore();
+    }
+
+    function drawSkyContour(box, contour, now, line, pps, stats, from, to, ink) {
+      const {midi,hop}=contour, origin=finite(contour.start) ? contour.start : 0;
+      const start=Math.max(0,Math.floor((Math.max(from,now-line/pps)-origin)/hop)-1);
+      const end=Math.min(midi.length-1,Math.ceil((Math.min(to,now+(size.width-line)/pps)-origin)/hop)+1);
+      const yFor=pitch=>contourY(box,pitch);
+      context.lineWidth=1.32;
+      for(const past of [true,false]) {
+        context.strokeStyle=past ? ink.lit : rgba(ink.preview,.65);
+        context.globalAlpha=past ? .93 : 1;
+        context.beginPath();
+        let pen=false;
+        for(let i=start+1;i<=end;i++) {
+          const t=origin+i*hop, before=t-hop;
+          if(!finite(midi[i-1]) || !finite(midi[i]) || (past ? before>=now : t<=now)) {pen=false;continue;}
+          const a=Math.max(from,past ? before : Math.max(now,before)), b=Math.min(to,past ? Math.min(t,now) : t);
+          if (b<=a) {pen=false;continue;}
+          const slope=(midi[i]-midi[i-1])/hop;
+          if(!pen) context.moveTo(line+(a-now)*pps,yFor(midi[i-1]+(a-before)*slope));
+          context.lineTo(line+(b-now)*pps,yFor(midi[i-1]+(b-before)*slope));
+          pen=true;stats.contour++;
+        }
+        context.stroke();
+      }
+    }
+
+    function drawPitched(box, now, line, pps, stats) { if(guidesOnly)return;
+      if (options.meteorMotion) {
+        drawSkyPitched(box, now, line, pps, stats);
+        return;
+      }
       const {lane} = box, set = lane.set;
+      const bodyColor = lane.ink || lane.color, activeColor = lane.litInk || lane.lit;
       const left = now - line / pps, right = now + (size.width - line) / pps;
       const future = [], past = [], active = [], names = [];
+      const recent = options.releaseFocus ? [] : null;
+      const recentEnds = recent && options.attackWeight ? [] : null;
+      const attacks = options.attackWeight ? [] : null;
+      const hints = lane.weak ? [] : null;
       const thickness = box.thickness, half = thickness / 2;
       const weighted = options.pitchWeight && WEIGHT_GROUPS.includes(lane.group);
       const thinnest = Math.min(thickness, lane.kind === 'melody' ? 3.5 : 2);
@@ -1680,16 +2409,38 @@
         }
         const y = pitchY(box, set.pitch[i]) - half;
         const bucket = start > now ? future : end <= now ? past : active;
+        if (hints && lane.weak[i]) {
+          const thin = Math.max(1, thickness*.52);
+          hints.push(x, y + half - thin/2, width, thin);
+          stats.notes++;
+          if (bucket === active) stats.active++;
+          continue;
+        }
+        const fading = recent && bucket === past && now - end < 2;
+        const rects = fading ? recent : bucket;
         if (weighted) {
           const own = ownThickness(box, i, thinnest);
-          bucket.push(x, y + half - own / 2, width, own);
-        } else bucket.push(x, y, width, thickness);
-        if (joins) (bucket === future ? joins[0] : bucket === past ? joins[1] : joins[2]).push(lane.strands.ends[i]);
+          rects.push(x, y + half - own / 2, width, own);
+        } else rects.push(x, y, width, thickness);
+        if (fading) {
+          recent.push(now - end, joins ? lane.strands.ends[i] : 0);
+          if (recentEnds) recentEnds.push(attackOpacity(end - start));
+        }
+        else if (joins) (bucket === future ? joins[0] : bucket === past ? joins[1] : joins[2]).push(lane.strands.ends[i]);
+        if (attacks && bucket === active) attacks.push(now - start);
         if (lane.kind === 'melody') names.push(x, y, set.pitch[i], bucket === future ? 0 : bucket === past ? 1 : 2);
         stats.notes++;
         if (bucket === active) stats.active++;
         if (extra) noteEffects(extra, i, x, y, width, start, end, now, line);
       }
+      const clip = options.spacedLanes && (active.length || hints?.length || blocked || shapes?.links?.length || linked ||
+        (lane.contour && options.showContour) || (names.length && !options.quietText) ||
+        (extra && (extra.halos.length || extra.glow.length || extra.shimmer.length || extra.near.length ||
+                   extra.sound.length || extra.burnt.length || extra.burning.length)) ||
+        notesReachClip(future, 4, box) || notesReachClip(past, 4, box) || (recent && notesReachClip(recent, 6, box)));
+      const savePaint = options.spacedLanes && (clip || future.length || past.length || recent?.length);
+      if (clip) clipContents(box);
+      else if (savePaint) context.save();
       const radius = Math.min(half, 2.5);
       if (blocked) drawBlocks(box, now, line, pps, stats);
       if (shapes && shapes.links && shapes.links.length) drawLinks(box, now, line, pps, stats);
@@ -1701,19 +2452,66 @@
       } : shape === 'struck' || shape === 'bass' ? (list, colour, light) => fillShapes(list, rgba(colour, light), shape, box, pps)
         : (list, colour, light) => fillBars(list, rgba(colour, light), radius);
       if (linked) drawStrands(box, now, line, pps, stats, weighted, thinnest);
-      paint(future, lane.color, 0.34, SPINDLE.haloFloor, joins && joins[0]);
-      paint(past, lane.color, 0.92, 0, joins && joins[1]);
+      if (hints && hints.length) {
+        paint(hints, bodyColor, .12, 0, null);
+        stats.weakNotes = (stats.weakNotes || 0) + hints.length / 4;
+      }
+      paint(future, bodyColor, 0.34, SPINDLE.haloFloor, joins && joins[0]);
+      paint(past, bodyColor, recent ? 0.28 : 0.92, 0, joins && joins[1]);
+      if (recent && recent.length) {
+        // Only the last two seconds need a continuous per-note value. The whole
+        // older history still uses a single batched path. Smoothstep has zero
+        // slope at release and at the join with that path.
+        const one = [0, 0, 0, 0], endBits = [0];
+        let previousAge = -1, light = 0, ink, opacity = 0, shadow = 0;
+        for (let i = 0; i < recent.length; i += 6) {
+          for (let j = 0; j < 4; j++) one[j] = recent[i + j];
+          endBits[0] = recent[i + 5];
+          const age = recent[i + 4];
+          if (age !== previousAge) {
+            previousAge = age;
+            light = releaseTail(age);
+            ink = lane.ink ? bodyColor.map((v,k) => Math.round(v + (activeColor[k]-v)*light)) : mix(bodyColor, 0.55 * light);
+            opacity = 0.28 + 0.72 * light;
+            shadow = Math.max(0, 1 - age / 0.14);
+          }
+          if (shadow > 0) {
+            context.save();
+            context.shadowBlur = 10 * shadow;
+            context.shadowColor = rgba(bodyColor, 0.9 * shadow);
+          }
+          const tailOpacity = recentEnds ? opacity - (1 - recentEnds[i / 6]) * light : opacity;
+          paint(one, ink, tailOpacity, 0, joins && endBits);
+          if (shadow > 0) context.restore();
+        }
+      }
       if (active.length) {
         context.save();
-        context.shadowColor = rgba(lane.color, 0.9);
+        context.shadowColor = rgba(bodyColor, 0.9);
         context.shadowBlur = 10;
-        paint(active, lane.lit, 1, 0, joins && joins[2]);
+        if (!attacks) paint(active, activeColor, 1, 0, joins && joins[2]);
+        else {
+          const one = [0,0,0,0], endBits = [0], held = [], heldEnds = joins ? [] : null;
+          for (let j = 0; j < attacks.length; j++) {
+            const age = attacks[j], i = j*4;
+            if (age >= .475) {
+              held.push(active[i], active[i+1], active[i+2], active[i+3]);
+              if (heldEnds) heldEnds.push(joins[2][j]);
+              continue;
+            }
+            for (let k = 0; k < 4; k++) one[k] = active[i+k];
+            if (joins) endBits[0] = joins[2][j];
+            paint(one, activeColor, attackOpacity(age), 0, joins && endBits);
+          }
+          if (held.length) paint(held, activeColor, .87, 0, heldEnds);
+        }
         context.restore();
       }
-      if (shape && shape !== 'held') stats.shaped = (stats.shaped || 0) + (future.length + past.length + active.length) / 4;
+      if (shape && shape !== 'held') stats.shaped = (stats.shaped || 0) + (future.length + past.length + active.length + (hints ? hints.length : 0)) / 4 + (recent ? recent.length / 6 : 0);
       if (extra) drawNoteEffects(extra, box, line, now, radius);
       if (lane.contour && options.showContour) drawContour(box, now, line, pps, stats);
       if (names.length) drawNoteNames(names, lane, box);
+      if (savePaint) context.restore();
     }
 
     // A note's own thickness with pitchWeight on (the lane's thickness by the note's weight, within its floor and cap).
@@ -1877,6 +2675,7 @@
     // A name above each sung note. A name that would run into the one before it is left
     // out; the bar itself still shows the pitch.
     function drawNoteNames(names, lane, box) {
+      if (options.quietText) return;
       const fontSize = geometry.narrow ? 9 : 10.5;
       context.font = `600 ${fontSize}px ${FONT}`;
       context.textAlign = 'left';
@@ -1893,10 +2692,114 @@
       }
     }
 
-    function drawDrums(box, now, line, pps, stats) {
+    function notationRows(lane) {
+      if (!lane.notationRows) {
+        const unknown = lane.rows.filter(item => !DRUM_DISPLAY.includes(item.name));
+        lane.notationRows = lane.rowNames.map((name,row) => {
+          const index = DRUM_DISPLAY.indexOf(name);
+          if (index >= 0) return {name, center: index + 1.5, fraction: 1};
+          const rank = unknown.findIndex(item => item.row === row);
+          return {name: 'unknown', center: (rank + 0.5) / Math.max(1,unknown.length), fraction: 1 / Math.max(1,unknown.length)};
+        });
+      }
+      return lane.notationRows;
+    }
+    function drumSlash(path,left,right,y,h) {
+      const ink = Math.max(.95,h*.56);
+      path.moveTo(left,y+h); path.lineTo(right,y-h); path.lineTo(right+ink,y-h);
+      path.lineTo(left+ink,y+h); path.closePath();
+    }
+    function drumMark(path,name,x,y,h) {
+      const w = h * 1.62 + .5;
+      if (name === 'kick') {
+        if (path.roundRect) path.roundRect(x-w,y-h*.56,2*w,h*1.12,h*.52);
+        else path.rect(x-w,y-h*.56,2*w,h*1.12);
+      } else if (name === 'snare') {
+        const ink = Math.max(.96,h*.74);
+        path.rect(x-ink/2,y-h,ink,2*h);
+      } else if (name === 'tom') {
+        path.moveTo(x+h,y); path.arc(x,y,h,0,Math.PI*2);
+      } else if (name === 'unknown') {
+        path.moveTo(x,y-h); path.lineTo(x+w,y); path.lineTo(x,y+h); path.lineTo(x-w,y); path.closePath();
+      } else {
+        // All cymbals have the same diagonal. A second short tick opens the hat,
+        // a low base distinguishes the ride bell, an opposing stroke makes the crash.
+        drumSlash(path,x-w*.76,x+w*.5,y,h);
+        if (name === 'openhat') drumSlash(path,x+w*.28,x+w*1.54,y,h);
+        if (name === 'ride') path.rect(x-w*.9,y+h*.4,w*1.8,h*.48);
+        if (name === 'crash') drumSlash(path,x+w*.48,x-w*.76,y,h);
+      }
+    }
+    function drawDrumNotation(box,now,line,pps,stats) {
+      const {lane} = box, hits = lane.hits, rows = notationRows(lane);
+      const right = now + (size.width-line)/pps, step = box.height / 8;
+      const colors = lane.ink
+        ? [rgba(lane.ink, options.releaseFocus ? .28 : .92), rgba(lane.litInk, 1), rgba(lane.ink,.34)]
+        : [rgba(lane.color,.73),rgba(lane.color,.91),rgba(lane.color,.46)];
+      let batch = -1, path;
+      for (let i=lowerBound(hits.time,hits.count,now-line/pps-.2); i<hits.count && hits.time[i]<right; i++) {
+        const t = hits.time[i], row = rows[hits.row[i]];
+        const phase = t > now ? 2 : now-t < .09 ? 1 : 0;
+        if (phase !== batch) {
+          if (batch >= 0) fillGeometry(path);
+          context.fillStyle = colors[phase]; path = beginGeometry(); batch = phase;
+        }
+        const h = Math.min(2.7,step * row.fraction * .30) * (.77 + .23 * hits.vel[i]/127);
+        drumMark(path,row.name,line+(t-now)*pps,box.top+step*row.center,h);
+        stats.hits++;
+        if (phase === 1) stats.active++;
+      }
+      if (batch >= 0) fillGeometry(path);
+    }
+
+
+    function drawSkyDrums(box, now, line, pps, stats) {
+      const lane=box.lane, hits=lane.hits, rows=notationRows(lane), step=box.height/8;
+      const right=now+(size.width-line)/pps;
+      context.save();context.beginPath();context.rect(history.left,box.top,size.width-history.left,box.height);context.clip();
+      let batch=-1, lastAlpha=-1, path;
+      const ink=historyBrush(lane), colors=[ink.color,ink.lit,rgba(ink.preview,.56)];
+      const scale=options.drumDecayScale, past=scale ? Math.min(history.seconds, .50*scale) : history.seconds;
+      for(let i=lowerBound(hits.time,hits.count,now-past);i<hits.count&&hits.time[i]<right;i++) {
+        const t=hits.time[i],age=now-t, row=rows[hits.row[i]];
+        const lifetime=drumSeconds[row.name]*scale;
+        if (scale && age >= lifetime-1e-9) continue;
+        const phase=age<0 ? 2 : age<.085 ? 1 : 0;
+        const fade=scale && age>0 ? transientLight(age,lifetime) : 1;
+        const alpha=(phase===0 ? .72 : phase===1 ? .84 : 1)*fade;
+        if(phase!==batch || alpha!==lastAlpha) {
+          if(batch>=0)fillGeometry(path);
+          context.fillStyle=colors[phase];context.globalAlpha=alpha;lastAlpha=alpha;
+          path=beginGeometry();batch=phase;
+        }
+        const x=line+(t-now)*pps,y=box.top+step*row.center;
+        const strength=hits.vel[i]/127, h=Math.max(.42,Math.min(3.3,step*row.fraction*.40)*(.45+.57*strength));
+        if(row.name==='kick') {
+          const w=1.0+1.48*h, d=h*(phase===1 ? .80 : .63);
+          path.moveTo(x-w,y);path.quadraticCurveTo(x,y-1.6*d,x+w,y);
+          path.quadraticCurveTo(x+.18*w,y+.92*d,x-w,y);path.closePath();
+        } else if(row.name==='snare') {
+          const w=Math.max(.55,.35*h);
+          path.moveTo(x,y-h);path.lineTo(x+w,y);path.lineTo(x,y+h);path.lineTo(x-w,y);path.closePath();
+          if(strength>.67)path.rect(x-1.4*w,y-.35,2.8*w,.7);
+        } else drumMark(path,row.name,x,y,h);
+        stats.hits++;if(phase===1)stats.active++;
+      }
+      if(batch>=0)fillGeometry(path);
+      context.restore();
+    }
+    function releaseTail(age) {
+      const left = clamp(1 - age / 2, 0, 1);
+      return left * left * (3 - 2 * left);
+    }
+
+    function drawDrums(box, now, line, pps, stats) { if(guidesOnly)return;
+      if (options.meteorMotion) return drawSkyDrums(box, now, line, pps, stats);
+      if (options.drumNotation) return drawDrumNotation(box,now,line,pps,stats);
       const {lane} = box, hits = lane.hits;
       const left = now - line / pps, right = now + (size.width - line) / pps;
       const future = [], past = [], flash = [];
+      const recent = options.releaseFocus ? [] : null;
       const mark = clamp(box.rowHeight * 0.5, 2, 4);
       const strikes = frameFx && frameFx.on.drums ? [] : null;
       for (let i = lowerBound(hits.time, hits.count, left - 0.2); i < hits.count; i++) {
@@ -1908,21 +2811,69 @@
         // A hit has no length, so it is "on the line" for a moment after it lands.
         const bucket = time > now ? future : now - time < 0.09 ? flash : past;
         if (bucket === flash) bucket.push(x - 1, y - 1, mark * 1.6 + 2, mark + 2);
+        else if (recent && bucket === past && now - time < 2.09) recent.push(x, y, now - time - 0.09);
         else bucket.push(x, y, mark * 1.6, mark);
         stats.hits++;
         if (bucket === flash) stats.active++;
         if (strikes && time <= now) strikes.push(i, x + mark * 0.8, y + mark / 2);
       }
-      fillBars(future, rgba(lane.color, 0.3), 1);
-      fillBars(past, rgba(lane.color, 0.85), 1);
+      const bodyColor = lane.ink || lane.color;
+      fillBars(future, rgba(bodyColor, lane.ink ? .34 : .3), 1);
+      fillBars(past, rgba(bodyColor, recent ? .28 : lane.ink ? .92 : .85), 1);
+      if (recent) {
+        for (let i = 0; i < recent.length; i += 3) {
+          const light = releaseTail(recent[i + 2]);
+          const shadow = Math.max(0, 1 - recent[i + 2] / 0.14);
+          if (shadow > 0) {
+            context.save();
+            context.shadowBlur = 8 * shadow;
+            context.shadowColor = rgba([255, 255, 255], 0.9 * shadow);
+          }
+          const ink = lane.ink ? bodyColor.map((v,k) => Math.round(v + (lane.litInk[k]-v)*light)) : mix(bodyColor,light);
+          fillBars([recent[i] - light, recent[i + 1] - light, mark * 1.6 + 2 * light, mark + 2 * light],
+            rgba(ink, 0.28 + 0.72 * light), 1);
+          if (shadow > 0) context.restore();
+        }
+      }
       if (flash.length) {
         context.save();
         context.shadowColor = 'rgba(255,255,255,0.9)';
         context.shadowBlur = 8;
-        fillBars(flash, 'rgba(255,255,255,1)', 1);
+        fillBars(flash, lane.litInk ? rgba(lane.litInk,1) : 'rgba(255,255,255,1)', 1);
         context.restore();
       }
       if (strikes && strikes.length) drawDrumEffects(strikes, box, now);
+    }
+
+    function drawAllGuides() {
+      if (!geometry.lanes.length) return;
+      if (!options.drumNotation || typeof host.Path2D !== 'function') {
+        for (const box of geometry.lanes) drawGuides(box);
+        return;
+      }
+      // Retain the exact rule geometry for each lane; keep the original stroke boundaries
+      // and their rasterization, including matches in the narrow 140% XML window.
+      if (geometry.guideLanes !== geometry.lanes) {
+        const paths = [];
+        for (const box of geometry.lanes) {
+          const path = new host.Path2D();
+          if (box.lane.kind === 'drums') {
+            const y = box.top + box.height * 5 / 8;
+            path.moveTo(0, y); path.lineTo(size.width, y);
+          } else {
+            for (let pitch = Math.ceil(box.lane.range.low / 12) * 12; pitch <= box.lane.range.high; pitch += 12) {
+              const y = Math.round(pitchY(box, pitch)) + 0.5;
+              path.moveTo(0, y); path.lineTo(size.width, y);
+            }
+          }
+          paths.push(path);
+        }
+        geometry.guideLanes = geometry.lanes;
+        geometry.guidePaths = paths;
+      }
+      context.strokeStyle = 'rgba(255,255,255,0.06)';
+      context.lineWidth = 1;
+      for (const path of geometry.guidePaths) context.stroke(path);
     }
 
     function drawGuides(box) {
@@ -1931,7 +2882,10 @@
       context.lineWidth = 1;
       context.beginPath();
       if (lane.kind === 'drums') {
-        for (let row = 0; row < lane.rows.length; row++) {
+        if (options.drumNotation || options.meteorMotion) {
+          const y = box.top + box.height * 5 / 8;
+          context.moveTo(0,y); context.lineTo(size.width,y);
+        } else for (let row = 0; row < lane.rows.length; row++) {
           const y = Math.round(box.top + (row + 0.5) * box.rowHeight) + 0.5;
           context.moveTo(0, y); context.lineTo(size.width, y);
         }
@@ -1947,26 +2901,55 @@
     // Lane names on the left and octave marks on the right sit over the notes, on a fade
     // into the background, so the notes run on underneath as they do in the reference.
     // One icon of ICONS, `side` pixels square with its top left at (x, y), stroked in `colour`.
-    function drawIcon(moves, x, y, side, colour, alpha, widen = 1) {
+    function drawIcon(moves, x, y, side, colour, alpha, widen = 1, paint = context, material = null) {
       const k = side / 24;
-      context.save();
-      context.strokeStyle = rgba(colour, alpha);
-      context.lineWidth = ICON_STROKE * k * widen;
-      context.lineCap = 'round';
-      context.lineJoin = 'round';
-      context.beginPath();
-      for (const move of moves) {
-        if (move[0] === 'M') context.moveTo(x + move[1] * k, y + move[2] * k);
-        else if (move[0] === 'L') context.lineTo(x + move[1] * k, y + move[2] * k);
-        else if (move[0] === 'Q') context.quadraticCurveTo(x + move[1] * k, y + move[2] * k, x + move[3] * k, y + move[4] * k);
-        else if (move[0] === 'Z') context.closePath();
-        else if (move[0] === 'C') {
-          context.moveTo(x + (move[1] + move[3]) * k, y + move[2] * k);
-          context.arc(x + move[1] * k, y + move[2] * k, move[3] * k, 0, Math.PI * 2);
+      paint.save();
+      paint.strokeStyle = rgba(colour, alpha);
+      paint.lineWidth = ICON_STROKE * k * widen;
+      paint.lineCap = 'round';
+      paint.lineJoin = 'round';
+      if (material) {
+        paint.globalAlpha *= .38 + .62 * alpha;
+        const ink = material === 'ember'
+          ? paint.createLinearGradient(x, y + side * .2, x + side * .82, y + side)
+          : paint.createLinearGradient(x, y, x, y + side);
+        const stops = material === 'ember'
+          ? [[0, '#f5ba82'], [.23, '#c88c67'], [.52, '#98705c'], [1, '#664e46']]
+          : material === 'water'
+            ? [[0, '#788ca9'], [.54, '#8fa3bc'], [.7, '#748bad'], [.84, '#d5e7f4'], [1, '#adbcd6']]
+            : [[0, '#f8f0dc'], [.55, '#e8e3d6'], [1, '#bdbccb']];
+        for (const [stop, color] of stops) ink.addColorStop(stop, color);
+        paint.strokeStyle = ink;
+      }
+      // A repeated icon may appear on many tracks. Keep the exact screen-space path,
+      // including fractional coordinates; changes of colour or line weight reuse it.
+      const cache = options.drumNotation && typeof host.Path2D === 'function'
+        ? (geometry.icons || (geometry.icons = new Map())) : null;
+      let paths = cache && cache.get(moves);
+      if (cache && !paths) { paths = new Map(); cache.set(moves, paths); }
+      const key = paths ? x + '/' + y + '/' + side : null;
+      let path = paths && paths.get(key);
+      if (!path) {
+        if (cache) path = new host.Path2D();
+        else { paint.beginPath();path = paint; }
+        for (const move of moves) {
+          if (move[0] === 'M') path.moveTo(x + move[1] * k, y + move[2] * k);
+          else if (move[0] === 'L') path.lineTo(x + move[1] * k, y + move[2] * k);
+          else if (move[0] === 'Q') path.quadraticCurveTo(x + move[1] * k, y + move[2] * k, x + move[3] * k, y + move[4] * k);
+          else if (move[0] === 'Z') path.closePath();
+          else if (move[0] === 'C') {
+            path.moveTo(x + (move[1] + move[3]) * k, y + move[2] * k);
+            path.arc(x + move[1] * k, y + move[2] * k, move[3] * k, 0, Math.PI * 2);
+          }
+        }
+        if (paths) {
+          if (paths.size >= 48) paths.delete(paths.keys().next().value);
+          paths.set(key, path);
         }
       }
-      context.stroke();
-      context.restore();
+      if (path === paint) paint.stroke();
+      else paint.stroke(path);
+      paint.restore();
     }
 
     const iconLevel = share => clamp(ICON_DIM + (1 - ICON_DIM) * (share - SHARE_FLOOR) / (1 - SHARE_FLOOR), ICON_DIM, 1);
@@ -1976,31 +2959,59 @@
       if (!geometry.lanes.length) return;
       const band = geometry.texture;
       const bottom = band ? Math.max(lanesBottom, band.bottom) : lanesBottom;
-      const leftFade = context.createLinearGradient(0, 0, gutter + 26, 0);
-      leftFade.addColorStop(0, rgba(BACKGROUND_RGB, 0.96));
-      leftFade.addColorStop(0.62, rgba(BACKGROUND_RGB, 0.8));
-      leftFade.addColorStop(1, rgba(BACKGROUND_RGB, 0));
+      let leftFade = options.drumNotation && geometry.leftFade;
+      if (!leftFade) {
+        leftFade = context.createLinearGradient(0, 0, gutter + 26, 0);
+        leftFade.addColorStop(0, rgba(BACKGROUND_RGB, 0.96));
+        leftFade.addColorStop(0.62, rgba(BACKGROUND_RGB, 0.8));
+        leftFade.addColorStop(1, rgba(BACKGROUND_RGB, 0));
+        if (options.drumNotation) geometry.leftFade = leftFade;
+      }
       context.fillStyle = leftFade;
-      context.fillRect(0, top - 6, gutter + 26, bottom - top + 12);
-      const rightFade = context.createLinearGradient(width - 46, 0, width, 0);
-      rightFade.addColorStop(0, rgba(BACKGROUND_RGB, 0));
-      rightFade.addColorStop(1, rgba(BACKGROUND_RGB, 0.9));
+      if(!guidesOnly)context.fillRect(0, top - 6, gutter + 26, bottom - top + 12);
+      let rightFade = options.drumNotation && geometry.rightFade;
+      if (!rightFade) {
+        rightFade = context.createLinearGradient(width - 46, 0, width, 0);
+        rightFade.addColorStop(0, rgba(BACKGROUND_RGB, 0));
+        rightFade.addColorStop(1, rgba(BACKGROUND_RGB, 0.9));
+        if (options.drumNotation) geometry.rightFade = rightFade;
+      }
       context.fillStyle = rightFade;
-      context.fillRect(width - 46, top - 6, 46, bottom - top + 12);
+      if(!guidesOnly)context.fillRect(width - 46, top - 6, 46, bottom - top + 12);
 
       context.textBaseline = 'middle';
       stats.labels = [];
       // A group on screen more than once (timbre tracks split apart): the same icon on each, numbered top to bottom.
-      const groupCount = new Map(), groupRank = [];
-      for (const box of geometry.lanes) {
-        groupCount.set(box.lane.group, (groupCount.get(box.lane.group) || 0) + 1);
-        groupRank.push(groupCount.get(box.lane.group));
+      let groups = options.drumNotation && geometry.edgeGroups;
+      if (!groups) {
+        const groupCount = new Map(), groupRank = [];
+        for (const box of geometry.lanes) {
+          const rank = (groupCount.get(box.lane.group) || 0) + 1;
+          groupCount.set(box.lane.group, rank);
+          groupRank.push(rank);
+        }
+        groups = {groupCount, groupRank, split: [...groupCount.values()].some(count => count > 1)};
+        if (options.drumNotation) geometry.edgeGroups = groups;
       }
+      const {groupCount, groupRank, split} = groups;
       // How loud each lane is now (its share, which glides between sections), for the icons' brightness.
-      const shares = options.laneLabels === 'icon' && prepared.stretches ? sharesAt(stats.time, geometry.area.lanes) : null;
+      const shares = options.laneLabels === 'icon' && prepared.stretches ? (geometry.frameShares || sharesAt(stats.time, geometry.area.lanes)) : null;
       // Only with a group shown apart (else as before: one size, a lane too short for it has no icon).
-      const split = [...groupCount.values()].some(n => n > 1);
-      const iconSide = split ? Math.max(ICON_MIN, Math.min(labelFont * ICON_SCALE, ...geometry.lanes.map(box => box.height))) : labelFont * ICON_SCALE;
+      const minHeight = split ? Math.min(...geometry.lanes.map(box => box.height)) : Infinity;
+      const iconSide = Math.max(ICON_MIN, Math.min(labelFont * ICON_SCALE, minHeight));
+      // In dense XML scores adjacent labels borrow horizontal room, never vertical room
+      // from the notes. Keep each label centred at the height used by hit testing.
+      let columns = 1, compactSide = 0;
+      if (options.denseLaneLabels && options.laneLabels === 'icon' &&
+          (split ? minHeight < 11 : geometry.lanes.some(box => box.height < iconSide + 2))) {
+        let pitch = Infinity;
+        for (let i = 1; i < geometry.lanes.length; i++) {
+          const a = geometry.lanes[i - 1], b = geometry.lanes[i];
+          pitch = Math.min(pitch, (b.top + b.bottom - a.top - a.bottom) / 2);
+        }
+        columns = clamp(Math.ceil(12 / Math.max(.1, pitch)), 1, Math.floor(gutter / 24));
+        compactSide = Math.max(1, Math.min(11, pitch * columns - 1));
+      }
       for (const [index, box] of geometry.lanes.entries()) {
         const {lane} = box;
         const icon = options.laneLabels === 'icon' ? iconFor(lane.group) : null;
@@ -2010,19 +3021,25 @@
         if (flash) context.save();
         if (icon) {
           // One size, centred in the name column, in the middle of its own lane.
-          const side = iconSide;
-          if (box.height < side + (split ? -1e-6 : 2)) stats.labels.push({lane: lane.id, shown: 'none', size: 0});
+          const side = compactSide || iconSide;
+          if (!compactSide && box.height < side + (split ? -1e-6 : 2)) stats.labels.push({lane: lane.id, shown: 'none', size: 0});
           else {
-            const x = gutter / 2 - side / 2, y = (box.top + box.bottom) / 2 - side / 2;
+            const middle = (box.top + box.bottom) / 2;
+            const x = compactSide ? (index % columns + .5) * gutter / columns - (side + 12) / 2 : gutter / 2 - side / 2;
+            const y = middle - side / 2;
             const level = round3(flash ? Math.max(iconLevel(shares ? shares[index] : 1), 0.55 + 0.45 * flash) : iconLevel(shares ? shares[index] : 1));
-            if (flash) drawIcon(icon, x, y, side, lane.color, round3(MARK_HALO * flash), 1 + MARK_WIDEN * flash);
-            drawIcon(icon, x, y, side, lane.color, level);
+            if (materialIcons) materialIcons.push([icon, x, y, side, lane.color, level]);
+            else {
+              if (flash) drawIcon(icon, x, y, side, lane.color, round3(MARK_HALO * flash), 1 + MARK_WIDEN * flash);
+              drawIcon(icon, x, y, side, lane.color, level);
+            }
             if (number) {
-              context.font = `600 ${Math.round(labelFont * MARK_NUMBER)}px ${FONT}`;
+              const numberSize = compactSide ? Math.min(9, side) : Math.round(labelFont * MARK_NUMBER);
+              context.font = '600 ' + numberSize + 'px ' + FONT;
               context.textAlign = 'left';
-              context.textBaseline = 'alphabetic';
+              context.textBaseline = compactSide ? 'middle' : 'alphabetic';
               context.fillStyle = rgba(lane.color, level);
-              context.fillText(String(number), x + side + 1, y + side);
+              context.fillText(String(number), x + side + 1, compactSide ? middle : y + side);
               context.textBaseline = 'middle';
             }
             stats.labels.push({lane: lane.id, shown: 'icon', size: Math.round(side * 100) / 100, x: Math.round(x * 100) / 100,
@@ -2059,7 +3076,9 @@
         const texture = prepared.texture, middle = (band.top + band.bottom) / 2;
         if (options.laneLabels === 'icon') {
           const side = labelFont * ICON_SCALE, x = gutter / 2 - side / 2, y = middle - side / 2;
-          drawIcon(TEXTURE_ICON, x, y, side, texture.color, round3(ICON_DIM + (1 - ICON_DIM) * (stats.texture ? stats.texture.now : 0)));
+          const level = round3(ICON_DIM + (1 - ICON_DIM) * (stats.texture ? stats.texture.now : 0));
+          if (materialIcons) materialIcons.push([TEXTURE_ICON, x, y, side, texture.color, level]);
+          else drawIcon(TEXTURE_ICON, x, y, side, texture.color, level);
           stats.labels.push({lane: texture.id, shown: 'icon', size: Math.round(side * 100) / 100, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100});
         } else {
           context.font = `600 ${labelFont}px ${FONT}`;
@@ -2071,9 +3090,40 @@
       }
     }
 
+    // Fit a single quiet label without shrinking or stretching its font. Cache
+    // the result in the current layout; changing the view, width or song resets it.
+    function quietLabel(text, room, key) {
+      if (!text || room <= 0) return '';
+      const cache = geometry[key];
+      if (cache && cache.text === text && cache.room === room && cache.font === context.font) return cache.label;
+      let label = text;
+      if (context.measureText(text).width > room) {
+        const chars = Array.from(text);
+        let lo = 0, hi = chars.length;
+        while (lo < hi) {
+          const middle = Math.ceil((lo + hi) / 2);
+          if (context.measureText(chars.slice(0, middle).join('') + '…').width <= room) lo = middle;
+          else hi = middle - 1;
+        }
+        label = lo > 0 ? chars.slice(0, lo).join('') + '…' : '';
+      }
+      geometry[key] = {text, room, font: context.font, label};
+      return label;
+    }
+
     function drawHeader() {
       const {width, header, narrow} = geometry;
       const {title, album, artist} = prepared.track;
+      if (options.quietText) {
+        if (!title) return;
+        context.textAlign = 'left';
+        context.textBaseline = 'middle';
+        context.font = `500 ${narrow ? 12 : 14}px ${FONT}`;
+        context.fillStyle = 'rgba(255,255,255,0.69)';
+        const room = prepared.has.chords ? width * 0.65 - 2 * geometry.side : width - 2 * geometry.side;
+        context.fillText(quietLabel(title, room, 'quietTitle'), geometry.side, header / 2 + 3);
+        return;
+      }
       if (!title && !album && !artist) return;
       context.textBaseline = 'middle';
       const y = header / 2 + 4;
@@ -2103,6 +3153,18 @@
     // exit) it is.
     function drawChord(chord, alpha, shift) {
       const {info} = geometry;
+      if (options.quietText) {
+        context.textAlign = 'right';
+        context.textBaseline = 'middle';
+        const chordSize = options.albumLayout ? (geometry.narrow ? 19 : 24) : (geometry.narrow ? 15 : 18);
+        context.font = `550 ${chordSize}px ${FONT}`;
+        // A chord stays legible at the instant its symbol changes; the small
+        // remainder of the existing song-time crossfade uses no motion.
+        context.fillStyle = rgba([255,255,255], round3(0.64 + 0.19 * alpha));
+        const text = quietLabel(chord[2], geometry.width * 0.33 - geometry.side, 'quietChord');
+        context.fillText(text, info.right, geometry.header / 2 + 3);
+        return;
+      }
       const band = info.bottom - info.top;
       const names = prepared.chordToneNames.get(chord[2]) || [];
       const chip = clamp(band * 0.26, 15, 22);
@@ -2231,13 +3293,67 @@
     // The band under the header: which section this is, on the left, and the chord that is
     // sounding, on the right. Changes are eased rather than snapped, and the easing is a
     // function of the song's time, not the wall clock, so it scrubs with the song.
+    function drawQuietCue(now, section, name, stats) {
+      const info = geometry.info;
+      const ci = options.showCaptions ? startedBy(prepared.captions, now, row => row.start) : -1;
+      const row = ci < 0 || now >= prepared.captions[ci].end ? null : prepared.captions[ci];
+      const marked = row && options.captionStyle === 'mark' && row.cue;
+      // markAt already decides whether this entry may be announced. A surprise
+      // can have an early row start without permitting a visual preview.
+      const cue = marked && (!frameMark || frameMark.caption !== row) ? null : row;
+      // A user's own timed annotation takes precedence over the section entrance.
+      // Later in the section the same line is available for listening cues.
+      let text = '', alpha = 0;
+      if (section && name && (!cue || cue.source !== 'manual')) {
+        stats.section = name;
+        const end = Math.min(section.end, section.start + 3.6);
+        const span = end - section.start;
+        if (span > 0 && now < end) {
+          const edge = Math.min(1, (now - section.start) / Math.min(0.18, span / 3),
+            (end - now) / Math.min(0.65, span / 3));
+          alpha = 0.68 * edge * edge * (3 - 2 * edge);
+          text = name;
+          if (alpha > 0) stats.sectionHint = {name, alpha: round3(alpha)};
+        }
+      } else if (name) stats.section = name;
+      if (!text && cue) {
+        const age = Math.min(1, (now - cue.start) / CAPTION_FADE, (cue.end - now) / CAPTION_FADE);
+        alpha = 0.66 * (marked ? frameMark.alpha : Math.max(0, age));
+        text = cue.text;
+        stats.caption = text;
+        if (marked) stats.mark = {text, object: cue.cue.object, word: cue.cue.word,
+          state: frameMark.state, alpha: round3(alpha), icon: false, line: null, shown: alpha > 0};
+      }
+      if (options.albumLayout) {
+        if (name) {
+          context.font = `500 ${geometry.narrow ? 12 : 14}px ${FONT}`;
+          context.textAlign = 'left';
+          context.textBaseline = 'middle';
+          context.fillStyle = 'rgba(235,238,244,.80)';
+          const label = quietLabel(name, geometry.width * .62 - info.left, 'albumSection');
+          context.fillText(label, info.left, geometry.header / 2 + 3);
+        }
+        return;
+      }
+      if (!text || alpha <= 0) return;
+      context.font = `500 ${geometry.narrow ? 11 : 12}px ${FONT}`;
+      context.textAlign = 'left';
+      context.textBaseline = 'top';
+      context.fillStyle = rgba([255,255,255], round3(alpha));
+      // XML's timed lyric starts at the play line. Leave that horizontal space to it.
+      const room = geometry.width * options.playhead - info.left - 12;
+      const shown = quietLabel(text, room, 'quietCue');
+      if (shown) context.fillText(shown, info.left, info.top + 3);
+    }
+
     function drawInfo(now, stats) {
       const {info, narrow} = geometry;
       if (!info) return;
       const band = info.bottom - info.top;
       const section = sectionAt(now);
       const name = section ? sectionLabel(section) : '';
-      if (name) {
+      if (options.quietText) drawQuietCue(now, section, name, stats);
+      else if (name) {
         const arrived = clamp((now - section.start) / (CHORD_OUT + CHORD_IN), 0, 1);
         context.font = `600 ${clamp(band * 0.24, 13, 19)}px ${FONT}`;
         context.textAlign = 'left';
@@ -2246,7 +3362,7 @@
         context.fillText(name, info.left, info.top + 3);
         stats.section = name;
       }
-      if (options.showCaptions) drawCaption(now, stats, name ? clamp(band * 0.24, 13, 19) + 9 : 2);
+      if (!options.quietText && options.showCaptions) drawCaption(now, stats, name ? clamp(band * 0.24, 13, 19) + 9 : 2);
       const chords = chordsFor(options.chordSmoothing);
       const index = startedBy(chords, now, chord => chord[0]);
       if (index < 0 || now >= chords[index][1]) return;
@@ -2282,7 +3398,17 @@
       const total = prepared.track.duration || 1;
       const span = bar.right - bar.left, height = bar.bottom - bar.top;
       const xAt = time => bar.left + clamp(time / total, 0, 1) * span;
-      if (options.sectionStyle === 'line') drawSectionLines(now, xAt, stats);
+      if (options.quietText) {
+        const middle = Math.round((bar.top + bar.bottom) / 2);
+        for (const section of prepared.sections) {
+          const from = xAt(section.start), to = xAt(section.end);
+          const on = now >= section.start && now < section.end;
+          const thick = options.sectionStyle === 'block' ? (on ? 9 : 6) : (on ? 4 : 2);
+          context.fillStyle = on ? 'rgba(255,255,255,0.71)' : 'rgba(255,255,255,0.27)';
+          context.fillRect(from + 1, middle - thick / 2, Math.max(1, to - from - 2), thick);
+        }
+        stats.sectionNames = [];
+      } else if (options.sectionStyle === 'line') drawSectionLines(now, xAt, stats);
       else drawSectionBlocks(now, xAt, span, height);
       if (options.loop) {
         // The stretch being repeated: a bright frame around it on the bar.
@@ -2407,7 +3533,8 @@
       if (!ruler) return;
       const left = now - line / pps, right = now + (size.width - line) / pps;
       const middle = (ruler.top + ruler.bottom) / 2;
-      context.font = `500 ${narrow ? 8.5 : 9.5}px ${FONT}`;
+      const rulerFont = options.quietText ? (narrow ? 10 : 11) : (narrow ? 8.5 : 9.5);
+      context.font = `500 ${rulerFont}px ${FONT}`;
       context.textAlign = 'left';
       context.textBaseline = 'middle';
       context.fillStyle = 'rgba(255,255,255,0.5)';
@@ -2418,7 +3545,8 @@
         stats.bar = started > 0 ? started : null;
         // Where bars are packed tighter than their numbers, number every second or fourth.
         const typical = bars.length > 1 ? (bars[bars.length - 1] - bars[0]) / (bars.length - 1) : 1;
-        const every = typical * pps >= 24 ? 1 : typical * pps >= 12 ? 2 : 4;
+        const every = options.quietText ? ([1, 2, 4, 8, 16, 32].find(n => n * typical * pps >= 90) || 32)
+          : typical * pps >= 24 ? 1 : typical * pps >= 12 ? 2 : 4;
         context.strokeStyle = 'rgba(255,255,255,0.1)';
         context.beginPath();
         for (let i = lowerBound(bars, bars.length, left); i < bars.length && bars[i] < right; i++) {
@@ -2430,7 +3558,7 @@
         context.stroke();
         return;
       }
-      const step = [1, 2, 5, 10, 15, 30, 60].find(seconds => seconds * pps >= 46) || 60;
+      const step = [1, 2, 5, 10, 15, 30, 60].find(seconds => seconds * pps >= (options.quietText ? 90 : 46)) || 60;
       context.strokeStyle = 'rgba(255,255,255,0.22)';
       context.beginPath();
       for (let second = Math.max(0, Math.ceil(left)); second < right; second++) {
@@ -2503,7 +3631,7 @@
       }
       if (on.afterglow) {
         // S2: played a moment ago, still dimming.
-        if (end <= now && now - end < level.afterglow) extra.glow.push(x, y, width, 1 - (now - end) / level.afterglow);
+        if (!options.releaseFocus && end <= now && now - end < level.afterglow) extra.glow.push(x, y, width, 1 - (now - end) / level.afterglow);
         // S2: held across the line, long enough to be a held note.
         else if (start <= now && end > now && end - start >= FX.shimmerFrom) extra.shimmer.push(x, y, width, start);
         // S2: sounding right now, lifted.
@@ -2683,7 +3811,7 @@
     // The texture band: a soft band that scrolls with the notes, as thick and as light as the
     // stems without notes are loud, nothing at all under TEXTURE.floor. No effect reaches it; with
     // fxDynamics 'song' it brightens and dims with the song's rise and fall like everything else.
-    function drawTexture(now, line, pps, stats) {
+    function drawTexture(now, line, pps, stats) { if(guidesOnly)return;
       const band = geometry.texture, texture = prepared.texture;
       const middle = (band.top + band.bottom) / 2, width = size.width;
       const amount = time => {
@@ -2696,16 +3824,44 @@
       const now0 = amount(now);
       stats.texture = {at: band.at, top: round3(band.top), bottom: round3(band.bottom), now: round3(now0), drawn: 0};
       // The outline, sampled every 3 px: runs where it sounds, each closed on itself.
-      const step = 3, runs = [];
-      let run = null;
-      for (let x = 0; x <= width + step; x += step) {
-        const a = amount(now + (Math.min(x, width) - line) / pps);
-        if (a > 0) { if (!run) runs.push(run = []); run.push([Math.min(x, width), a * TEXTURE.full * band.height / 2]); }
-        else run = null;
+      const step = 3, count = Math.floor((width + step) / step) + 1;
+      // The sample x coordinates are fixed by the layout. Refill numeric storage for each
+      // frame, preserving both original edge samples when width is a multiple of three.
+      const samples = geometry.textureSamples || (geometry.textureSamples = {
+        x: Float64Array.from({length: count}, (_, i) => Math.min(i * step, width)),
+        half: new Float64Array(count), start: new Uint32Array(count), end: new Uint32Array(count)
+      });
+      let runCount = 0, active = false;
+      for (let i = 0; i < count; i++) {
+        const a = amount(now + (samples.x[i] - line) / pps);
+        if (a > 0) {
+          if (!active) { samples.start[runCount++] = i; active = true; }
+          samples.half[i] = a * TEXTURE.full * band.height / 2;
+          samples.end[runCount - 1] = i;
+        } else active = false;
       }
-      if (!runs.length) return;
+      if (!runCount) return;
       // The light along it: one stop per frame of the levels on screen, dimmer ahead of the line.
-      const light = context.createLinearGradient(0, 0, width, 0);
+      // A software-backed band keeps dynamic multi-stop gradients off the display GPU.
+      // Crop only in device pixels so path antialiasing keeps its original pixel grid.
+      const ratio = size.ratio;
+      const topPx = Math.max(0, Math.floor((band.top * ratio - 2) / 8) * 8);
+      const bottomPx = Math.min(canvas.height, Math.ceil(band.bottom * ratio) + 2);
+      let paint = context, raster = samples.raster;
+      if (options.liveTextureRaster && typeof host.OffscreenCanvas === 'function' && bottomPx > topPx) {
+        const pixelHeight = bottomPx - topPx;
+        if (!raster || raster.canvas.width !== canvas.width || raster.canvas.height !== pixelHeight) {
+          const surface = new host.OffscreenCanvas(canvas.width, pixelHeight);
+          const cpu = surface.getContext('2d', {willReadFrequently:true});
+          raster = samples.raster = cpu ? {canvas:surface, context:cpu} : null;
+        }
+        if (raster) {
+          paint = raster.context;
+          paint.setTransform(1,0,0,1,0,0);paint.clearRect(0,0,raster.canvas.width,raster.canvas.height);
+          paint.setTransform(ratio,0,0,ratio,0,-topPx);
+        }
+      }
+      const light = paint.createLinearGradient(0, 0, width, 0);
       // textureAdapt, with the cover behind: the band's light from the cover and its veil (else TEXTURE.alpha).
       const picture = options.showBackdrop && options.backdrop === 'cover' ? cover : null;
       const top = options.textureAdapt && picture ? textureLight(veilOf(picture)) : TEXTURE.alpha;
@@ -2718,28 +3874,48 @@
         if (x > 0 && x < width) stops.push([x / width, alpha(amount((k + 0.5) * texture.hop), x > line)]);
       }
       const at = clamp(line / width, 0, 1);
+      if (history) {
+        // Extra knots preserve the shared fade even when the stem has sparse loudness samples.
+        for (let i=0; i<historyAlpha.length-1; i++) {
+          const x=history.left+history.span*i/(historyAlpha.length-1);
+          stops.push([x/width,alpha(amount(now+(x-line)/pps),false)]);
+        }
+      }
       stops.push([at, alpha(now0, false)], [at, alpha(now0, true)]);
       stops.push([0, alpha(amount(now - line / pps), line > 0)], [1, alpha(amount(now + (width - line) / pps), true)]);
       stops.sort((a, b) => a[0] - b[0]);
-      for (const [offset, value] of stops) light.addColorStop(offset, rgba(texture.color, value));
+      for (const [offset, value] of stops) {
+        const weight = history && offset<at ? lightAt(offset*width) : 1;
+        light.addColorStop(offset, rgba(texture.color,value*weight));
+      }
       // Soft edges: the whole outline faintly, and a core half as thick at the full light.
       const outline = scale => {
-        context.beginPath();
-        for (const points of runs) {
-          points.forEach(([x, half], i) => (i ? context.lineTo(x, middle - half * scale) : context.moveTo(x, middle - half * scale)));
-          for (let i = points.length - 1; i >= 0; i--) context.lineTo(points[i][0], middle + points[i][1] * scale);
-          context.closePath();
+        const path = options.drumNotation && typeof host.Path2D === 'function' ? new host.Path2D() : paint;
+        if (path === paint) paint.beginPath();
+        for (let run = 0; run < runCount; run++) {
+          const first = samples.start[run], last = samples.end[run];
+          path.moveTo(samples.x[first], middle - samples.half[first] * scale);
+          for (let i = first + 1; i <= last; i++) path.lineTo(samples.x[i], middle - samples.half[i] * scale);
+          for (let i = last; i >= first; i--) path.lineTo(samples.x[i], middle + samples.half[i] * scale);
+          path.closePath();
         }
-        context.fill();
+        if (path === paint) paint.fill(); else paint.fill(path);
       };
-      context.save();
-      context.fillStyle = light;
-      context.globalAlpha = TEXTURE.edge;
+      paint.save();
+      paint.fillStyle = light;
+      paint.globalAlpha = TEXTURE.edge;
       outline(1);
-      context.globalAlpha = 1;
+      paint.globalAlpha = 1;
       outline(0.5);
-      context.restore();
-      for (const points of runs) stats.texture.drawn += points.length;
+      paint.restore();
+      if (paint !== context) {
+        context.save();
+        context.setTransform(1,0,0,1,0,0);
+        context.globalAlpha = 1;
+        context.drawImage(raster.canvas,0,topPx);
+        context.restore();
+      }
+      for (let i = 0; i < runCount; i++) stats.texture.drawn += samples.end[i] - samples.start[i] + 1;
     }
 
     function drawPlayhead(line) {
@@ -2759,42 +3935,76 @@
     // Draw one frame. `at` overrides the clock (tests, and hosts that drive the frame
     // themselves). Returns what the frame held, which is also how the page proves to itself
     // that notes really are passing the line.
-    function draw(at) {
+    function draw(at, paintVariation) {
       resize();
       currentDisplay();
       if (!geometry) geometry = layout();
       const now = (finite(at) ? at : readClock()) + options.offsetSeconds;
       // Lane heights that follow the loudness are settled again every frame; fixed ones once.
       if (prepared.stretches) {
-        geometry.lanes = arrange(geometry.placeArea, options.laneHeights === 'loudness' ? sharesAt(now, geometry.area.lanes) : null, geometry.texture);
+        if (!options.drumNotation) {
+          geometry.lanes = arrange(geometry.placeArea, options.laneHeights === 'loudness' ? sharesAt(now, geometry.area.lanes) : null, geometry.texture);
+        } else {
+          geometry.frameShares = options.laneHeights === 'loudness' || options.laneLabels === 'icon' ? sharesAt(now, geometry.area.lanes) : null;
+          const factors = options.laneHeights === 'loudness' ? geometry.frameShares : null;
+          if (factors !== geometry.placedShares || options.laneLabels !== geometry.placedLabels) {
+            geometry.lanes = arrange(geometry.placeArea, factors, geometry.texture);
+            geometry.placedShares = factors;
+            geometry.placedLabels = options.laneLabels;
+          }
+        }
       }
       const {width, height, ratio} = size;
       const stats = {time: now, lanes: geometry.lanes.length, notes: 0, hits: 0, active: 0, chord: null, section: null, bar: null, contour: 0, caption: null, backdrop: null};
-      frameFx = effectsFor(now);
+      frameFx = options.meteorMotion ? null : effectsFor(now);
       stats.fx = frameFx ? frameFx.stats : null;
       frameMark = markAt(now);
       if (frameMark) stats.mark = null;
       if (!width || !height) { last = stats; return stats; }
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      context.fillStyle = BACKGROUND;
-      context.fillRect(0, 0, width, height);
-      drawBackdrop(now, stats);
+      if(guidesOnly)context.clearRect(0,0,width,height);else{context.fillStyle=BACKGROUND;context.fillRect(0,0,width,height);drawBackdrop(now,stats);}
       stats.heights = Object.fromEntries(geometry.lanes.map(box => [box.lane.id, Math.round(box.height * 100) / 100]));
       const pps = width / options.windowSeconds;
       const line = Math.round(width * options.playhead);
-      if (frameFx && frameFx.on.drums) drawBreath(now);
+      history = options.meteorMotion ? historyFor(line,pps) : null;
+      if (history) stats.skyHistory = history;
+      if (frameFx && frameFx.on.drums && !options.drumNotation) drawBreath(now);
       if (frameFx && frameFx.on.playline) drawColumn(now, line);
-      for (const box of geometry.lanes) drawGuides(box);
+      if (options.spacedLanes) {
+        context.fillStyle = 'rgba(255,255,255,0.028)';
+        if (typeof host.Path2D === 'function') {
+          if (geometry.bandLanes !== geometry.lanes) {
+            const bands = new host.Path2D();
+            for (const box of geometry.lanes) bands.rect(0, box.top, width, box.height);
+            geometry.bandPath = bands;
+            geometry.bandLanes = geometry.lanes;
+          }
+          context.fill(geometry.bandPath);
+        } else {
+          context.beginPath();
+          for (const box of geometry.lanes) context.rect(0, box.top, width, box.height);
+          context.fill();
+        }
+      }
+      drawAllGuides();
       drawRuler(now, line, pps, stats);
+      if (!guidesOnly && typeof paintVariation === 'function') {
+        stats.variation = paintVariation(context, {time: now, width, height, needle: line, pixelsPerSecond: pps,
+          geometry, parts: box => skyParts(box.lane), yAt: pitchY, contourYAt: contourY, left: history?.left,
+          drumYAt: options.drumNotation ? (box, row) => box.top + box.height / 8 * notationRows(box.lane)[row]?.center : undefined});
+      }
       for (const box of geometry.lanes) {
-        if (box.lane.kind === 'drums') drawDrums(box, now, line, pps, stats);
-        else drawPitched(box, now, line, pps, stats);
+        if (box.lane.kind === 'drums') {
+          if (options.spacedLanes) clipContents(box);
+          drawDrums(box, now, line, pps, stats);
+          if (options.spacedLanes) context.restore();
+        } else drawPitched(box, now, line, pps, stats);
       }
       if (geometry.texture) drawTexture(now, line, pps, stats);
       // One lane listened to alone: the others step back. A group that is not on screen dims nothing.
       stats.focus = null;
       const band = geometry.texture;
-      if (options.focusGroup && (geometry.lanes.some(box => groupOf(box.lane) === options.focusGroup) || (band && prepared.texture.group === options.focusGroup))) {
+      if (!guidesOnly && options.focusGroup && (geometry.lanes.some(box => groupOf(box.lane) === options.focusGroup) || (band && prepared.texture.group === options.focusGroup))) {
         stats.focus = options.focusGroup;
         context.fillStyle = rgba(BACKGROUND_RGB, FOCUS_VEIL);
         for (const box of geometry.lanes) {
@@ -2804,7 +4014,7 @@
       }
       drawEdges(stats);
       drawPlayhead(line);
-      drawHeader();
+      if (!options.albumLayout) drawHeader();
       drawInfo(now, stats);
       drawSections(now, stats);
       stats.loop = options.loop && geometry.bar ? options.loop.slice() : null;
@@ -2877,6 +4087,37 @@
     setOptions(initial);
     resize();
     return {
+      // Read-only prepared geometry for the material painters; the normal draw path is unchanged.
+      layoutSnapshot() {
+        if (!geometry) return null;
+        return {
+          width:size.width, height:size.height,
+          needle:Math.round(size.width*options.playhead),
+          pixelsPerSecond:size.width/options.windowSeconds,
+          lanes:geometry.lanes.map(box=>({id:box.lane.id,top:box.top,bottom:box.bottom,
+            low:box.lane.range?.low,semitone:box.semitone})),
+          ruler:geometry.ruler, bar:geometry.bar
+        };
+      },
+      materialFrame(at, material) {
+        const icons = material === 'ember' || material === 'water' || material === 'mist' ? [] : null;
+        guidesOnly = true;
+        materialIcons = icons;
+        try {
+          const frame = draw(at);
+          const paintLabels = (paint, unit, top) => {
+            if (!icons?.length) return;
+            paint.save();
+            paint.setTransform(unit, 0, 0, unit, 0, top);
+            for (const icon of icons) drawIcon(...icon, 1, paint, material);
+            paint.restore();
+          };
+          return {frame, geometry, parts: box => skyParts(box.lane), yAt: pitchY, contourYAt: contourY, paintLabels};
+        } finally {
+          guidesOnly = false;
+          materialIcons = null;
+        }
+      },
       draw, start, stop, resize, setOptions, options: getOptions, setModel, setCover, lanes, layers, xOf, timeAt, hit, chordCounts,
       duration: () => prepared.track.duration, lastFrame: () => ({...last}), destroy: stop,
       // The song's rise and fall: its value at a time, and the whole curve (for a host's own plot).
@@ -2889,7 +4130,7 @@
   }
 
   return Object.freeze({
-    create, simplifyNotes, drumAccents, smoothChords, toneNames, noteName, CONTRACT, VERSION,
+    create, swellOf, canonicalOnsets, simplifyNotes, drumAccents, smoothChords, toneNames, noteName, transientTiming, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,
     COVER_ADAPT, TEXTURE_ADAPT, measureCover, GROUP_COLORS: Object.freeze({...GROUP_COLORS}),
     // Checks a model the way `create` would, without a canvas.

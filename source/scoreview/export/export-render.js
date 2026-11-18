@@ -36,7 +36,9 @@
     const canvas = root.document.createElement('canvas');
     canvas.width = job.tier.width;
     canvas.height = job.tier.height;
-    const view = Core.create(canvas, job.model, () => 0, {...job.look, offsetSeconds: 0});
+    const view = (root.XinScorePresentation || Core).create(canvas, job.model, () => 0, {...job.look, meteorMotion: true, presentationLayout: true, offsetSeconds: job.look?.offsetSeconds || 0});
+    await view.ready?.();
+    view.setLyrics?.(job.lyrics);
     view.resize();
     if (canvas.width !== job.tier.width || canvas.height !== job.tier.height) throw fail('size', `canvas ${canvas.width}x${canvas.height}`);
     const cover = await loadCover(job.coverUrl || (job.model.cover && job.model.cover.src));
