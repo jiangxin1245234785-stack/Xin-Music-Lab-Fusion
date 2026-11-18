@@ -17,13 +17,13 @@ function frame(options, time = 10.3, model = fullModel()) {
 }
 
 test('night sky: off by default, booleans only, bounded amounts; off draws exactly what the starry core drew', () => {
-  assert.equal(ScoreView.VERSION, '0.30.0');
+  assert.equal(ScoreView.VERSION, '0.30.1');
   assert.equal(ScoreView.DEFAULTS.nightSky, false);
-  assert.equal(ScoreView.DEFAULTS.starDim, .34);
+  assert.equal(ScoreView.DEFAULTS.starDim, .48, '0.30.1：用户挑的 C');
   assert.equal(ScoreView.DEFAULTS.meteorTail, 1.5);
   const {view} = frame(STARRY);
   view.setOptions({nightSky: 'yes', starDim: 2, meteorTail: 0});
-  assert.deepEqual([view.options().nightSky, view.options().starDim, view.options().meteorTail], [false, .34, 1.5]);
+  assert.deepEqual([view.options().nightSky, view.options().starDim, view.options().meteorTail], [false, .48, 1.5]);
   view.setOptions({nightSky: true, starDim: .22, meteorTail: 2.2});
   assert.deepEqual([view.options().nightSky, view.options().starDim, view.options().meteorTail], [true, .22, 2.2]);
   for (const t of [9.2, 10.3, 12.5]) assert.equal(frame({...STARRY, nightSky: false}, t).json, frame(STARRY, t).json);
@@ -43,7 +43,7 @@ test('night sky: a still sky colour, no section wash, a horizon without the mark
   assert.ok(plain.calls.some(dot) && !sky.calls.some(dot));
   // Notes to come are dimmer points (the preview dots' light is starDim, not .78).
   assert.ok(plain.calls.some(c => c.name === 'fill' && /,0\.78\)$/.test(c.fillStyle)));
-  assert.ok(sky.calls.some(c => c.name === 'fill' && /,0\.34\)$/.test(c.fillStyle)));
+  assert.ok(sky.calls.some(c => c.name === 'fill' && /,0\.48\)$/.test(c.fillStyle)));
   assert.ok(!sky.calls.some(c => c.name === 'fill' && /,0\.78\)$/.test(c.fillStyle)));
 });
 

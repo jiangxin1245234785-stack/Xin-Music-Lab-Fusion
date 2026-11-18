@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.30.0';
+  const VERSION = '0.30.1';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -119,7 +119,7 @@
     // The starry score as a night sky (0.30.0, work/score-depth-20261118/SPEC.md batch 2), only with meteorMotion: a still
     // sky tinted by the cover, dim stars for the notes to come (`starDim`, their light), meteors whose tails are gone
     // `meteorTail` seconds after the note ends, the play line a horizon, the 「其它」 band a Milky Way. Off: as 0.29.1.
-    nightSky: false, starDim: .34, meteorTail: 1.5,
+    nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
     meteorDirectionDegrees: 0, meteorBassDirection: true,

@@ -9,7 +9,7 @@ const {SIMPLIFY, SHAPES, DRUM_ACCENT, FX_PRESETS} = ScoreView;
 const round = notes => notes.map(n => [n[0], Math.round(n[1] * 1000) / 1000, n[2], n[3]]);
 
 test('the version and the new amounts', () => {
-  assert.equal(ScoreView.VERSION, '0.30.0');
+  assert.equal(ScoreView.VERSION, '0.30.1');
   assert.deepEqual({...SIMPLIFY}, {joinGap: 0.04, fade: 0.8, rise: 1.25, longest: 6, minDuration: 0.03, faint: 0.4, faintDur: 0.12});
   assert.deepEqual([...ScoreView.STRUCK_GROUPS], ['piano', 'guitar', 'bass']);
   assert.equal(SHAPES.head, 1.4);

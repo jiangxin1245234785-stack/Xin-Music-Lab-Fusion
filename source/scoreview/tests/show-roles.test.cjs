@@ -78,7 +78,7 @@ const blockRects = frame => frame.bars.filter(bar => { const c = rgbaOf(bar.styl
 
 test('the default is off; showRoles takes booleans only; the model says whether it has roles', () => {
   assert.equal(ScoreView.DEFAULTS.showRoles, false);
-  assert.equal(ScoreView.VERSION, '0.30.0');
+  assert.equal(ScoreView.VERSION, '0.30.1');
   const view = ScoreView.create(mockCanvas().canvas, shapes(), () => 0);
   assert.equal(view.options().showRoles, false);
   view.setOptions({showRoles: 'yes'});
