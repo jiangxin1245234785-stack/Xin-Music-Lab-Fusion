@@ -142,7 +142,7 @@ test('smoothed dB follows its source time and repeated seeks produce the same fr
 
 test('0.31.0: the fog bed runs along the whole timeline for each sounding stem; mistFog 0 leaves the mist as it was', () => {
   const ScoreView = require('../score-view.js');
-  assert.equal(ScoreView.DEFAULTS.mistFog, .24);
+  assert.equal(ScoreView.DEFAULTS.mistFog, .32);
   const {view} = listening(fullModel());
   view.setOptions({scoreStyle: 'mist'});
   const on = view.draw(11);

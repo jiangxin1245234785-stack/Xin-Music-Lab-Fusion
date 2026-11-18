@@ -53,11 +53,11 @@ test('a sustained paper note has no artificial repeat seams and frame reconstruc
   assert.equal(JSON.stringify(p.at(6).ink.calls.slice(1)),geometry);
 });
 test('0.31.0: on paper a note still to come is pressed, not inked; paperPress 0 inks both sides as before', () => {
-  assert.equal(ScoreView.DEFAULTS.paperPress, 1.1);
+  assert.equal(ScoreView.DEFAULTS.paperPress, 1.5);
   assert.equal(ScoreView.DEFAULTS.pressTint, 0);
   const data = model([[4, .5, 60, 90], [7, .5, 62, 90]]);
   const pressed = paperFixture(data).at(5);
-  assert.equal(pressed.stats.paper.press, 1.1);
+  assert.equal(pressed.stats.paper.press, 1.5);
   const deep = paperFixture(data, {paperPress: 1.8, pressTint: .1}).at(5);
   assert.equal(deep.stats.paper.press, 1.8, "0.31.1：压痕可到 2");
   const flat = paperFixture(data, {paperPress: 0}).at(5);

@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.31.1';
+  const VERSION = '0.31.2';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -121,10 +121,10 @@
     // `meteorTail` seconds after the note ends, the play line a horizon, the 「其它」 band a Milky Way. Off: as 0.29.1.
     // The sound mist's fog bed along the whole timeline (0.31.0, work/score-depth-20261118/SPEC.md batch 3): the light
     // of its thickest part; 0 keeps the mist as 0.30.1 drew it (wisps by the needle only).
-    mistFog: .24,           // .24 since 0.31.1 (the user: 浓一点)
+    mistFog: .32,           // .32 since 0.31.2 (the user: 雾加浓; .24 in 0.31.1)
     // The embossed paper's press (0.31.0, batch 3): how deep a note still to come is pressed into the paper (its edges'
     // light); 0 inks both sides of the needle as 0.30.1 did.
-    paperPress: 1.1,        // 1.1 since 0.31.1 (the user: 中间太淡)
+    paperPress: 1.5,        // 1.5 since 0.31.2 (the user: 压痕纸加深; 1.1 in 0.31.1)
     pressTint: 0,           // 0.31.1: a faint grey inside the groove (0–0.3)
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.

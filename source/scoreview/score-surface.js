@@ -744,7 +744,7 @@ function paper(data, paintVariation) {
  }
 
  // A short note's round head (the core's shortHead / SHORT_NOTE), in the look's own ink: played, sounding, to come.
- const pressOf=()=>Number.isFinite(options.paperPress)?options.paperPress:1.1;
+ const pressOf=()=>Number.isFinite(options.paperPress)?options.paperPress:1.5;
  function shortHeads(style){
   const core=coreOf();if(!core||!core.SHORT_NOTE)return;
   const radius=(Number.isFinite(options.shortHead)?options.shortHead:core.DEFAULTS?.shortHead||0)*unit;if(!(radius>0))return;

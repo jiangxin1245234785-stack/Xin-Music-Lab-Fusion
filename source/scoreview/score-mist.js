@@ -344,7 +344,7 @@
       return ink;
     }
     function paintFogBed(layers, scene) {
-      const strength = Number.isFinite(options.mistFog) ? options.mistFog : .16;
+      const strength = Number.isFinite(options.mistFog) ? options.mistFog : .32;
       if (!(strength > 0) || !layers.length) return 0;
       const {floor, right, needle, pps, now, py, unit} = scene;
       const lead = FOG.lead * pps, span = right + lead;
