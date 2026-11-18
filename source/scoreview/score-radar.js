@@ -582,8 +582,8 @@
         write(cat.ring, cx - 12, cy - r, 12, muted(k) || !data.present[k] ? '#2f7a52' : '#8ef5b0', 'mono', 'right', 0, 'bold');
       });
       p.restore();
-      // Bar numbers of the turn at the quarters.
-      if (bars) {
+      // Bar numbers of the turn at the quarters: only on the song's own bar lines.
+      if (bars && bars.source === 'downbeats') {
         const first = Math.floor(turn) * 4;
         [[0, -1], [1, 0], [2, 1], [3, 0]].forEach(([q]) => {
           const a = -Math.PI / 2 + q / 4 * Math.PI * 2, r = screen - 26;
@@ -598,7 +598,7 @@
       // Stamped name and the one sticker.
       write('PPI', 968, 132, 14, C.stamp, 'stamp', 'right', 0, 'bold');
       write('1 REV', 968, 149, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-      write(bars ? '4 BARS' : FREE_TURN + ' SEC', 968, 166, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+      write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 166, 14, C.stamp, 'stamp', 'right', 0, 'bold');
       font('marker', 13);
       const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
       p.save(); p.translate(980 - stickerW, 186); p.rotate(-.05);
@@ -747,26 +747,32 @@
     }
 
     function drumGrid(data, env, bars, now, out) {
+      // The step grid stands on the song's own bar lines only: downbeats (the analysis gives them only for a steady
+      // grid that 90 % of the model's bars agree on) and 2-4 beats a bar, four steps to a beat. Without them the
+      // grid would invent bars (every four beats from the first), so only the five lamps are shown.
+      const per = bars && bars.source === 'downbeats' && env.beats.length >= 2 && [2, 3, 4].includes(bars.perBar) ? bars.perBar : 0;
+      const steps = per * 4;
       write('DRUMS · THIS BAR', 1028, 407, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
-      write('16 STEPS', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
+      write(steps ? steps + ' STEPS' : 'NO BAR LINES · LAMPS ONLY', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
       rect(1028, 420, 376, 122, '#1f201b', '#4a4c42', 1);
-      // The bar now: its hits on sixteen steps.
       let barStart = null, barEnd = null, step = -1;
-      const cells = DRUM_ROWS.map(() => new Array(16).fill(0));
-      if (bars && env.beats.length >= 2) {
+      const cells = DRUM_ROWS.map(() => new Array(steps).fill(0));
+      if (steps) {
         const b = Math.floor(barAt(env, bars, now));
         if (b >= 0 && b < bars.starts.length) {
           barStart = bars.starts[b]; barEnd = bars.starts[b + 1] ?? barStart + bars.length;
-          const b0 = env.beatAt(barStart), per = bars.perBar;
-          const stepOf = t => Math.floor(((env.beatAt(t) - b0) / per) * 16 + .5);
-          step = clamp(Math.floor(((env.beatAt(now) - b0) / per) * 16), 0, 15);
+          const b0 = env.beatAt(barStart);
+          const stepOf = t => Math.floor(((env.beatAt(t) - b0) / per) * steps + .5);
+          step = clamp(Math.floor(((env.beatAt(now) - b0) / per) * steps), 0, steps - 1);
           for (let k = lower(data.drums, barStart - .03, d => d.time); k < data.drums.length && data.drums[k].time < barEnd - .03; k++) {
             const d = data.drums[k], s = stepOf(d.time);
-            if (s < 0 || s > 15) continue;
+            if (s < 0 || s > steps - 1) continue;
             cells[d.row][s] = d.time <= now + 1e-6 ? 2 : 1;
           }
         }
       }
+      // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
+      const cellPitch = steps ? Math.min(24, 286 / steps) : 0, cellSize = Math.max(8, cellPitch - 3);
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
         write(row.label, 1040, y + 7, 12, C.stamp, 'mono', 'left', 0, 'bold');
@@ -775,14 +781,14 @@
         let v = 0;
         for (let k = j; k >= 0 && now - data.drums[k].time < .15; k--) if (data.drums[k].row === r) { v = 1 - (now - data.drums[k].time) / .15; break; }
         lamp(1094, y + 7, 6, v);
-        for (let s = 0; s < 16; s++) {
-          const x = 1112 + s * 18 + Math.floor(s / 4) * 2, state = cells[r][s];
+        for (let s = 0; s < steps; s++) {
+          const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
           const fill = state === 2 ? (s === step ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : '#2c2d26';
-          rect(x, y, 15, 15, fill);
-          if (s === step) { p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.strokeRect(x - .5, y - .5, 16, 16); }
+          rect(x, y, cellSize, 15, fill);
+          if (s === step) { p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.strokeRect(x - .5, y - .5, cellSize + 1, 16); }
         }
       });
-      out.drums = {step, bar: barStart, hits: cells.map(row => row.join(''))};
+      out.drums = {steps, step, bar: barStart, hits: cells.map(row => row.join(''))};
     }
 
     function recorder(data, now, out) {

@@ -186,3 +186,18 @@ test('any window shape: the panel scales whole and sits centred', () => {
     assert.ok(Math.abs(m.origin[0] * 2 + 1440 * m.scale - W) < 1e-6 && Math.abs(m.origin[1] * 2 + 900 * m.scale - 1080) < 1e-6);
   }
 });
+
+test('the drum grid stands on the song\'s own bar lines: three beats = twelve steps; beats without bar lines = lamps only', () => {
+  const drums = {id: 'd', kind: 'drums', group: 'drums', rows: ['kick', 'snare'], hits: [[6, 0, 100], [6.5, 1, 100]]};
+  // 3/4 at 120 bpm: bars of 1.5 s from 0.
+  const beats = Array.from({length: 121}, (_, i) => i / 2), downbeats = beats.filter((_, i) => i % 3 === 0);
+  const waltz = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beatsPerBar: 3, beats, downbeats, steady: true}, lanes: [drums]}).frame(7.2).motion;
+  assert.equal(waltz.drums.steps, 12);
+  assert.equal(waltz.drums.hits[4][0], '2', 'the kick on the bar line');
+  assert.equal(waltz.drums.hits[3][4], '2', 'the snare on beat two (step 4 of 12)');
+  // Beats but no bar lines (an unsteady grid): no steps, no claim of bars on the disc either.
+  const loose = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beats, downbeats: [], steady: false}, lanes: [drums]}).frame(7.2).motion;
+  assert.equal(loose.drums.steps, 0);
+  assert.deepEqual(loose.drums.hits, ['', '', '', '', '']);
+  assert.equal(loose.barBeat, '---·-');
+});
