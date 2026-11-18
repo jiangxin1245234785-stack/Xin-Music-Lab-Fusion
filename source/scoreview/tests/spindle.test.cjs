@@ -79,7 +79,7 @@ const heights = p => Array.from({length: p.points.length / 8}, (_, k) => {
 });
 
 test("shapeSet: 'two' by default; 'spindle' taken; 'three' (withdrawn) and anything else read as 'two'", () => {
-  assert.equal(ScoreView.VERSION, '0.30.1');
+  assert.equal(ScoreView.VERSION, '0.31.0');
   assert.equal(ScoreView.DEFAULTS.shapeSet, 'two');
   const view = ScoreView.create(mockCanvas().canvas, oneLane('strings'), () => 0);
   for (const value of ['three', 'four', 3, null, 'SPINDLE']) { view.setOptions({shapeSet: value}); assert.equal(view.options().shapeSet, 'two', String(value)); }

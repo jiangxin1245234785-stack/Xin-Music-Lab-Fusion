@@ -25,7 +25,7 @@
   'use strict';
 
   const CONTRACT = 'xin.score-view/1';
-  const VERSION = '0.30.1';
+  const VERSION = '0.31.0';
   const DRAWN_LAYERS = Object.freeze(['header', 'lanes', 'drums', 'playhead', 'chords', 'sections', 'bars', 'contour', 'captions', 'backdrop']);
 
   // The first four are what gate one settled on (2026-11-10): simplified notes, one lane
@@ -119,6 +119,12 @@
     // The starry score as a night sky (0.30.0, work/score-depth-20261118/SPEC.md batch 2), only with meteorMotion: a still
     // sky tinted by the cover, dim stars for the notes to come (`starDim`, their light), meteors whose tails are gone
     // `meteorTail` seconds after the note ends, the play line a horizon, the 「其它」 band a Milky Way. Off: as 0.29.1.
+    // The sound mist's fog bed along the whole timeline (0.31.0, work/score-depth-20261118/SPEC.md batch 3): the light
+    // of its thickest part; 0 keeps the mist as 0.30.1 drew it (wisps by the needle only).
+    mistFog: .16,
+    // The embossed paper's press (0.31.0, batch 3): how deep a note still to come is pressed into the paper (its edges'
+    // light); 0 inks both sides of the needle as 0.30.1 did.
+    paperPress: .8,
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
@@ -1458,6 +1464,8 @@ function canonicalOnsets(rows) {
       if (finite(patch.shortHead) && patch.shortHead >= 0 && patch.shortHead <= 4) next.shortHead = patch.shortHead;
       if (typeof patch.meteorMotion === 'boolean') next.meteorMotion = patch.meteorMotion;
       if (typeof patch.nightSky === 'boolean') next.nightSky = patch.nightSky;
+      if (finite(patch.mistFog) && patch.mistFog >= 0 && patch.mistFog <= .5) next.mistFog = patch.mistFog;
+      if (finite(patch.paperPress) && patch.paperPress >= 0 && patch.paperPress <= 1.5) next.paperPress = patch.paperPress;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
       if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));

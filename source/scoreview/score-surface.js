@@ -72,7 +72,7 @@ function paperBounds(time) {
   if(W!==width){
     W=width; canvas.width=W; hud.width=W;
     for(const key of Object.keys(backgrounds))delete backgrounds[key];
-    paperMask=null;
+    paperMask=null;paperPressMask=null;
   }
   NOW=data.frame.time; NEEDLE=layout.needle*unit; PPS=layout.pixelsPerSecond*unit;
   geometry=data.geometry; corePitchY=data.yAt;coreContourY=data.contourYAt; events=[]; attacks=[];
@@ -175,6 +175,7 @@ function paperBounds(time) {
 // so both sides of the needle retain exactly the same graphite edge.
 let paperGrid = null;
 let paperMask = null;
+let paperPressMask = null;
 let paperInfo = null;
 
 function paperTimeline() {
@@ -288,7 +289,8 @@ function paper(data, paintVariation) {
   }
   ctx.drawImage(backgrounds.paper,0,0);
 
-  if (!paperMask) paperMask = make();
+  // The press mask is made just before the ink mask, so the ink mask stays the newest canvas.
+  if (!paperMask) { paperPressMask = make(); paperMask = make(); }
   const ink = paperMask.getContext('2d');
   ink.setTransform(1, 0, 0, 1, 0, 0);
   ink.clearRect(0, 0, W, H);
@@ -331,6 +333,14 @@ function paper(data, paintVariation) {
     ink.restore();
   }
 
+  // A short note still to come is pressed too: its head goes into the same shapes.
+  const core=coreOf(),press=pressOf(),headRadius=(Number.isFinite(options.shortHead)?options.shortHead:core?.DEFAULTS?.shortHead||0)*unit;
+  if(press>0&&headRadius>0&&core?.SHORT_NOTE){
+    for(const e of events){
+      if(e.group==='drums'||e.part?.contour||e.start<=NOW||e.end-e.start>=core.SHORT_NOTE.seconds||e.x>W-16)continue;
+      ink.beginPath();ink.arc(e.x,e.y,headRadius,0,Math.PI*2);ink.fill();
+    }
+  }
   for(const note of touched){
     ink.save();clipLane(ink,note);
     // A small pressure touch, not a notehead symbol or periodic seam.
@@ -338,6 +348,11 @@ function paper(data, paintVariation) {
     ink.restore();
   }
 
+  // What lies beyond the needle is pressed, not inked: take its shapes out before the colour pass.
+  if(press>0){
+    const p=paperPressMask.getContext('2d');p.setTransform(1,0,0,1,0,0);p.globalCompositeOperation='source-over';p.globalAlpha=1;
+    p.clearRect(0,0,W,H);p.drawImage(paperMask,NEEDLE,0,W-NEEDLE,H,NEEDLE,0,W-NEEDLE,H);
+  }
   // Fresh ink holds for 1.75 beats; older graphite stays legible across 75% of the available history.
   // One colour pass over the union avoids doubled edges at the needle.
   const colour=ink.createLinearGradient(0,0,W,0);
@@ -349,6 +364,8 @@ function paper(data, paintVariation) {
     const alpha=x<bounds.left?0:.84*(1-Math.min(1,progress)**2.6);
     colour.addColorStop(x/W,'rgba(78,85,81,'+alpha+')');
   }
+  // With the press on, no ink beyond the needle (the stop just after it).
+  if(press>0){colour.addColorStop(Math.min(1,(NEEDLE+1)/W),'rgba(78,85,81,0)');colour.addColorStop(1,'rgba(78,85,81,0)');}
   ink.globalCompositeOperation = 'source-in';
   ink.fillStyle = colour;
   ink.fillRect(0, 0, W, H);
@@ -356,7 +373,18 @@ function paper(data, paintVariation) {
   const variation = paintVariation?.(ctx, {time:NOW,width:W,height:H,needle:NEEDLE,pixelsPerSecond:PPS,
     geometry,parts:data.parts,yAt:data.yAt,contourYAt:data.contourYAt,unit,top,left:leftEdge,right:W-16});
   ctx.drawImage(paperMask, 0, 0);
+  if(press>0){
+    // A groove: a faint shadow on its upper edge, the paper's light caught on its lower edge, nothing inside.
+    const p=paperPressMask.getContext('2d');
+    p.globalCompositeOperation='source-in';
+    p.fillStyle='rgba(70,76,70,1)';p.fillRect(0,0,W,H);
+    ctx.globalAlpha=Math.min(1,.26*press);ctx.drawImage(paperPressMask,0,-.7*unit);
+    p.fillStyle='rgba(252,252,244,1)';p.fillRect(0,0,W,H);
+    ctx.globalAlpha=Math.min(1,.7*press);ctx.drawImage(paperPressMask,0,.9*unit);
+    p.globalCompositeOperation='source-over';ctx.globalAlpha=1;
+  }
   paperInfo = {
+    press,
     lineWidth: 1.55,
     layers: 1,
     holdBeats: 1.75,
@@ -713,6 +741,7 @@ function paper(data, paintVariation) {
  }
 
  // A short note's round head (the core's shortHead / SHORT_NOTE), in the look's own ink: played, sounding, to come.
+ const pressOf=()=>Number.isFinite(options.paperPress)?options.paperPress:.8;
  function shortHeads(style){
   const core=coreOf();if(!core||!core.SHORT_NOTE)return;
   const radius=(Number.isFinite(options.shortHead)?options.shortHead:core.DEFAULTS?.shortHead||0)*unit;if(!(radius>0))return;
@@ -720,6 +749,7 @@ function paper(data, paintVariation) {
   const ink=style==='paper'?['58,64,66','75,85,87']:style==='ember'?['214,122,72','150,158,160']:['166,195,210','123,150,170'];
   for(const e of events){
    if(e.group==='drums'||e.part?.contour||e.end-e.start>=limit||e.x<NEEDLE*.15625||e.x>W-16)continue;
+   if(style==='paper'&&e.start>NOW&&pressOf()>0)continue;
    const past=e.start<=NOW,a=past?(e.end>NOW?1:Math.max(.18,ageAlpha(e)))*.86:.66;
    ctx.fillStyle='rgba('+(past?ink[0]:ink[1])+','+a+')';ctx.beginPath();ctx.arc(e.x,e.y,radius*(past&&e.end>NOW?1.15:1),0,Math.PI*2);ctx.fill();
   }

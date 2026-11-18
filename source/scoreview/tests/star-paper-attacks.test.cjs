@@ -52,3 +52,18 @@ test('a sustained paper note has no artificial repeat seams and frame reconstruc
   const geometry=JSON.stringify(first.ink.calls.slice(1));p.at(7);
   assert.equal(JSON.stringify(p.at(6).ink.calls.slice(1)),geometry);
 });
+test('0.31.0: on paper a note still to come is pressed, not inked; paperPress 0 inks both sides as before', () => {
+  assert.equal(ScoreView.DEFAULTS.paperPress, .8);
+  const data = model([[4, .5, 60, 90], [7, .5, 62, 90]]);
+  const pressed = paperFixture(data).at(5);
+  assert.equal(pressed.stats.paper.press, .8);
+  const flat = paperFixture(data, {paperPress: 0}).at(5);
+  assert.equal(flat.stats.paper.press, 0);
+  // The ink's colour pass: with the press, the last stop (beyond the needle) carries no ink.
+  const lastStop = frame => {
+    const fill = frame.ink.calls.filter(c => c.name === 'fillRect' && c.fillStyle && c.fillStyle.stops).pop();
+    return fill.fillStyle.stops[fill.fillStyle.stops.length - 1][1];
+  };
+  assert.match(lastStop(pressed), /,0\)$/);
+  assert.doesNotMatch(lastStop(flat), /,0\)$/);
+});

@@ -24,6 +24,9 @@
     other: [[107, 126, 159], '#c5d1df']
   };
   const amount = db => Math.pow(clamp((db - FLOOR_DB) / (PEAK_DB - FLOOR_DB), 0, 1), 1.65);
+  // The fog bed (0.31.0): sampled every `step` pixels; at its thinnest `least` of the lane's half height where it sounds;
+  // `ahead` of its light ahead of the needle.
+  const FOG = Object.freeze({step: 16, least: .18, ahead: .6, scale: 4, hop: .05, lead: 4});
   const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
   const mix = (a, b, t) => a + (b - a) * t;
   const smooth = x => x * x * (3 - 2 * x);
@@ -313,6 +316,97 @@
     }
 
 
+    // The fog bed (the core's mistFog): per lane with a measured stem, along the whole timeline, a soft band about its
+    // middle whose thickness and light follow how loud the recording is there; ahead of the needle at FOG.ahead of the
+    // light. Sampled every FOG.step pixels of song time, so a pause or a seek draws the same frame.
+    let fogStrip = null;
+    // A level's amount() on a fixed song-time grid, once per level; and colour strings by quantised light.
+    const fogGrids = new WeakMap(), fogInks = new Map();
+    function fogGrid(level) {
+      let grid = fogGrids.get(level);
+      if (!grid) {
+        grid = new Float32Array(Math.max(1, Math.ceil((level.end || 0) / FOG.hop) + 2));
+        for (let i = 0; i < grid.length; i++) grid[i] = amount(level.dbAt(i * FOG.hop));
+        fogGrids.set(level, grid);
+      }
+      return grid;
+    }
+    const fogAt = (grid, t) => {
+      if (!(t >= 0)) return 0;
+      const at = t / FOG.hop, i = Math.floor(at);
+      if (i + 1 >= grid.length) return 0;
+      return grid[i] + (grid[i + 1] - grid[i]) * (at - i);
+    };
+    function fogInk(smoke, light) {
+      const q = Math.round(light * 400), key = smoke.join() + '|' + q;
+      let ink = fogInks.get(key);
+      if (!ink) { ink = rgba(smoke, q / 400); fogInks.set(key, ink); }
+      return ink;
+    }
+    function paintFogBed(layers, scene) {
+      const strength = Number.isFinite(options.mistFog) ? options.mistFog : .16;
+      if (!(strength > 0) || !layers.length) return 0;
+      const {floor, right, needle, pps, now, py, unit} = scene;
+      const lead = FOG.lead * pps, span = right + lead;
+      const small = [Math.ceil(span / FOG.scale), Math.ceil(HEIGHT / FOG.scale)];
+      const key = [width, floor, right, needle, pps, strength, ...layers.map(layer =>
+        [layer.id, layer.box.top, layer.box.bottom, layer.weight, layer.dim].join(','))].join('|');
+      // The strip starts on a fixed song-time grid (every half lead), so a moment always draws from the same strip,
+      // however it was reached: playing, paused, seeking or exporting.
+      const anchor = Math.floor(now / (FOG.lead / 2)) * (FOG.lead / 2);
+      if (!fogStrip || fogStrip.key !== key || fogStrip.time !== anchor) {
+        if (!fogStrip || fogStrip.canvas.width !== small[0] || fogStrip.canvas.height !== small[1]) {
+          const canvas = target.ownerDocument.createElement('canvas');
+          canvas.width = small[0]; canvas.height = small[1];
+          fogStrip = {canvas};
+        }
+        Object.assign(fogStrip, {key, time: anchor, drawn: 0});
+        const fog = fogStrip.canvas.getContext('2d');
+        fog.setTransform(1, 0, 0, 1, 0, 0); fog.clearRect(0, 0, small[0], small[1]);
+        fog.setTransform(1 / FOG.scale, 0, 0, 1 / FOG.scale, 0, 0);
+        for (const layer of layers) {
+          const {box, group, level, weight, dim} = layer;
+          const half = (box.bottom - box.top) * unit / 2, center = py((box.top + box.bottom) / 2);
+          const xs = [], as = [], grid = fogGrid(level);
+          for (let x = floor; x <= span + FOG.step; x += FOG.step) {
+            const at = Math.min(x, span);
+            xs.push(at); as.push(fogAt(grid, anchor + (at - needle) / pps) * weight * dim);
+          }
+          if (!as.some(a => a > .01)) continue;
+          const light = fog.createLinearGradient(floor, 0, span, 0), [smoke] = colorOf(group);
+          for (let i = 0; i < xs.length; i += 2) {
+            light.addColorStop(clamp((xs[i] - floor) / Math.max(1, span - floor), 0, 1), fogInk(smoke, strength * Math.min(1, .25 + .75 * as[i])));
+          }
+          const band = scale => {
+            fog.beginPath();
+            fog.moveTo(xs[0], center - half * scale * (FOG.least + (1 - FOG.least) * as[0]));
+            for (let i = 1; i < xs.length; i++) fog.lineTo(xs[i], center - half * scale * (FOG.least + (1 - FOG.least) * as[i]) * (as[i] > .01 ? 1 : 0));
+            for (let i = xs.length - 1; i >= 0; i--) fog.lineTo(xs[i], center + half * scale * (FOG.least + (1 - FOG.least) * as[i]) * (as[i] > .01 ? 1 : 0));
+            fog.closePath(); fog.fill();
+          };
+          fog.fillStyle = light;
+          fog.globalAlpha = .55; band(1);
+          fog.globalAlpha = 1; band(.5);
+          fogStrip.drawn++;
+        }
+        fog.globalAlpha = 1;
+      }
+      if (!fogStrip.drawn) return 0;
+      // Lay on the slice for now: what the strip held `shift` pixels to the right. Up to the needle at full light,
+      // beyond it at FOG.ahead.
+      const offset = (now - fogStrip.time) * pps, k = FOG.scale;
+      const lay = (from, to, alpha) => {
+        if (to <= from) return;
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(fogStrip.canvas, (from + offset) / k, 0, (to - from) / k, small[1], from, 0, to - from, small[1] * k);
+      };
+      ctx.imageSmoothingEnabled = true;
+      lay(floor, needle, 1);
+      lay(needle, right, FOG.ahead);
+      ctx.globalAlpha = 1;
+      return fogStrip.drawn;
+    }
+
     function cachedEnds(set) {
       if (ends.has(set)) return ends.get(set);
       let end = -Infinity;
@@ -506,6 +600,7 @@
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(background, 0, 0);
+      const bed = paintFogBed(exposed, scene);
       guide.setTransform(1, 0, 0, 1, 0, 0);
       guide.clearRect(0, 0, width, HEIGHT);
       const fog = paintRecording(exposed, scene);
@@ -542,7 +637,7 @@
         active: skeleton.sounding.size,
         window: [now - layout.needle / layout.pixelsPerSecond,
           now + (layout.width - layout.needle) / layout.pixelsPerSecond],
-        mist: {held: skeleton.held, leader, lanes: fog.map(lane =>
+        mist: {held: skeleton.held, leader, bed, lanes: fog.map(lane =>
           ({...lane, sounding: skeleton.sounding.has(lane.id)}))}
       };
     }

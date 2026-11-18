@@ -39,7 +39,7 @@ const veilFor = m => {
 const BUSY = {mean: 0.71, spread: 0.32}, MID = {mean: 0.36, spread: 0.15}, PLAIN = {mean: 0.23, spread: 0.03}, DARK = {mean: 0.05, spread: 0.12};
 
 test('coverAdapt and textureAdapt: off by default, booleans only; the version moved up a step', () => {
-  assert.equal(ScoreView.VERSION, '0.30.1');
+  assert.equal(ScoreView.VERSION, '0.31.0');
   assert.equal(ScoreView.DEFAULTS.coverAdapt, false);
   assert.equal(ScoreView.DEFAULTS.textureAdapt, false);
   const view = ScoreView.create(mockCanvas().canvas, model(), () => 0);
