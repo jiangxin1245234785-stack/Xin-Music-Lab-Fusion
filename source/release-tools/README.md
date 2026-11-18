@@ -12,7 +12,7 @@
 3. 构建自动加入发布版 UI/IPC、窗口版本、版本/帮助按钮、ⓘ 路径状态、F1、本地使用说明；版本取自同一配置。开发源码窗口不注入发布控件，用户档案名称不变。
 4. 输出目录内 README.md、使用说明.html、主包 package.json、runtime.json、release-manifest.json 使用同一版本号。搬迁后重新核对 runtime.json 相对路径与文件清单。
 5. `node test-release-shell.cjs` 验证版本、可信窗口 IPC、帮助复用、F1 与环境路径提示；`node test.cjs` 验证运行配置。`test-packaged.cjs` 验证实际两个 EXE、帮助窗口、1180px 视口、一键 MIDI 和同包交接。
-6. EXE 文件属性写入产品名称、版本和图标；XML 沿用原图标，XLD 沿用页面字标配色。make-xld-icon.ps1 可重建多尺寸 XLD 图标。release-manifest.json 记录品牌工具摘要和最终文件哈希。
+6. XLD 和 XML 的 EXE 图标取自各自应用的 assets 目录。make-xld-icon.ps1 将 XLD 定稿同步到构建工具的兼容资源目录。release-manifest.json 记录品牌工具摘要和最终文件哈希。
 7. 随包“检查环境.cmd”以 Electron 的 Node 模式运行 resources/diagnostics/diagnose.cjs。无需系统 Node/Python，使用 runtime.json 绑定的解释器，逐项探测全部引擎（含 drums-adtof）；每项 120 秒超时。JSON/中文报告保存到 LocalAppData/XinMusicDiagnostics 的独立目录。Ctrl+C 可停止控制台检查。test-diagnostics.cjs 覆盖缺 Python、缺鼓模型、超时和损坏配置；检查失败退出码为 1。
 
 帮助页面不需要网络或额外运行库。路径检查仅判断文件/目录存在，不冒充模型推理验证。保留 RC 标识，直至干净 Windows 验收；个人本地使用与公开再分发许可审查分别记录。

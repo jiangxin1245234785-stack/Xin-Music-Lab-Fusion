@@ -5,8 +5,9 @@ function brand({output,sourceRoot,version,rcedit}) {
  if(!rcedit || !path.isAbsolute(rcedit))throw Error('Set XIN_RCEDIT to the reviewed rcedit.exe build tool');
  if(crypto.createHash('sha256').update(fs.readFileSync(rcedit)).digest('hex')!==TOOL_SHA256)throw Error('Unreviewed rcedit build tool');
  const icons=path.join(output,'resources/branding');fs.mkdirSync(icons,{recursive:true});
+ const deckIcon=path.join(sourceRoot,'xld-runtime-baseline/assets/xld.ico');
  for(const [name,product,icon] of [
-  ['XLD',"Xin's Local Deck",path.join(__dirname,'assets/xld.ico')],
+  ['XLD',"Xin's Local Deck",fs.existsSync(deckIcon)?deckIcon:path.join(__dirname,'assets/xld.ico')],
   ['XML',"Xin's Music Lab",path.join(sourceRoot,'fusion-runtime-baseline/assets/xins-music-lab-icon.ico')]
  ]) {
   const args=[path.join(output,name+'.exe'),'--set-icon',icon,'--set-file-version',version.split('-')[0]+'.0','--set-product-version',version];

@@ -28,9 +28,11 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
   fs.cpSync(from,path.join(apps,name),{recursive:true,filter:file=>(!interfaceOnly||require('./interface-policy.cjs').includeAppFile(path.relative(from,file))) && !path.relative(from,file).split(path.sep).some(part=>excluded.has(part)) && !path.basename(file).startsWith('start-') && !path.basename(file).startsWith('setup_') && !['development-settings.json','runtime.local.json','.env','auth.json','credentials.json'].includes(path.basename(file))});
  }
  // The listening score is shared code that XML loads from beside itself (../scoreview). Only what runs is shipped:
- // the render core, the clock, and the adapter with the files it reads. Its tools, tests and pages stay out.
+ // the render core, the material renderers and their stage assets, the clock,
+ // and the adapter with the files it reads. Its tests and development pages stay out.
  // adapter/cues.cjs makes the marks (the default since 2026-11-14); export/ is the score video export.
- const scoreFiles=['score-view.js','media-clock.js','section-names.json','adapter/track-model.cjs','adapter/captions.cjs','adapter/cues.cjs','adapter/roles.cjs','tools/chord_consensus.cjs',
+ const scoreFiles=['score-presentation.js','score-view.js','score-mood.js','score-surface.js','score-mist.js','score-terrain.js','score-variation.js','score-style.cjs','media-clock.js','section-names.json','adapter/track-model.cjs','adapter/captions.cjs','adapter/cues.cjs','adapter/roles.cjs','tools/chord_consensus.cjs',
+  'assets/mood/theatre-paper-material.png','assets/mood/performers.png','assets/mood/pianist.png',
   'export/export-main.cjs','export/export-page.html','export/export-preload.cjs','export/export-render.js','export/mp4-writer.js'];
  if(fs.existsSync(path.join(sourceRoot,'scoreview')))for(const file of scoreFiles){const to=path.join(apps,'scoreview',file);fs.mkdirSync(path.dirname(to),{recursive:true});fs.copyFileSync(path.join(sourceRoot,'scoreview',file),to);}
  const appRoot=path.join(output,'resources/app');fs.mkdirSync(appRoot,{recursive:true});

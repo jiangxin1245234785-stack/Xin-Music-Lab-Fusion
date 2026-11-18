@@ -58,13 +58,22 @@ test('rollback preserves independent edits to package metadata',()=>fixture(asyn
 }));
 test('both app-first orders seed shared settings; isolated acceptance uses the same path',()=>fixture(async({root})=>{
  const source=fs.readFileSync(path.join(__dirname,'bootstrap.cjs'),'utf8');
- for(const first of ['XML','XLD'])for(const acceptance of [false,true]){
-  const directory=path.join(root,'boot-'+first+'-'+acceptance),appRoot=path.join(directory,'resources/app'),paths={appData:path.join(directory,'appData')};
+ for(const first of ['XML','XLD'])for(const acceptance of [false,true])for(const profileVersion of [undefined,'0.5.0-dev.score.6']){
+  const directory=path.join(root,'boot-'+first+'-'+acceptance+'-'+(profileVersion||'default')),appRoot=path.join(directory,'resources/app'),paths={appData:path.join(directory,'appData')};
   fs.mkdirSync(appRoot,{recursive:true});fs.writeFileSync(path.join(directory,'development-settings.json'),JSON.stringify({libraryRoot:path.join(root,'music'),analysisRoot:'analysis'}));fs.writeFileSync(path.join(directory,'runtime.json'),'{}');
   const app={setName(n){this.name=n;},getName(){return this.name;},getVersion:()=> '0.5.0-dev.score.7',setAppUserModelId(){},getPath:k=>paths[k],setPath:(k,v)=>paths[k]=v,quit:()=>assert.fail('unexpected quit')};
   const env=acceptance?{XLD_TEST:'1',XML_TEST:'1',XIN_RELEASE_TEST_ROOT:path.join(directory,'isolated'),XIN_RELEASE_TEST_ANALYSIS_ROOT:path.join(directory,'work/analysis')}:{};
-  const run=()=>vm.runInNewContext(source,{require:n=>n==='node:fs'?fs:n==='node:path'?path:n==='electron'?{app,dialog:{showErrorBox:(_,msg)=>assert.fail(msg)}}:n.endsWith('runtime-config.cjs')?{apply:()=>({ok:true})}:n==='./release-shell.cjs'?{install(){}}:n.endsWith('main.cjs')?{}:assert.fail(n),process:{execPath:path.join(directory,first+'.exe'),env},__dirname:appRoot});
+  const dependencies={'node:fs':fs,'node:path':path,electron:{app,dialog:{showErrorBox:(_,msg)=>assert.fail(msg)}},
+   './package.json':{developmentProfileVersion:profileVersion},'./release-shell.cjs':{install(){}}};
+  function load(n){
+   if(Object.hasOwn(dependencies,n))return dependencies[n];
+   if(n.endsWith('runtime-config.cjs'))return {apply:()=>({ok:true})};
+   if(n.endsWith('main.cjs'))return {};
+   assert.fail(n);
+  }
+  const run=()=>vm.runInNewContext(source,{require:load,process:{execPath:path.join(directory,first+'.exe'),env},__dirname:appRoot});
   run();const file=path.join(paths.appData,"Xin's Local Deck Beta/settings.json"),settings=JSON.parse(fs.readFileSync(file));
+  assert.equal(paths.appData,acceptance?env.XIN_RELEASE_TEST_ROOT:path.join(directory,'appData','XinMusicDevelopment',profileVersion||app.getVersion()));
   assert.equal(settings.analysisRoot,acceptance?env.XIN_RELEASE_TEST_ANALYSIS_ROOT:path.join(directory,'analysis'));
   fs.writeFileSync(file,JSON.stringify({libraryRoot:'user-picked',analysisRoot:'keep-this'}));
   // Re-run in an independent app shell at the same base AppData, as the other app would start.

@@ -17,7 +17,9 @@ if(previewProfile&&!acceptanceProfile){
  const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
 }
 if(!previewProfile&&fs.existsSync(developmentSeed)&&!acceptanceProfile){
- const profiles=path.join(app.getPath('appData'),'XinMusicDevelopment',app.getVersion());
+ // An icon-only edition can keep using the profile of the release it was built from.
+ const profileVersion=require('./package.json').developmentProfileVersion||app.getVersion();
+ const profiles=path.join(app.getPath('appData'),'XinMusicDevelopment',profileVersion);
  fs.mkdirSync(profiles,{recursive:true});app.setPath('appData',profiles);
  const profile=path.join(profiles,app.getName());fs.mkdirSync(profile,{recursive:true});app.setPath('userData',profile);
 }
