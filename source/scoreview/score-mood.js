@@ -1197,7 +1197,7 @@ function spellPitch(midi,flats=true){
       return {kind:'time',time:clamp(time-(options.offsetSeconds||0),0,model.track.duration||86400)};
     }
     rebuild();
-    return {draw,hit,ready:()=>options.scoreStyle==='theatre'?loadTheatreAssets():Promise.resolve(),setModel(next){model=next;cover=null;lyrics=null;echoPost=null;echoFrame=null;rebuild()},
+    return {draw,hit,ready:()=>options.scoreStyle==='theatre'?loadTheatreAssets():options.scoreStyle==='glass'&&root.XinScoreRadar?.ready?root.XinScoreRadar.ready():Promise.resolve(),setModel(next){model=next;cover=null;lyrics=null;echoPost=null;echoFrame=null;rebuild()},
       setOptions(next){const changed=['hidden','mergeTimbres','simplify'].some(key=>JSON.stringify(options[key])!==JSON.stringify(next[key]));options=next;if(changed)rebuild()},
       setCover(image){cover=image},setLyrics(value){lyrics=value?.trackId===model.track.id?value:null},lastFrame:()=>last};
   }

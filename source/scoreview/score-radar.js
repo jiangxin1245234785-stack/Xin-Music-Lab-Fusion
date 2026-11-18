@@ -48,12 +48,27 @@
     paper: '#e4dcc3', paperInk: '#38362e', paperFaint: '#b9b199', pen: '#b3362b', green: '#6ee08c', greenOff: '#1d3324'
   });
   const FONTS = Object.freeze({
-    stamp: '"Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif',
+    stamp: '"Saira Stencil One", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif',
     mono: '"Consolas", "Cascadia Mono", "Courier New", monospace',
-    marker: '"Ink Free", "Segoe Print", "Comic Sans MS", cursive',
+    marker: '"Permanent Marker", "Ink Free", "Segoe Print", "Comic Sans MS", cursive',
     hanzi: '"FangSong", "仿宋", "STFangsong", "KaiTi", "楷体", "SimSun", serif'
   });
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  // The bundled faces (assets/fonts, with their licences): Saira Stencil One (SIL OFL 1.1) for the stamped names,
+  // Permanent Marker (Apache 2.0) for the tape labels. Loaded once; the fallbacks above draw until they are in.
+  const FACES = Object.freeze([['Saira Stencil One', 'SairaStencilOne-Regular.ttf'], ['Permanent Marker', 'PermanentMarker-Regular.ttf']]);
+  const fontBase = (() => { try { return new URL('./assets/fonts/', root.document.currentScript.src).href; } catch (_) { return null; } })();
+  let fontsLoading = null;
+  function loadFonts() {
+    if (fontsLoading) return fontsLoading;
+    const doc = root.document;
+    if (!fontBase || typeof root.FontFace !== 'function' || !doc || !doc.fonts) return (fontsLoading = Promise.resolve([]));
+    fontsLoading = Promise.all(FACES.map(([family, file]) => {
+      const face = new root.FontFace(family, `url("${fontBase}${file}")`);
+      return face.load().then(loaded => { doc.fonts.add(loaded); return family; }, () => null);
+    })).then(list => list.filter(Boolean));
+    return fontsLoading;
+  }
   const smooth = x => x * x * (3 - 2 * x);
   const lower = (array, value, key = x => x) => {
     let lo = 0, hi = array.length;
@@ -284,8 +299,8 @@
     // ---------- drawing ----------
     let p = null;
     function font(kind, size, weight = '') {
-      const stretch = kind === 'stamp' ? 'condensed ' : '';
-      p.font = `${stretch}${weight ? weight + ' ' : ''}${size}px ${FONTS[kind]}`;
+      const display = kind === 'stamp' || kind === 'marker';
+      p.font = `${!display && weight ? weight + ' ' : ''}${size}px ${FONTS[kind]}`;
     }
     function write(value, x, y, size, color, kind = 'stamp', align = 'left', maxWidth = 0, weight = '') {
       font(kind, size, weight);
@@ -584,8 +599,10 @@
       write('PPI', 968, 132, 14, C.stamp, 'stamp', 'right', 0, 'bold');
       write('1 REV', 968, 149, 14, C.stamp, 'stamp', 'right', 0, 'bold');
       write(bars ? '4 BARS' : FREE_TURN + ' SEC', 968, 166, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-      p.save(); p.translate(890, 186); p.rotate(-.05);
-      rect(0, 0, 94, 34, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 32, 94, 2);
+      font('marker', 13);
+      const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
+      p.save(); p.translate(980 - stickerW, 186); p.rotate(-.05);
+      rect(0, 0, stickerW, 34, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 32, stickerW, 2);
       write('OUTER = VOX', 6, 10, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
       write('INNER = BASS', 6, 25, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
       p.restore();
@@ -936,8 +953,9 @@
       }
       return null;
     }
+    loadFonts();
     return {paint, hit};
   }
-  root.XinScoreRadar = Object.freeze({create, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
+  root.XinScoreRadar = Object.freeze({create, ready: loadFonts, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
   if (typeof module === 'object' && module.exports) module.exports = root.XinScoreRadar;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

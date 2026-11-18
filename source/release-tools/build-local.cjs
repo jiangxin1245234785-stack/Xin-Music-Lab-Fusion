@@ -31,7 +31,7 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  // the render core, the material renderers and their stage assets, the clock,
  // and the adapter with the files it reads. Its tests and development pages stay out.
  // adapter/cues.cjs makes the marks (the default since 2026-11-14); export/ is the score video export.
- const scoreFiles=['score-presentation.js','score-view.js','score-mood.js','score-telegraph.js','score-radar.js','score-surface.js','score-mist.js','score-terrain.js','score-flag.js','score-variation.js','score-style.cjs','media-clock.js','section-names.json','adapter/track-model.cjs','adapter/captions.cjs','adapter/cues.cjs','adapter/roles.cjs','tools/chord_consensus.cjs',
+ const scoreFiles=['score-presentation.js','score-view.js','score-mood.js','score-telegraph.js','score-radar.js','assets/fonts/SairaStencilOne-Regular.ttf','assets/fonts/SairaStencilOne-OFL.txt','assets/fonts/PermanentMarker-Regular.ttf','assets/fonts/PermanentMarker-LICENSE.txt','score-surface.js','score-mist.js','score-terrain.js','score-flag.js','score-variation.js','score-style.cjs','media-clock.js','section-names.json','adapter/track-model.cjs','adapter/captions.cjs','adapter/cues.cjs','adapter/roles.cjs','tools/chord_consensus.cjs',
   'assets/mood/theatre-paper-material.png','assets/mood/performers.png','assets/mood/pianist.png',
   'export/export-main.cjs','export/export-page.html','export/export-preload.cjs','export/export-render.js','export/mp4-writer.js'];
  if(fs.existsSync(path.join(sourceRoot,'scoreview')))for(const file of scoreFiles){const to=path.join(apps,'scoreview',file);fs.mkdirSync(path.dirname(to),{recursive:true});fs.copyFileSync(path.join(sourceRoot,'scoreview',file),to);}
