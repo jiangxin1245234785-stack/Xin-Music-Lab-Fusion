@@ -3,6 +3,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('XLD', Object.freeze({
+  planTrackRemoval: trackId => ipcRenderer.invoke('library:plan-track-removal', {trackId}),
+  confirmTrackRemoval: payload => ipcRenderer.invoke('library:confirm-track-removal', payload),
+  executeTrackRemoval: payload => ipcRenderer.invoke('library:execute-track-removal', payload),
   storageScan: () => ipcRenderer.invoke('storage:scan'),
   storageKeep: payload => ipcRenderer.invoke('storage:keep',payload),
   storageClear: payload => ipcRenderer.invoke('storage:clear',payload),

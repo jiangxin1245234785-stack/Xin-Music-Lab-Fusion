@@ -528,3 +528,10 @@ input[type="range"] { accent-color: var(--violet); height: 3px; cursor: pointer;
 #workspace-tab-timeline { display: none; }
 #playButton { position: relative; }
 #playButton::after { content: attr(data-source-label); position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 500; color: var(--muted, #9898a8); pointer-events: none; }
+:root .track-removal-dialog { max-width:720px; width:calc(100vw - 40px); max-height:85vh; overflow:auto; }
+.track-removal-dialog p, .track-removal-dialog pre { overflow-wrap:anywhere; white-space:pre-wrap; }
+.track-removal-dialog fieldset { display:grid; gap:12px; border:1px solid var(--border, #555); border-radius:8px; padding:14px; margin:16px 0; }
+.track-removal-dialog fieldset label { display:flex; gap:9px; align-items:flex-start; }
+.track-removal-dialog pre { max-height:180px; overflow:auto; font-size:12px; }
+.track-removal-dialog .storage-footer { flex-wrap:wrap; justify-content:flex-end; gap:10px; }
+#removeTrackButton { flex-shrink:0; font-size:12px; }

@@ -106,12 +106,13 @@
       $('workspaceOverviewHint').textContent = selected ? copy('overviewHint',{count:state.annotations.length}) : copy('choose');
       if (selected && refreshErrorTrack === selected.id) $('workspaceOverviewHint').textContent = copy('readFailed');
       const album = state.library?.albums?.find(album=>album.tracks.some(track=>track.id===selected?.id));
+      const coverUrl = selected?.coverUrl || album?.coverUrl;
       const cover = $('workspaceCover');
-      if (cover.getAttribute('src') !== album?.coverUrl) {
-        if (album?.coverUrl) cover.src = album.coverUrl; else cover.removeAttribute('src');
+      if (cover.getAttribute('src') !== coverUrl) {
+        if (coverUrl) cover.src = coverUrl; else cover.removeAttribute('src');
       }
-      cover.hidden = !album?.coverUrl;
-      $('workspaceCoverFallback').hidden = Boolean(album?.coverUrl);
+      cover.hidden = !coverUrl;
+      $('workspaceCoverFallback').hidden = Boolean(coverUrl);
       const summaries = {section:labSummary(state,sections),harmony:labSummary(state,harmonies)};
       const midi = [...new Set([...Object.keys(derived?.midi || {}),...Object.keys(derived?.variants || {})])].filter(stem => derived?.midi?.[stem]?.ok || Object.values(derived?.variants?.[stem] || {}).some(item=>item?.ok));
       summaries.stems = {

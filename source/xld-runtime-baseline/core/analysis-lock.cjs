@@ -33,14 +33,21 @@ function hookExit() {
 
 function createAnalysisLock({program, now = Date.now, isAlive = alive, maxAgeMs = MAX_AGE_MS} = {}) {
   const fileFor = root => path.join(path.resolve(root), FILE);
-  async function read(root) {
-    try { return JSON.parse(await fsp.readFile(fileFor(root), 'utf8')); } catch (error) { return error.code === 'ENOENT' ? null : {broken: true}; }
+  async function read(root, reportIoErrors = false) {
+    try { return JSON.parse(await fsp.readFile(fileFor(root), 'utf8')); } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      if (reportIoErrors && !(error instanceof SyntaxError)) throw error;
+      return {broken: true};
+    }
   }
   // Is the recorded holder still doing something? A broken file (half written by a crash) counts as void once it is a
   // minute old, so a lock being written right now is not taken away.
-  async function stale(root, value) {
+  async function stale(root, value, reportIoErrors = false) {
     if (value?.broken) {
-      try { return now() - (await fsp.stat(fileFor(root))).mtimeMs > 60000; } catch (_) { return true; }
+      try { return now() - (await fsp.stat(fileFor(root))).mtimeMs > 60000; } catch (error) {
+        if (reportIoErrors && error.code !== 'ENOENT') throw error;
+        return true;
+      }
     }
     const started = Date.parse(value?.startedAt || '');
     return !isAlive(value?.pid) || !Number.isFinite(started) || now() - started > maxAgeMs;
@@ -77,7 +84,15 @@ function createAnalysisLock({program, now = Date.now, isAlive = alive, maxAgeMs 
     }
     return {ok: false, error: 'analysis-locked', holder: (await read(root)) || null};
   }
-  return {acquire, read: root => read(root), file: fileFor};
+  // Inspect only. A stale file is reclaimed by the next acquisition, never by a reader.
+  async function holder(root) {
+    if (!root) return null;
+    const value = await read(root, true);
+    if (!value || await stale(root, value, true)) return null;
+    const {program, task, song, startedAt, pid} = value;
+    return {program, task, song, startedAt, pid};
+  }
+  return {acquire, read: root => read(root), holder, file: fileFor};
 }
 // What to tell the user: "XML 正在分析 七里香（score-layers）".
 function holderMessage(holder, locale = 'zh') {

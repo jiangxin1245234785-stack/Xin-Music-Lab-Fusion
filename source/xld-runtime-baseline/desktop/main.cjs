@@ -6,7 +6,7 @@ const fsSync = require('fs');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeImage } = require('electron');
 // Isolated acceptance runs only: scripted answers for native dialogs (XLD_TEST=1 and XLD_TEST_DIALOG_ANSWERS set;
 // a normal start never sets XLD_TEST, so this never installs there - tests/test-dialogs.cjs).
 require('../core/test-dialogs.cjs').install(dialog);
@@ -19,7 +19,8 @@ const { createMainLocaleController, normalizeLocale } = require('./locale.cjs');
 const {defaultUserPaths} = require('../../shared-analysis/user-paths.cjs');
 const DEFAULT_LIBRARY_ROOT = defaultUserPaths(app).libraryRoot;
 const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus']);
-const COVER_NAMES = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.png', 'front.jpg', 'front.png'];
+const {createCoverResolver} = require('../../shared-analysis/cover-art.cjs');
+const coverArt = createCoverResolver({nativeImage, cacheRoot: path.join(app.getPath('appData'), 'Xin Music Lab', 'CoverCache-v1')});
 const {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS, REMOVED_RESULT_ENGINE_IDS, isDeletableResultEngineId} = require('../core/result-engines.cjs');
 const ANNOTATIONS_FILENAME = 'manual-tags.json';
 const MUSIC_LAB_FILENAME = 'music-lab.json';
@@ -132,11 +133,7 @@ function stableTrackId(filePath, stat) {
   return crypto.createHash('sha1').update(`${filePath}\0${stat.size}\0${stat.mtimeMs}`).digest('hex');
 }
 
-async function findCover(folderPath, entries) {
-  const names = new Map(entries.filter(entry => entry.isFile()).map(entry => [entry.name.toLowerCase(), entry.name]));
-  const name = COVER_NAMES.map(candidate => names.get(candidate)).find(Boolean);
-  return name ? pathToFileURL(path.join(folderPath, name)).href : null;
-}
+const findCover = coverArt.folder;
 
 // Cache/bridge identity stays tied to the on-disk folder + filename so embedded
 // tags never relocate (and orphan) existing analysis. The pathArtist/pathAlbum/
@@ -308,6 +305,7 @@ async function scanLibrary() {
     if (!audioFiles.length) continue;
 
     const albumInfo = parseAlbumFolder(folder.name);
+    const coverUrl = await findCover(folderPath, entries);
     const tracks = [];
     for (let index = 0; index < audioFiles.length; index += 1) {
       const entry = audioFiles[index];
@@ -329,7 +327,8 @@ async function scanLibrary() {
         filename: entry.name,
         extension: path.extname(entry.name).slice(1).toUpperCase(),
         bytes: stat.size,
-        fileUrl: pathToFileURL(filePath).href
+        fileUrl: pathToFileURL(filePath).href,
+        coverUrl: coverUrl || await coverArt.embedded(filePath, stat)
       };
       trackIndex.set(id, { ...track, filePath, stat });
       tracks.push(track);
@@ -340,7 +339,7 @@ async function scanLibrary() {
       folder: folder.name,
       artist: albumInfo.artist,
       title: albumInfo.album,
-      coverUrl: await findCover(folderPath, entries),
+      coverUrl: coverUrl || tracks.find(track => track.coverUrl)?.coverUrl || null,
       trackCount: tracks.length,
       tracks
     });
@@ -375,7 +374,8 @@ async function scanLibrary() {
         filename: entry.name,
         extension: path.extname(entry.name).slice(1).toUpperCase(),
         bytes: stat.size,
-        fileUrl: pathToFileURL(filePath).href
+        fileUrl: pathToFileURL(filePath).href,
+        coverUrl: await coverArt.embedded(filePath, stat)
       };
       trackIndex.set(id, { ...track, filePath, stat });
       singles.push(track);
@@ -407,6 +407,7 @@ async function scanLibrary() {
 
 function createWindow() {
   const win = new BrowserWindow({
+    icon: path.join(__dirname, '..', 'assets', 'xld.png'),
     width: 1580,
     height: 960,
     minWidth: 1180,
@@ -834,6 +835,35 @@ let midiSourceChanging=false;
 const storageManager=require('../core/storage.cjs').createStorage({getRoot:analysisRoot,isBusy:()=>Boolean(analysisService.task()||midiSourceChanging),trash:directory=>shell.trashItem(directory),
  optimizer:require('../core/refinement-storage.cjs').createOptimizer({assets:derivedAssets,trackForDirectory:directory=>[...trackIndex.values()].find(track=>path.resolve(analysisDirectoryForTrack(track))===path.resolve(directory)),trash:file=>shell.trashItem(file)})});
 
+// Track deletion mutation gate
+// Only operations that write user data, rebuild the source index, or materialize audio caches participate.
+const TRACK_MUTATION_CHANNELS=new Set([
+ 'library:scan','library:choose','library:consume-open-request',
+ 'analysis:run','analysis:delete-result','analysis:delete-results','analysis:choose-root','analysis:open-root',
+ 'assets:run','assets:merge-midi','assets:strings-source','assets:winds-source','assets:winds-adopt','assets:delete-midi','assets:activate-midi-run','assets:keep-midi-run','assets:export-midi','assets:save-midi-revision','assets:write-midi-draft','assets:midi-evidence-check','assets:midi-evidence-apply',
+ 'assets:stem-envelope','assets:wav-chunk',
+ 'refinement:run','refinement:keep',
+ 'storage:keep','storage:optimize','storage:clear','storage:relink-source','storage:discard-source',
+ 'annotations:upsert','annotations:delete','integration:export'
+]);
+let activeTrackMutations=0;
+function trackMutationIpc(channel,handler){
+ // Mixed read/write registration loops preserve the original read-only callback and response shape.
+ if(!TRACK_MUTATION_CHANNELS.has(channel)){ipcMain.handle(channel,handler);return;}
+ ipcMain.handle(channel,async(...args)=>{
+  if(trackRemoval.busy())return {ok:false,error:'track-removal-busy'};
+  activeTrackMutations++;
+  try{return await handler(...args);}finally{activeTrackMutations--;}
+ });
+}
+
+async function confirmTrackRemovalDialog(plan){
+      const en=mainLocale.getState()?.locale==='en-US';
+      const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:en?['Cancel','Delete permanently']:['取消','永久删除'],defaultId:0,cancelId:0,noLink:true,title:en?'Delete this song':'删除这首歌',message:plan.title,detail:(en?'Permanently deletes the actual original audio file (not a managed copy), without using the Recycle Bin.':'将永久删除实际原音频文件（不是托管副本），不进入回收站。')+'\n'+plan.original.path+'\n\n'+(plan.keepSmall?(en?'Keeps analysis, MIDI and annotations; deletes generated audio and matched playback cache.':'保留分析、MIDI、人工标注；删除生成音频和可精确匹配的播放缓存。'):(en?'Also deletes the verified song analysis and derived results.':'同时删除经验证属于这首歌的分析和派生结果。'))});return answer.response===1;
+
+}
+const trackRemoval=require('../core/track-removal.cjs').createTrackRemoval({getTrack:id=>trackIndex.get(id),getTracks:()=>trackIndex.values(),getRoot:analysisRoot,suspendDecode:files=>require('../core/stem-audio.cjs').sharedCache().suspend(files),getLegacyRoot:legacyAnalysisRoot,analysisLock:require('../core/analysis-lock.cjs').createAnalysisLock({program:'XLD storage'}),getLibraryRoot:()=>libraryRoot,coverCacheDir:path.join(app.getPath('appData'), 'Xin Music Lab', 'CoverCache-v1'),isBusy:()=>Boolean(activeTrackMutations>0||analysisService.task()||storageManager.busy()||require('../core/stem-audio.cjs').sharedCache().busy?.())});
+
 async function executeAnalysis(trackId, engine, options = {}) {
   if(storageManager.busy()||midiSourceChanging)return {ok:false,error:"存储管理正在操作文件，请稍后重试"};
   const track = trackIndex.get(String(trackId || ''));
@@ -879,8 +909,8 @@ app.whenReady().then(async () => {
     publishHostLocale();
     return { ok: true, ...state };
   });
-  ipcMain.handle('library:scan', scanLibrary);
-  ipcMain.handle('library:choose', async () => {
+  trackMutationIpc('library:scan', scanLibrary);
+  trackMutationIpc('library:choose', async () => {
     const result = await dialog.showOpenDialog({ title: mainLocale.message('dialog.library.chooseTitle'), defaultPath: libraryRoot, properties: ['openDirectory'] });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     libraryRoot = result.filePaths[0];
@@ -893,7 +923,7 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(track.filePath);
     return true;
   });
-  ipcMain.handle('library:consume-open-request', async () => {
+  trackMutationIpc('library:consume-open-request', async () => {
     const request=await consumeRequest(analysisRoot());
     if(!request)return {trackId:null};
     const requestedLocale=normalizeLocale(request.locale);
@@ -901,7 +931,7 @@ app.whenReady().then(async () => {
     const match=[...trackIndex.values()].find(track=>path.resolve(track.filePath).toLowerCase()===path.resolve(request.source).toLowerCase());
     return {trackId:match?.id || null,source:request.source};
   });
-  ipcMain.handle('assets:merge-midi', (_event, payload) => executeAnalysis(payload?.trackId,'midi-merge'));
+  trackMutationIpc('assets:merge-midi', (_event, payload) => executeAnalysis(payload?.trackId,'midi-merge'));
   ipcMain.handle('assets:open-merged-midi', async (_event, payload) => {
     const track=trackIndex.get(String(payload?.trackId || ''));
     if(!track)return {ok:false,error:'track-missing'};
@@ -913,11 +943,11 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('assets:separation-engines', () => analysisService.separationEngines());
   ipcMain.handle('refinement:engines',()=>analysisService.refinementEngines());
-  ipcMain.handle('refinement:run',(_event,payload)=>{
+  trackMutationIpc('refinement:run',(_event,payload)=>{
     if(!require('../core/refinement.cjs').profileFor(payload?.engine))return {ok:false,error:'refinement-engine-invalid'};
     return executeAnalysis(payload.trackId,payload.engine,{scope:payload.scope,start:payload.start,duration:30,sourceStem:payload.sourceStem,target:payload.target,device:payload.device});
   });
-  for(const operation of ['read','keep','reveal'])ipcMain.handle('refinement:'+operation,async(_event,payload)=>{
+  for(const operation of ['read','keep','reveal'])trackMutationIpc('refinement:'+operation,async(_event,payload)=>{
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     analysisService.setAnalysisRoot(analysisRoot());
     const options={scope:payload.scope,engine:payload.engine,start:payload.start,duration:30,sourceStem:payload.sourceStem,target:payload.target,device:payload.device,runId:payload.runId};
@@ -928,24 +958,24 @@ app.whenReady().then(async () => {
       return result;
     }catch(error){return {ok:false,error:error.message};}
   });
-  ipcMain.handle('assets:strings-source',async(_event,payload)=>{
+  trackMutationIpc('assets:strings-source',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     midiSourceChanging=true;
     try{return await derivedAssets.stringSources.select(track,payload.selection);}catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
   });
   // A finished winds fine split: the winds source, or "this song has no winds" when it holds (nearly) nothing.
-  ipcMain.handle('assets:winds-adopt',async(_event,payload)=>{
+  trackMutationIpc('assets:winds-adopt',async(_event,payload)=>{
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     try{return await derivedAssets.windSources.adopt(track,{runId:payload?.runId,cacheKey:payload?.cacheKey});}catch(error){return {ok:false,error:error.message};}
   });
-  ipcMain.handle('assets:winds-source',async(_event,payload)=>{
+  trackMutationIpc('assets:winds-source',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     midiSourceChanging=true;
     try{return await derivedAssets.windSources.select(track,payload.selection);}catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
   });
-  ipcMain.handle('assets:delete-midi',async(_event,payload)=>{
+  trackMutationIpc('assets:delete-midi',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     midiSourceChanging=true;
@@ -971,7 +1001,7 @@ app.whenReady().then(async () => {
     try{return {ok:true,runs:await derivedAssets.listMidiRuns(track,payload?.stem,payload?.engine||null)};}catch(error){return {ok:false,error:error.message};}
   });
   // Switching and pinning both write into the analysis root, so they join the same mutex as deletion.
-  ipcMain.handle('assets:activate-midi-run',async(_event,payload)=>{
+  trackMutationIpc('assets:activate-midi-run',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     midiSourceChanging=true;
@@ -981,12 +1011,12 @@ app.whenReady().then(async () => {
   // Saving a revision writes into the analysis root and moves the active pointer, so it joins the same mutex as
   // switching and deleting. Without it a save could land while a run is committing and the two would race for
   // the same four pointer paths.
-  for(const operation of ['read','write','list'])ipcMain.handle('assets:'+operation+'-midi-draft',async(_event,payload)=>{
+  for(const operation of ['read','write','list'])trackMutationIpc('assets:'+operation+'-midi-draft',async(_event,payload)=>{
   const track=trackIndex.get(String(payload?.trackId||''));
   if(!track)return {ok:false,error:'track-missing'};
   return midiDrafts[operation](track,payload||{});
 });
-  ipcMain.handle('assets:export-midi',async(_event,payload)=>{
+  trackMutationIpc('assets:export-midi',async(_event,payload)=>{
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     try{
       const exporter=require('../core/midi-export.cjs').createMidiExport({assets:derivedAssets,protectedRoots:()=>[analysisRoot(),app.getAppPath()]});
@@ -1007,7 +1037,7 @@ app.whenReady().then(async () => {
     }catch(_){return {ok:false,error:'export-write-failed'};}
   });
 
-ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
+trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     analysisService.setAnalysisRoot(analysisRoot());
@@ -1025,7 +1055,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
   });
   // Checking a run against its stem writes one sidecar into the analysis root, and applying the result saves a
   // revision and moves the active pointer, so both join the same mutex as saving a hand edit. Reading does not.
-  for(const operation of ['check','apply'])ipcMain.handle('assets:midi-evidence-'+operation,async(_event,payload)=>{
+  for(const operation of ['check','apply'])trackMutationIpc('assets:midi-evidence-'+operation,async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     analysisService.setAnalysisRoot(analysisRoot());
@@ -1049,7 +1079,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     }catch(error){return {ok:false,error:error.message};}
   });
   // Read only: the envelope of the stem WAV that 核对原声 reads for this run (same lookup), or a quiet failure.
-  ipcMain.handle('assets:stem-envelope',async(_event,payload)=>{
+  trackMutationIpc('assets:stem-envelope',async(_event,payload)=>{
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     analysisService.setAnalysisRoot(analysisRoot());
     try{
@@ -1059,7 +1089,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
       return result.ok?{ok:true,hop:result.hop,duration:result.duration,floorDb:result.floorDb,values:result.values}:result;
     }catch(error){return {ok:false,error:error.message};}
   });
-  ipcMain.handle('assets:keep-midi-run',async(_event,payload)=>{
+  trackMutationIpc('assets:keep-midi-run',async(_event,payload)=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const track=trackIndex.get(String(payload?.trackId||''));if(!track)return {ok:false,error:'track-missing'};
     midiSourceChanging=true;
@@ -1067,7 +1097,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     catch(error){return {ok:false,error:error.message};}finally{midiSourceChanging=false;}
   });
   ipcMain.handle('assets:midi-engines', () => analysisService.midiEngines());
-  ipcMain.handle('assets:run', (_event, payload) => {
+  trackMutationIpc('assets:run', (_event, payload) => {
     if (!['stems','midi'].includes(payload?.kind)) return {ok:false,error:'asset-kind-invalid'};
     const midiCore = require('../core/derived-assets.cjs');
     const engine = payload.kind==='stems'?(payload.engine || midiCore.defaultSeparation):(payload.engine || midiCore.defaultEngine(payload.stem));
@@ -1130,25 +1160,32 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     return Array.isArray(loaded) ? loaded.map(result => withSections(result)) : withSections(loaded);
   });
   ipcMain.handle('analysis:summary', analysisSummary);
-  ipcMain.handle('assets:wav-chunk', async (_event,payload) => {try{return await mixAudioReader.chunk(payload||{});}catch(error){return {ok:false,error:error.message};}});
+  trackMutationIpc('assets:wav-chunk', async (_event,payload) => {try{return await mixAudioReader.chunk(payload||{});}catch(error){return {ok:false,error:error.message};}});
   ipcMain.handle('assets:midi-notes', (_event, payload) => readMidiNotes(payload?.trackId,payload?.selection ?? null));
-  ipcMain.handle('analysis:delete-result', (_event, payload) => deleteAnalysisResult(payload.trackId, payload.engine));
+  trackMutationIpc('analysis:delete-result', (_event, payload) => deleteAnalysisResult(payload.trackId, payload.engine));
   ipcMain.handle('analysis:task:get', () => taskSnapshot());
-  ipcMain.handle('analysis:run', (event, payload) => runAnalysis(event, payload.trackId, payload.engine, payload.range || null, Boolean(payload.auto), payload.separation || 'none'));
+  trackMutationIpc('analysis:run', (event, payload) => runAnalysis(event, payload.trackId, payload.engine, payload.range || null, Boolean(payload.auto), payload.separation || 'none'));
   ipcMain.handle('analysis:cancel', (_event, payload) => cancelAnalysis(payload?.taskId));
   const storageReply=fn=>async(_event,payload)=>{try{return await fn(payload);}catch(error){return {ok:false,error:error.message};}};
   ipcMain.handle('analysis:result-sweep',storageReply(payload=>sweepResults(payload?.engines||null)));
-  ipcMain.handle('analysis:delete-results',storageReply(payload=>deleteResultsBulk(payload?.items)));
+  trackMutationIpc('analysis:delete-results',storageReply(payload=>deleteResultsBulk(payload?.items)));
+  ipcMain.handle('library:plan-track-removal',storageReply(payload=>trackRemoval.plan(payload?.trackId)));
+  ipcMain.handle('library:confirm-track-removal',storageReply(payload=>trackRemoval.confirmSelection(payload,confirmTrackRemovalDialog)));
+  ipcMain.handle('library:execute-track-removal',storageReply(async payload=>{
+    if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
+    midiSourceChanging=true;
+    try{return await trackRemoval.execute(payload,confirmTrackRemovalDialog);}finally{midiSourceChanging=false;}
+  }));
   ipcMain.handle('storage:scan',storageReply(async()=>({ok:true,...await storageManager.scan()})));
-  ipcMain.handle('storage:keep',storageReply(payload=>{if(typeof payload?.value!=='boolean')throw Error('storage-options-invalid');return storageManager.protect(payload.item,payload.value);}));
+  trackMutationIpc('storage:keep',storageReply(payload=>{if(typeof payload?.value!=='boolean')throw Error('storage-options-invalid');return storageManager.protect(payload.item,payload.value);}));
   ipcMain.handle('storage:reveal',storageReply(async payload=>{const error=await shell.openPath(await storageManager.reveal(payload.item));return {ok:!error,error};}));
   ipcMain.handle('storage:cancel-optimize',()=>storageManager.cancelOptimize());
-  ipcMain.handle('storage:optimize',storageReply(payload=>storageManager.optimize(payload?.item,payload?.mode||'trash',async plan=>{
+  trackMutationIpc('storage:optimize',storageReply(payload=>storageManager.optimize(payload?.item,payload?.mode||'trash',async plan=>{
    if(plan.mode!=='permanent')return true;
    const en=mainLocale.getState()?.locale==='en-US',result=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:en?['Cancel','Optimize and delete copies']:['取消','优化并删除副本'],defaultId:0,cancelId:0,noLink:true,
     title:en?'Optimize audio copies':'优化音频副本',message:plan.rows[0].track+' · '+(plan.bytes/1024**3).toFixed(2)+' GiB',detail:en?'Only verified redundant copies are permanently removed. Target, residual and MIDI stay intact. Older XLD versions cannot read the optimized result.':'仅永久删除已校验的冗余副本；提取结果、剩余声音和 MIDI 保留。优化后的结果不支持旧版 XLD。'});return result.response===1;
   })));
-  ipcMain.handle('storage:clear',storageReply(payload=>storageManager.clear(payload?.items,payload?.mode,async plan=>{
+  trackMutationIpc('storage:clear',storageReply(payload=>storageManager.clear(payload?.items,payload?.mode,async plan=>{
    const permanent=plan.mode==='permanent',english=mainLocale.getState()?.locale==='en-US';
    const size=(plan.bytes/1024**3).toFixed(2)+' GiB';
    const result=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:english?['Cancel',permanent?'Delete permanently':'Move to Recycle Bin']:['取消',permanent?'永久删除':'移至回收站'],defaultId:0,cancelId:0,noLink:true,
@@ -1160,7 +1197,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
   // the song's analysis to the Recycle Bin.
   const sourceRelink=()=>require('../core/source-relink.cjs').createSourceRelink({assets:derivedAssets,trackIdFor:stableTrackId});
   ipcMain.handle('storage:missing-sources',storageReply(async()=>({ok:true,items:require('../core/source-relink.cjs').listMissing(analysisRoot())})));
-  ipcMain.handle('storage:relink-source',storageReply(async payload=>{
+  trackMutationIpc('storage:relink-source',storageReply(async payload=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const item=require('../core/source-relink.cjs').listMissing(analysisRoot()).find(m=>m.id===payload?.id);if(!item)return {ok:false,error:'relink-not-missing'};
     const english=mainLocale.getState()?.locale==='en-US';
@@ -1173,7 +1210,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     try{const result=await sourceRelink().relink(analysisRoot(),item.folder,pick.filePaths[0],{targetDirFor});if(result.ok)await scanLibrary().catch(()=>{});return result;}
     finally{midiSourceChanging=false;}
   }));
-  ipcMain.handle('storage:discard-source',storageReply(async payload=>{
+  trackMutationIpc('storage:discard-source',storageReply(async payload=>{
     if(analysisService.task()||storageManager.busy()||midiSourceChanging)return {ok:false,error:'analysis-busy'};
     const item=require('../core/source-relink.cjs').listMissing(analysisRoot()).find(m=>m.id===payload?.id);if(!item)return {ok:false,error:'relink-not-missing'};
     const english=mainLocale.getState()?.locale==='en-US';
@@ -1184,7 +1221,7 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     return sourceRelink().discard(analysisRoot(),item.folder,dir=>shell.trashItem(dir));
   }));
   ipcMain.handle('analysis:settings', () => ({ analysisRoot: analysisRoot(), libraryRoot }));
-  ipcMain.handle('analysis:choose-root', async () => {
+  trackMutationIpc('analysis:choose-root', async () => {
     if (analysisService.task()||storageManager.busy()||midiSourceChanging) return {canceled:true,error:'analysis-busy',analysisRoot:analysisRoot()};
     const result = await dialog.showOpenDialog({ title: mainLocale.message('dialog.analysis.chooseTitle'), defaultPath: analysisRoot(), properties: ['openDirectory', 'createDirectory'] });
     if (result.canceled || !result.filePaths[0]) return { canceled: true, analysisRoot: analysisRoot() };
@@ -1193,15 +1230,15 @@ ipcMain.handle('assets:save-midi-revision',async(_event,payload)=>{
     await writeSettings();
     return { canceled: false, analysisRoot: analysisRoot() };
   });
-  ipcMain.handle('analysis:open-root', async () => {
+  trackMutationIpc('analysis:open-root', async () => {
     await fs.mkdir(analysisRoot(), { recursive: true });
     return shell.openPath(analysisRoot());
   });
   ipcMain.handle('annotations:load', (_event, payload) => loadAnnotations(payload.trackId));
-  ipcMain.handle('annotations:upsert', (_event, payload) => upsertAnnotation(payload.trackId, payload.tag));
-  ipcMain.handle('annotations:delete', (_event, payload) => deleteAnnotation(payload.trackId, payload.tagId));
+  trackMutationIpc('annotations:upsert', (_event, payload) => upsertAnnotation(payload.trackId, payload.tag));
+  trackMutationIpc('annotations:delete', (_event, payload) => deleteAnnotation(payload.trackId, payload.tagId));
   ipcMain.handle('integration:manifest', (_event, payload) => buildMusicLabManifest(payload.trackId));
-  ipcMain.handle('integration:export', (_event, payload) => writeMusicLabBridge(payload.trackId));
+  trackMutationIpc('integration:export', (_event, payload) => writeMusicLabBridge(payload.trackId));
   mainWindow = createWindow();
 });
 

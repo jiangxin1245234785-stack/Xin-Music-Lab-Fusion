@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Xin's Local Deck</title>
+  <link rel="icon" type="image/x-icon" href="assets/xld.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="workspace.css">
   <link rel="stylesheet" href="workbench.css">
@@ -13,7 +14,7 @@
 <body class="workspace-app">
   <div class="noise"></div>
   <header class="topbar">
-    <div class="brand-mark">XLD</div>
+    <img class="brand-mark" src="assets/xld.png" alt="XLD">
     <div class="brand-copy">
       <strong>Xin’s Local Deck <em class="beta-tag">BETA</em></strong>
       <span data-i18n="static.app.subtitle">本地专辑播放器 · 结构与和声观测台</span>
@@ -58,6 +59,22 @@
     <section id="storageMissing" class="storage-missing" hidden><h3 id="storageMissingTitle">原音频找不到</h3><p id="storageMissingHelp" class="derived-hint"></p><div id="storageMissingRows" class="storage-rows"></div></section>
     <div id="storageRows" class="storage-rows"></div>
     <div class="storage-footer"><strong id="storageSelected"></strong><select id="storageMode" aria-label="清理方式"><option value="trash">移至回收站</option><option value="permanent">永久删除 · 释放空间</option></select><button id="storageClear" class="danger-button" disabled>清理所选</button></div>
+  </dialog>
+  <dialog id="trackRemovalDialog" class="storage-dialog track-removal-dialog" aria-labelledby="trackRemovalTitle" aria-describedby="trackRemovalIntro">
+    <h2 id="trackRemovalTitle"></h2><strong id="trackRemovalName"></strong>
+    <p id="trackRemovalIntro"></p>
+    <section id="trackRemovalDetails" hidden>
+      <p id="trackRemovalOriginal"></p><p id="trackRemovalPath" class="storage-path"></p>
+      <p id="trackRemovalAudio"></p><p id="trackRemovalSmall"></p>
+      <fieldset><legend id="trackRemovalChoice">删除范围 / Delete scope</legend>
+        <label><input id="trackRemovalAll" type="radio" name="trackRemovalMode" checked><span id="trackRemovalAllLabel"></span></label>
+        <label><input id="trackRemovalKeep" type="radio" name="trackRemovalMode"><span id="trackRemovalKeepLabel"></span></label>
+      </fieldset>
+      <div id="trackRemovalRetain" hidden><p id="trackRemovalRetainTitle"></p><pre id="trackRemovalRetainFiles"></pre></div>
+      <strong id="trackRemovalEstimate"></strong>
+    </section>
+    <p id="trackRemovalStatus" role="status" aria-live="polite"></p>
+    <div class="storage-footer"><button id="trackRemovalCancel" class="quiet-button"></button><button id="trackRemovalConfirm" class="danger-button" disabled></button></div>
   </dialog>
   <main class="app-shell">
     <aside class="workspace-library">
@@ -109,7 +126,7 @@
       <div class="workspace-topline">
       <section class="analysis-target">
         <div class="workspace-cover"><img id="workspaceCover" alt="" hidden><span id="workspaceCoverFallback">XLD</span></div><div class="workspace-target-copy"><span class="eyebrow"><span data-workspace-copy="selected">工作曲目</span></span><strong id="analysisTargetTitle">请单击选择一首曲目</strong><small id="analysisTargetMeta">单击只选择，双击或 ▶ 才播放</small></div>
-      <button id="workspaceLocate" class="quiet-button" data-workspace-copy="locate">定位曲目</button></section>
+      <button id="workspaceLocate" class="quiet-button" data-workspace-copy="locate">定位曲目</button><button id="removeTrackButton" class="quiet-button" disabled>删除这首歌…</button></section>
       <nav class="workspace-tabs" role="tablist" aria-label="工作台"><button type="button" id="workspace-tab-overview" role="tab" data-workspace-tab="overview" aria-selected="true" tabindex="0" aria-controls="workspaceContent" data-workspace-copy="overview">概览</button><button type="button" id="workspace-tab-section" role="tab" data-workspace-tab="section" data-lab="section" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="section">段落</button><button type="button" id="workspace-tab-harmony" role="tab" data-workspace-tab="harmony" data-lab="harmony" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="harmony">和弦</button><button type="button" id="workspace-tab-stems" role="tab" data-workspace-tab="stems" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="stems">分轨</button><button type="button" id="workspace-tab-midi" role="tab" data-workspace-tab="midi" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="midi">转谱</button><button type="button" id="workspace-tab-timeline" role="tab" data-workspace-tab="timeline" aria-selected="false" tabindex="-1" aria-controls="workspaceContent" data-workspace-copy="timeline">时间轴</button></nav>
       </div>
       <section id="taskCard" class="task-card hidden" aria-live="polite">
@@ -386,6 +403,7 @@
 <script src="timeline-controls.js"></script>
   <script src="refinement-controls.js"></script>
   <script src="storage-controls.js"></script>
+  <script src="track-removal-controls.js"></script>
     <script src="result-sweep-controls.js"></script>
   <script src="workbench-shell.js"></script>
   <script src="workbench-results.js"></script>

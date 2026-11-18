@@ -135,6 +135,28 @@ async function wavSamples(file) {
     assert.equal((await ask(path.join(scratch, 'gone.wav'))).status, 404, 'a missing file is a 404');
     assert.equal(passed.length, 2);
 
+    const registry = audio.createXmlStemPlayback();
+    const asStem = (file,name='guitar') => ({name,audioUrl:require('node:url').pathToFileURL(file).href});
+    const readUrl = url => handler(new Request(url,{headers:{range:'bytes=0-3'}}));
+    const registeredFile = path.join(scratch,'extracted-strings.flac');
+    fs.copyFileSync(marked,registeredFile);
+    const strings = asStem(registeredFile,'strings');
+    const [first,second] = await Promise.all([registry.describe(strings),registry.describe(strings)]);
+    assert.equal(first.playbackUrl,second.playbackUrl);
+    assert.equal(first.audioUrl,strings.audioUrl);
+    assert.equal(first.playbackGain,2);
+    assert.deepEqual(await registry.describe(asStem(plain)),asStem(plain));
+    assert.deepEqual(await registry.describe(asStem(source)),asStem(source));
+    audio.registerFileProtocol({protocol,net,xmlPlayback:registry,cache:{playable(){throw Error('unexpected whole-file decode');}}});
+    r=await readUrl(first.playbackUrl);
+    assert.equal(r.status,206);
+    assert.equal(r.headers.get('content-type'),'audio/flac');
+    assert.equal(await r.text(),'fLaC');
+    assert.equal((await readUrl(first.playbackUrl.replace('extracted-strings','unregistered'))).status,410);
+    fs.utimesSync(registeredFile,new Date(0),new Date(0));
+    assert.equal((await readUrl(first.playbackUrl)).status,410);
+    assert.notEqual((await registry.describe(strings)).playbackUrl,first.playbackUrl);
+
     // --- the existing readers through the cache --------------------------------------------------------------
     const reader = require('../core/mix-audio.cjs').createAudioReader({audioCache: cache});
     const registered = await reader.register(stem, 'track-1');

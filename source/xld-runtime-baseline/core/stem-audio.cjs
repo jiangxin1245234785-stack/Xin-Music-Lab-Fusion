@@ -5,11 +5,11 @@
 //     (and in the manifests as `encoding: 'flac-24', gain: 2`): a float stem may go above full scale, 24-bit
 //     integers cannot, so the samples are halved before writing and doubled again by every reader.
 //
-// Nothing in the apps reads a FLAC directly. Whatever wants samples asks `playable(file)` and gets a float WAV:
+// Analysis and export ask `playable(file)` for a float WAV:
 // the file itself when it already is one, otherwise a decoded copy (gain applied) in a size-capped cache in the
 // system temp folder - never in the analysis root. The existing WAV readers (mix-audio, stem-envelope) are left as
-// they were. Audio elements in the renderers keep using plain file:// links: `registerFileProtocol` answers a link to
-// a marked FLAC with its decoded WAV (byte ranges included) and passes every other file request through untouched.
+// they were. Plain file:// links to marked FLACs also serve gain-restored WAVs.
+// For XML listening, registered links serve the compressed recording and pass its gain to the output graph.
 //
 // The decoder is plain JavaScript (FLAC subset that libFLAC writes: fixed / LPC / constant / verbatim subframes,
 // Rice residuals, the four stereo modes, wasted bits), frame CRC-16 checked; it runs in a worker thread so the main
@@ -20,6 +20,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {Worker, isMainThread, parentPort, workerData} = require('node:worker_threads');
+const {fileURLToPath} = require('node:url');
 
 const GAIN_KEY = 'xld-gain';
 const FLAC_GAIN = 2;
@@ -294,6 +295,13 @@ const isStemFormat = info => Boolean(info && ((info.format === 'wav' && info.flo
 // --- decode cache -------------------------------------------------------------------------------------------------
 function createStemCache({dir = path.join(os.tmpdir(), 'xin-stem-cache'), limitBytes = DEFAULT_LIMIT, decode = decodeInWorker, now = Date.now} = {}) {
   const pending = new Map(), lastUsed = new Map();
+  const blockedSources = new Map();
+  const blockedKey = file => path.resolve(file).toLowerCase();
+  function suspend(files) {
+    const keys=[...new Set(files.map(blockedKey))];
+    for(const key of keys)blockedSources.set(key,(blockedSources.get(key)||0)+1);
+    let resumed=false;return ()=>{if(resumed)return;resumed=true;for(const key of keys){const count=(blockedSources.get(key)||0)-1;if(count>0)blockedSources.set(key,count);else blockedSources.delete(key);}};
+  }
   const keyFor = (file, stat) => crypto.createHash('sha256').update(JSON.stringify([path.resolve(file).toLowerCase(), stat.size, Math.round(stat.mtimeMs)])).digest('hex');
   async function evict(keep) {
     let entries = [];
@@ -317,7 +325,9 @@ function createStemCache({dir = path.join(os.tmpdir(), 'xin-stem-cache'), limitB
   // The float WAV to read for `file`: the file itself for a WAV, a decoded copy for a FLAC.
   async function playable(file) {
     if (!isFlacPath(file)) return file;
+    if(blockedSources.has(blockedKey(file)))throw Error('stem-source-removing');
     const stat = await fsp.stat(file);
+    if(blockedSources.has(blockedKey(file)))throw Error('stem-source-removing');
     const target = path.join(dir, keyFor(file, stat) + '.wav');
     try { await fsp.access(target); lastUsed.set(target, now()); return target; } catch (_) {}
     if (!pending.has(target)) {
@@ -331,13 +341,47 @@ function createStemCache({dir = path.join(os.tmpdir(), 'xin-stem-cache'), limitB
     }
     return pending.get(target);
   }
-  return {playable, dir, evict};
+  return {playable, dir, evict, busy: () => pending.size > 0, suspend};
 }
 let shared = null;
 const sharedCache = options => shared || (shared = createStemCache(options));
 
 // --- file:// for the renderers --------------------------------------------------------------------------------------
 const AUDIO_TYPES = {'.wav': 'audio/wav', '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.opus': 'audio/ogg'};
+const XML_STEM_QUERY = 'xin-xml-stem';
+
+function createXmlStemPlayback() {
+  const files = new Map();
+  const signature = stat => stat.size + ':' + stat.mtimeMs;
+  async function describe(stem) {
+    try {
+      const url = new URL(stem.audioUrl);
+      if (url.protocol !== 'file:' || url.search || url.hash) return stem;
+      const file = fileURLToPath(url);
+      if (!isFlacPath(file)) return stem;
+      const stamp = signature(await fsp.stat(file));
+      let entry = files.get(file);
+      if (entry?.stamp !== stamp) {
+        const info = await readFlacInfo(file);
+        // A migrated file carries its scale in the FLAC itself, including extracted strings and winds.
+        // Other encodings keep their existing file handler and gain.
+        if (!info.marked || info.gain !== FLAC_GAIN || info.bits !== 24) return stem;
+        entry = files.get(file);
+        if (entry?.stamp !== stamp) {
+          entry = {stamp, key: crypto.randomUUID()};
+          files.set(file, entry);
+        }
+      }
+      url.searchParams.set(XML_STEM_QUERY, entry.key);
+      return {...stem, playbackUrl:url.href, playbackGain:FLAC_GAIN};
+    } catch (_) { return stem; }
+  }
+  async function matches(file, key) {
+    const entry = files.get(file);
+    return Boolean(entry && entry.key === key && entry.stamp === signature(await fsp.stat(file)));
+  }
+  return {describe, matches};
+}
 async function rangeResponse(file, range, type = 'audio/wav') {
   const {Readable} = require('node:stream');
   const size = (await fsp.stat(file)).size;
@@ -357,16 +401,19 @@ async function rangeResponse(file, range, type = 'audio/wav') {
 // element seeks with them; the pass-through below does not honour ranges and Chromium then refuses a WAV): a marked
 // FLAC as its decoded WAV, any other audio file (WAV stems, original songs) as it is. Everything else - the app's own
 // pages, scripts, images - goes to the normal file handler.
-function registerFileProtocol({protocol, net, cache = sharedCache()}) {
-  const {fileURLToPath} = require('node:url');
+function registerFileProtocol({protocol, net, cache = sharedCache(), xmlPlayback}) {
   protocol.handle('file', async request => {
     const pass = () => net.fetch(request, {bypassCustomProtocolHandlers: true});
-    let file;
-    try { const url = new URL(request.url); url.search = ''; url.hash = ''; file = fileURLToPath(url); } catch (_) { return pass(); }
+    let file, url;
+    try { url = new URL(request.url); file = fileURLToPath(url); } catch (_) { return pass(); }
     const type = AUDIO_TYPES[path.extname(file).toLowerCase()];
     if (!type) return pass();
     const range = request.headers.get('range');
     try {
+      if (xmlPlayback && url.searchParams.has(XML_STEM_QUERY)) {
+        if (!await xmlPlayback.matches(file, url.searchParams.get(XML_STEM_QUERY))) return new Response(null, {status: 410});
+        return await rangeResponse(file, range, 'audio/flac');
+      }
       if (isFlacPath(file)) {
         const info = await readFlacInfo(file).catch(() => null);
         if (info && info.marked && info.gain !== 1) return await rangeResponse(await cache.playable(file), range);
@@ -378,5 +425,5 @@ function registerFileProtocol({protocol, net, cache = sharedCache()}) {
   });
 }
 
-module.exports = {GAIN_KEY, FLAC_GAIN, ENCODING_FLAC, isFlacPath, parseInfo, readFlacInfo, decodeFrames, decodeFlacSync, decodeToWavSync,
+module.exports = {GAIN_KEY, FLAC_GAIN, ENCODING_FLAC, isFlacPath, parseInfo, readFlacInfo, decodeFrames, decodeFlacSync, decodeToWavSync, createXmlStemPlayback,
   probe, isStemFormat, createStemCache, sharedCache, registerFileProtocol, rangeResponse};
