@@ -311,3 +311,19 @@ test('the vocal line is read from its own file', async () => {
   assert.deepEqual(await readVocalLine(folder), {kind: 'score-vocals-stale', state: 'no-stem'});
   fs.rmSync(folder, {recursive: true, force: true});
 });
+
+test('radar PAN: a version 2 layers file brings left minus right per frame; an older one brings none and still loads', () => {
+  const v2 = layers();
+  v2.levels.pan = {hop: 1, groups: {guitar: Array(60).fill(3), vocals: 'x'}, mix: Array(60).fill(-1.5)};
+  const built = modelFrom(input({layers: v2}));
+  assert.deepEqual(Object.keys(built.model.levels.pan.groups), ['guitar']);
+  assert.equal(built.model.levels.pan.mix.length, 60);
+  assert.equal(built.health.levels.pan, true);
+  assert.ok(draws(built.model).layers().levels, 'the core takes the model with pan');
+  const old = modelFrom(input({layers: layers()}));
+  assert.equal(old.model.levels.pan, undefined);
+  assert.equal(old.health.levels.pan, false);
+  const broken = layers();
+  broken.levels.pan = {hop: 0, mix: [1]};
+  assert.equal(modelFrom(input({layers: broken})).model.levels.pan, undefined);
+});

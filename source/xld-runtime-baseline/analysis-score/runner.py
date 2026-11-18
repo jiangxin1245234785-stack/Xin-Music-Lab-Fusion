@@ -13,7 +13,9 @@ work package B0). The result sits next to the track's other results as `score-la
             agree on one length; otherwise `downbeats` is empty and `why` says so. A wrong
             bar line on screen is worse than none.
     energy  {hop, db}          RMS of the mono mix every 0.1 s
-    levels  {hop, groups}      K-weighted level of each stem every second (needs the stems)
+    levels  {hop, groups, pan} K-weighted level of each stem every second (needs the stems);
+            pan {hop, groups, mix}: left minus right, in dB, every second, per stereo stem
+            and for the original audio (version 2, 2026-11-18). 0 where both sides are silent.
 
 A layer that cannot be made is `null` and its reason is in `missing`; the others still come.
 The runner only reads the audio, the stems and the MIDI records. It runs under the MuScriptor
@@ -29,7 +31,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MIDI = HERE.parent / 'analysis-midi'
-ENGINE = {'id': 'score-layers', 'name': 'Score layers', 'family': 'score', 'version': 1}
+ENGINE = {'id': 'score-layers', 'name': 'Score layers', 'family': 'score', 'version': 2}
 BEAT_PROFILE = 'strings-muscriptor-large-v04'     # the profile that carries `tempoAnalysis`
 #: Upstream writes a time signature when 90 % of bars agree; a bar line on screen is the same claim.
 MIN_BAR_AGREEMENT = 0.9
@@ -138,6 +140,29 @@ def k_weighted(mono, rate):
     return lfilter([1, -2, 1], high_a, lfilter(shelf_b, shelf_a, mono))
 
 
+#: Below this K-weighted power (about -70 LUFS) a side counts as silent: no left / right difference is claimed.
+PAN_SILENT = 1e-7
+#: The difference is held to this many dB; a side alone is 'all the way over', not -100 dB.
+PAN_LIMIT = 24.0
+
+
+def second_power(weighted, rate):
+    import numpy as np
+    count = len(weighted) // rate
+    return np.mean(weighted[:count * rate].reshape(count, rate) ** 2, axis=1) if count else np.zeros(0)
+
+
+def pan_series(audio, rate):
+    """Left minus right K-weighted level, dB, every second; None for audio that is not stereo."""
+    import numpy as np
+    if audio.ndim != 2 or audio.shape[1] < 2:
+        return None
+    left, right = (second_power(k_weighted(audio[:, side], rate), rate) for side in (0, 1))
+    diff = 10 * np.log10(np.maximum(left, 1e-12) / np.maximum(right, 1e-12))
+    diff = np.where(np.maximum(left, right) < PAN_SILENT, 0.0, np.clip(diff, -PAN_LIMIT, PAN_LIMIT))
+    return [round(float(v), 1) for v in diff]
+
+
 def stem_files(track_dir):
     """Which audio each lane group is heard from: the separated stem, or what its MIDI was made from."""
     manifest = json.loads((track_dir / 'stems.json').read_text(encoding='utf-8'))
@@ -153,11 +178,11 @@ def stem_files(track_dir):
     return files
 
 
-def make_levels(track_dir):
+def make_levels(track_dir, mix=None, rate=None):
     import numpy as np
     sys.path.insert(0, str(MIDI))
     import stem_audio  # a stem is a float WAV or a marked FLAC at half level; read() applies the gain
-    groups = {}
+    groups, pans = {}, {}
     for group, path in stem_files(track_dir).items():
         if not Path(path).is_file():
             continue
@@ -168,9 +193,14 @@ def make_levels(track_dir):
             continue
         power = np.mean(weighted[:count * rate].reshape(count, rate) ** 2, axis=1)
         groups[group] = [round(float(v), 1) for v in -0.691 + 10 * np.log10(np.maximum(power, 1e-10))]
+        pan = pan_series(audio, rate)
+        if pan is not None:
+            pans[group] = pan
     if not groups:
         raise ValueError('没有可读的分轨')
-    return {'hop': 1.0, 'weighting': 'K (ITU-R BS.1770)', 'groups': groups}
+    whole = pan_series(mix, rate) if mix is not None and rate else None
+    return {'hop': 1.0, 'weighting': 'K (ITU-R BS.1770)', 'groups': groups,
+            'pan': {'hop': 1.0, 'unit': 'dB, left minus right', 'groups': pans, 'mix': whole}}
 
 
 def main(argv=None):
@@ -196,7 +226,7 @@ def main(argv=None):
     print(json.dumps({'durationSeconds': duration}), flush=True)
     layers, missing = {'bars': None, 'energy': None, 'levels': None}, {}
     steps = (('energy', 0.08, '正在量整首歌的响度', lambda: make_energy(audio.mean(axis=1), rate)),
-             ('levels', 0.15, '正在量每条分轨的响度', lambda: make_levels(track_dir)),
+             ('levels', 0.15, '正在量每条分轨的响度', lambda: make_levels(track_dir, audio, rate)),
              # The beat analysis checks the length it is told against the file header, to the
              # millisecond; for an mp3 the header and the decoded length are not the same number.
              ('bars', 0.3, '正在找拍点', lambda: make_bars(source, info.frames / info.samplerate)))

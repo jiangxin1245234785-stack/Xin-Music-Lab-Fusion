@@ -206,6 +206,16 @@ function layersInto(model, layers, health) {
   if (levels && finite(levels.hop) && levels.hop > 0 && Object.keys(groups).length) {
     model.levels = {hop: levels.hop, groups};
     health.levels = {ok: true, groups: Object.keys(groups)};
+    // Left minus right, dB per frame (score-layers version 2): the whole song and each stereo stem. Older results
+    // have none; the radar's PAN meter then stays level.
+    const pan = levels.pan;
+    if (pan && typeof pan === 'object' && finite(pan.hop) && pan.hop > 0) {
+      const panGroups = pan.groups && typeof pan.groups === 'object'
+        ? Object.fromEntries(Object.entries(pan.groups).filter(([, row]) => numbers(row) && row.length)) : {};
+      const mix = numbers(pan.mix) && pan.mix.length ? pan.mix : null;
+      if (mix || Object.keys(panGroups).length) model.levels.pan = {hop: pan.hop, groups: panGroups, mix};
+    }
+    health.levels.pan = Boolean(model.levels.pan);
   } else health.levels = {ok: false, why: none('levels')};
 }
 
