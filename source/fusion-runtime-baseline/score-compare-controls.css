@@ -1,0 +1,54 @@
+.stage[data-effect="score"][data-score-style="mist"] {
+  --album-panel: #252832;
+  --album-ink: #eee7dc;
+  --album-muted: #b5b6c1;
+  --album-line: #494a58;
+  --theme-accent: #dbc1a3;
+  --theme-hover: #3a3a46;
+  background: #191b23;
+}
+
+.stage[data-effect="score"][data-score-style="mist"] :is(#scoreSidebar, #scoreCompactTransport) {
+  background-image: radial-gradient(ellipse at 12% 0, #a795b028, transparent 64%);
+}
+
+.score-compare {
+  position: absolute;
+  z-index: 6;
+  right: max(8px, var(--album-edge, 8px));
+  bottom: calc(var(--album-foot, var(--xl-transport, 45px)) + 8px);
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--album-line, #4a5560);
+  border-radius: 7px;
+  background: var(--album-panel, #252b32);
+  color: var(--album-ink, #e6edf1);
+  font: 600 12px/1.35 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.score-presentation-active .score-compare { bottom: clamp(36px, 6vh, 65px); }
+.score-compare[hidden], .score-compare-details[hidden], .score-compare-picker[hidden] { display: none; }
+.score-compare-picker select { min-width: 0; max-width: 70%; text-overflow: ellipsis; }
+.score-compare-status { display: block; padding: 3px 0 8px; color: var(--xl-dim, #abb9c5); }
+.score-compare button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 2px 7px;
+  border: 1px solid var(--album-line, #4a5560);
+  border-radius: 4px;
+  background: var(--album-panel, #252b32);
+  color: inherit;
+  font: inherit;
+  touch-action: manipulation;
+}
+
+.score-compare button:not(:disabled) { cursor: pointer; }
+.score-compare button:not(:disabled):not([aria-pressed="true"]):hover { background: var(--theme-hover, #334653); }
+.score-compare button[aria-pressed="true"] { background: var(--theme-accent, #b6cfdf); color: var(--theme-on-accent, #10212c); }
+.score-compare button:disabled { opacity: .55; }
+.score-compare button:focus-visible { outline: 2px solid var(--theme-accent, #b6cfdf); outline-offset: 1px; }
+
+@media (pointer: coarse), (max-width: 740px) {
+  .score-compare button { min-width: 44px; min-height: 44px; }
+}

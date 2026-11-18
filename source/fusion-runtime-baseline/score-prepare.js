@@ -20,6 +20,7 @@
   const ENGINE = 'score-layers';
   const VOCALS = 'score-vocals';
   const RETRY_MS = 30000;
+  const LOCK_CHECK_MS = 2000;
   const stepsOf = engines => (Array.isArray(engines) && engines.length ? engines.filter(e => e === ENGINE || e === VOCALS) : [ENGINE]);
 
   function create(options) {
@@ -33,6 +34,7 @@
     // asks it when it falls due; without it, a retry falling due in another scene is held ('held')
     // until the score is shown again and auto() is called for the song.
     const mayStart = typeof options.mayStart === 'function' ? options.mayStart : () => true;
+    const wanted = typeof options.isWanted === 'function' ? options.isWanted : () => true;
 
     // trackId -> {phase, source, attempts, error, batch, key}
     //   phase: 'queued' | 'running' | 'retrying' (waiting to try once more) | 'held' (the retry fell due
@@ -47,6 +49,59 @@
 
     function job(trackId) { return jobs.get(trackId) || null; }
     const keyOf = value => (value === undefined ? null : value);
+    const awaitingLock = entry => entry && (entry.phase === 'locked' || (entry.phase === 'held' && entry.holder));
+
+    // Lock contention has started no engine. Inspect just the shared lock while occupied;
+    // after release re-read the owed steps because XLD might have completed them itself.
+    function waitForLock(id, entry) {
+      entry.phase = 'locked';
+      const eligible = () => {
+        if (job(id) !== entry || entry.phase !== 'locked') return false;
+        if (!wanted(id)) { jobs.delete(id); return false; }
+        if (!mayStart(id)) { entry.phase = 'held'; return false; }
+        return true;
+      };
+      async function check() {
+        entry.timer = 0;
+        if (!eligible()) return;
+        let holder;
+        try { holder = await options.readLock(); } catch (_) {
+          // The last known owner stays visible until a successful read confirms release.
+          if (eligible()) entry.timer = later(check, LOCK_CHECK_MS);
+          return;
+        }
+        if (!eligible()) return;
+        if (holder) { entry.holder = holder; entry.timer = later(check, LOCK_CHECK_MS); return; }
+        let steps;
+        try { steps = await options.owedAfterLock?.(id); } catch (_) {}
+        if (!eligible()) return;
+        if (Array.isArray(steps)) entry.steps = steps.filter(step => step === ENGINE || step === VOCALS);
+        entry.holder = null;
+        entry.error = null;
+        if (!entry.steps.length) {
+          entry.phase = 'done';
+          emit({type: 'done', trackId: id, ok: true, phase: 'done', result: {ok: true, cached: true}});
+          return;
+        }
+        entry.phase = 'queued';
+        entry.afterLock = true;
+        queue.push(id);
+        emit({type: 'queued', trackId: id});
+        pump();
+      }
+      if (eligible()) entry.timer = later(check, LOCK_CHECK_MS);
+    }
+
+    function cancelWait(id) {
+      const entry = job(id);
+      if (!entry || entry.phase !== 'locked') return false;
+      clear(entry.timer);
+      entry.phase = 'cancelled';
+      entry.holder = null;
+      entry.error = null;
+      emit({type: 'cancelled', trackId: id});
+      return true;
+    }
 
     function enqueue(trackId, source, batch, key, engines) {
       const id = String(trackId || '');
@@ -70,6 +125,8 @@
       const id = queue.shift();
       const entry = job(id);
       if (!entry || entry.phase !== 'queued') return pump();
+      if (entry.source === 'auto' && !wanted(id)) { jobs.delete(id); return pump(); }
+      if (entry.afterLock && !mayStart(id)) { entry.phase = 'held'; return pump(); }
       current = id;
       entry.phase = 'running';
       entry.attempts++;
@@ -92,6 +149,14 @@
         entry.error = String(result && (result.error || result.detail) || 'failed');
         // Another program holds the analysis lock (XLD core/analysis-lock.cjs): who, and on which song.
         entry.holder = result && result.error === 'analysis-locked' ? (result.holder || {}) : null;
+        if (entry.source === 'auto' && !wanted(id)) { jobs.delete(id); return pump(); }
+        if (entry.source === 'auto' && entry.holder && options.readLock) {
+          entry.attempts--;
+          entry.steps = entry.steps.slice(entry.steps.indexOf(entry.step));
+          waitForLock(id, entry);
+          emit({type: 'locked', trackId: id, holder: entry.holder});
+          return pump();
+        }
         // An automatic run gets one more try after a pause; anything else waits for the user.
         if (entry.source === 'auto' && entry.attempts < 2 && entry.error !== 'analysis-cancelled') {
           entry.phase = 'retrying';
@@ -99,7 +164,8 @@
             entry.timer = 0;
             if (entry.phase !== 'retrying') return;
             // Only from the score (acceptance M1 holds for the retry too): otherwise wait for the score.
-            if (!mayStart()) { entry.phase = 'held'; emit({type: 'held', trackId: id}); return; }
+            if (!wanted(id)) { jobs.delete(id); return; }
+            if (!mayStart(id)) { entry.phase = 'held'; emit({type: 'held', trackId: id}); return; }
             entry.phase = 'queued';
             queue.push(id);
             emit({type: 'queued', trackId: id});
@@ -118,16 +184,22 @@
     // `engines`: what the song owes (owedEngines(health)); without it, the layers only (as before B7).
     function auto(trackId, key, engines) {
       const known = job(String(trackId || ''));
+      if (known && known.phase === 'locked' && known.key === keyOf(key)) return false;
+      if (known && known.phase === 'held' && known.holder && known.key === keyOf(key)) {
+        waitForLock(String(trackId), known);
+        return true;
+      }
       if (known && ['queued', 'running', 'retrying'].includes(known.phase)) return false;
       // A held retry for the same stems runs now, still as the one automatic retry (enqueue keeps the count).
       if (known && known.phase === 'held' && known.key === keyOf(key)) return enqueue(trackId, 'auto', null, key, engines);
-      if (known && ['done', 'failed'].includes(known.phase) && known.key === keyOf(key)) return false;
+      if (known && ['done', 'failed', 'cancelled'].includes(known.phase) && known.key === keyOf(key)) return false;
       return enqueue(trackId, 'auto', null, key, engines);
     }
 
     // The user asked for this track (the retry on the score's line, or manual mode).
     function request(trackId, key, engines) {
       const known = job(String(trackId || ''));
+      if (awaitingLock(known)) return false;
       if (known && known.phase === 'retrying') { clear(known.timer); known.timer = 0; }
       return enqueue(trackId, 'user', null, key === undefined && known ? known.key : key, engines);
     }
@@ -140,7 +212,7 @@
         if (id !== keepTrackId && entry && entry.source === 'auto') { queue.splice(index, 1); jobs.delete(id); }
       }
       for (const [id, entry] of jobs) {
-        if (id !== keepTrackId && ['retrying', 'held'].includes(entry.phase) && entry.source === 'auto') { clear(entry.timer); jobs.delete(id); }
+        if (id !== keepTrackId && ['retrying', 'held', 'locked', 'cancelled'].includes(entry.phase) && entry.source === 'auto') { clear(entry.timer); jobs.delete(id); }
       }
     }
 
@@ -173,12 +245,12 @@
         status: () => ({...state, failures: state.failures.slice()})
       };
       // Songs already queued or running (opened in the score just now) are left to that job.
-      const mine = ids.filter(id => { const known = job(id); return !(known && (known.phase === 'running' || known.phase === 'queued')); });
+      const mine = ids.filter(id => { const known = job(id); return !(known && (known.phase === 'running' || known.phase === 'queued' || awaitingLock(known))); });
       skipped = ids.length - mine.length;
       state.total = mine.length;
       state.finished = state.total === 0;
       // Listen before the first song starts: it starts as soon as it is queued.
-      listeners.add(function follow(event) {
+      if (mine.length) listeners.add(function follow(event) {
         if (event.type === 'running' && job(event.trackId) && job(event.trackId).batch === handle) { state.current = event.trackId; report(); }
         if (state.finished) listeners.delete(follow);
       });
@@ -188,7 +260,7 @@
     }
 
     return Object.freeze({
-      auto, request, forgetWaiting, batch,
+      auto, request, forgetWaiting, cancelWait, batch,
       phase: trackId => { const entry = job(String(trackId || '')); return entry ? entry.phase : 'idle'; },
       error: trackId => { const entry = job(String(trackId || '')); return entry ? entry.error : null; },
       holder: trackId => { const entry = job(String(trackId || '')); return entry && entry.holder ? entry.holder : null; },

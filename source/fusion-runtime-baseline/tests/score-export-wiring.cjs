@@ -76,10 +76,14 @@ async function channel() {
   const {createScoreExport} = require(path.join(root, 'desktop', 'score-export-ipc.cjs'));
   const exporter = require(path.join(root, '..', 'scoreview', 'export', 'export-main.cjs'));
   const asked = [];
+  let saveDialogs = 0;
   const fakeEngine = {...exporter, exportVideo: async request => { asked.push(request); return {ok: true, file: request.outFile, summary: {bytes: 1}}; }};
   const sender = {isDestroyed: () => false, send: () => {}};
   const make = roots => createScoreExport({
-    app: {getPath: () => scratch}, dialog: {showSaveDialog: async () => ({canceled: false, filePath: path.join(scratch, 'out.mp4')})},
+    app: {getPath: () => scratch}, dialog: {showSaveDialog: async () => {
+      saveDialogs++;
+      return {canceled: false, filePath: path.join(scratch, 'out.mp4')};
+    }},
     shell: {showItemInFolder: () => {}}, BrowserWindow: {fromWebContents: () => null}, exporter: fakeEngine,
     scoreModelFor: async () => ({ok: true, model: {track: {title: 't', artist: 'a', duration: 10}, lanes: [{}]}}), analysisRoots: () => roots, locale: () => 'zh-CN'
   });
@@ -94,6 +98,23 @@ async function channel() {
   assert.equal(none.ok, false, '没有分析根清单时不该导出');
   assert.equal(asked.length, 1, '没有分析根清单时引擎不该被叫到');
   done.push('导出通道：禁写目录原样交给引擎；没有清单就不导出');
+  const channel = make(roots);
+  for (const videoBitrate of [49999, 16000001, 95000.5, NaN, Infinity, -Infinity, '2500000', false, {}, [8000000]]) {
+    const rejected = await channel.start({sender}, {tier:'1080p', videoBitrate});
+    assert.equal(rejected.error, 'invalid-video-bitrate');
+    assert.equal(saveDialogs, 1);
+    assert.equal(asked.length, 1);
+  }
+  for (const tier of ['720p', '1080p']) {
+    for (const videoBitrate of [50000, 2738291, 16000000, null, undefined]) {
+      const selected = await channel.start({sender}, {trackId:'x', tier, videoBitrate, meteorMotion:true});
+      assert.ok(selected.ok);
+      assert.equal(asked.at(-1).tier, tier);
+      assert.equal(asked.at(-1).videoBitrate, videoBitrate);
+      assert.equal(asked.at(-1).look.meteorMotion, true);
+    }
+  }
+  done.push('两档分辨率逐次转发视频码率，无效值不打开保存对话框');
 }
 
 // --- 2. the kept effects setting ----------------------------------------------------------------------
@@ -190,8 +211,8 @@ async function laneNamesAndLanguage() {
   done.push('英文界面悬停名是英文；切换语言立刻重读谱面');
 }
 
-// The size shown on the two buttons, against MEGURI's real files (work/score-export-20261114/out-b and the
-// file XML itself exported: 44,246,252 B and 22,954,650 B for 9:28.77).
+// The panel estimates decimal MB using the encoding tier's nominal video and audio rates.
+// The small-tier reference file is MEGURI.
 function sizeEstimate() {
   const scene = {status: () => ({active: true, status: 'ready', trackId: 't', fxPreset: 'clear', reading: {}})};
   const p = page({scene});
@@ -201,19 +222,136 @@ function sizeEstimate() {
   p.byId.get('scoreExportChoices').querySelectorAll = () => [];
   p.win.XinsMusicLabFusion = {scoreExport: async () => ({ok: false}), onScoreExportProgress: () => () => {}};
   p.run('score-export-controls.js');
-  const shown = tier => Number(/(\d+)/.exec(p.byId.get(tier === '1080p' ? 'scoreExport1080Size' : 'scoreExport720Size').textContent)[1]);
-  const real = {'1080p': 44246252 / 1048576, '720p': 22954650 / 1048576};
-  for (const tier of ['1080p', '720p']) {
-    const off = Math.abs(shown(tier) - real[tier]) / real[tier];
-    assert.ok(off <= 0.1, `${tier} 预估 ${shown(tier)} MB，实际 ${real[tier].toFixed(1)} MB，差 ${(off * 100).toFixed(1)}%`);
+  const shown = tier => Number(/(\d+(?:\.\d+)?)/.exec(p.byId.get(tier === '1080p' ? 'scoreExport1080Size' : 'scoreExport720Size').textContent)[1]);
+  assert.ok(Math.abs(shown('720p') - 22954650 / 1000000) / (22954650 / 1000000) <= 0.1);
+  const audio = p.byId.get('fusionAudio');
+  audio.duration = 16;
+  audio.fire('loadedmetadata');
+  const tier = require('../../scoreview/export/export-main.cjs').TIERS['1080p'];
+  const targetMB = audio.duration * (tier.videoBitrate + tier.audioBitrate) / 8000000;
+  assert.equal(shown('1080p'), Number(targetMB.toFixed(1)));
+  done.push('720p 大小预估与实测相符，1080p 大小预估随编码器视频与音频码率计算');
+}
+
+function exportPanel(storage) {
+  const state = {active: true, status: 'ready', trackId: 't', meteorMotion: false};
+  let complete;
+  const calls = [];
+  const p = page({scene: {status: () => ({...state})}});
+  const get = id => p.byId.get(id);
+  for (const id of ['scoreExportOpen', 'scoreExportChoices', 'scoreExportStatus', 'scoreExportProgress', 'scoreExportCancel', 'scoreExportReveal',
+                    'scoreExportBitrate','scoreExportCustomBitrate','scoreExportCustomRow','scoreExportBitrateError','scoreExport1080Size','scoreExport720Size','fusionAudio'])
+    p.byId.set(id, p.element());
+  const mode = get('scoreExportBitrate'), custom = get('scoreExportCustomBitrate');
+  mode.value = 'auto'; custom.value = '2';
+  custom.setAttribute = (key, value) => { custom[key] = value; };
+  get('fusionAudio').duration = 60;
+  const tiers = ['720p', '1080p'].map(tier => Object.assign(p.element('button'), {dataset: {tier}}));
+  get('scoreExportChoices').querySelectorAll = () => tiers;
+  p.win.localStorage = {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value)};
+  p.win.XinsMusicLabFusion = {scoreExport: payload => {
+    calls.push(payload);
+    return new Promise(resolve => { complete = () => resolve({ok: false, error: 'not-chosen'}); });
+  }};
+  p.run('score-export-controls.js');
+  return {state, calls, tiers, get, mode, custom, p,
+    setMode(value) { mode.value = value; mode.fire('change'); },
+    setMbps(value) { custom.value = value; custom.fire('input'); },
+    async finish() { complete(); await new Promise(resolve => setImmediate(resolve)); }};
+}
+
+async function exportSettingsAtStart() {
+  const storage = new Map();
+  const {state, calls, tiers, get, mode, custom, setMode, setMbps, finish, p} = exportPanel(storage);
+  const estimates = () => [get('scoreExport720Size'), get('scoreExport1080Size')].map(n => n.textContent);
+  assert.equal(mode.value, 'auto');
+  assert.deepEqual(estimates(), ['约 2.2 MB', '约 13 MB']);
+  assert.equal(get('scoreExportCustomRow').hidden, true);
+  for (const preset of ['1','2','4','8']) {
+    setMode(preset);
+    tiers[1].fire('click');
+    assert.equal(calls.at(-1).videoBitrate, Number(preset) * 1000000);
+    await finish();
   }
-  done.push(`预估大小 1080p ${shown('1080p')} / 720p ${shown('720p')} MB，与 MEGURI 实际差 10% 以内`);
+  setMode('custom');
+  assert.equal(get('scoreExportCustomRow').hidden, false);
+  for (const invalid of ['', '.049', '16.001', '-1', '1e1', '1.2345', 'abc']) {
+    setMbps(invalid);
+    assert.equal(custom['aria-invalid'], 'true');
+    assert.equal(get('scoreExportBitrateError').hidden, false);
+    assert.deepEqual(estimates(), ['', '']);
+    for (const button of tiers) { assert.equal(button.disabled, true); button.fire('click'); }
+    assert.equal(calls.length, 4);
+  }
+  for (const value of ['.05','1.234','16']) {
+    setMbps(value);
+    assert.equal(custom['aria-invalid'], 'false');
+    assert.equal(get('scoreExportBitrateError').hidden, true);
+    assert.ok(tiers.every(button => !button.disabled));
+    tiers[0].fire('click');
+    assert.equal(calls.at(-1).videoBitrate, Math.round(Number(value) * 1000000));
+    await finish();
+  }
+  setMbps('0.5');
+  assert.deepEqual(estimates(), ['约 4.5 MB', '约 4.7 MB']);
+  const restored = exportPanel(storage);
+  assert.equal(restored.mode.value, 'custom');
+  assert.equal(restored.custom.value, '0.5');
+  for (const button of tiers) {
+    for (const selected of [true, false]) {
+      state.meteorMotion = !selected;
+      get('scoreExportOpen').fire('click');
+      state.meteorMotion = selected;
+      setMode(selected ? '4' : 'auto');
+      button.fire('click');
+      state.meteorMotion = !selected;
+      setMode('2');
+      const request = calls.at(-1);
+      assert.equal(request.tier, button.dataset.tier);
+      assert.equal(request.meteorMotion, selected);
+      if (selected) assert.equal(request.videoBitrate, 4000000);
+      else assert.equal(Object.hasOwn(request, 'videoBitrate'), false);
+      assert.equal(p.win.XinScoreExportControls.status().working, true);
+      await finish();
+      assert.equal(p.win.XinScoreExportControls.status().working, false);
+    }
+  }
+  assert.equal(calls.length, 11);
+  assert.equal(exportPanel(storage).mode.value, '2');
+  done.push('两种分辨率均在开始导出时取流星和码率；无效值阻止导出，自定义、预估体积与重启记忆均通过');
+}
+
+async function scoreSnapshot() {
+  const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+  const source = app.slice(app.indexOf('  async function captureSnapshot()'), app.indexOf('  async function toggleAlwaysOnTop()'));
+  assert.ok(app.includes("snapshotButton.addEventListener('click', captureSnapshot)"));
+  const score = {width: 1800, getBoundingClientRect: () => ({left: 10, top: 92, width: 1200, height: 590})};
+  const draws = [], transforms = [], saves = [];
+  const shot = {toDataURL: () => 'data:image/png,test', getContext: () => ({
+    setTransform: (...args) => transforms.push(args), createRadialGradient: () => ({addColorStop() {}}),
+    fillRect() {}, fillText() {}, drawImage: (...args) => draws.push(args)
+  })};
+  const win = {
+    activeEffect: 'score', $: name => name === '#scoreCanvas' ? score : null,
+    w: 1200, h: 740, dpr: 0.85, currentPalette: {dark: [5, 6, 7]},
+    stage: {getBoundingClientRect: () => ({left: 10, top: 12}), classList: {contains: () => false}},
+    window: {SmokeResonanceDesktop: {saveSnapshot: url => saves.push(url)}},
+    document: {createElement: () => shot}, uiText() {}, showToast() {}
+  };
+  await vm.runInNewContext(source + '\ncaptureSnapshot()', win);
+  assert.deepEqual(saves, ['data:image/png,test']);
+  assert.deepEqual(draws, [[score, 0, 80, 1200, 590]]);
+  assert.deepEqual(transforms, [[1.5, 0, 0, 1.5, 0, 0]]);
+  assert.deepEqual([shot.width, shot.height], [1800, 1110]);
+  done.push('谱面截屏按谱面分辨率、原位置和高度保存');
 }
 
 (async () => {
+  await scoreSnapshot();
   await channel();
   keptSetting();
   await laneNamesAndLanguage();
+  await exportSettingsAtStart();
   sizeEstimate();
   await mainWiring();
   console.log(`score export wiring: PASS (${done.join('；')})`);

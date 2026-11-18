@@ -29,13 +29,15 @@ assert.ok(zh && en, 'catalogs load');
   assert.match(html, /data-i18n="score\.fxFollow">光效跟随起伏</);
   assert.match(html, /<kbd>G<\/kbd> 画面特效 ·/, 'G 开关的是画面特效');
   // Nothing in the score group says 特效 any more; the 画面特效 switch is not in the score group.
-  const scoreGroup = html.slice(html.indexOf('data-i18n="score.options"'), html.indexOf('data-i18n="shell.more"'));
+  const start = html.indexOf('id="xlScoreSettings"');
+  const scoreGroup = html.slice(start, html.indexOf('</aside>', start));
+  assert.ok(scoreGroup.includes('id="scoreEffects"'));
   assert.doesNotMatch(scoreGroup.replace(/<details[\s\S]*?<\/details>/, ''), /特效/, '谱面阅读组里不再出现「特效」');
   assert.ok(!scoreGroup.includes('glitchPowerButton'));
   // 谱面对齐 is docked into the 谱面阅读 group (above 导出视频), not into the second group (画面效果).
   const scene = read('score-scene.js');
-  assert.match(scene, /const group = root\.document\.querySelector\('#xlSettings \[data-i18n="score\.options"\]'\)\?\.closest\('\.xl-group'\) \|\| null;/);
-  assert.match(scene, /group\.insertBefore\(row, group\.querySelector\(':scope > \.score-export'\)\);/);
+  assert.match(scene, /const group = root\.document\.getElementById\('scoreTimingGroup'\);/);
+  assert.match(scene, /group\.appendChild\(row\);/);
   assert.ok(!scene.includes('.xl-group + .xl-group'), '谱面对齐不再落到第二组');
   assert.ok(html.indexOf('data-i18n="score.options"') < html.indexOf('class="score-export"'));
   // Keys, defaults and behaviour unchanged.

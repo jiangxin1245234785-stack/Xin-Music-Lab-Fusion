@@ -56,7 +56,37 @@
 
     const byTrack = new Map();    // trackId -> {lines, source, offset} | {lines: null, settled, reason, hidden}
     let trackId = null, placedAt = -Infinity, anchor = null, shownIndex = null, frame = 0, asks = 0, fromKey = '', flashTimer = 0, busy = false;
+    let anchorWidth = 0, anchorHeight = 0;
     const reasked = new Set();    // songs asked again once their vocal line came (at most once each per page)
+    const sideWords = doc.getElementById?.('scoreSidebarLyrics');
+    const compactWords = doc.getElementById?.('scoreCompactLyrics');
+    const entry = doc.createElement('button');
+    entry.type = 'button'; entry.className = 'score-lyrics-entry'; entry.id = 'scoreLyricsFind';
+    entry.hidden = true;
+    menu.id = 'scoreLyricsMenu';
+    entry.setAttribute('aria-controls', menu.id);
+    entry.setAttribute('aria-expanded', 'false');
+    entry.addEventListener('click', event => { stop(event); toggleMenu(); });
+    sideWords?.append(entry);
+    let lyricSlot = null;
+    function dockLyrics() {
+      let target = null;
+      if (sideWords && compactWords && stage.classList?.contains('score-layout-active')) {
+        target = stage.classList.contains('score-layout-collapsed') || stage.classList.contains('ui-hidden') ? compactWords : sideWords;
+      }
+      if (target !== lyricSlot) {
+        closeMenu();
+        if (target) target.appendChild(box);
+        else canvas.parentNode.insertBefore(box, canvas.nextSibling);
+        box.removeAttribute('style');
+        menu.removeAttribute('style');
+        box.classList.remove('is-tight');
+        lyricSlot = target;
+        anchor = null;
+        placedAt = -Infinity;
+      }
+      return target;
+    }
     // The whole-song offset (main process: estimated once from the vocal line, plus the user's nudges). Shown time =
     // play time - shift; positive shift = the lyrics were early and are shown later.
     const shiftOf = found => (found && found.offset ? (Number(found.offset.auto) || 0) + (Number(found.offset.manual) || 0) : 0);
@@ -93,19 +123,27 @@
 
     function ask(id) {
       if (byTrack.has(id) || typeof bridge?.lyrics !== 'function') return;
-      byTrack.set(id, {lines: null, pending: true});
+      const pending = {lines: null, pending: true};
+      byTrack.set(id, pending);
       asks++;
       const duration = Number(audio?.duration);
-      Promise.resolve(bridge.lyrics(id, Number.isFinite(duration) ? duration : 0)).then(answer => {
+      pending.promise = Promise.resolve(bridge.lyrics(id, Number.isFinite(duration) ? duration : 0)).then(answer => {
+        if (byTrack.get(id) !== pending) return;
         const parsed = answer?.ok && answer.lrc ? core.parseLrc(answer.lrc) : null;
         byTrack.set(id, parsed && parsed.timed ? {lines: parsed.lines, source: answer.source, file: answer.file || null, chosen: Boolean(answer.chosen), offset: answer.offset || null}
-          : {lines: null, settled: true, reason: answer?.reason || 'none', hidden: Boolean(answer?.hidden)});
+          : {lines: null, settled: true, reason: answer?.reason || 'none', hidden: Boolean(answer?.hidden), instrumental: Boolean(answer?.instrumental)});
         if (id === trackId) { shownIndex = null; fromKey = ''; flash(); }
-      }, () => byTrack.set(id, {lines: null, settled: true, reason: 'error'}));
+      }, () => { if (byTrack.get(id) === pending) byTrack.set(id, {lines: null, settled: true, reason: 'network'}); });
     }
 
     // --- the menu ------------------------------------------------------------------------------------------------------
-    function closeMenu() { if (!menu.hidden) menu.hidden = true; box.classList.remove('is-menu'); }
+    let menuPage = 'home', searchTitle = '', searchArtist = '', shareUrl = '', preview = null, candidateList = null, menuRequest = 0;
+    function closeMenu() {
+      if (menu.hidden) return;
+      menu.hidden = true; busy = false; menuRequest++;
+      entry.setAttribute('aria-expanded', 'false');
+      box.classList.remove('is-menu');
+    }
     function item(text, onClick, {disabled = false, note = ''} = {}) {
       const b = doc.createElement('button'); b.type = 'button'; b.className = 'score-lyrics__item'; b.textContent = text; b.disabled = Boolean(disabled || busy);
       if (note) b.title = note;
@@ -115,23 +153,123 @@
     function act(action, extra = {}) {
       const id = trackId;
       if (!id || busy || typeof bridge?.lyricsMenu !== 'function') return Promise.resolve(null);
+      const request = ++menuRequest;
       busy = true; drawMenu();
       const duration = Number(audio?.duration);
       return Promise.resolve(bridge.lyricsMenu(id, action, {...extra, duration: Number.isFinite(duration) ? duration : 0}))
         .then(answer => answer, () => ({ok: false, reason: 'error'}))
         .then(answer => {
-          busy = false;
-          if (answer && answer.ok && !answer.canceled && action !== 'candidates') { byTrack.delete(id); reasked.delete(id); closeMenu(); ask(id); }
-          else drawMenu(answer && !answer.ok ? say('score.lyricsFailed', '没成：{why}', {why: answer.reason || ''}) : '');
+          const currentMenu = request === menuRequest && id === trackId && !menu.hidden;
+          if (currentMenu) busy = false;
+          if (answer?.ok && !answer.canceled && action !== 'candidates' && action !== 'netease-preview') {
+            byTrack.delete(id); reasked.delete(id);
+            if (currentMenu) closeMenu();
+            if (id === trackId && enabled && scene.status?.()?.active) ask(id);
+          } else if (currentMenu) {
+            if (action === 'refresh' && answer && !answer.ok && !byTrack.get(id)?.lines) {
+              byTrack.set(id, {lines:null, settled:true, reason:answer.reason || 'error'});
+            }
+            drawMenu(answer && !answer.ok ? failText(answer.reason) : '');
+          }
+          if (!currentMenu) return null;
           return answer;
         });
     }
-    let candidateList = null;
+    function failText(reason) {
+      if (reason === 'invalid-link' || reason === 'need-song-link') return say('score.lyricsBadLink', '请粘贴网易云的单曲分享链接。');
+      if (reason === 'no-timed-lyrics') return say('score.lyricsLinkUntimed', '这份录音没有同步歌词。');
+      if (['none','not-found','not-the-song','not-offered'].includes(reason)) return say('score.lyricsNoResult', '没有找到这份歌词。');
+      if (reason === 'rate-limited' || reason === 'waiting') return say('score.lyricsWait', '歌词服务暂时限制了查询，请稍后再试。');
+      if (reason === 'no-names') return say('score.lyricsNeedNames', '请填写歌名或艺人。');
+      if (reason === 'chosen-file-missing') return say('score.lyricsMissingFile', '之前选的本地歌词文件已移走。');
+      return say('score.lyricsServiceError', '暂时无法读取歌词，请稍后再试。');
+    }
+    function note(text, className = 'score-lyrics__note') {
+      const row = doc.createElement('small');
+      row.className = className;
+      row.textContent = text;
+      return row;
+    }
+    const clockText = duration => {
+      if (!Number.isFinite(duration) || duration <= 0) return '';
+      const seconds = Math.round(duration);
+      return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+    };
+    function formField(form, id, label, value, update, limit) {
+      const group = doc.createElement('label'), input = doc.createElement('input');
+      input.id = id; input.type = 'text'; input.value = value;
+      input.maxLength = limit; input.autocomplete = 'off'; input.disabled = busy;
+      group.textContent = label;
+      input.addEventListener('input', () => update(input.value));
+      group.append(input);
+      form.append(group);
+    }
+    function menuForm(page) {
+      const form = doc.createElement('form');
+      form.className = 'score-lyrics__form';
+      const search = page === 'search';
+      if (search) {
+        formField(form, 'scoreLyricsQuery', say('score.lyricsTitleField', '歌名'), searchTitle, value => { searchTitle = value; }, 256);
+        formField(form, 'scoreLyricsArtistQuery', say('score.lyricsArtistField', '艺人'), searchArtist, value => { searchArtist = value; }, 256);
+      } else {
+        formField(form, 'scoreLyricsShareUrl', say('score.lyricsLinkField', '网易云歌曲分享链接'), shareUrl, value => { shareUrl = value; }, 2048);
+      }
+      const submit = doc.createElement('button');
+      submit.type = 'submit'; submit.className = 'score-lyrics__item'; submit.disabled = busy;
+      submit.textContent = search ? say('score.lyricsSearch', '搜索歌词') : say('score.lyricsPreview', '预览歌词版本');
+      form.append(submit);
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        if (busy) return;
+        if (search && !searchTitle.trim() && !searchArtist.trim()) { drawMenu(failText('no-names')); return; }
+        if (!search && !shareUrl.trim()) { drawMenu(failText('invalid-link')); return; }
+        preview = null; candidateList = null;
+        const task = search ? act('candidates', {query: searchTitle.trim(), artist: searchArtist.trim()}) : act('netease-preview', {url: shareUrl.trim()});
+        task.then(answer => {
+          if (!answer?.ok) return;
+          if (search) candidateList = answer.candidates || [];
+          else preview = answer.candidate;
+          drawMenu();
+          (menu.querySelector?.('[data-lyrics-choice]') || menu.querySelector?.('input'))?.focus();
+        });
+      });
+      return form;
+    }
+    function enterMenuPage(page) {
+      candidateList = null; preview = null; menuPage = page;
+      if (page === 'search') {
+        const title = doc.getElementById?.('fusionTrack')?.textContent || '';
+        const artist = doc.getElementById?.('fusionArtist')?.textContent || '';
+        const parsed = core.query?.({title, artist});
+        searchTitle = parsed?.title || title;
+        searchArtist = parsed?.artist || (['unknown artist','未知艺术家','—'].includes(artist.trim().toLowerCase()) ? '' : artist);
+      } else if (page === 'netease') shareUrl = '';
+      drawMenu();
+      menu.querySelector?.('input:not([disabled]),button:not([disabled])')?.focus();
+    }
     function drawMenu(message = '') {
       if (menu.hidden) return;
       const found = byTrack.get(trackId) || {};
       menu.replaceChildren();
-      if (candidateList) {
+      if (menuPage === 'search' || menuPage === 'netease') {
+        if (menuPage === 'search' || !preview) menu.append(menuForm(menuPage));
+        if (candidateList) {
+          if (!candidateList.length) menu.append(note(say('score.lyricsNoOther', 'LRCLIB 上没有别的带时间的版本')));
+          for (const c of candidateList) {
+            const label = [c.title, c.artist, c.album, clockText(c.duration)].filter(Boolean).join(' · ');
+            const choice = item(label, () => act('choose', {id:c.id}), {note:label});
+            choice.dataset.lyricsChoice = String(c.id);
+            menu.append(choice);
+          }
+        }
+        if (preview) {
+          menu.append(note([preview.title, preview.artist, preview.album, clockText(preview.duration), say('score.lyricsLines', '{count} 行', {count: preview.lines})].filter(Boolean).join(' · '), 'score-lyrics__result'));
+          if (preview.recordingMismatch) menu.append(note(say('score.lyricsDifferentVersion', '曲目信息与本地录音有差异，请核对版本。')));
+          const use = item(say('score.lyricsUseVersion', '使用这份歌词'), () => act('netease-choose', {id:preview.id}));
+          use.id = 'scoreLyricsConfirm'; use.dataset.lyricsChoice = String(preview.id); menu.append(use);
+        }
+        menu.append(item(say('score.lyricsBack', '返回'), () => enterMenuPage('home')));
+      } else if (candidateList) {
         const list = candidateList;
         if (!list.length) menu.append(Object.assign(doc.createElement('small'), {className: 'score-lyrics__note', textContent: say('score.lyricsNoOther', 'LRCLIB 上没有别的带时间的版本')}));
         for (const c of list) {
@@ -140,6 +278,19 @@
           menu.append(item(label, () => act('choose', {id: c.id})));
         }
         menu.append(item(say('score.lyricsBack', '返回'), () => { candidateList = null; drawMenu(); }));
+      } else if (lyricSlot === sideWords && sideWords) {
+        if (found.instrumental) {
+          menu.append(item(say('score.lyricsUndoInstrumental', '撤销无歌词标记'), () => act('undo-instrumental')));
+        } else if (found.hidden) {
+          menu.append(item(say('score.lyricsShow', '显示歌词'), () => act('show')));
+        } else {
+          menu.append(item(say('score.lyricsSearch', '搜索歌词'), () => enterMenuPage('search')));
+          menu.append(item(say('score.lyricsNetEaseLink', '粘贴网易云链接…'), () => enterMenuPage('netease')));
+          menu.append(item(say('score.lyricsFileMenu', '用本地文件…'), () => act('file')));
+          if (!found.lines) menu.append(item(say('score.lyricsRefresh', '重新查找'), () => act('refresh')));
+          menu.append(item(say('score.lyricsMarkInstrumental', '标记为无歌词'), () => act('instrumental')));
+          if (found.lines) menu.append(item(say('score.lyricsHide', '这首不显示歌词'), () => act('hide')));
+        }
       } else {
         menu.append(item(say('score.lyricsRefresh', '重新查找'), () => act('refresh')));
         if (!found.hidden) menu.append(item(say('score.lyricsOther', '换一份'), () => act('candidates').then(answer => {
@@ -149,13 +300,22 @@
         menu.append(found.hidden ? item(say('score.lyricsShow', '显示歌词'), () => act('show'))
           : item(say('score.lyricsHide', '这首不显示歌词'), () => act('hide')));
       }
-      if (message || busy) menu.append(Object.assign(doc.createElement('small'), {className: 'score-lyrics__note', textContent: busy ? say('score.lyricsWorking', '正在处理…') : message}));
+      if (message || busy) {
+        const status = note(busy ? say('score.lyricsWorking', '正在处理…') : message);
+        status.setAttribute('role','status'); menu.append(status);
+      }
     }
     function toggleMenu() {
       if (!menu.hidden) { closeMenu(); return; }
-      candidateList = null; menu.hidden = false; box.classList.add('is-menu'); drawMenu();
+      candidateList = null; preview = null; menuPage = 'home'; menu.hidden = false;
+      entry.setAttribute('aria-expanded', 'true');
+      box.hidden = false; box.classList.add('is-menu'); drawMenu();
     }
-    doc.addEventListener?.('pointerdown', event => { if (!menu.hidden && !box.contains?.(event.target)) closeMenu(); }, true);
+    doc.addEventListener?.('pointerdown', event => { if (!menu.hidden && !box.contains?.(event.target) && !entry.contains?.(event.target)) closeMenu(); }, true);
+    menu.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); closeMenu(); (entry.hidden ? more : entry).focus?.(); }
+      event.stopPropagation();
+    });
 
     // Where the vocal lane starts, asked of the score itself: the first point down the play line that view.hit() calls
     // the vocal lane; without one, the first lane of any kind.
@@ -174,12 +334,17 @@
     function sourceName(found) {
       if (found.source === 'file') return say('score.lyricsFile', '歌曲文件夹里的 .lrc');
       if (found.source === 'chosen-file') return found.file || '.lrc';
+      if (found.source === 'netease') return say('score.lyricsNetEase', '网易云音乐');
       return found.chosen ? say('score.lyricsChosen', 'LRCLIB（你选的那份）') : 'LRCLIB';
     }
 
     const signed = value => (value > 0 ? '+' : value < 0 ? '−' : '') + Math.abs(value).toFixed(1);
     function fromText(found) {
-      if (!found.lines) return found.hidden ? say('score.lyricsHidden', '这首不显示歌词') : say('score.lyricsNone', '没有找到歌词');
+      if (!found.lines) {
+        if (found.instrumental) return say('score.lyricsInstrumental', '已标记为无歌词');
+        if (found.hidden) return say('score.lyricsHidden', '这首不显示歌词');
+        return stateFor(found) === 'unavailable' ? failText(found.reason) : say('score.lyricsNone', '没有找到歌词');
+      }
       const parts = [say('score.lyricsFrom', '歌词来自 {source}', {source: sourceName(found)})];
       const o = found.offset;
       if (o && o.sure && Number(o.auto)) parts.push(say('score.lyricsAligned', '已对齐 {shift} 秒', {shift: signed(Number(o.auto))}));
@@ -189,10 +354,38 @@
     // A song with no singing (its vocal line is made and has nothing sung): no "没有找到歌词" row for it.
     const noSinging = status => status.health?.vocals?.state === 'current' && status.health?.contour && status.health.contour.ok === false;
 
+    function stateFor(found) {
+      if (!found || found.pending) return 'pending';
+      if (found.lines) return 'ready';
+      if (found.instrumental) return 'instrumental';
+      if (found.hidden) return 'hidden';
+      if (['none','not-found','no-names','no-timed-lyrics','not-the-song','chosen-file-missing'].includes(found.reason)) return 'missing';
+      return 'unavailable';
+    }
+    let entryLabelKey = '';
+    function showEntry(state, slot) {
+      if (stage.dataset && stage.dataset.scoreLyricState !== state) stage.dataset.scoreLyricState = state;
+      const managed = state === 'instrumental' || state === 'hidden';
+      const visible = sideWords && slot === sideWords && (managed || state === 'missing' || state === 'unavailable');
+      if (entry.hidden !== !visible) entry.hidden = !visible;
+      if (visible) {
+        const key = (managed ? 'manage' : 'find') + (doc.documentElement?.lang || '');
+        if (entryLabelKey !== key) {
+          entryLabelKey = key;
+          entry.textContent = managed ? say('score.lyricsManage', '歌词设置…') : say('score.lyricsFind', '找歌词…');
+        }
+      }
+    }
     function render() {
+      const slot = dockLyrics();
       const status = scene.status?.();
-      if (!enabled || !status || !status.active || status.status !== 'ready' || !status.trackId) { hide(); return; }
-      if (status.trackId !== trackId) { trackId = status.trackId; anchor = null; placedAt = -Infinity; shownIndex = null; fromKey = ''; closeMenu(); }
+      if (!enabled || !status?.active || !status.trackId || (!slot && status.status !== 'ready')) {
+        showEntry(enabled ? 'idle' : 'off', slot); hide(); return;
+      }
+      if (status.trackId !== trackId) {
+        trackId = status.trackId; anchor = null; placedAt = -Infinity; shownIndex = null; fromKey = '';
+        current.textContent = before.textContent = after.textContent = from.textContent = ''; closeMenu();
+      }
       // The vocal line arrived after the lyrics were asked for (XML prepares it, B7 A): ask once more for the estimate.
       const asked = byTrack.get(trackId);
       if (asked?.lines && asked.offset && asked.offset.why === 'no-vocal-line' && !reasked.has(trackId) && status.health?.contour?.ok) {
@@ -200,20 +393,29 @@
       }
       ask(trackId);
       const found = byTrack.get(trackId);
+      showEntry(stateFor(found), slot);
       const view = scene.viewHandle?.();
       const empty = found && !found.lines && found.settled;
-      if (!view || !found || (!found.lines && !empty) || (empty && !found.hidden && noSinging(status))) { hide(); return; }
+      if ((!view && !slot) || !found || (!found.lines && !empty) ||
+          (empty && !slot && !found.hidden && noSinging(status))) { hide(); return; }
+      if (empty && slot && menu.hidden) {
+        hide();
+        return;
+      }
       const width = canvas.clientWidth, height = canvas.clientHeight;
-      if (!width || !height) { hide(); return; }
-      const x = width * (Number(view.options?.().playhead) || 0);
-      if (now() - placedAt > PLACE_EVERY) { anchor = place(view, width, height, x); placedAt = now(); }
-      if (!anchor) { hide(); return; }
+      if (!slot && (!width || !height)) { hide(); return; }
+      const x = width * (Number(view?.options?.().playhead) || 0);
+      if (!slot && (now() - placedAt > PLACE_EVERY || width !== anchorWidth || height !== anchorHeight)) {
+        anchor = place(view, width, height, x); placedAt = now(); anchorWidth = width; anchorHeight = height;
+      }
+      if (!slot && !anchor) { hide(); return; }
       if (empty) {
         // Only the faint row, on the same terms as the source row (a moment after opening, then while pointed at).
         if (shownIndex !== -2) { shownIndex = -2; current.textContent = before.textContent = after.textContent = ''; }
       } else {
-        const at = core.lineAt(found.lines, view.timeAt(x) - shiftOf(found));
-        if (!at.now && !at.after && menu.hidden) { hide(); return; }
+        const time = view && status.status === 'ready' ? view.timeAt(x) : (Number(audio?.currentTime) || 0) - (Number(status.latencyMs) || 0) / 1000;
+        const at = core.lineAt(found.lines, time - shiftOf(found));
+        if (!at.now && !at.after && menu.hidden && (!sideWords || slot !== sideWords)) { hide(); return; }
         if (shownIndex !== at.index) {
           shownIndex = at.index;
           current.textContent = at.now ? at.now.text : '';
@@ -224,27 +426,65 @@
       }
       const text = fromText(found);
       if (text !== fromKey) { fromKey = text; from.textContent = text; earlier.hidden = laterButton.hidden = !found.lines; box.classList.toggle('is-empty', !found.lines); }
+      if (slot) {
+        box.hidden = false;
+        box.dataset.anchor = slot === sideWords ? 'sidebar' : 'compact';
+        return;
+      }
       const left = canvas.offsetLeft + x - 2;
       box.style.left = `${Math.round(left)}px`;
       box.style.maxWidth = `${Math.max(80, Math.round(canvas.offsetLeft + width - left - 16))}px`;
       box.hidden = false;
-      box.style.top = `${Math.round(canvas.offsetTop + anchor.top - GAP - box.offsetHeight)}px`;
+      // Prefer the space above the named lane, but keep the expanded lines inside the
+      // score when the vocal lane comes first. The menu floats beside these words.
+      box.classList.toggle('is-tight', anchor.top < 100);
+      const margin = 4, boxHeight = box.offsetHeight;
+      const relativeTop = Math.max(margin, Math.min(anchor.top - GAP - boxHeight, height - boxHeight - margin));
+      box.style.top = Math.round(canvas.offsetTop + relativeTop) + 'px';
+      if (!menu.hidden) {
+        const boxLeft = left - canvas.offsetLeft, boxRight = boxLeft + box.offsetWidth;
+        const rightRoom = width - boxRight - 2 * margin, leftRoom = boxLeft - 2 * margin;
+        const goRight = rightRoom >= 158 || rightRoom >= leftRoom;
+        const sideRoom = goRight ? rightRoom : leftRoom;
+        if (sideRoom >= 128) {
+          menu.style.maxWidth = Math.floor(sideRoom) + 'px';
+          menu.style.left = goRight ? (box.offsetWidth + margin) + 'px' : 'auto';
+          menu.style.right = goRight ? 'auto' : (box.offsetWidth + margin) + 'px';
+          menu.style.top = (margin - relativeTop) + 'px';
+          menu.style.maxHeight = Math.max(36, Math.min(height - 2 * margin, anchor.top - 2 * margin)) + 'px';
+        } else {
+          // Very narrow screens: put the scrollable popup on its own row.
+          menu.style.left = '0px'; menu.style.right = 'auto'; menu.style.top = (boxHeight + margin) + 'px';
+          menu.style.maxWidth = Math.max(64, width - boxLeft - margin) + 'px';
+          menu.style.maxHeight = Math.max(32, height - relativeTop - boxHeight - 2 * margin) + 'px';
+        }
+      }
       box.dataset.anchor = anchor.vocal ? 'vocals' : 'top';
     }
 
+    function snapshot(id = trackId) {
+      const found = byTrack.get(id);
+      const available = !found?.hidden && Boolean(found?.lines?.length);
+      return {trackId: id, enabled: enabled && !found?.hidden, alignment: available,
+        offset: shiftOf(found), lines: available ? found.lines : []};
+    }
+    async function exportData(id = trackId) {
+      if (enabled && id) { ask(id); await byTrack.get(id)?.promise; }
+      return snapshot(id);
+    }
     function loop() { frame = raf(loop); try { render(); } catch (_) { hide(); } }
     frame = raf(loop);
     return Object.freeze({
-      render,
+      render, snapshot, exportData,
       openMenu: () => { if (menu.hidden) toggleMenu(); },
       menuItems: () => [...menu.querySelectorAll?.('.score-lyrics__item') || []].map(b => b.textContent),
-      status: () => ({enabled, trackId, asks, shown: !box.hidden, anchor: anchor ? {...anchor} : null,
+      status: () => ({enabled, trackId, asks, shown: !box.hidden, state: stage.dataset?.scoreLyricState, anchor: anchor ? {...anchor} : null,
         lines: trackId && byTrack.get(trackId)?.lines ? byTrack.get(trackId).lines.length : 0, source: trackId ? byTrack.get(trackId)?.source || null : null,
         offset: trackId && byTrack.get(trackId)?.offset ? {...byTrack.get(trackId).offset} : null, from: from.textContent,
         rowShown: box.classList.contains('is-flash') || box.classList.contains('is-hover') || box.classList.contains('is-menu'),
         menuOpen: !menu.hidden, hidden: Boolean(trackId && byTrack.get(trackId)?.hidden),
         now: current.textContent, before: before.textContent, after: after.textContent}),
-      destroy: () => { if (frame && root.cancelAnimationFrame) root.cancelAnimationFrame(frame); if (flashTimer) cancel(flashTimer); box.remove(); }
+      destroy: () => { if (frame && root.cancelAnimationFrame) root.cancelAnimationFrame(frame); if (flashTimer) cancel(flashTimer); box.remove(); entry.remove(); }
     });
   }
 

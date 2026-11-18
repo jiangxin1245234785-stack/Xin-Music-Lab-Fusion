@@ -39,12 +39,12 @@ app.whenReady().then(async()=>{
   assert(await evaluate("document.querySelector('#fusionAudio').paused && Math.abs(document.querySelector('#fusionAudio').currentTime-35)<.1"));
   checks.push('Returning focus reloads timeline while preserving pause and 35 seconds');
   await evaluate("document.querySelector('#fusionStemSelect').value='bass';document.querySelector('#fusionStemSelect').dispatchEvent(new Event('change'))");
-  await until("!document.querySelector('#fusionStemSelect').disabled && document.querySelector('#fusionAudio').src.endsWith('bass.wav')");
+  await until("!document.querySelector('#fusionStemSelect').disabled && window.SmokeResonanceAudioSource.stemOutput.current().element?.currentSrc.endsWith('bass.wav')");
   await evaluate("document.querySelector('#fusionPlay').click()");await until("!document.querySelector('#fusionAudio').paused");
   timeline('verse');
   await evaluate("document.querySelector('#fusionResultsRefresh').click()");
   await until("window.SmokeResonanceTimeline.get().sectionLabel==='verse'");
-  assert(await evaluate("!document.querySelector('#fusionAudio').paused && document.querySelector('#fusionAudio').src.endsWith('bass.wav') && document.querySelector('#fusionAudio').currentTime>=35"));
+  assert(await evaluate("!document.querySelector('#fusionAudio').paused && window.SmokeResonanceAudioSource.stemOutput.current().element?.currentSrc.endsWith('bass.wav') && document.querySelector('#fusionAudio').currentTime>=35"));
   checks.push('Manual update keeps the playing stem and position');
   await until("!document.querySelector('#fusionMidiReveal').disabled");
   const midiFile=path.join(fixture.directory,'midi','bass.json'),midiText=fs.readFileSync(midiFile,'utf8');
@@ -60,7 +60,7 @@ app.whenReady().then(async()=>{
   assert.equal(await evaluate("window.SmokeResonanceTimeline.get().sectionLabel"),'verse');timeline('verse');
   const stale=JSON.parse(originalStems);stale.source.mtimeMs+=10000;fs.writeFileSync(stemPath,JSON.stringify(stale));
   const position=await evaluate("document.querySelector('#fusionAudio').currentTime");await evaluate("window.dispatchEvent(new Event('focus'))");
-  await until("document.querySelector('#fusionStemSelect').options.length===1 && !document.querySelector('#fusionStemSelect').disabled && document.querySelector('#fusionAudio').src.endsWith('.flac')");
+  await until("document.querySelector('#fusionStemSelect').options.length===1 && !document.querySelector('#fusionStemSelect').disabled && (window.SmokeResonanceAudioSource.stemOutput.current().element || document.querySelector('#fusionAudio')).src.endsWith('.flac')");
   assert(await evaluate(`document.querySelector('#fusionAudio').paused && Math.abs(document.querySelector('#fusionAudio').currentTime-${position})<.1`));
   checks.push('Invalid timeline retains display; stale stems return to original at the same position');
   fs.writeFileSync(stemPath,originalStems);

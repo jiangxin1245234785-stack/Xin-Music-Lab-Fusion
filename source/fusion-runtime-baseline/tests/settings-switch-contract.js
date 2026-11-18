@@ -18,6 +18,19 @@ const start = html.indexOf('id="xlSettings"');
 const end = html.indexOf('</aside>', start);
 assert.ok(start > 0 && end > start, 'settings drawer found');
 const drawer = html.slice(start, end);
+const pages = drawer.split('<div id="xlScoreSettings" class="xl-settings__body" hidden>');
+assert.equal(pages.length, 2, 'one score settings page');
+assert.equal((pages[0].match(/id="xlScoreSettingsOpen"/g) || []).length, 1);
+assert.doesNotMatch(pages[0], /id="score[A-Z]/, 'the parent has a single entry and no score controls');
+const scorePages=pages[1].split('<div id="xlStarScoreSettings" class="xl-settings__body" hidden>');
+assert.equal(scorePages.length,2,'one nested starry score settings page');
+for (const id of ['scoreAlbumLayout', 'scoreMergeTimbres', 'scoreShapes', 'scoreStarSettingsOpen',
+                  'scoreAutoLayers', 'scoreLyrics', 'scoreExportOpen', 'scoreNotesEditor']) {
+  assert.equal(scorePages[0].split('id="' + id + '"').length, 2, id + ' lives once in the score settings page');
+}
+assert.doesNotMatch(drawer,/id="scoreMeteorMotion"/,'permanent score has no overall switch');
+for(const id of ['scoreTransientPanel','scoreDirectionPanel']){assert.ok(scorePages[1].includes('id="'+id+'"'));assert.ok(!scorePages[0].includes('id="'+id+'"'));}
+assert.doesNotMatch(pages[1], /id="(?:glitchPowerButton|fusionSectionEngine|pinButton)"/);
 
 // 1. Every checkbox in the drawer is a switch, and every switch is one of the two kinds.
 const checkboxes = drawer.match(/<input[^>]*type="checkbox"[^>]*>/g) || [];

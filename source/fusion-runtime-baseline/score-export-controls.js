@@ -11,11 +11,44 @@
   const meter = doc.getElementById('scoreExportProgress'), cancel = doc.getElementById('scoreExportCancel');
   const reveal = doc.getElementById('scoreExportReveal'), audio = doc.getElementById('fusionAudio');
   const sizes = {'1080p': doc.getElementById('scoreExport1080Size'), '720p': doc.getElementById('scoreExport720Size')};
+  const buttons = Array.from(choices.querySelectorAll('button[data-tier]'));
+  const bitrate = doc.getElementById('scoreExportBitrate'), custom = doc.getElementById('scoreExportCustomBitrate');
+  const customRow = doc.getElementById('scoreExportCustomRow'), bitrateError = doc.getElementById('scoreExportBitrateError');
   const i18n = root.XinMusicLabDynamicUi, say = (key, fallback, params = {}) => i18n?.t(key, params, fallback) || fallback;
-  // Megabytes (MiB) a minute, as measured on a song with a busy cover (MEGURI: 4.45 and 2.31); a plainer song
-  // comes out smaller. tests/score-export-wiring.cjs holds the estimate within 10 % of MEGURI's real files.
-  const PER_MINUTE = {'1080p': 4.5, '720p': 2.3};
+  const tierRates = {'1080p': {video: 1650000, audio: 128000}, '720p': {video: 200000, audio: 96000}};
+  const modes = ['auto', '1', '2', '4', '8', 'custom'];
+  const rateKey = 'xin-score-export-bitrate', customKey = 'xin-score-export-custom-mbps';
   let working = false, cancelling = false, step = null, saved = null, failure = null;
+
+  function customRate(text) {
+    const value = String(text ?? '').trim();
+    if (!/^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/.test(value)) return null;
+    const bps = Math.round(Number(value) * 1000000);
+    return bps >= 50000 && bps <= 16000000 ? bps : null;
+  }
+  function selectedRate() {
+    const mode = bitrate?.value || 'auto';
+    if (mode === 'auto') return undefined;
+    if (mode === 'custom') return customRate(custom.value);
+    return modes.includes(mode) ? Number(mode) * 1000000 : null;
+  }
+  if (bitrate && custom) {
+    try {
+      const mode = root.localStorage.getItem(rateKey), value = root.localStorage.getItem(customKey);
+      if (modes.includes(mode)) bitrate.value = mode;
+      if (customRate(value) !== null) custom.value = value;
+    } catch (_) {}
+    bitrate.addEventListener('change', () => {
+      try { root.localStorage.setItem(rateKey, bitrate.value); } catch (_) {}
+      render();
+    });
+    custom.addEventListener('input', () => {
+      if (customRate(custom.value) !== null) {
+        try { root.localStorage.setItem(customKey, custom.value.trim()); } catch (_) {}
+      }
+      render();
+    });
+  }
 
   const scene = () => root.XinScoreSceneView?.status?.() || null;
   const ready = () => { const s = scene(); return Boolean(s && s.active && s.status === 'ready' && s.trackId); };
@@ -29,9 +62,19 @@
     open.disabled = working || !usable;
     open.title = usable ? '' : say('export.unavailable', '在谱面场景里、歌有谱面时才能导出。');
     if (!usable && !working) choices.hidden = true;
-    const minutes = audio && audio.duration > 0 ? audio.duration / 60 : 0;
+    const videoBitrate = selectedRate(), invalid = videoBitrate === null;
+    if (customRow) customRow.hidden = bitrate.value !== 'custom';
+    if (custom) custom.setAttribute('aria-invalid', String(invalid));
+    if (bitrateError) {
+      bitrateError.hidden = !invalid;
+      bitrateError.textContent = invalid ? say('export.bitrateInvalid', '请输入 0.05–16 Mbps，最多三位小数。') : '';
+    }
+    for (const button of buttons) button.disabled = invalid || working || !usable;
     for (const [tier, node] of Object.entries(sizes)) {
-      const text = minutes ? say('export.size', '约 {mb} MB', {mb: Math.max(1, Math.round(minutes * PER_MINUTE[tier]))}) : '';
+      const rates = tierRates[tier];
+      const mb = (audio?.duration || 0) * ((videoBitrate ?? rates.video) + rates.audio) / 8000000;
+      const approximate = Number(mb.toFixed(mb < 1 ? 2 : mb < 10 ? 1 : 0));
+      const text = !invalid && Number.isFinite(mb) && mb > 0 ? say('export.size', '约 {mb} MB', {mb: approximate}) : '';
       if (node && node.textContent !== text) node.textContent = text;
     }
     cancel.hidden = !working;
@@ -51,9 +94,10 @@
   }
 
   open.addEventListener('click', () => { if (!open.disabled) { choices.hidden = !choices.hidden; saved = null; failure = null; render(); } });
-  for (const button of choices.querySelectorAll('button[data-tier]')) {
+  for (const button of buttons) {
     button.addEventListener('click', async () => {
-      if (working || !ready()) return;
+      const videoBitrate = selectedRate();
+      if (working || !ready() || videoBitrate === null) return;
       const s = scene(), tier = button.dataset.tier;
       choices.hidden = true;
       saved = null; failure = null; step = null; cancelling = false;
@@ -62,8 +106,14 @@
       render();
       let result;
       try {
+        const exportLyrics = root.XinScoreLyricsView?.exportData ? await root.XinScoreLyricsView.exportData(s.trackId) : null;
         result = await bridge.scoreExport({
-          trackId: s.trackId, tier, fxPreset: s.fxPreset, fxDynamics: s.fxDynamics, shapes: s.shapes === true, mergeTimbres: s.reading?.mergeTimbres, simplify: s.reading?.simplify,
+          trackId: s.trackId, tier, fxPreset: s.fxPreset, fxDynamics: s.fxDynamics,
+          presentationLook: s.presentationLook, lyrics: exportLyrics,
+          ...(videoBitrate === undefined ? {} : {videoBitrate}),
+          shapes: s.shapes === true, meteorMotion: s.meteorMotion === true,
+          ...(s.meteorMotion && s.transientTiming ? {transientTiming:s.transientTiming} : {}),
+          mergeTimbres: s.reading?.mergeTimbres, simplify: s.reading?.simplify,
           useDynamics: root.XinScoreDynamicsControls?.enabled?.() === true, lang: doc.documentElement.lang || undefined
         });
       } catch (error) {

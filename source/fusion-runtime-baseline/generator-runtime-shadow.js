@@ -48,6 +48,9 @@
       this.productPresetModule = null;
       this.builtInPresets = [];
       this.renderPort = null;
+      this.rendererSleeping = false;
+      this.createRenderPort = null;
+      this.shaderPipeline = null;
       this.report = null;
       this.loadState = this.enabled ? 'idle' : 'disabled';
       this.error = null;
@@ -103,14 +106,32 @@
             if (typeof module?.createSourceAwareWebglRenderPort !== 'function') {
               throw new Error('GENERATOR_SOURCE_RENDER_PORT_MISSING');
             }
-            renderPort = module.createSourceAwareWebglRenderPort(
+            this.createRenderPort = () => module.createSourceAwareWebglRenderPort(
               this.renderCanvas,
               {
                 ...this.renderPortOptions,
                 qualityMode: this.resolveQualityMode()
               }
             );
-            this.renderPort = renderPort;
+            if (!this.rendererSleeping) this.ensureRenderPort();
+            // The runtime keeps its preset, mapping and transport. Only its GPU allocation
+            // goes away while the score owns the screen.
+            renderPort = {
+              render: (source, evaluation) => this.ensureRenderPort().render(source, evaluation),
+              reset: reason => this.renderPort?.reset?.(reason),
+              profile: () => this.renderPort?.profile?.(),
+              dispose: () => this.releaseRenderPort(),
+              configurePresetShaderPipeline: pipeline => {
+                // Validate custom shaders even when a preset is edited in the score scene.
+                try {
+                  const result = this.ensureRenderPort().configurePresetShaderPipeline?.(pipeline);
+                  this.shaderPipeline = pipeline;
+                  return result;
+                } finally {
+                  if (this.rendererSleeping) this.releaseRenderPort();
+                }
+              }
+            };
           }
           this.runtime = module.createGeneratorRuntime({
             sessionSeed: this.sessionSeed,
@@ -141,6 +162,32 @@
       return this.loadPromise;
     }
 
+    ensureRenderPort() {
+      if (this.renderPort) return this.renderPort;
+      const port = this.createRenderPort();
+      try {
+        if (this.shaderPipeline) port.configurePresetShaderPipeline?.(this.shaderPipeline);
+      } catch (error) {
+        port.dispose?.();
+        throw error;
+      }
+      this.renderPort = port;
+      return port;
+    }
+
+    releaseRenderPort() {
+      this.renderPort?.dispose?.();
+      this.renderPort = null;
+    }
+
+    setRendererSleeping(sleeping) {
+      this.rendererSleeping = sleeping;
+      if (!sleeping) return;
+      this.releaseRenderPort();
+      this.renderReport = null;
+      if (this.renderCanvas) this.renderCanvas.width = this.renderCanvas.height = 1;
+    }
+
     evaluate(frame, clock, options = {}) {
       if (!this.enabled || !this.runtime) return null;
       try {
@@ -160,7 +207,7 @@
     }
 
     renderCurrentSource() {
-      if (!this.rendererEnabled || !this.runtime || !this.report) return null;
+      if (this.rendererSleeping || !this.rendererEnabled || !this.runtime || !this.report) return null;
       const sourceFrame = this.sourceProvider?.() || null;
       const source = sourceFrame?.source || sourceFrame;
       if (!source || sourceFrame?.available === false) {

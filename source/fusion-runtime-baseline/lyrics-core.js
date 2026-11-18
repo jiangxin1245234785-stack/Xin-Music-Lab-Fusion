@@ -71,6 +71,49 @@
     const left = new Set(String(a || '').normalize('NFKC').split(ARTIST_SPLIT).map(normalize).filter(Boolean));
     return String(b || '').normalize('NFKC').split(ARTIST_SPLIT).map(normalize).some(name => name && left.has(name));
   }
+
+  // Some Japanese releases credit both the local and English titles in the same tag.
+  // Only split across scripts: a slash inside a single-language title may name a medley.
+  function titleAliases(title) {
+    const full = String(title || '').normalize('NFKC').trim();
+    const main = full.replace(/\s*[(\[]?\b(?:feat(?:uring)?\.?|ft\.?)\s+.*$/iu, '')
+      .replace(/[\s(\[‐–—-]+album\s+(?:version|ver\.?)\s*[)\]‐–—-]*\s*$/iu, '').trim();
+    const east = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+    const latin = /\p{Script=Latin}/u;
+    const words = main.replace(/[(/)\[\]／]/g, ' ').trim().split(/\s+/u);
+    const parts = [];
+    let from = 0, previous = '';
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const script = east.test(word) ? (latin.test(word) ? 'mixed' : 'east') : (latin.test(word) ? 'latin' : '');
+      if (!script) continue;
+      if (previous && previous !== script) { parts.push(words.slice(from, i).join(' ')); from = i; }
+      previous = script;
+    }
+    parts.push(words.slice(from).join(' '));
+    const names = parts.length === 2 && parts.every(part => east.test(part) !== latin.test(part)) ? parts : [];
+    if (main && main !== full) names.push(main);
+    return [...new Set(names.map(name => name.trim()).filter(name => name.length && name !== full))];
+  }
+
+  function sameTitle(a, b) {
+    const wanted = new Set([a, ...titleAliases(a)].map(normalize).filter(Boolean));
+    return [b, ...titleAliases(b)].some(title => wanted.has(normalize(title)));
+  }
+  const albumKey = name => String(name || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const edition = title => [...new Set(String(title || '').toLowerCase().match(/\b(?:live|acoustic|demo|instrumental|remix|remaster(?:ed)?)\b|现场|現場|ライブ|ライヴ/g) || [])].sort().join('|');
+  function guests(record) {
+    const title = String(record.title || '').normalize('NFKC');
+    const featured = /\b(?:feat(?:uring)?|ft)\.?\s+([^)\]]+)/iu.exec(title)?.[1];
+    const artists = String(record.artist || '').split(ARTIST_SPLIT).slice(1);
+    return featured ? [...featured.split(ARTIST_SPLIT), ...artists] : artists;
+  }
+  function sameRelease(want, got) {
+    if (edition(want.title) !== edition(got.title)) return false;
+    if (want.album && got.album && albumKey(want.album) !== albumKey(got.album)) return false;
+    const local = guests(want), online = guests(got);
+    return !local.length || !online.length || local.some(a => online.some(b => sameTitle(a,b)));
+  }
   // Whether a record found is the song asked about: the same title, an artist in common, and (when both are known)
   // durations at most MATCH.durationSeconds apart.
   function sameSong(want, got) {
@@ -181,6 +224,6 @@
     return {...answer, sure: true, shift: best};
   }
 
-  const api = {parseLrc, lineAt, normalize, artistsMatch, sameSong, query, MATCH, phraseStarts, estimateOffset, ALIGN};
+  const api = {parseLrc, lineAt, normalize, artistsMatch, titleAliases, sameTitle, sameRelease, sameSong, query, MATCH, phraseStarts, estimateOffset, ALIGN};
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.XinLyricsCore = Object.freeze(api);
 })(typeof self !== 'undefined' ? self : this);

@@ -101,6 +101,7 @@
     }) || null;
   let xldProviderFrame = xldTimelineProvider?.get() || null;
   let unifiedMusicFrame = musicFeatureResolver?.get() || null;
+  let materialSleeping = false;
   const dom = {
     stage: $('.stage'), panel: $('#fusionPanel'), button: $('#fusionButton'), close: $('#fusionClose'),
     load: $('#fusionLoad'), welcomeLoad: $('#fusionWelcomeButton'), reveal: $('#fusionReveal'),
@@ -172,18 +173,19 @@
     Promise.resolve(bridge?.saveListeningState?.(value)).then(result=>{if(result?.ok&&resumeRecord===value)resumeRecord=validResume(result.value)||value;}).catch(()=>{});
   }
   const stemControls = window.XldStemControls?.create({
-    bridge, audio: dom.audio, getTrack: () => trackById(state.selectedTrackId),
+    bridge, audio: dom.audio, output: visualAudio?.stemOutput, getTrack: () => trackById(state.selectedTrackId),
     getOriginalUrl: () => state.payload?.audioUrl, onSwitch: () => markTransportTransition('seek')
   }) || null;
   // The listening score (score-scene.js). It is told which track is loaded and nothing else.
   const scoreScene = window.XinScoreScene?.create({
-    bridge, audio: dom.audio, stage: dom.stage, canvas: document.getElementById('scoreCanvas')
+    bridge, audio: dom.audio, stage: dom.stage, canvas: document.getElementById('scoreCanvas'),
+    activeStem: stemControls?.activeName
   }) || null;
   // Lyrics over the score (score-lyrics.js): asked for only while the score shows a song.
   const scoreLyrics = scoreScene && window.XinScoreLyrics?.create({
     bridge, stage: dom.stage, canvas: document.getElementById('scoreCanvas'), scene: scoreScene, audio: dom.audio
   }) || null;
-  window.XinScoreLyricsView = Object.freeze({status: () => scoreLyrics?.status() || null});
+  window.XinScoreLyricsView = Object.freeze({status: () => scoreLyrics?.status() || null, snapshot: () => scoreLyrics?.snapshot() || null, exportData: () => scoreLyrics?.exportData() || null});
   window.XinScoreSceneView = Object.freeze({
     status: () => scoreScene?.status() || null,
     refresh: () => scoreScene?.load(state.selectedTrackId),
@@ -441,7 +443,26 @@
     return frame;
   }
 
+  function syncMaterialSubscriptions() {
+    const sleep = dom.stage.dataset.effect === 'score';
+    if (sleep !== materialSleeping) {
+      materialSleeping = sleep;
+      generatorRuntimeShadow?.setRendererSleeping(sleep);
+      if (sleep) generatorOutputController?.update(visualFrameClock?.get() || {}, null, null, null, false);
+      else frameOwnershipMonitor?.reset();
+    }
+    if (sleep) {
+      state.resolverUnsubscribe?.();
+      state.generatorRenderUnsubscribe?.();
+      state.resolverUnsubscribe = state.generatorRenderUnsubscribe = null;
+    } else if (!state.resolverUnsubscribe) {
+      state.resolverUnsubscribe = visualFrameClock?.subscribe(updateResolverShadow, { phase: 'pre-material' }) || null;
+      state.generatorRenderUnsubscribe = visualFrameClock?.subscribe(renderGeneratorFrame, { phase: 'post-material' }) || null;
+    }
+  }
+
   function updateResolverShadow(clock = {}) {
+    if (materialSleeping) return null;
     if (!musicFeatureResolver) return null;
     const timeSeconds = Number.isFinite(dom.audio.currentTime)
       ? Math.max(0, Number(dom.audio.currentTime))
@@ -505,6 +526,7 @@
   }
 
   function renderGeneratorFrame(clock) {
+    if (materialSleeping) return;
     generatorRuntimeShadow?.renderCurrentSource();
     const generatorReport = generatorRuntimeShadow?.get() || null;
     const generatorRuntimeStatus =
@@ -795,8 +817,8 @@
       if(changed){populateEngineSelectors();updateTimeline();}
       state.payload={...state.payload,...payload};state.bridgePath=payload.filePath || payload.sourcePath || '';
       await stemControls?.refresh();
-      if(changed || manual)scoreScene?.load(track.id);
       if(revision!==state.loadSequence || track.id!==state.selectedTrackId)return false;
+      if(changed || manual)scoreScene?.load(track.id);
       if(changed || manual)bindUiText(dom.analysisStatus,'fusion.resultsUpdated','已更新 XLD 结果');
       return true;
     } catch(_){if(manual && track.id===state.selectedTrackId)bindUiText(dom.analysisStatus,'fusion.resultsFailed','未能更新，当前结果已保留');return false;}
@@ -1248,6 +1270,7 @@
       })[payload?.error] || '未能读取分析文件';
       return;
     }
+    stemControls?.reset();
     await acceptPayload(payload);
   }
 
@@ -1349,6 +1372,7 @@
   window.addEventListener('beforeunload', () => {
     rememberPosition(true);removeResumeMetadata?.();
     state.analysisUnsubscribe?.();
+    dom.stage.removeEventListener('scorevisibilitychange', syncMaterialSubscriptions);
     state.resolverUnsubscribe?.();
     state.generatorRenderUnsubscribe?.();
     state.localeUnsubscribe?.();
@@ -1539,16 +1563,8 @@
       generatorPresetRepositoryUi?.fail(error);
     }
   });
-  state.resolverUnsubscribe =
-    visualFrameClock?.subscribe(
-      updateResolverShadow,
-      { phase: 'pre-material' }
-    ) || null;
-  state.generatorRenderUnsubscribe =
-    visualFrameClock?.subscribe(
-      renderGeneratorFrame,
-      { phase: 'post-material' }
-    ) || null;
+  dom.stage.addEventListener('scorevisibilitychange', syncMaterialSubscriptions);
+  syncMaterialSubscriptions();
   state.localeUnsubscribe = dynamicI18n?.subscribe(() => {
     renderLibrary();
     renderHome();

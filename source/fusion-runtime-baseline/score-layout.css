@@ -1,0 +1,281 @@
+/* Album reading layout. Sizes here are CSS pixels; controls and type follow XML's UI scale. */
+.stage.score-layout-active {
+  --album-edge: clamp(8px, 1vw, 16px);
+  --album-width: clamp(190px, 20vw, 324px);
+  --album-pad: clamp(12px, 1.35vw, 24px);
+  --album-left: calc(var(--album-width) + 2 * var(--album-edge));
+  --album-key: clamp(30px, calc(25px * var(--ui-scale)), 45px);
+  --album-foot: calc(var(--album-key) + 2 * var(--album-edge) + 10px);
+  --album-panel: #23272c;
+  --album-ink: #f0f0ed;
+  --album-muted: #adb2b9;
+  --album-line: rgba(255,255,255,.09);
+  --album-compact-width: clamp(260px, 23vw, 350px);
+  min-height: 0;
+  background: #1a1d21;
+  color: var(--album-ink);
+}
+.stage.score-layout-active > :is(.xl-top, .xl-transport) { display: none; }
+.stage.score-layout-active > :is(#visualizer, .beta-canvas, .glitch-canvas, .glitch-webgl-canvas, .generator-canvas, .aurora, .grain, .vignette, .color-flash) { visibility: hidden; }
+.stage.score-layout-active .xl-drawer { top: var(--album-edge); bottom: var(--album-edge); right: var(--album-edge); border: 1px solid var(--album-line); border-radius: 14px; }
+.stage.score-layout-active #scoreCanvas {
+  left: var(--album-left);
+  top: 0;
+  width: calc(100% - var(--album-left));
+  height: calc(100% - var(--album-foot));
+}
+.stage.score-layout-active :is(#scoreSidebar, #scoreCompactTransport, #scoreSceneDock, #scoreCompactLyrics)[hidden],
+.stage.score-layout-active :is(#scoreSidebarArt, #scoreSidebarCredits, #scoreSidebarCaption, #scoreCompactCaption)[hidden] { display: none; }
+.stage.score-layout-active :is(#scoreSidebar, #scoreCompactTransport) {
+  position: absolute;
+  z-index: 7;
+  color: var(--album-ink);
+  background: var(--album-panel);
+  border: 1px solid var(--album-line);
+  border-radius: clamp(12px, 1.15vw, 20px);
+}
+.stage.score-layout-active #scoreSidebar {
+  inset: var(--album-edge) auto var(--album-edge) var(--album-edge);
+  width: var(--album-width);
+  display: flex;
+  flex-direction: column;
+  padding: clamp(9px, 1.3vh, 15px) var(--album-pad) var(--album-pad);
+}
+/* The two springs divide only the free space between the fixed navigation and transport.
+   The upper spring stays closed while looking up lyrics or waiting for a song's first line. */
+.stage.score-layout-active:is([data-score-lyric-state="missing"], [data-score-lyric-state="instrumental"],
+  [data-score-lyric-state="hidden"], [data-score-lyric-state="off"], [data-score-lyric-state="unavailable"]) {
+  --album-record-space: 1;
+  --album-word-space: 2;
+  --album-word-align: flex-start;
+}
+.stage.score-layout-active #scoreSidebar::before { content: ""; flex: var(--album-record-space, 0) 1 0; }
+.score-layout-active .score-sidebar__actions {
+  display: flex; flex: none; order: -1; align-items: center; gap: 2px;
+  margin: 0 -4px clamp(10px, 2vh, 22px);
+}
+.score-layout-active #scoreSidebarHide { margin-left: auto; }
+.score-layout-active :is(.score-sidebar__actions button, #scoreSidebarShow, #immersiveButton) {
+  flex: none; display: grid; place-items: center; width: var(--album-key); height: var(--album-key);
+  margin-block: 0; padding: 0; border: 0; border-radius: 8px;
+  color: var(--album-muted); background: transparent; box-shadow: none; cursor: pointer;
+}
+.score-layout-active :is(.score-sidebar__actions button, #scoreSidebarShow, #immersiveButton) svg {
+  width: clamp(16px, calc(13px * var(--ui-scale)), 22px); height: auto;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.score-layout-active :is(.score-sidebar__actions button, #scoreSidebarShow, #immersiveButton):hover,
+.score-layout-active .score-sidebar__actions [aria-expanded="true"]:not(#scoreSidebarHide) { background: #32373e; color: var(--album-ink); }
+.score-layout-active :is(#scoreSidebar, #scoreCompactTransport, #scoreSceneDock, #scoreCompactLyrics) :focus-visible {
+  outline: 2px solid #f0a830; outline-offset: 1px;
+}
+.score-layout-active .score-sidebar__record { flex: none; min-width: 0; }
+.score-layout-active #scoreSidebarArt {
+  width: min(100%, 31vh); aspect-ratio: 1; overflow: hidden;
+  border-radius: clamp(8px, .8vw, 12px); margin: 0 0 clamp(10px, 2.1vh, 20px);
+}
+.score-layout-active #scoreSidebarArt #fusionCover {
+  display: block; width: 100%; height: 100%; border-radius: inherit;
+  object-fit: contain; box-shadow: none;
+}
+.score-layout-active .score-sidebar__title { font-size: clamp(16px, calc(13.2px * var(--ui-scale)), 23px); line-height: 1.26; }
+.score-layout-active #fusionTrack {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: inherit; font-weight: 600; letter-spacing: -.02em;
+}
+.score-layout-active .score-sidebar__credits {
+  margin-top: 5px; color: var(--album-muted);
+  font-size: clamp(11px, calc(9.4px * var(--ui-scale)), 16px); line-height: 1.48;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.score-layout-active #fusionAlbum { color: inherit; font: inherit; }
+.score-layout-active .score-sidebar__credits [hidden] { display: none; }
+.score-layout-active #fusionArtist:not([hidden]):not(:empty) + #fusionAlbum:not([hidden]):not(:empty)::before { content: ' · '; }
+.score-layout-active #scoreSidebar #scoreSidebarCredits:not([hidden]) { display: grid; gap: 1px; }
+.score-layout-active #scoreSidebar #scoreSidebarCredits > :not([hidden]) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.score-layout-active #scoreSidebar #scoreSidebarCredits #fusionAlbum::before { content: none; }
+
+/* The same lyrics element owns the local file, timing controls and menu in both layouts. */
+.score-layout-active #scoreSidebarLyrics {
+  position: relative; min-height: 0; flex: var(--album-word-space, 1) 1 auto;
+  display: flex; flex-direction: column; justify-content: var(--album-word-align, center); gap: 9px;
+}
+.score-layout-active #scoreSidebarLyrics .score-lyrics-entry:not([hidden]) {
+  flex: none; align-self: flex-start; order: -1; margin: 3px 0 0; padding: 4px 0;
+  border: 0; background: transparent; color: var(--album-muted); font: inherit;
+  font-size: clamp(11px, calc(9.4px * var(--ui-scale)), 16px); cursor: pointer;
+}
+.score-layout-active #scoreSidebarLyrics .score-lyrics-entry:hover { color: var(--album-ink); }
+.score-layout-active :is(#scoreSidebarLyrics, #scoreCompactLyrics) .score-lyrics {
+  position: relative; top: auto !important; left: auto !important; max-width: 100% !important;
+  width: 100%; color: var(--album-ink); text-shadow: none; row-gap: 7px;
+}
+.score-layout-active #scoreSidebarLyrics .score-lyrics__now {
+  color: var(--album-ink); font-size: clamp(15px, calc(12.8px * var(--ui-scale)), 23px);
+  font-weight: 550; line-height: 1.45; -webkit-line-clamp: 2;
+}
+.score-layout-active #scoreSidebarLyrics .score-lyrics__near:not(:empty) { color: var(--album-muted); opacity: .84; -webkit-line-clamp: 1; }
+.score-layout-active #scoreSidebarLyrics .score-lyrics :is(.score-lyrics__near:not(:empty), .score-lyrics__now:not(:empty)) {
+  display: -webkit-box; -webkit-box-orient: vertical; white-space: normal; overflow: hidden; overflow-wrap: anywhere;
+}
+.score-layout-active :is(#scoreSidebarLyrics, #scoreCompactLyrics) .score-lyrics__head {
+  flex-wrap: wrap; gap: 3px; min-height: 0; line-height: 1.3;
+}
+.score-layout-active :is(#scoreSidebarLyrics, #scoreCompactLyrics) .score-lyrics:is(:focus-within, :hover, .is-menu) .score-lyrics__head { opacity: 1; }
+.score-layout-active .score-lyrics__from { opacity: .8; color: var(--album-muted); }
+.score-layout-active :is(#scoreSidebarLyrics, #scoreCompactLyrics) .score-lyrics__menu:not([hidden]) {
+  position: absolute; z-index: 11; inset: auto 0 100% !important;
+  width: 100%; max-width: 100% !important; max-height: min(30vh, 210px) !important;
+  padding: 5px; border-radius: 8px; background: #292d32;
+  overflow: auto; box-shadow: 0 4px 12px #15171966;
+}
+.score-lyrics__menu .score-lyrics__form {
+  display: grid; flex: none; gap: 4px; width: 100%; min-width: 0; padding: 4px; box-sizing: border-box;
+}
+.score-lyrics__form label, .score-lyrics__form input { width: 100%; min-width: 0; box-sizing: border-box; }
+.score-lyrics__form label { display: grid; gap: 3px; color: #d7dadf; font: inherit; }
+.score-lyrics__form input {
+  min-height: 27px; border: 1px solid #565d65; border-radius: 5px; background: #202429;
+  color: #f1f1ee; padding: 3px 6px; font: inherit;
+}
+.score-lyrics__form input:focus-visible { outline: 2px solid #f0a830; outline-offset: -1px; }
+.score-lyrics__menu :is(.score-lyrics__result, .score-lyrics__note) {
+  flex: none; max-width: 100%; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+}
+.score-layout-active #scoreSidebarLyrics .score-lyrics__menu:has(.score-lyrics__form):not([hidden]) {
+  max-height: min(42vh, 310px) !important;
+}
+.score-layout-active :is(#scoreSidebarCaption, #scoreCompactCaption) {
+  color: var(--album-muted); font-size: clamp(11px, calc(10px * var(--ui-scale)), 18px);
+  line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere;
+}
+.score-layout-active .score-sidebar__controls { flex: none; display: grid; gap: 8px; min-width: 0; }
+.score-layout-active .score-sidebar__progress {
+  display: grid; grid-template-columns: 1fr 1fr; align-items: center;
+  color: var(--album-muted); font-size: clamp(10px, calc(9px * var(--ui-scale)), 15px);
+  font-variant-numeric: tabular-nums;
+}
+.score-layout-active #fusionSeek {
+  grid-row: 1; grid-column: 1 / -1; width: 100%; min-width: 0; height: 22px;
+  appearance: none; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer;
+}
+.score-layout-active #fusionSeek::-webkit-slider-runnable-track {
+  height: 3px; border-radius: 3px;
+  background: linear-gradient(to right, #f0a830 0 var(--score-progress, 0%), #44494f var(--score-progress, 0%) 100%);
+}
+.score-layout-active #fusionSeek::-webkit-slider-thumb {
+  appearance: none; width: 7px; height: 7px; margin-top: -2px;
+  border: 0; border-radius: 50%; background: #f0a830; opacity: 0;
+}
+.score-layout-active #fusionSeek:is(:hover, :focus-visible, :active)::-webkit-slider-thumb { opacity: 1; }
+.score-layout-active #fusionTime, .score-layout-active #fusionDuration { grid-row: 2; }
+.score-layout-active #fusionDuration { justify-self: end; }
+.score-layout-active .xl-transport__keys { justify-content: center; gap: clamp(7px, .85vw, 14px); }
+.score-layout-active .xl-transport__keys > button {
+  display: grid; place-items: center; line-height: 1; padding: 0;
+  width: var(--album-key); height: var(--album-key); color: #e3e5e8; background: transparent; box-shadow: none; border: 0; border-radius: 50%;
+}
+.score-layout-active .xl-transport__keys .fusion-skip { font-size: calc(22px * var(--ui-scale)); }
+.score-layout-active .xl-transport__keys .fusion-play {
+  width: calc(var(--album-key) + 4px); height: calc(var(--album-key) + 4px);
+  background: #e8e9e6; color: #191c20; font-size: calc(11px * var(--ui-scale)); font-weight: 650;
+}
+.score-layout-active .xl-transport__keys .fusion-skip:hover:not(:disabled) { background: #31363d; color: white; }
+.score-layout-active .xl-transport__keys .fusion-play:hover:not(:disabled) { background: white; }
+.score-layout-active .score-sidebar__tools, .score-layout-active .score-sidebar__tools .xl-listen { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.score-layout-active .score-sidebar__tools { justify-content: space-between; }
+.score-layout-active .score-sidebar__tools .xl-listen { flex: 1 1 auto; color: var(--album-muted); font-size: calc(9.6px * var(--ui-scale)); }
+.score-layout-active .score-sidebar__tools #fusionStemSelect {
+  min-width: 0; max-width: 100%; flex: 1; height: var(--album-key);
+  padding: 0 5px; color: var(--album-ink); border: 1px solid var(--album-line); background: #282d32; font: inherit;
+}
+.score-layout-active #scoreSceneDock {
+  position: absolute; z-index: 8; left: var(--album-left); right: var(--album-edge); bottom: var(--album-edge);
+  display: flex; justify-content: center; pointer-events: none;
+}
+.score-layout-active #scoreSceneDock .visual-catalog {
+  position: relative; inset: auto; width: max-content; max-width: 100%; height: auto; margin: 0;
+  padding: 3px; gap: 2px; border: 1px solid var(--album-line); border-radius: 11px;
+  background: var(--album-panel); box-shadow: none; backdrop-filter: none;
+  overflow: visible; transform: none; pointer-events: auto;
+}
+.score-layout-active #scoreSceneDock .catalog-group--scenes, .score-layout-active #scoreSceneDock .catalog-group--scenes .catalog-items { flex: 0 1 auto; min-width: 0; gap: 1px; }
+.score-layout-active #scoreSceneDock .catalog-rule { display: none; }
+.score-layout-active #scoreSceneDock .catalog-group--scenes .scene-button::after { content: none; }
+.score-layout-active #scoreSceneDock .catalog-group--scenes .scene-button,
+.score-layout-active #scoreSceneDock .catalog-archive summary {
+  display: flex; align-items: center; justify-content: center; min-width: 0; height: var(--album-key);
+  padding: 0 clamp(6px, .85vw, 15px); letter-spacing: 0;
+  color: var(--album-muted); font-size: clamp(12px, calc(10px * var(--ui-scale)), 17px);
+  border: 0; border-radius: 7px;
+}
+.score-layout-active #scoreSceneDock .scene-button.is-active { color: var(--album-ink); background: #383d44; box-shadow: none; }
+.score-layout-active #scoreSceneDock :is(.scene-button, summary):hover { color: var(--album-ink); background: #30353c; }
+.score-layout-active #scoreSceneDock .catalog-archive__drawer {
+  inset: auto 0 calc(100% + 5px) auto; width: min(500px, calc(100vw - var(--album-left) - 36px));
+  max-height: 48vh; overflow-y: auto; border-radius: 11px; background: #272b30; box-shadow: none; backdrop-filter: none;
+}
+
+/* Collapsing the album and entering native fullscreen are independent choices. */
+.stage.score-layout-active.score-layout-collapsed { --album-left: 0px; }
+.score-layout-active.score-layout-collapsed #scoreSceneDock { left: calc(var(--album-compact-width) + 2 * var(--album-edge)); justify-content: flex-end; }
+.score-layout-active #scoreCompactTransport {
+  left: var(--album-edge); bottom: var(--album-edge); display: flex; align-items: center; gap: 7px;
+  width: var(--album-compact-width); padding: 4px 6px; border-radius: 12px;
+}
+.score-layout-active #scoreCompactTransport .score-sidebar__record {
+  flex: 1 1 auto; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; align-items: center;
+}
+.score-layout-active #scoreCompactTransport #scoreSidebarArt { grid-area: 1/1/3/2; width: var(--album-key); margin: 0; border-radius: 5px; }
+.score-layout-active #scoreCompactTransport #scoreSidebarTitle { grid-column: 2; align-self: end; font-size: clamp(12px, calc(10px * var(--ui-scale)), 16px); }
+.score-layout-active #scoreCompactTransport #scoreSidebarCredits:not([hidden]) {
+  grid-column: 2; align-self: start; display: block; margin-top: 1px; font-size: clamp(10px, calc(8px * var(--ui-scale)), 14px); white-space: nowrap; text-overflow: ellipsis;
+}
+.score-layout-active #scoreCompactTransport .score-sidebar__controls { display: flex; align-items: center; }
+.score-layout-active #scoreCompactTransport :is(#scoreProgress, .fusion-skip, .xl-listen) { display: none; }
+.score-layout-active #scoreCompactTransport .xl-transport__keys { gap: 0; }
+.score-layout-active #scoreCompactTransport .fusion-play { width: var(--album-key); height: var(--album-key); }
+.score-layout-active #scoreCompactLyrics {
+  position: absolute; z-index: 6; bottom: var(--album-foot); left: 10%; right: 10%; text-align: center;
+}
+.score-layout-active #scoreCompactLyrics .score-lyrics__near,
+.score-layout-active #scoreCompactLyrics .score-lyrics__head { display: none; }
+.score-layout-active:not(.ui-hidden):not(.is-immersive) #scoreCompactLyrics .score-lyrics__head {
+  position: absolute; right: 0; bottom: 0; display: flex; justify-content: flex-end;
+}
+.score-layout-active #scoreCompactLyrics .score-lyrics__head > :not(.score-lyrics__more) { display: none; }
+.score-layout-active #scoreCompactLyrics .score-lyrics__more { background: var(--album-panel); }
+.score-layout-active #scoreCompactLyrics .score-lyrics__now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-layout-active #scoreCompactLyrics .score-lyrics__menu:not([hidden]) { margin-inline: auto; max-width: 270px !important; }
+.score-layout-active #scoreCompactLyrics:has(.score-lyrics:not([hidden]) .score-lyrics__now:not(:empty)) #scoreCompactCaption { display: none; }
+.stage.score-layout-collapsed:not(.ui-hidden):not(.is-immersive):has(#scoreCompactLyrics:not([hidden]) :is(.score-lyrics:not([hidden]) .score-lyrics__now:not(:empty), #scoreCompactCaption:not([hidden]))) #scoreCanvas {
+  height: calc(100% - var(--album-foot) - 2.2em);
+}
+.stage.score-layout-active:is(.ui-hidden, .is-immersive) { --album-left: 0px; --album-foot: 0px; }
+.stage.score-layout-active:is(.ui-hidden, .is-immersive) :is(#scoreSidebar, #scoreSceneDock, #scoreCompactTransport, .xl-drawer, .score-lyrics__menu) { display: none !important; }
+.stage.score-layout-active:is(.ui-hidden, .is-immersive) #scoreCanvas { inset: 0; width: 100%; height: 100%; }
+.stage.score-layout-active:is(.ui-hidden, .is-immersive) #scoreCompactLyrics { bottom: clamp(20px, 6vh, 62px); pointer-events: none; }
+.stage.score-layout-active:is(.ui-hidden, .is-immersive) #scoreCompactLyrics * { pointer-events: none; }
+
+@media (max-height: 650px) {
+  .stage.score-layout-active #scoreSidebar { padding-block: 6px 8px; }
+  .score-layout-active .score-sidebar__actions { margin-bottom: 7px; }
+  .score-layout-active #scoreSidebarArt { width: min(100%, 26vh); margin-bottom: 8px; }
+  .score-layout-active .score-sidebar__controls { gap: 4px; }
+}
+@media (max-width: 900px) {
+  .stage.score-layout-active { --album-pad: 12px; --album-compact-width: 224px; }
+  .score-layout-active #scoreSceneDock :is(.catalog-archive summary, .catalog-group--scenes .scene-button) { padding-inline: 6px; }
+  .score-layout-active #scoreCompactTransport { gap: 3px; }
+}
+@media (max-width: 640px) {
+  .stage.score-layout-active { --album-width: 150px; --album-edge: 5px; --album-pad: 7px; --album-key: 27px; --album-compact-width: 114px; }
+  .score-layout-active #scoreCompactTransport #scoreSidebarRecord { display: none; }
+  .score-layout-active #scoreSceneDock :is(.catalog-archive summary, .catalog-group--scenes .scene-button) { padding-inline: 3px; font-size: 11px; }
+}
+
+/* Immersive and export share the canvas footer; suppress the old DOM copies. */
+.stage.score-presentation-active #scoreCanvas { inset: 0 !important; width: 100% !important; height: 100% !important; }
+.stage.score-presentation-active :is(#scoreCompactLyrics, .score-lyrics, #scoreSidebarCaption, #scoreCompactCaption) { display: none !important; }

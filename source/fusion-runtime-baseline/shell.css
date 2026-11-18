@@ -108,6 +108,7 @@
   opacity: 0; visibility: hidden; transform: translateX(16px); pointer-events: none; transition: opacity .25s, transform .25s, visibility .25s;
 }
 .xl-drawer.is-open, .fusion-panel.xl-drawer.is-open { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+.xl-settings.is-open { transition-property: opacity, transform; }
 .stage.ui-hidden .xl-top, .stage.ui-hidden .xl-transport, .stage.ui-hidden .xl-drawer { opacity: 0; pointer-events: none; }
 .stage.ui-hidden .xl-top { transform: translateY(-8px); }
 .stage.ui-hidden .xl-transport { transform: translateY(8px); }
@@ -155,6 +156,21 @@
 
 /* settings */
 .xl-settings__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: calc(14px * var(--ui-scale)); padding: calc(4px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(14px * var(--ui-scale)); }
+.xl-settings__body[hidden], .xl-settings .xl-drawer__head [hidden] { display: none !important; }
+.xl-settings-link { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: calc(35px * var(--ui-scale)); padding: 0 calc(5px * var(--ui-scale)); border: 0; border-radius: 5px; background: transparent; color: var(--xl-text); font: inherit; text-align: start; cursor: pointer; }
+.xl-settings-link:hover, .xl-settings-link:focus-visible { background: rgba(255,255,255,.06); }
+.xl-settings-chevron { color: var(--xl-dim); font-size: 1.45em; line-height: 1; }
+.xl-settings .xl-settings-back { min-width: calc(29px * var(--ui-scale)); padding: 0; font-size: calc(21px * var(--ui-scale)); line-height: 1; }
+#scoreLightGroup > .xl-more { margin-inline-start: .45em; padding-inline-start: .7em; border-inline-start: 1px solid var(--xl-line); }
+#scoreLightGroup > .xl-more > label:first-of-type { margin-top: .3em; }
+#xlScoreSettings .xl-row:has(> .intensity) > .xl-row__label { flex-basis: 6.5em; }
+#xlScoreSettings .intensity output { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The nested starry page uses longer labels and three different value units. Keep
+   their control columns steady while presets and slider values change. */
+#xlStarScoreSettings .xl-row__label { flex-basis: 8em; }
+#xlStarScoreSettings .intensity { min-width: 0; }
+#xlStarScoreSettings .intensity output { flex: 0 0 4.5em; text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#scoreDecayCustom:not([hidden]) { display: grid; gap: calc(9px * var(--ui-scale)); }
 .xl-group { display: flex; flex-direction: column; gap: calc(9px * var(--ui-scale)); padding-top: calc(12px * var(--ui-scale)); border-top: 1px solid var(--xl-line); }
 .xl-group:first-child { border-top: 0; padding-top: 0; }
 .xl-group h3 { margin: 0; font-size: calc(11px * var(--ui-scale)); font-weight: 400; letter-spacing: .04em; color: var(--xl-dim); }
@@ -261,7 +277,9 @@
 /* --- score: export video (score-export-controls.js) --------------------------------------- */
 .score-export { display: grid; gap: calc(6px * var(--ui-scale)); }
 .score-export__choices { display: grid; gap: calc(6px * var(--ui-scale)); }
-.score-export__choices[hidden], .score-export__progress[hidden], .score-export__status[hidden] { display: none; }
+.score-export__choices [hidden], .score-export__choices[hidden], .score-export__progress[hidden], .score-export__status[hidden] { display: none; }
+.score-export__choices select, .score-export__choices input { min-width: 0; flex: 1 1 0; }
+.score-export__choices input { font: inherit; color: inherit; background: #121722; border: 1px solid var(--xl-line); border-radius: 6px; padding: 6px; }
 .score-export__choices button { display: flex; justify-content: space-between; align-items: baseline; gap: calc(10px * var(--ui-scale)); text-align: left; }
 .score-export__choices small { color: var(--xl-dim); font-size: calc(11.5px * var(--ui-scale)); }
 .score-export__progress { width: 100%; height: calc(6px * var(--ui-scale)); accent-color: var(--xl-accent); }

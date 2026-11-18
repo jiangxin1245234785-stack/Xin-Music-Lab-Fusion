@@ -5,7 +5,7 @@ const fs = require('fs/promises');
 const fsSync = require('fs');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell, nativeImage } = require('electron');
 const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createService: createXldAnalysisService } = require('./xld-analysis-service.cjs');
 const {readLatestTrack} = require('./refresh-track.cjs');
@@ -29,7 +29,8 @@ const DEFAULT_ANALYSIS_ROOT = defaultUserPaths(app).analysisRoot;
 let fusionLibraryRoot = DEFAULT_LIBRARY_ROOT;
 let fusionAnalysisRoot = DEFAULT_ANALYSIS_ROOT;
 const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus']);
-const COVER_NAMES = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.png', 'front.jpg', 'front.png'];
+const {createCoverResolver} = require('../../shared-analysis/cover-art.cjs');
+const coverArt = createCoverResolver({nativeImage, cacheRoot: path.join(app.getPath('appData'), 'Xin Music Lab', 'CoverCache-v1')});
 const MAX_GLITCH_PRESET_JSON_BYTES = 4 * 1024 * 1024;
 const ADVANCED_GENERATOR_VERSION = '6.6.1-integration-v.3';
 const fusionTrackIndex = new Map();
@@ -82,8 +83,9 @@ function createWindow() {
 }
 
 if (gotSingleInstanceLock) app.whenReady().then(async () => {
-  // A file:// link to a FLAC stem plays its decoded WAV (gain restored); every other file request is untouched.
-  require('../../xld-runtime-baseline/core/stem-audio.cjs').registerFileProtocol({protocol: require('electron').protocol, net: require('electron').net});
+  const stemAudio = require('../../xld-runtime-baseline/core/stem-audio.cjs');
+  const xmlPlayback = stemAudio.createXmlStemPlayback();
+  stemAudio.registerFileProtocol({protocol: require('electron').protocol, net: require('electron').net, xmlPlayback});
   const xldSettingsPath = path.join(app.getPath('appData'), "Xin's Local Deck Beta", 'settings.json');
   const refreshXldSettings = async () => {
     try {
@@ -143,8 +145,12 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     try{
       switch(payload?.action){
         case 'refresh':return await lyrics.refresh(named);
-        case 'candidates':return await lyrics.candidates(named);
+        case 'candidates':return await lyrics.candidates(named,{query:payload?.query,artist:payload?.artist});
         case 'choose':return await lyrics.choose(named,payload?.id);
+        case 'netease-preview':return await lyrics.neteasePreview(named,payload?.url);
+        case 'netease-choose':return await lyrics.neteaseChoose(named,payload?.id);
+        case 'instrumental':return await lyrics.setInstrumental(named,true);
+        case 'undo-instrumental':return await lyrics.setInstrumental(named,false);
         case 'file':{
           const english=mainLocale.getState()?.locale==='en-US';
           const pick=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:english?'Lyrics file for this song':'这首歌的歌词文件',
@@ -276,11 +282,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     return { artist: null, album: null, number: tail.number, title: tail.title || stem };
   };
 
-  const findCover = async (folderPath, entries) => {
-    const names = new Map(entries.filter(entry => entry.isFile()).map(entry => [entry.name.toLowerCase(), entry.name]));
-    const name = COVER_NAMES.map(candidate => names.get(candidate)).find(Boolean);
-    return name ? pathToFileURL(path.join(folderPath, name)).href : null;
-  };
+  const findCover = coverArt.folder;
 
   const collectManifests = async root => {
     const manifests = new Map();
@@ -408,7 +410,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           album: albumInfo.album,
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
-          coverUrl,
+          coverUrl: coverUrl || await coverArt.embedded(filePath, stat),
           ...analysisFields(linked),
           ...(await stemFields(linked))
         };
@@ -422,7 +424,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
         folder: folder.name,
         artist: albumInfo.artist,
         title: albumInfo.album,
-        coverUrl,
+        coverUrl: coverUrl || albumTracks.find(track => track.coverUrl)?.coverUrl || null,
         trackCount: albumTracks.length,
         // 「N 首可看谱面」: songs XLD wrote notes for (library-status.js isReady), not sections / chords.
         analyzedCount: albumTracks.filter(track => track.hasNotes).length,
@@ -454,7 +456,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           album: (tags && tags.ALBUM) || fallback.album || '单曲',
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
-          coverUrl: null,
+          coverUrl: await coverArt.embedded(filePath, stat),
           ...analysisFields(linked),
           ...(await stemFields(linked))
         };
@@ -561,6 +563,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
         ok: true,
         filePath,
         audioUrl: pathToFileURL(source).href,
+        coverUrl: (path.resolve(path.dirname(source)).toLowerCase() === path.resolve(fusionLibraryRoot).toLowerCase()
+          ? null : await coverArt.folder(path.dirname(source))) || await coverArt.embedded(source),
         identity: {
           trackId: manifest.track.id,
           sourcePath: source
@@ -613,6 +617,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     return { ok: true, ...roots };
   });
   ipcMain.handle('fusion:analysis-task', () => xldAnalysis.task());
+  const lockReader = require('../../xld-runtime-baseline/core/analysis-lock.cjs').createAnalysisLock();
+  ipcMain.handle('fusion:analysis-lock-holder', () => lockReader.holder(fusionAnalysisRoot));
   ipcMain.handle('fusion:analysis-cancel', () => xldAnalysis.cancel());
   ipcMain.handle('app:locale-get', () => ({ ok: true, ...mainLocale.getState() }));
   ipcMain.handle('app:locale-set', async (_event, payload) => {
@@ -756,7 +762,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     // is the dug-out file their current MIDI was made from. A song without winds has no winds MIDI, so no entry.
     const dug=[];
     for(const name of ['strings','winds']){const midi=await xldAnalysis.readMidi(track,name);if(midi.ok&&midi.source?.path)dug.push({name,audioUrl:pathToFileURL(midi.source.path).href});}
-    return dug.length?{...base,stems:[...base.stems,...dug]}:base;
+    return {...base,stems:await Promise.all([...base.stems,...dug].map(xmlPlayback.describe))};
   });
   ipcMain.handle('fusion:stems-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));

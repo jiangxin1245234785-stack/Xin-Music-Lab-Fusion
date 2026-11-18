@@ -41,7 +41,7 @@ html:root .stage :is(.xl-listen select, .xl-drawer select, .score-note-form inpu
 html:root .stage .xl-drawer .fusion-library__filter input[type="search"] { border-color: var(--xs-edge); background: var(--xs-field); border-radius: calc(6px * var(--ui-scale)); }
 
 /* top bar */
-html:root .stage .xl-brand__mark { background: var(--xl-text); }
+html:root .stage .xl-brand__mark { border-radius: 0; background: transparent url('./assets/xins-music-lab-icon-64.png') center / contain no-repeat; }
 html:root .stage .xl-now { border-color: var(--xs-edge); background: var(--xs-key); box-shadow: var(--xs-shadow); border-radius: calc(7px * var(--ui-scale)); }
 html:root .stage .xl-now:hover { border-color: var(--xl-accent); }
 

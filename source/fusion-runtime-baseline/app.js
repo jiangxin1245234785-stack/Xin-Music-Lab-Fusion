@@ -42,6 +42,9 @@
     nowMs: 0,
     deltaMs: 0
   };
+  const scoreClockFrame = { ...engineClockFrame };
+  let scoreDriver = null;
+  let shellRequest = 0;
   const glitchWebglRenderer = window.SmokeResonanceGlitchWebGL?.create(glitchWebglCanvas, { maxDimension: 2560 }) || null;
   let webglFailureNotified = false;
   const intensityInput = $('#intensity');
@@ -51,6 +54,7 @@
   const glitchPowerButton = $('#glitchPowerButton');
   const glitchSettingsButton = $('#glitchSettingsButton');
   const glitchPanel = $('#glitchPanel');
+  let glitchPanelOpen = glitchPanel.classList.contains('is-open');
   const glitchClose = $('#glitchClose');
   const glitchReset = $('#glitchReset');
   const glitchRackToggle = $('#glitchRackToggle');
@@ -199,6 +203,7 @@
     restrained: { label: '克制留白', ensembleWeight: .55, drumWeight: .4, abrasionWeight: .45, sectionDrive: .55, fxStrength: .7, rhythmLock: .3, baseLayer: .45, noiseLayer: .25, burstLayer: .5, tensionBuild: .65, eventSpacing: 1.7 }
   };
   const glitchConfig = { ...glitchDefaults };
+  let glitchPostFxDirty = false;
   const fusionTimelineState = {
     connected: false,
     section: 0,
@@ -268,6 +273,9 @@
     sourceKind: 'none',
     mediaElement: null,
     mediaSource: null,
+    originalGain: null,
+    stemLevel: null,
+    mediaMix: null,
     mediaConnected: false,
     playing: false,
     started: false,
@@ -436,29 +444,167 @@
     bandCache.clear();
   }
 
+  // The original element owns the playhead. Each decoded stem feeds the same output
+  // and analysis bus through its own initially silent gain. A switch changes which
+  // input reaches that bus without opening the stem a second time.
+  const stemNodes = new WeakMap();
+  const stemInputs = new Set();
+  let activeStemInput = null;
+  let renderedStemInput = null;
+  const scheduledInputs = [];
+
+  function renderedInput() {
+    const now = audioState.context?.currentTime || 0;
+    while (scheduledInputs.length && scheduledInputs[0].when <= now) {
+      renderedStemInput = scheduledInputs.shift().input;
+    }
+    return renderedStemInput;
+  }
+
+  function syncStemLevel() {
+    const master = audioState.mediaElement;
+    const level = master.paused || master.muted || master.ended || !master.readyState ? 0 : master.volume;
+    audioState.stemLevel.gain.setValueAtTime(level, audioState.context.currentTime);
+  }
+
+  function selectMediaInput(input, immediate = false) {
+    const context = audioState.context;
+    const now = context.currentTime;
+    const quantum = (context.renderQuantumSize || 128) / context.sampleRate;
+    renderedInput();
+    if (immediate || context.state !== 'running' || !audioState.mediaConnected || audioState.mediaElement.paused) {
+      scheduledInputs.length = 0;
+      for (const stem of stemInputs) {
+        stem.gain.gain.cancelScheduledValues(now);
+        stem.gain.gain.setValueAtTime(stem === input ? stem.playbackGain : 0, now);
+        stem.silentAt = now;
+      }
+      audioState.originalGain.gain.cancelScheduledValues(now);
+      audioState.originalGain.gain.setValueAtTime(input ? 0 : 1, now);
+      activeStemInput = renderedStemInput = input;
+      return;
+    }
+    if (input === activeStemInput) return;
+    // Chromium renders on another thread. Give both AudioParams several quanta to
+    // receive their commands, with the identical sample boundary for both steps.
+    const lead = Math.max(0.032, 4 * quantum);
+    const last = scheduledInputs.at(-1);
+    const replace = last && last.when - now >= lead / 2;
+    const when = replace ? last.when : Math.ceil((now + lead) / quantum) * quantum;
+    if (activeStemInput) {
+      activeStemInput.gain.gain.setValueAtTime(0, when);
+      activeStemInput.silentAt = when + quantum;
+    }
+    audioState.originalGain.gain.setValueAtTime(input ? 0 : 1, when);
+    if (input) input.gain.gain.setValueAtTime(input.playbackGain, when);
+    activeStemInput = input;
+    if (replace) last.input = input;
+    else scheduledInputs.push({when, input});
+  }
+
+  function connectMediaGraph(element) {
+    if (audioState.mediaElement && audioState.mediaElement !== element) throw Error('media-element-conflict');
+    if (!audioState.mediaSource) {
+      audioState.mediaSource = audioState.context.createMediaElementSource(element);
+      audioState.mediaElement = element;
+      audioState.originalGain = audioState.context.createGain();
+      audioState.stemLevel = audioState.context.createGain();
+      audioState.mediaMix = audioState.context.createGain();
+      audioState.mediaSource.connect(audioState.originalGain);
+      audioState.originalGain.connect(audioState.mediaMix);
+      audioState.stemLevel.connect(audioState.mediaMix);
+      syncStemLevel();
+      for (const event of ['volumechange', 'play', 'playing', 'pause', 'ended', 'emptied']) {
+        element.addEventListener(event, syncStemLevel);
+      }
+    }
+    if (!audioState.mediaConnected) {
+      audioState.mediaMix.connect(audioState.analyser);
+      audioState.mediaMix.connect(audioState.context.destination);
+      audioState.mediaConnected = true;
+    }
+  }
+
+  function prepareStemOutput(element, playbackGain = 1) {
+    if (!(element instanceof HTMLMediaElement)) throw Error('invalid-media-element');
+    if (playbackGain !== 1 && playbackGain !== 2) throw Error('invalid-stem-gain');
+    const master = audioState.mediaElement || document.getElementById('fusionAudio');
+    if (!master || element === master) throw Error('invalid-stem-element');
+    initAudio();
+    connectMediaGraph(master);
+    const context = audioState.context;
+    let source = stemNodes.get(element);
+    if (!source) {
+      source = context.createMediaElementSource(element);
+      stemNodes.set(element, source);
+    }
+    for (const input of stemInputs) if (!input.released && input.element === element) {
+      if (input.playbackGain !== playbackGain) throw Error('stem-gain-changed');
+      return input.handle;
+    }
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    source.connect(gain);
+    gain.connect(audioState.stemLevel);
+    element.volume = 1;
+    const input = {element, gain, playbackGain, silentAt: 0, released: false, retirement: null, handle: null};
+    function disconnect() {
+      renderedInput();
+      stemInputs.delete(input);
+      source.disconnect(gain);
+      gain.disconnect();
+    }
+    input.handle = {
+      activate() {
+        if (input.released) return false;
+        selectMediaInput(input);
+        return true;
+      },
+      release() {
+        if (input.released) return input.retirement;
+        input.released = true;
+        if (activeStemInput === input) selectMediaInput(null);
+        if (context.state !== 'running' || context.currentTime >= input.silentAt) {
+          disconnect();
+          return;
+        }
+        // Dispose the media element only once the audio thread no longer needs it.
+        input.retirement = new Promise(resolve => {
+          function finish() {
+            if (context.state === 'running' && context.currentTime < input.silentAt) {
+              setTimeout(finish, Math.max(2, Math.ceil((input.silentAt - context.currentTime) * 1000)));
+              return;
+            }
+            disconnect();
+            resolve();
+          }
+          finish();
+        });
+        return input.retirement;
+      }
+    };
+    stemInputs.add(input);
+    return input.handle;
+  }
+
+  const stemOutput = Object.freeze({
+    prepare: prepareStemOutput,
+    original() { if (activeStemInput) selectMediaInput(null); },
+    current() {
+      const input = renderedInput();
+      return input ? {kind: 'stem', element: input.element}
+        : {kind: 'original', element: audioState.mediaElement || document.getElementById('fusionAudio')};
+    }
+  });
+
   async function attachInternalMedia(element) {
     if (!(element instanceof HTMLMediaElement)) return { ok: false, error: 'invalid-media-element' };
     initAudio();
     try { await audioState.context.resume(); } catch (_) {}
     if (audioState.mediaElement && audioState.mediaElement !== element) return { ok: false, error: 'media-element-conflict' };
-    if (!audioState.mediaSource) {
-      try {
-        audioState.mediaSource = audioState.context.createMediaElementSource(element);
-        audioState.mediaElement = element;
-      } catch (_) {
-        return { ok: false, error: 'media-source-failed' };
-      }
-    }
-    if (!audioState.mediaConnected) {
-      try {
-        audioState.mediaSource.connect(audioState.analyser);
-        audioState.mediaSource.connect(audioState.context.destination);
-        audioState.mediaConnected = true;
-      } catch (_) {
-        return { ok: false, error: 'media-connect-failed' };
-      }
-    }
-    audioState.source = audioState.mediaSource;
+    try { connectMediaGraph(element); }
+    catch (_) { return { ok: false, error: audioState.mediaSource ? 'media-connect-failed' : 'media-source-failed' }; }
+    audioState.source = audioState.mediaMix;
     audioState.sourceKind = 'internal';
     audioState.started = true;
     audioState.playing = !element.paused;
@@ -469,14 +615,16 @@
   }
 
   function detachInternalMedia() {
-    if (audioState.sourceKind !== 'internal') return { ok: true, kind: audioState.sourceKind };
-    try { audioState.mediaSource?.disconnect(); } catch (_) {}
+    if (audioState.mediaSource) selectMediaInput(null, true);
+    for (const input of stemInputs) input.handle.release();
+    if (!audioState.mediaConnected) return { ok: true, kind: audioState.sourceKind };
+    try { audioState.mediaMix.disconnect(); } catch (_) {}
     audioState.mediaConnected = false;
     audioState.source = null;
     audioState.sourceKind = 'none';
     audioState.started = false;
     audioState.playing = false;
-    if (audioState.stereoSource === audioState.mediaSource) audioState.stereoSource = null;
+    if (audioState.stereoSource === audioState.mediaMix) audioState.stereoSource = null;
     resetAudioAnalysis();
     return { ok: true, kind: 'none' };
   }
@@ -1313,6 +1461,8 @@
   }
 
   function clearGlitchPostFx() {
+    if (!glitchPostFxDirty) return;
+    glitchPostFxDirty = false;
     stage.classList.remove('webgl-postfx-on');
     delete stage.dataset.glitchRenderer;
     if (glitchState.filter || betaCanvas.style.filter || canvas.style.filter || glitchCanvas.style.filter) {
@@ -1481,6 +1631,7 @@
   }
 
   function drawUniversalGlitchPostFx(energy, now) {
+    glitchPostFxDirty = true;
     const sourceCanvas = activeEffect.startsWith('beta-') ? betaCanvas : canvas;
     const signals = currentGlitchSignals();
     const strength = Math.max(.4, glitchConfig.fxStrength);
@@ -1731,6 +1882,7 @@
   }
 
   function drawBetaRhythmPostFx(energy) {
+    glitchPostFxDirty = true;
     const accent = Math.min(1, Math.max(
       audioState.accents.bass,
       audioState.accents.mid * .84,
@@ -1920,9 +2072,21 @@
   }
 
   function setActiveEffectState(name, reason = 'material-change') {
+    const wasScore = activeEffect === 'score';
     activeEffect = name;
     stage.dataset.effect = name;
     syncPaletteReach();
+    if (wasScore !== (name === 'score')) {
+      if (name === 'score') {
+        clearGlitchPostFx();
+        colorFlash.style.opacity = '0';
+      }
+      realtimeProviderLastAt = 0;
+      resetPerformanceWindow();
+      resize(true);
+      stage.dispatchEvent(new Event('scorevisibilitychange'));
+      scheduleShell();
+    }
     const runtime = ensureMaterialRuntime();
     if (runtime?.status()?.activeMaterialId !== name) {
       runtime.activate(name, reason);
@@ -2411,6 +2575,7 @@
   }
 
   function setGlitchPanel(open) {
+    glitchPanelOpen = open;
     glitchPanel.classList.toggle('is-open', open);
     glitchPanel.setAttribute('aria-hidden', String(!open));
     glitchSettingsButton.setAttribute('aria-expanded', String(open));
@@ -2486,6 +2651,7 @@
 
   window.SmokeResonanceAudioSource = Object.freeze({
     get: () => ({ kind: audioState.sourceKind, playing: audioState.playing, started: audioState.started }),
+    stemOutput,
     attachMediaElement: element => attachInternalMedia(element),
     detachMediaElement: () => detachInternalMedia(),
     setMediaPlaying: value => setInternalPlaying(value)
@@ -2515,6 +2681,21 @@
   });
   window.SmokeResonanceFrameClock = Object.freeze({
     get: () => ({ ...engineClockFrame }),
+    attachScoreDriver() {
+      const driver = {
+        tick(timestamp) {
+          if (scoreDriver === driver && activeEffect === 'score' && !document.hidden) advanceScoreFrame(timestamp);
+        },
+        detach() {
+          if (scoreDriver !== driver) return;
+          scoreDriver = null;
+          scheduleShell();
+        }
+      };
+      scoreDriver = driver;
+      scheduleShell();
+      return driver;
+    },
     subscribe: (callback, options = {}) => {
       if (typeof callback !== 'function') return () => {};
       const subscribers = options?.phase === 'pre-material'
@@ -2760,7 +2941,9 @@
   }
 
   async function captureSnapshot() {
-    const scale = Math.max(1, Math.min(2, dpr));
+    const score = activeEffect === 'score' ? $('#scoreCanvas') : null;
+    const scoreBox = score?.getBoundingClientRect();
+    const scale = scoreBox?.width > 0 ? score.width / scoreBox.width : Math.max(1, Math.min(2, dpr));
     const shot = document.createElement('canvas');
     shot.width = Math.round(w * scale);
     shot.height = Math.round(h * scale);
@@ -2774,7 +2957,10 @@
     try {
       const generatorSnapshot =
         window.SmokeResonanceGeneratorOutput?.snapshotCanvas?.() || null;
-      if (
+      if (score && scoreBox.width > 0 && scoreBox.height > 0) {
+        const stageBox = stage.getBoundingClientRect();
+        shotCtx.drawImage(score, scoreBox.left - stageBox.left, scoreBox.top - stageBox.top, scoreBox.width, scoreBox.height);
+      } else if (
         stage.classList.contains('generator-renderer-on') &&
         generatorSnapshot === generatorCanvas
       ) {
@@ -2818,7 +3004,7 @@
       : uiText('runtime.pin.disabled', '窗口置顶已关闭'));
   }
 
-  function resize() {
+  function resize(restoreBuffers = false) {
     const nativeDpr = window.devicePixelRatio || 1;
     const nextDpr = qualityState.mode === 'high'
       ? Math.min(nativeDpr, 2)
@@ -2828,7 +3014,23 @@
     const nextWidth = Math.max(1, innerWidth);
     const nextHeight = Math.max(1, innerHeight);
     const webglScale = currentQualityBudget().webglScale;
-    if (w === nextWidth && h === nextHeight && Math.abs(dpr - nextDpr) < .001) {
+    if (activeEffect === 'score') {
+      w = nextWidth;
+      h = nextHeight;
+      dpr = nextDpr;
+      // The score and lyrics have their own canvases and media clock. Keep full CSS layout
+      // dimensions for controls, but release the hidden drawing buffers and GL feedback.
+      if (restoreBuffers) {
+        canvas.width = canvas.height = 1;
+        glitchCanvas.width = glitchCanvas.height = 1;
+        try { betaState.visualizer?.setRendererSize(2, 2); } catch (_) {}
+        betaCanvas.width = betaCanvas.height = 2;
+        glitchWebglRenderer?.resize(1, 1, 1, 1);
+      }
+      resizeGlitchCurve();
+      return;
+    }
+    if (!restoreBuffers && w === nextWidth && h === nextHeight && Math.abs(dpr - nextDpr) < .001) {
       glitchWebglRenderer?.resize(w, h, dpr, webglScale);
       syncGlitchRendererState();
       return;
@@ -2875,11 +3077,53 @@
     } catch (_) {}
   }
 
+  function publishScoreClock(now) {
+    scoreClockFrame.deltaMs = engineClockFrame.nowMs ? Math.max(0, now - engineClockFrame.nowMs) : 0;
+    scoreClockFrame.frameIndex = frame;
+    scoreClockFrame.nowMs = now;
+    engineClockFrame = scoreClockFrame;
+    if (!engineFrameSubscribers.preMaterial.size && !engineFrameSubscribers.postMaterial.size) return;
+    for (const phase of [engineFrameSubscribers.preMaterial, engineFrameSubscribers.postMaterial]) {
+      for (const subscriber of [...phase]) {
+        try { subscriber({ ...engineClockFrame }); }
+        catch (error) { console.error('Score frame subscriber failed', error); }
+      }
+    }
+  }
+
+  function scheduleShell() {
+    // The visible score already has one callback per display frame, including when
+    // it shows an empty/loading state. Keep the independent loop as a hostless fallback.
+    if (activeEffect === 'score' && scoreDriver) {
+      if (shellRequest) cancelAnimationFrame(shellRequest);
+      shellRequest = 0;
+    } else if (!shellRequest) shellRequest = requestAnimationFrame(animate);
+  }
+
+  function advanceScoreFrame(now) {
+    frame++;
+    if ((directorState.enabled && audioState.playing) || glitchPanelOpen) {
+      const energy = getEnergy();
+      if (directorState.enabled) updateDirector(energy, now);
+      if (glitchPanelOpen) {
+        updateRhythmState(now);
+        updateGlitchCurve(now);
+      }
+    }
+    publishScoreClock(now);
+  }
+
   function animate() {
+    shellRequest = 0;
     const now = performance.now();
     if (document.hidden) {
       resetPerformanceWindow(now);
-      requestAnimationFrame(animate);
+      scheduleShell();
+      return;
+    }
+    if (activeEffect === 'score') {
+      if (!scoreDriver) advanceScoreFrame(now);
+      scheduleShell();
       return;
     }
     frame++;
@@ -2962,7 +3206,7 @@
         console.error('Post-material frame subscriber failed', error);
       }
     }
-    requestAnimationFrame(animate);
+    scheduleShell();
   }
 
   intensityInput.addEventListener('input', event => { intensity = Number(event.target.value); });
@@ -3180,5 +3424,5 @@
     observeGlitch: (frameIndex, report) =>
       materialFrameOrchestrator?.observeGlitch(frameIndex, report) || null
   });
-  requestAnimationFrame(animate);
+  scheduleShell();
 })();

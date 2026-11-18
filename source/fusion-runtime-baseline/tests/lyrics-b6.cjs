@@ -235,6 +235,17 @@ async function page() {
   assert.equal(box.style.top, `${100 + 200 - api.GAP - 40}px`, '字的下沿在人声轨上沿之上（人声轨上面还有一条轨也一样）');
   assert.equal(box.style.left, `${300 - 2}px`, '从播放线开始');
   assert.equal(box.dataset.anchor, 'vocals');
+  // The score is resized before the periodic recheck. An expanded lyric block must
+  // immediately anchor to the new first vocal row and stay inside the canvas.
+  canvas.clientWidth = 785; canvas.clientHeight = 364;
+  const regularHit = view.hit;
+  view.hit = (x,y) => y >= 90 ? {kind: 'lane', group: 'vocals'} : null;
+  box.offsetHeight = 82; ctl.render();
+  assert.equal(box.style.top, '104px');
+  assert.ok(box.classList.contains('is-tight'));
+  assert.ok(parseInt(box.style.top) + box.offsetHeight <= canvas.offsetTop + 90);
+  canvas.clientWidth = 1000; canvas.clientHeight = 600;
+  view.hit = regularHit; box.offsetHeight = 40; ctl.render();
   ctl.render(); ctl.render(); await flush();
   assert.equal(asked.length, 1, '同一首只问一次');
   // No vocal lane: above the first lane.

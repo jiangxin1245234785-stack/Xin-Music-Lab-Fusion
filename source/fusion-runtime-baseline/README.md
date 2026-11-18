@@ -20,7 +20,7 @@
 
 界面有中文与英文两种语言，契约见 `I18N_RELEASE.md`。
 
-手写字幕在“外观与设置 → 谱面阅读”里；可设置起止秒与文字，修改/删除会保留本机历史。开发版字幕跨版本保存在 `%APPDATA%/XinMusicDevelopment/Listening Notes`，不写分析原件。
+手写字幕位于「外观与设置 → 谱面设置 → 字幕与导出」。可设置起止秒与文字，修改或删除时会保留本机历史。开发版字幕跨版本保存在 `%APPDATA%/XinMusicDevelopment/Listening Notes`，字幕修改只写入本机字幕目录。
 
 ## 运行与测试
 

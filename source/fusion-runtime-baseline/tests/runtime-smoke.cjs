@@ -816,9 +816,11 @@ app.whenReady().then(async () => {
         && frameOwnershipStatus?.pass === true
       );
       const stage = document.querySelector('main.stage');
-      const nativeEffects = [...document.querySelectorAll('[data-effect]')]
+      const nativeEffects = [...document.querySelectorAll('.scene-button[data-effect]')]
         .map(button => button.dataset.effect)
-        .filter(effect => effect && !effect.startsWith('beta-'));
+        .filter(effect => effect && !effect.startsWith('beta-'))
+        // Exercise waking the buffers on the explicit score-to-ribbons transition below.
+        .sort((a,b) => Number(a === 'score') - Number(b === 'score'));
       const failedNativeEffects = [];
       const materialFrameWaits = [];
       // Timers can expire before the next visible frame on a busy machine. Wait for
@@ -837,24 +839,75 @@ app.whenReady().then(async () => {
               && output.frameIndex === source?.materialFrameIndex
               && output.frameIndex === generator?.renderReport?.output?.frameIndex
               && generator?.renderReport?.status === 'rendered') {
-            materialFrameWaits.push({effect, after, frame: output.frameIndex, waitedMs: Math.round(performance.now() - began)});
-            return;
+            return {effect, after, frame: output.frameIndex, waitedMs: Math.round(performance.now() - began)};
           }
           await new Promise(resolve => setTimeout(resolve, 16));
         }
         throw new Error('No synchronized material frame: ' + effect + ', after ' + after);
       };
+      const scoreBufferIds = ['visualizer', 'betaCanvas', 'glitchCanvas', 'glitchWebglCanvas', 'generatorCanvas'];
+      const readBuffers = ids => Object.fromEntries(ids.map(id => {
+        const canvas = document.getElementById(id);
+        return [id, [canvas.width, canvas.height]];
+      }));
+      const scoreSample = () => {
+        const material = window.SmokeResonanceMaterialView.status();
+        const generator = window.SmokeResonanceGeneratorRuntimeShadowView.status();
+        return {
+          clock: window.SmokeResonanceFrameClock.get(),
+          materialFrame: material.frameIndex,
+          materialFrames: material.materialFrames,
+          evaluations: generator.evaluateCalls,
+          renders: generator.renderRequests,
+          buffers: readBuffers(scoreBufferIds)
+        };
+      };
+      async function checkScoreClock() {
+        // The first score tick puts the Generator to sleep. Observe subsequent real display frames.
+        return new Promise((resolve, reject) => {
+          const samples = [];
+          let pending;
+          const deadline = setTimeout(() => {
+            cancelAnimationFrame(pending);
+            reject(new Error('Score did not present four animation frames'));
+          }, 8000);
+          function sample() {
+            try {
+              const row = scoreSample();
+              const previous = samples.at(-1);
+              if (stage.dataset.effect !== 'score' || !Number.isInteger(row.clock.frameIndex)
+                  || !Number.isInteger(row.materialFrame) || !Number.isInteger(row.evaluations) || !Number.isInteger(row.renders)
+                  || !Object.values(row.buffers).every(size => size.every(n => n >= 1 && n <= 2))) {
+                throw new Error('Score clock or parked scene buffers invalid: ' + JSON.stringify(row));
+              }
+              if (previous && !(row.clock.frameIndex > previous.clock.frameIndex && row.clock.nowMs > previous.clock.nowMs
+                  && row.materialFrame === previous.materialFrame && row.materialFrames === previous.materialFrames
+                  && row.evaluations === previous.evaluations && row.renders === previous.renders)) {
+                throw new Error('Score clock stopped or inactive renderer ran: ' + JSON.stringify([previous,row]));
+              }
+              samples.push(row);
+              if (samples.length < 4) pending = requestAnimationFrame(sample);
+              else { clearTimeout(deadline); resolve(samples); }
+            } catch (error) { clearTimeout(deadline); reject(error); }
+          }
+          pending = requestAnimationFrame(sample);
+        });
+      }
+      let scoreFrames;
       for (const effect of nativeEffects) {
-        document.querySelector('[data-effect="' + effect + '"]')?.click();
+        document.querySelector('.scene-button[data-effect="' + effect + '"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 55));
         if (stage?.dataset.effect !== effect) failedNativeEffects.push(effect);
-        // Every kept scene is still registered and rendered through the material runtime:
-        // the runtime, the generator source and the generator render agree on one new frame.
-        await waitMaterialFrame(effect, window.SmokeResonanceMaterialView?.status()?.frameIndex ?? -1);
+        if (effect === 'score') scoreFrames = await checkScoreClock();
+        else materialFrameWaits.push(await waitMaterialFrame(effect, window.SmokeResonanceMaterialView?.status()?.frameIndex ?? -1));
       }
       // Not pulsar: main.stage carries data-effect too, and the director check below clicks pulsar.
       document.querySelector('.scene-button[data-effect="ribbons"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 80));
+      const restoredMaterial = await waitMaterialFrame('ribbons', window.SmokeResonanceMaterialView.status().frameIndex);
+      const restoredBuffers = readBuffers(['visualizer', 'glitchCanvas', 'glitchWebglCanvas', 'generatorCanvas']);
+      if (!Object.values(restoredBuffers).every(size => size.every(n => n > 64))) {
+        throw new Error('Scene buffers still parked after leaving score: ' + JSON.stringify(restoredBuffers));
+      }
       const materialLifecycleReports = [];
       for (const reason of ['pause', 'seek', 'track-change']) {
         window.SmokeResonanceMaterialView?.reset(reason);
@@ -1073,6 +1126,9 @@ app.whenReady().then(async () => {
         failedNativeEffects,
         nativeEffectCount: nativeEffects.length,
         materialFrameWaits,
+        scoreFrames,
+        restoredMaterial,
+        restoredBuffers,
         materialLifecycleReady,
         materialLifecycleReports,
         calibrationPanelAbsent,
@@ -1149,7 +1205,9 @@ app.whenReady().then(async () => {
         visibilityLifecycle.pausedWhileHidden &&
         visibilityLifecycle.resumedAfterShow,
       nativeEffects: result.failedNativeEffects.length === 0
-        && result.materialFrameWaits.length === result.nativeEffectCount,
+        && result.scoreFrames?.length === 4
+        && result.materialFrameWaits.length + 1 === result.nativeEffectCount
+        && result.restoredMaterial.frame > result.scoreFrames.at(-1).materialFrame,
       materialLifecycleReady: result.materialLifecycleReady,
       calibrationPanelAbsent: result.calibrationPanelAbsent,
       fxPanelActuallyVisible: result.fxPanelActuallyVisible,

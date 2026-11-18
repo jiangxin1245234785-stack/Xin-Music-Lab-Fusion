@@ -8,10 +8,13 @@
          intentionally limited to local scripts; every network source remains blocked. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'" />
     <title data-i18n="app.documentTitle">Xin’s Music Lab Fusion · XLD × Live</title>
-    <link rel="icon" type="image/png" href="./assets/xins-music-lab-icon.png" />
+    <link rel="icon" type="image/x-icon" href="./assets/xins-music-lab-icon.ico" />
     <link rel="stylesheet" href="./style.css?v=0.5.0-i18n-step6" />
     <link rel="stylesheet" href="./shell.css" />
     <link rel="stylesheet" href="./xml-studio.css" />
+    <link rel="stylesheet" href="./score-layout.css" />
+    <link rel="stylesheet" href="./score-compare-controls.css" />
+    <link rel="stylesheet" href="./score-theme.css" />
   </head>
   <body>
     <main class="stage" data-palette="cover" data-effect="spectrum">
@@ -21,6 +24,11 @@
       <canvas id="glitchWebglCanvas" class="glitch-webgl-canvas" aria-label="WebGL2 跨帧反馈 Glitch 渲染" data-i18n-aria-label="canvas.webgl"></canvas>
       <canvas id="generatorCanvas" class="generator-canvas" aria-label="Generator Source-aware WebGL2 输出" data-i18n-aria-label="canvas.generator"></canvas>
       <canvas id="scoreCanvas" class="score-canvas" aria-label="跟着音乐滚动的谱面" data-i18n-aria-label="canvas.score"></canvas>
+      <div id="scoreVariationControls" class="score-compare" role="group" aria-label="段落对照" data-i18n-aria-label="score.variation" hidden>
+        <button id="scoreVariationPlayA" type="button" aria-label="跳到 A 段开头" title="跳到 A 段开头" data-i18n-aria-label="score.variationPlayA" data-i18n-title="score.variationPlayA" aria-pressed="false">A</button>
+        <button id="scoreVariationPlayB" type="button" aria-label="跳到 B 段开头" title="跳到 B 段开头" data-i18n-aria-label="score.variationPlayB" data-i18n-title="score.variationPlayB" aria-pressed="false">B</button>
+        <button id="scoreVariationJump" type="button" data-i18n="score.variationJumpShort" aria-label="听同拍的另一遍" title="听同拍的另一遍" data-i18n-aria-label="score.variationJump" data-i18n-title="score.variationJump" aria-describedby="scoreVariationStatus">同拍切换</button>
+      </div>
       <div class="aurora" aria-hidden="true"></div>
       <div class="grain" aria-hidden="true"></div>
       <div class="vignette" aria-hidden="true"></div>
@@ -60,6 +68,41 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5M9 12h6" /></svg>
         </button>
       </footer>
+
+      <aside id="scoreSidebar" class="score-sidebar" aria-label="专辑侧栏" data-i18n-aria-label="score.albumLayout" hidden>
+        <div class="score-sidebar__actions">
+          <button id="scoreSidebarHome" type="button" aria-controls="welcome" aria-expanded="false" aria-label="开始页" title="开始页" data-i18n-aria-label="home.title" data-i18n-title="home.title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3.5 10 8.5-7 8.5 7V20H15v-6H9v6H3.5Z"/></svg>
+          </button>
+          <button id="scoreSidebarLibrary" type="button" aria-controls="fusionPanel" aria-expanded="false" aria-label="打开曲库" title="打开曲库" data-i18n-aria-label="shell.openLibrary" data-i18n-title="shell.openLibrary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4.5 5v14m4-14v14m4-14v14m3.5-14 3.5 13.5"/></svg>
+          </button>
+          <button id="scoreSidebarSettings" type="button" aria-controls="xlScoreSettings" aria-expanded="false" aria-label="谱面设置" title="谱面设置" data-i18n-aria-label="score.settings" data-i18n-title="score.settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7h5m5 0h8M3 17h10m5 0h3"/><circle cx="10.5" cy="7" r="2.5"/><circle cx="15.5" cy="17" r="2.5"/></svg>
+          </button>
+          <button id="scoreSidebarHide" type="button" aria-controls="scoreSidebar" aria-expanded="true" aria-label="收起专辑栏" title="收起专辑栏" data-i18n-aria-label="score.collapseAlbum" data-i18n-title="score.collapseAlbum">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-12-3 4 3 4"/></svg>
+          </button>
+        </div>
+        <div id="scoreSidebarRecord" class="score-sidebar__record">
+          <div id="scoreSidebarArt" class="score-sidebar__art" hidden></div>
+          <div id="scoreSidebarTitle" class="score-sidebar__title"></div>
+          <div id="scoreSidebarCredits" class="score-sidebar__credits"></div>
+        </div>
+        <div id="scoreSidebarLyrics" class="score-sidebar__lyrics"><small id="scoreSidebarCaption" aria-live="off" hidden></small></div>
+        <div id="scoreTransportControls" class="score-sidebar__controls">
+          <div id="scoreProgress" class="score-sidebar__progress"></div>
+          <div id="scoreTransportKeys" class="score-sidebar__keys"></div>
+          <div id="scoreTransportTools" class="score-sidebar__tools"></div>
+        </div>
+      </aside>
+      <div id="scoreCompactTransport" class="score-compact-transport" hidden>
+        <button id="scoreSidebarShow" type="button" aria-controls="scoreSidebar" aria-expanded="false" aria-label="展开专辑栏" title="展开专辑栏" data-i18n-aria-label="score.expandAlbum" data-i18n-title="score.expandAlbum">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-12 3 4-3 4"/></svg>
+        </button>
+      </div>
+      <div id="scoreCompactLyrics" class="score-compact-lyrics" hidden><small id="scoreCompactCaption" aria-live="off" hidden></small></div>
+      <div id="scoreSceneDock" class="score-dock" hidden></div>
 
       <aside class="fusion-panel xl-drawer" id="fusionPanel" aria-label="XLD Fusion 控制台" aria-hidden="true">
         <div class="xl-drawer__head">
@@ -118,12 +161,13 @@
         </div>
       </aside>
 
-      <aside class="xl-drawer xl-settings" id="xlSettings" aria-label="外观与设置" data-i18n-aria-label="shell.settings" aria-hidden="true">
+      <aside class="xl-drawer xl-settings" id="xlSettings" aria-labelledby="xlSettingsHeading" aria-hidden="true" inert>
         <div class="xl-drawer__head">
-          <h2 data-i18n="shell.settings">外观与设置</h2>
+          <button id="xlSettingsBack" class="xl-settings-back" type="button" aria-label="返回外观与设置" data-i18n-aria-label="shell.backSettings" title="返回外观与设置" data-i18n-title="shell.backSettings" hidden>‹</button>
+          <h2 id="xlSettingsHeading"><span id="xlGeneralTitle" data-i18n="shell.settings">外观与设置</span><span id="xlScoreTitle" data-i18n="score.settings" hidden>谱面设置</span><span id="xlStarTitle" data-i18n="score.meteorMotion" hidden>星空谱面</span></h2>
           <button id="xlSettingsClose" class="calibration-close" type="button" aria-label="关闭" data-i18n-aria-label="shell.close">×</button>
         </div>
-        <div class="xl-settings__body">
+        <div id="xlSettingsGeneral" class="xl-settings__body">
           <section class="xl-group">
             <h3 data-i18n="visualSettings.look">外观</h3>
             <div class="xl-row" data-palette-row>
@@ -195,24 +239,71 @@
               </label>
             </div>
           </section>
+          <div class="xl-group">
+            <button id="xlScoreSettingsOpen" class="xl-settings-link" type="button" aria-controls="xlScoreSettings" aria-expanded="false"><span data-i18n="score.settings">谱面设置</span><span class="xl-settings-chevron" aria-hidden="true">›</span></button>
+          </div>
           <section class="xl-group">
+            <h3 data-i18n="shell.more">更多</h3>
+            <div class="xl-toggle-list">
+              <button class="calibration-toggle desktop-only xl-switch" id="pinButton" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="窗口置顶" data-i18n-aria-label="switch.pin" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
+            </div>
+            <div class="xl-grid">
+              <button class="calibration-toggle glitch-settings-toggle" id="glitchSettingsButton" type="button" aria-expanded="false" aria-controls="glitchPanel" title="打开 FX Rack 设置" data-i18n="engine.fxSettings" data-i18n-title="engine.fxSettingsTitle">设置</button>
+              <button class="calibration-toggle" id="snapshotButton" type="button" title="保存当前视觉画面（S）" data-i18n="engine.snapshot" data-i18n-title="engine.snapshotTitle">快照</button>
+              <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 自动</button>
+              <button class="calibration-toggle pulsar-style-toggle" id="pulsarLayoutButton" type="button" title="切换折叠频谱、单向频谱或真实双声道" data-i18n-title="visualSettings.pulsarLayoutTitle">Fold Spectrum</button>
+              <button class="calibration-toggle pulsar-style-toggle" id="pulsarStyleButton" type="button" title="切换脉冲星黑白 / 霓虹模式" data-i18n-title="visualSettings.pulsarStyleTitle">Ink Mono</button>
+            </div>
+          </section>
+          <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 画面特效 · <kbd>S</kbd> 保存画面</p>
+        </div>
+        <div id="xlScoreSettings" class="xl-settings__body" hidden>
+          <section id="scoreReadingGroup" class="xl-group">
+            <label class="xl-row"><span class="xl-row__label" data-i18n="score.style">谱面样式</span><select id="scoreStyle"><option value="starry" data-i18n="score.styleStarry">星空谱面</option><option value="overprint" data-i18n="score.stylePrint">套色舞会</option><option value="glass" data-i18n="score.styleGlass">回波雷达</option><option value="paper" data-i18n="score.stylePaper">压纹纸</option><option value="ember" data-i18n="score.styleEmber">余烬</option><option value="water" data-i18n="score.styleWater">夜水</option><option value="mist" data-i18n="score.styleMist">骨架与声雾</option><option value="terrain" data-i18n="score.styleTerrain">车窗地貌</option></select></label>
+            <label class="xl-toggle-field"><span><span data-i18n="score.variation">段落对照</span><small data-i18n="score.variationHint">适用于星空谱面和压纹纸。选两段，用重影看演奏变化。</small></span><input id="scoreVariationEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
+            <div id="scoreVariationDetails" class="score-compare-details" hidden>
+              <div id="scoreVariationPicker" class="score-compare-picker" hidden>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationA">A 段</span><select id="scoreVariationA"></select></label>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationB">B 段</span><select id="scoreVariationB"></select></label>
+              </div>
+              <small id="scoreVariationStatus" class="score-compare-status" role="status"></small>
+            </div>
             <h3 data-i18n="score.options">谱面阅读</h3>
+            <label class="xl-toggle-field"><span data-i18n="score.albumLayout">专辑侧栏</span><input id="scoreAlbumLayout" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <label class="xl-row"><span class="xl-row__label" data-i18n="score.appearance">谱面样式</span><select id="scoreAppearance"><option value="original" data-i18n="score.appearanceOriginal">原版</option><option value="clear" data-i18n="score.appearanceClear" selected>清晰</option><option value="detail" data-i18n="score.appearanceDetail">细读</option></select></label>
             <label class="xl-toggle-field"><span data-i18n="score.merge">合并同类乐器声部</span><input id="scoreMergeTimbres" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <label class="xl-toggle-field"><span><span data-i18n="score.lyrics">显示歌词</span><small data-i18n="score.lyricsHint">歌名和歌手会发到 LRCLIB 去查；歌曲文件夹里有同名 .lrc 就先用它</small></span><input id="scoreLyrics" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+          </section>
+          <section id="scoreLightGroup" class="xl-group">
+            <h3 data-i18n="score.noteLights">音符与光效</h3>
             <label class="xl-toggle-field"><span><span data-i18n="score.shapes">按乐器画音符</span><small data-i18n="score.shapesHint">弹拨的音有个头，弦乐是两头尖的梭</small></span><input id="scoreShapes" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">音符光效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
             <label class="xl-toggle-field"><span data-i18n="score.fxFollow">光效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-toggle-field"><span><span data-i18n="score.lyrics">显示歌词</span><small data-i18n="score.lyricsHint">歌名和歌手会发到 LRCLIB 去查；歌曲文件夹里有同名 .lrc 就先用它</small></span><input id="scoreLyrics" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            <button id="scoreStarSettingsOpen" class="xl-settings-link" type="button" aria-controls="xlStarScoreSettings" aria-expanded="false"><span data-i18n="score.meteorMotion">星空谱面</span><span class="xl-settings-chevron" aria-hidden="true">›</span></button>
+          </section>
+          <section id="scoreTimingGroup" class="xl-group">
+            <h3 data-i18n="score.timingGroup">准备与对齐</h3>
+            <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
             <div id="scoreDynamicsTools" hidden>
               <p id="scoreDynamicsStatus" class="score-dynamics-status" role="status" aria-live="polite"></p>
               <div class="xl-row"><button id="scoreDynamicsRun" type="button">生成力度副本</button><button id="scoreDynamicsCancel" type="button" hidden data-i18n="dynamics.cancel">取消</button></div>
               <small class="score-dynamics-note" data-i18n="dynamics.note">根据分轨能量估计相对强弱，不代表演奏者的真实力度。</small>
             </div>
+          </section>
+          <section id="scoreToolsGroup" class="xl-group">
+            <h3 data-i18n="score.outputGroup">字幕与导出</h3>
             <div class="score-export">
               <div class="xl-row"><button id="scoreExportOpen" type="button" data-i18n="export.open">导出视频</button></div>
               <div id="scoreExportChoices" class="score-export__choices" hidden>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="export.bitrate">视频码率</span><select id="scoreExportBitrate">
+                  <option value="auto" data-i18n="export.bitrateAuto">自动（随分辨率）</option>
+                  <option value="1">1 Mbps</option><option value="2">2 Mbps</option><option value="4">4 Mbps</option><option value="8">8 Mbps</option>
+                  <option value="custom" data-i18n="export.bitrateCustom">自定义</option>
+                </select></label>
+                <label id="scoreExportCustomRow" class="xl-row" hidden><span class="xl-row__label" data-i18n="export.bitrateValue">自定义（Mbps）</span><input id="scoreExportCustomBitrate" type="text" inputmode="decimal" value="2" placeholder="0.05–16" aria-describedby="scoreExportBitrateError" /></label>
+                <p id="scoreExportBitrateError" class="score-export__status" role="status" aria-live="polite" hidden></p>
                 <button type="button" data-tier="1080p"><span data-i18n="export.clear">清晰（1080p）</span><small id="scoreExport1080Size"></small></button>
                 <button type="button" data-tier="720p"><span data-i18n="export.small">小（720p）</span><small id="scoreExport720Size"></small></button>
               </div>
@@ -232,20 +323,31 @@
               </form>
             </details>
           </section>
+        </div>
+        <div id="xlStarScoreSettings" class="xl-settings__body" hidden>
           <section class="xl-group">
-            <h3 data-i18n="shell.more">更多</h3>
-            <div class="xl-toggle-list">
-              <button class="calibration-toggle desktop-only xl-switch" id="pinButton" type="button" role="switch" aria-checked="false" aria-pressed="false" aria-label="窗口置顶" data-i18n-aria-label="switch.pin" title="让窗口保持在最前（F10）" data-i18n-title="engine.pinTitle">置顶</button>
-            </div>
-            <div class="xl-grid">
-              <button class="calibration-toggle glitch-settings-toggle" id="glitchSettingsButton" type="button" aria-expanded="false" aria-controls="glitchPanel" title="打开 FX Rack 设置" data-i18n="engine.fxSettings" data-i18n-title="engine.fxSettingsTitle">设置</button>
-              <button class="calibration-toggle" id="snapshotButton" type="button" title="保存当前视觉画面（S）" data-i18n="engine.snapshot" data-i18n-title="engine.snapshotTitle">快照</button>
-              <button class="calibration-toggle" id="qualityButton" type="button" title="循环切换自动 / 高画质 / 省电画质" data-i18n-title="visualSettings.qualityTitle">画质 自动</button>
-              <button class="calibration-toggle pulsar-style-toggle" id="pulsarLayoutButton" type="button" title="切换折叠频谱、单向频谱或真实双声道" data-i18n-title="visualSettings.pulsarLayoutTitle">Fold Spectrum</button>
-              <button class="calibration-toggle pulsar-style-toggle" id="pulsarStyleButton" type="button" title="切换脉冲星黑白 / 霓虹模式" data-i18n-title="visualSettings.pulsarStyleTitle">Ink Mono</button>
-            </div>
+            <details id="scoreTransientPanel" class="xl-more" hidden>
+              <summary data-i18n="score.decayTitle">击拨与鼓点的余光</summary>
+              <label class="xl-toggle-field"><span data-i18n="score.quickPlucks">击拨快速消散</span><input id="scoreQuickPlucks" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-toggle-field"><span data-i18n="score.quickDrums">鼓点快速消散</span><input id="scoreQuickDrums" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-row"><span class="xl-row__label" data-i18n="score.decayPreset">余光时长</span><select id="scoreDecayPreset">
+                <option value="natural" data-i18n="score.decayNatural">自然</option><option value="crisp" data-i18n="score.decayCrisp">利落</option><option value="relaxed" data-i18n="score.decayRelaxed">舒展</option><option value="custom" data-i18n="score.decayCustom">自定义</option>
+              </select></label>
+              <div id="scoreDecayCustom" hidden>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.decaySeconds">击拨收音后</span><span class="intensity"><input id="scoreDecaySeconds" type="range" min=".25" max="3.00" step=".05" value=".70" /><output id="scoreDecaySecondsOut" for="scoreDecaySeconds">0.70 s</output></span></label>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.drumScale">鼓点时长倍率</span><span class="intensity"><input id="scoreDrumScale" type="range" min=".50" max="4" step=".05" value="1" /><output id="scoreDrumScaleOut" for="scoreDrumScale">1.00×</output></span></label>
+              </div>
+            </details>
+            <details id="scoreDirectionPanel" class="xl-more" hidden>
+              <summary data-i18n="score.directionTitle">流星方向</summary>
+              <label class="xl-toggle-field"><span><span data-i18n="score.directionOn">尾光偏转</span><small data-i18n="score.directionHint">同一拨共用方向，重播时一致</small></span><input id="scoreDirectionOn" class="xl-switch-input" role="switch" type="checkbox" /></label>
+              <label class="xl-row"><span class="xl-row__label" data-i18n="score.directionRange">偏角范围</span><select id="scoreDirectionPreset">
+                <option value="subtle" data-i18n="score.directionSubtle">轻微 ±4°</option><option value="natural" data-i18n="score.directionNatural">自然 ±6°</option><option value="lively" data-i18n="score.directionLively">鲜明 ±8°</option><option value="custom" data-i18n="score.decayCustom">自定义</option>
+              </select></label>
+              <div id="scoreDirectionCustom" hidden><label class="xl-row"><span class="xl-row__label" data-i18n="score.directionMax">最大偏角</span><span class="intensity"><input id="scoreDirectionDegrees" type="range" min="0" max="12" step=".5" value="6" /><output id="scoreDirectionOut" for="scoreDirectionDegrees">±6°</output></span></label></div>
+              <label class="xl-toggle-field"><span data-i18n="score.directionBass">贝斯跟随（三分之一幅度）</span><input id="scoreDirectionBass" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            </details>
           </section>
-          <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 画面特效 · <kbd>S</kbd> 保存画面</p>
         </div>
       </aside>
 
@@ -523,8 +625,17 @@
     <script src="./shell.js"></script>
     <script src="./stem-controls.js"></script>
     <script src="../scoreview/score-view.js"></script>
+    <script src="../scoreview/score-mood.js"></script>
+    <script src="../scoreview/score-surface.js"></script>
+    <script src="../scoreview/score-mist.js"></script>
+    <script src="../scoreview/score-terrain.js"></script>
+    <script src="../scoreview/score-variation.js"></script>
+    <script src="../scoreview/score-presentation.js"></script>
     <script src="../scoreview/media-clock.js"></script>
     <script src="./score-prepare.js"></script>
+    <script src="./score-transient-controls.js"></script>
+    <script src="./score-direction-controls.js"></script>
+    <script src="./score-compare-controls.js"></script>
     <script src="./score-scene.js"></script>
     <script src="./lyrics-core.js"></script>
     <script src="./score-lyrics.js"></script>
@@ -533,5 +644,7 @@
     <script src="./score-export-controls.js"></script>
     <script src="./library-status.js"></script>
     <script src="./fusion.js"></script>
+    <script src="./score-layout.js"></script>
+    <script src="./score-theme.js"></script>
   </body>
 </html>

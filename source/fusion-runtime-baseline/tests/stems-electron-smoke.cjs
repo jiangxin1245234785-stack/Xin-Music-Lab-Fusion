@@ -51,7 +51,7 @@ app.whenReady().then(async () => {
     await evaluate("document.querySelector('#welcome')?.remove(); document.querySelector('#fusionPanel').classList.add('is-open'); document.querySelector('#fusionAudio').currentTime=35;");
     await until("Math.abs(document.querySelector('#fusionAudio').currentTime-35)<0.1");
     await evaluate("document.querySelector('#fusionStemSelect').value='bass'; document.querySelector('#fusionStemSelect').dispatchEvent(new Event('change'));");
-    await until("!document.querySelector('#fusionStemSelect').disabled && document.querySelector('#fusionAudio').src.endsWith('bass.wav') && Math.abs(document.querySelector('#fusionAudio').currentTime-35)<0.1");
+    await until("!document.querySelector('#fusionStemSelect').disabled && window.SmokeResonanceAudioSource.stemOutput.current().element?.currentSrc.endsWith('bass.wav') && Math.abs(document.querySelector('#fusionAudio').currentTime-35)<0.1");
     await evaluate("document.querySelector('#fusionPlay').click()");
     await until("!document.querySelector('#fusionAudio').paused && document.querySelector('#fusionAudio').currentTime>35.1");
     if (process.env.MIDI_SMOKE === '1') {
@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
       await until("!document.querySelector('#fusionStemSelect').disabled");
     }
     await evaluate("document.querySelector('#fusionPlay').click(); document.querySelector('#fusionStemSelect').value='original'; document.querySelector('#fusionStemSelect').dispatchEvent(new Event('change'));");
-    await until("!document.querySelector('#fusionStemSelect').disabled && document.querySelector('#fusionAudio').src.endsWith('.flac')");
+    await until("!document.querySelector('#fusionStemSelect').disabled && (window.SmokeResonanceAudioSource.stemOutput.current().element || document.querySelector('#fusionAudio')).src.endsWith('.flac')");
     await evaluate("document.querySelector('#fusionStemReveal').click()");
     for (let attempt = 0; attempt < 100 && reveals < 1; attempt++) await new Promise(r => setTimeout(r, 25));
     assert.equal(reveals, 1);

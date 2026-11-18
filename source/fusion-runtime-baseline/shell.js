@@ -16,19 +16,60 @@
   root.addEventListener('beforeunload', () => switchObserver.disconnect(), {once: true});
 
   const isOpen = panel => panel.classList.contains('is-open');
-  function setSettings(open) {
+  const generalPage = find('#xlSettingsGeneral'), scorePage = find('#xlScoreSettings');
+  const generalTitle = find('#xlGeneralTitle'), scoreTitle = find('#xlScoreTitle');
+  const scoreEntry = find('#xlScoreSettingsOpen'), scoreShortcut = find('#scoreSidebarSettings'), back = find('#xlSettingsBack');
+  const starPage=find('#xlStarScoreSettings'), starTitle=find('#xlStarTitle'), starEntry=find('#scoreStarSettingsOpen');
+  const closeLibrary = () => { if (isOpen(library) && libraryClose) libraryClose.click(); };
+  let settingsOrigin = settingsButton;
+  function setSettings(open, score = false, star = false) {
+    if (open) closeLibrary();
+    const inScore = open && score, inStar = inScore && star;
     settings.classList.toggle('is-open', open);
     settings.setAttribute('aria-hidden', String(!open));
+    settings.inert = !open;
     settingsButton.setAttribute('aria-expanded', String(open));
+    if (scorePage) {
+      generalPage.hidden = generalTitle.hidden = inScore;
+      scorePage.hidden = scoreTitle.hidden = !inScore || inStar;
+      if(starPage)starPage.hidden=starTitle.hidden=!inStar;
+      if(starEntry)starEntry.setAttribute('aria-expanded',String(inStar));
+      back.hidden=!inScore;
+      const backKey=inStar?'score.backSettings':'shell.backSettings';
+      const backText=root.XinMusicLabDynamicUi?.t?.(backKey,{},inStar?'返回谱面设置':'返回外观与设置') || (inStar?'返回谱面设置':'返回外观与设置');
+      back.dataset.i18nAriaLabel=back.dataset.i18nTitle=backKey;back.setAttribute('aria-label',backText);back.title=backText;
+      scoreEntry.setAttribute('aria-expanded', String(inScore));
+      scoreShortcut.setAttribute('aria-expanded', String(inScore));
+    }
   }
-  const closeLibrary = () => { if (isOpen(library) && libraryClose) libraryClose.click(); };
+  function openSettings(from, score) {
+    settingsOrigin = from;
+    setSettings(true, score);
+    (score ? back : settingsClose)?.focus();
+  }
+  function leaveScore() {
+    if(starPage?.hidden===false){setSettings(true,true);starEntry.focus();return;}
+    setSettings(true);
+    scoreEntry.focus();
+  }
+  function dismissSettings() {
+    const returnTo = settingsOrigin.getClientRects().length ? settingsOrigin : settingsButton;
+    returnTo.focus();
+    setSettings(false);
+  }
 
   settingsButton.addEventListener('click', () => {
-    const open = !isOpen(settings);
-    if (open) closeLibrary();
-    setSettings(open);
+    if (isOpen(settings) && scorePage?.hidden !== false && starPage?.hidden !== false) dismissSettings();
+    else openSettings(settingsButton, false);
   });
-  if (settingsClose) settingsClose.addEventListener('click', () => setSettings(false));
+  starEntry?.addEventListener('click',()=>{setSettings(true,true,true);back.focus();});
+  scoreEntry?.addEventListener('click', () => { setSettings(true, true); back.focus(); });
+  scoreShortcut?.addEventListener('click', () => {
+    if (isOpen(settings) && (!scorePage.hidden || starPage?.hidden===false)) dismissSettings();
+    else openSettings(scoreShortcut, true);
+  });
+  back?.addEventListener('click', leaveScore);
+  settingsClose?.addEventListener('click', dismissSettings);
   // One drawer at a time.
   libraryButton.addEventListener('click', () => setSettings(false));
   // The song in the top bar is the way into the library.
@@ -39,9 +80,12 @@
     if (button) button.addEventListener('click', () => setSettings(false));
   }
   root.document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape') return;
-    if (isOpen(settings)) setSettings(false);
-    else closeLibrary();
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (isOpen(settings)) {
+      event.preventDefault();
+      if (scorePage?.hidden === false || starPage?.hidden===false) leaveScore();
+      else dismissSettings();
+    } else closeLibrary();
   });
 
   // Where the music and the analysis results are. The folders are shared with XLD; picking one

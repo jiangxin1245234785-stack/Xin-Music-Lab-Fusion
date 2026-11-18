@@ -43,7 +43,12 @@ function sceneWith(kept) {
   const win = {
     localStorage: {getItem: key => (storage.has(key) ? storage.get(key) : null), setItem: (key, value) => storage.set(key, String(value))},
     document: {getElementById: id => (id === 'scoreFxFollow' ? follow : null), querySelector: () => null, createElement: element, documentElement: {lang: 'zh-CN'}},
-    XinScoreView: {create: (canvas, model, clock, options) => { created.push(options); return {setOptions: patch => patches.push(patch), setModel() {}, setCover() {}, lanes: () => [], layers: () => ({}), lastFrame: () => ({})}; }},
+    XinScoreView: {create: (canvas, model, clock, options) => {
+      created.push(options);
+      const current = {...options};
+      return {setOptions(patch) { patches.push(patch); Object.assign(current, patch); }, options: () => ({...current}),
+        setModel() {}, setCover() {}, lanes: () => [], layers: () => ({}), lastFrame: () => ({})};
+    }},
     XinMediaClock: {create: () => ({now: () => 0, destroy() {}})},
     MutationObserver: class { observe() {} disconnect() {} }, addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
     CustomEvent: class { constructor(name, init) { this.type = name; this.detail = init && init.detail; } },

@@ -74,9 +74,12 @@ function fakeModule(capture) {
     createSourceAwareWebglRenderPort(canvas, options) {
       capture.renderCanvas = canvas;
       capture.renderPortOptions = options;
+      capture.allocations = (capture.allocations || 0) + 1;
       let qualityMode = options.qualityMode;
       return {
-        id: 'fake-source-aware-port',
+        render() { capture.gpuDraws = (capture.gpuDraws || 0) + 1; },
+        configurePresetShaderPipeline(pipeline) { capture.lastPipeline = pipeline; },
+        dispose() { capture.releases = (capture.releases || 0) + 1; },
         setQualityMode(mode) {
           qualityMode = mode;
           capture.qualityMode = mode;
@@ -130,6 +133,7 @@ function fakeModule(capture) {
           };
         },
         render(source, evaluation) {
+          options.renderPort?.render(source, evaluation);
           renderCalls++;
           capture.renderSource = source;
           capture.renderEvaluation = evaluation;
@@ -189,6 +193,7 @@ function fakeModule(capture) {
           return { ...activePreset };
         },
         dispose() {
+          options.renderPort?.dispose();
           capture.disposed = true;
         }
       };
@@ -303,7 +308,7 @@ function fakeModule(capture) {
   assert.equal(renderedReport.contract, 'xin.glitch-runtime-frame/1');
   assert.equal(renderCapture.renderCanvas, renderCanvas);
   assert.equal(renderCapture.renderPortOptions.qualityMode, 'eco');
-  assert.equal(renderCapture.options.renderPort.id, 'fake-source-aware-port');
+  assert.equal(renderCapture.gpuDraws, 1, 'the runtime sends its draw to the real render port');
   assert.equal(renderCapture.renderSource.source, sourceCanvas);
   assert.equal(
     renderCapture.renderSource.materialFields.density.source,
@@ -346,7 +351,24 @@ function fakeModule(capture) {
   assert.equal(renderer.status().renderRequests, 2);
   assert.equal(renderCapture.qualityMode, 'high');
   assert.equal(renderer.status().renderPort.quality.mode, 'high');
+  const custom = {customPass: {source: 'preset shader'}};
+  renderCapture.options.renderPort.configurePresetShaderPipeline(custom);
+  renderer.setRendererSleeping(true);
+  assert.equal(renderer.renderCurrentSource(), null);
+  assert.equal(renderCanvas.width * renderCanvas.height, 1);
+  assert.equal(renderer.status().renderPort, null);
+  assert.equal(renderCapture.releases, 1);
+  assert.equal(renderCapture.allocations, 1);
+  assert.equal(renderer.status().runtime.preset.id, 'balanced');
+  renderCapture.lastPipeline = null;
+  renderer.setRendererSleeping(false);
+  renderer.evaluate(frame, { ...clock, frameIndex: 40, nowMs: 640 });
+  assert.equal(renderCapture.allocations, 2);
+  assert.equal(renderCapture.releases, 1);
+  assert.deepEqual(renderCapture.lastPipeline, custom, 'the rebuilt GPU port receives the current shader');
+  assert.equal(renderer.status().renderRequests, 3);
   renderer.dispose();
+  assert.equal(renderCapture.releases, 2);
 
   const failed = api.create({
     importModule: async () => ({

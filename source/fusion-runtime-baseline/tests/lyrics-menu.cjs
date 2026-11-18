@@ -78,7 +78,7 @@ async function pageSide() {
   const el = tag => {
     const e = {tag, className: '', textContent: '', title: '', type: '', hidden: false, disabled: false, style: {}, dataset: {}, children: [], offsetHeight: 40,
       classList: {set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }, toggle(c, on) { if (on) this.set.add(c); else this.set.delete(c); }, contains(c) { return this.set.has(c); }},
-      setAttribute() {}, append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; }, remove() {},
+      setAttribute() {}, removeAttribute() {}, appendChild(c) { this.append(c); }, append(...c) { this.children.push(...c); }, replaceChildren(...c) { this.children = c; }, remove() {},
       contains(x) { return x === this || this.children.some(c => c === x || c.contains?.(x)); },
       querySelectorAll(sel) { const out = []; const walk = n => { for (const c of n.children || []) { if (sel === '.score-lyrics__item' && c.className === 'score-lyrics__item') out.push(c); walk(c); } }; walk(this); return out; },
       listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }};
@@ -134,7 +134,82 @@ async function pageSide() {
   const renderBody = read('score-lyrics.js').split('function render() {')[1].split('function loop()')[0];
   assert.doesNotMatch(renderBody, /later\(|flash\(|classList\.(add|remove)\('is-(flash|hover|menu)/, 'the row\'s showing and hiding is set on events, not per frame');
   assert.match(read('style.css'), /\.score-lyrics__head \{[^}]*opacity: 0; transition: opacity/, 'the fade is CSS');
+  await albumSide({api, el, say, flush});
   done.push('页面：来源那行平时不显示，歌词出来时显示一会儿（CSS 过渡），指着歌词时显示，移开收起；点歌词本身就打开菜单，四项；换一份列候选、点一条就用它；没查到时同一位置留淡淡一行「没有找到歌词」，同样只闪一下和指着时显示；没人声的歌不显示；每帧不做这些事');
+}
+
+async function albumSide({api, el, say, flush}) {
+  const side = el('div'), stage = el('div'), audio = {duration: 618, currentTime: 0};
+  const slots = {scoreSidebarLyrics: side, scoreCompactLyrics: el('div'), scoreLyrics: el('input'),
+    fusionTrack: {textContent:'グッドバイ Goodbye'}, fusionArtist: {textContent:'toe'}};
+  const doc = {createElement: el, getElementById: id => slots[id], addEventListener() {}};
+  const status = {active:true, status:'empty', trackId:'grass', latencyMs:100};
+  const source = new Map(), log = [];
+  let delayedPreview;
+  const answer = id => source.get(id) || {ok:false,reason:'none'};
+  const bridge = {
+    lyrics: async id => answer(id),
+    lyricsMenu: async (id, action, data) => {
+      log.push({id, action, data});
+      if (action === 'instrumental') source.set(id,{ok:false,instrumental:true,reason:'instrumental'});
+      if (action === 'undo-instrumental') source.delete(id);
+      if (action === 'candidates') return {ok:true,candidates:[{id:7,title:'Goodbye',artist:'toe',album:'For Long Tomorrow',duration:425,lines:6}]};
+      if (action === 'netease-preview') {
+        if (data.url === 'slow') return new Promise(resolve => { delayedPreview = resolve; });
+        return {ok:true,candidate:{id:12,title:'グッドバイ',artist:'toe',album:'For Long Tomorrow',duration:425,lines:6}};
+      }
+      if (action === 'netease-choose') source.set(id,{ok:true,source:'netease',chosen:true,lrc:'[01:55.00]first\n[02:05.00]second\n[05:12.00]'});
+      return {ok:true};
+    }
+  };
+  stage.classList.add('score-layout-active');
+  const canvas = {clientWidth:0,clientHeight:0,parentNode:{insertBefore(){}}};
+  const ctl = api.create({bridge, stage, canvas, scene:{status:() => status, viewHandle:() => null}, audio, core, doc, say,
+    storage:{getItem:() => null}, raf:() => 0});
+  const settle = async () => { ctl.render(); await flush(); ctl.render(); };
+  await settle();
+  const box = side.children.find(child => child.className === 'score-lyrics');
+  const menu = box.children[4], entry = side.children.find(child => child.id === 'scoreLyricsFind');
+  const click = element => { assert.ok(element, 'button available'); element.listeners.click[0]({stopPropagation(){}}); };
+  const pick = label => click(menu.querySelectorAll('.score-lyrics__item').find(button => button.textContent === label));
+  const form = () => menu.children.find(node => node.tag === 'form');
+  const fill = (index, value) => {
+    const input = form().children[index].children[0];
+    input.value = value; input.listeners.input[0]();
+  };
+  const submit = () => form().listeners.submit[0]({preventDefault(){}});
+  assert.equal(ctl.status().state,'missing');
+  assert.equal(entry.hidden,false, 'album tools work without score data');
+  click(entry); pick('标记为无歌词'); await flush(); await settle();
+  assert.equal(ctl.status().state,'instrumental'); assert.equal(entry.textContent,'歌词设置…');
+  click(entry); pick('撤销无歌词标记'); await flush(); await settle();
+  assert.equal(ctl.status().state,'missing'); assert.equal(entry.textContent,'找歌词…');
+  status.trackId = 'goodbye'; status.status = 'failed'; await settle();
+  click(entry); pick('搜索歌词');
+  assert.equal(form().children[0].children[0].value,'グッドバイ Goodbye');
+  fill(0,'Goodbye'); fill(1,'toe'); submit(); await flush();
+  assert.equal(log.at(-1).data.query,'Goodbye'); assert.equal(log.at(-1).data.artist,'toe');
+  assert.ok(ctl.menuItems().some(label => label.includes('Goodbye · toe · For Long Tomorrow · 7:05')));
+  pick('返回'); pick('粘贴网易云链接…'); fill(0,'https://music.163.com/song?id=12'); submit(); await flush();
+  assert.equal(log.at(-1).action,'netease-preview');
+  assert.equal(ctl.status().state,'missing', 'preview leaves the choice untouched');
+  assert.ok(menu.children.some(node => node.textContent.includes('グッドバイ · toe · For Long Tomorrow · 7:05')));
+  click(menu.children.find(node => node.id === 'scoreLyricsConfirm')); await flush(); await settle();
+  assert.equal(log.at(-1).action,'netease-choose'); assert.equal(log.at(-1).data.id,12);
+  assert.equal(ctl.status().state,'ready'); assert.equal(ctl.status().source,'netease');
+  assert.equal(ctl.status().now,'', 'the opening silence keeps the vocal layout');
+  assert.equal(entry.hidden,true);
+  audio.currentTime = 120; ctl.render(); assert.equal(ctl.status().now,'first', 'no score: the sidebar follows the audio clock');
+  audio.currentTime = 400; ctl.render(); assert.equal(ctl.status().state,'ready');
+  ctl.openMenu(); pick('粘贴网易云链接…'); fill(0,'slow'); submit();
+  source.set('offline',{ok:false,reason:'network'}); status.trackId='offline'; await settle();
+  delayedPreview({ok:true,candidate:{id:42,title:'old'}}); await flush();
+  assert.equal(ctl.status().state,'unavailable'); assert.equal(entry.hidden,false);
+  assert.equal(ctl.status().menuOpen,false,'switching tracks discards an old preview');
+  stage.classList.add('ui-hidden'); ctl.render(); assert.equal(entry.hidden,true,'fullscreen keeps the missing-source entry out of view');
+  stage.classList.remove('ui-hidden'); slots.scoreLyrics.checked=false; slots.scoreLyrics.listeners.change[0](); ctl.render();
+  assert.equal(ctl.status().state,'off'); assert.equal(entry.hidden,true);
+  console.log('ok  专辑侧栏：无谱可查词/撤销无词；改歌名与艺人；网易云预览后确认；空谱音频同步，前奏不跳位；切歌丢弃旧预览，断网 / 沉浸 / 关词各自独立');
 }
 
 (() => {

@@ -28,11 +28,19 @@
   // Whether the effects follow the song's rise and fall (the core's `fxDynamics`): on unless turned off here.
   const FOLLOW_KEY = 'xin-score-fx-dynamics';
   const storedFollow = kept => (kept === 'off' ? 'off' : 'song');
+  const APPEARANCE_KEY = 'xin-score-appearance';
+  const appearanceNames = ['original', 'clear', 'detail'];
+  function appearanceOptions(name) {
+    const clear = name !== 'original';
+    const detail = name === 'detail';
+    return {releaseFocus: clear, spacedLanes: clear, softCover: clear, balancedLanes: clear, attackWeight: detail, weakNoteHints: detail};
+  }
   // 按乐器画音符 (SPEC-B4): the user's pick from gate15, struck / plucked notes with a head and string notes as a
   // spindle (the core's shapes, the spindle set). On unless turned off on this device. Off, nothing about shapes
   // goes into the scene's options, so it draws as before; turning it off on a shown score hands the core the off
   // value. String links, pitch weight and the cover adaptations stay off (the core's defaults). The two option
   // names appear in this file only in the two literals below: source/scoreview/tests/host-guard.test.cjs holds that.
+  const METEOR_KEY = 'xin-score-meteor-motion';
   const SHAPES_KEY = 'xin-score-shapes';
   const storedShapes = kept => kept !== 'off';
   const shapeOptions = on => (on ? {showShapes: true, shapeSet: 'spindle'} : {});
@@ -63,6 +71,7 @@
     const {bridge, audio, stage, canvas} = config || {};
     const core = root.XinScoreView, clocks = root.XinMediaClock;
     if (!bridge || typeof bridge.scoreModel !== 'function' || !audio || !stage || !canvas || !core || !clocks) return null;
+    stage.dataset.quietText = 'true';
     const i18n = root.XinMusicLabDynamicUi;
     const say = (key, fallback) => (i18n && typeof i18n.t === 'function' && i18n.t(key, {}, fallback)) || fallback;
     const latency = () => {
@@ -78,6 +87,21 @@
     const interfaceLang = () => String(root.document.documentElement && root.document.documentElement.lang || '');
     // 'idle' (no track) | 'loading' | 'ready' | 'empty' (no transcribed notes) | 'failed'
     let status = 'idle';
+    let appearance = 'clear';
+    try {
+      const kept = root.localStorage.getItem(APPEARANCE_KEY);
+      if (appearanceNames.includes(kept)) appearance = kept;
+    } catch (_) {}
+    const appearanceSelect = root.document.getElementById('scoreAppearance');
+    if (appearanceSelect) {
+      appearanceSelect.value = appearance;
+      appearanceSelect.addEventListener('change', () => {
+        if (!appearanceNames.includes(appearanceSelect.value)) return;
+        appearance = appearanceSelect.value;
+        try { root.localStorage.setItem(APPEARANCE_KEY, appearance); } catch (_) {}
+        view?.setOptions(appearanceOptions(appearance));
+      });
+    }
     let reading={mergeTimbres:true,simplify:true};
     try{const saved=JSON.parse(root.localStorage.getItem('xin-score-reading')||'null');for(const k of Object.keys(reading))if(typeof saved?.[k]==='boolean')reading[k]=saved[k];}catch(_){}
     for(const [id,key]of [['scoreMergeTimbres','mergeTimbres'],['scoreSimplify','simplify']]){
@@ -121,6 +145,27 @@
       });
     }
 
+    const meteorMotion = true;
+    const styleInput=root.document.getElementById('scoreStyle');
+    let scoreStyle='starry';
+    try{scoreStyle=root.XinScoreMood?.normalize(root.localStorage.getItem('xin-score-style-v1'))||'starry'}catch(_){}
+    const compare = root.XinScoreCompareControls?.attach({audio, stage, say,
+      getView: () => status === 'ready' ? view : null, getTrackId: () => trackId,
+      isLoading: () => status === 'loading', seek: time => { setLoop(null); audio.currentTime = time; }});
+    if (styleInput) {
+      styleInput.value = scoreStyle;
+      styleInput.addEventListener('change', () => {
+        scoreStyle = root.XinScoreMood.normalize(styleInput.value);
+        try { root.localStorage.setItem('xin-score-style-v1', scoreStyle); } catch (_) {}
+        view?.setOptions({scoreStyle, ...compare?.options(trackId, scoreStyle)});
+        compare?.refresh(scoreStyle);
+      });
+    }
+    const transients = root.XinScoreTransientControls?.attach(patch=>view?.setOptions(patch));
+    const directions = root.XinScoreDirectionControls?.attach(patch=>view?.setOptions(patch));
+    transients?.setActive(true);
+    directions?.setActive(true);
+
     const active = () => stage.dataset.effect === EFFECT;
 
     // The score layers (bar lines, loudness, stem levels) are prepared in the background when a song
@@ -131,7 +176,13 @@
     try { autoLayers = root.localStorage.getItem(AUTO_KEY) !== 'off'; } catch (_) {}
     const Prepare = root.XinScorePrepare || null;
     const prepare = Prepare && typeof bridge.runAnalysis === 'function'
-      ? Prepare.create({run: (id, engine) => bridge.runAnalysis(id, engine), mayStart: () => active(),
+      ? Prepare.create({run: (id, engine) => bridge.runAnalysis(id, engine), mayStart: () => active() && status === 'ready',
+                        isWanted: id => autoLayers && id === trackId,
+                        readLock: bridge.analysisLockHolder,
+                        owedAfterLock: async id => {
+                          const surveyed = await Prepare.survey(ids => bridge.scoreLayersState(ids), [id]);
+                          return surveyed.ok && !surveyed.counts.unreadable ? (surveyed.engines[id] || []) : null;
+                        },
                         cancelRunning: () => { try { if (typeof bridge.cancelAnalysis === 'function') bridge.cancelAnalysis(); } catch (_) {} }})
       : null;
     let prepPlan = 'none', preparedAt = 0, noStemsUntil = 0, lineBox = null;
@@ -150,6 +201,7 @@
       autoInput.checked = autoLayers;
       autoInput.addEventListener('change', () => {
         autoLayers = autoInput.checked;
+        if (!autoLayers) prepare?.forgetWaiting('');
         try { root.localStorage.setItem(AUTO_KEY, autoLayers ? 'on' : 'off'); } catch (_) {}
         if (trackId && status === 'ready') consider();
       });
@@ -167,6 +219,7 @@
       if (!trackId || status !== 'ready') return null;
       const phase = prepare ? prepare.phase(trackId) : 'idle';
       const locked = prepare && prepare.holder ? prepare.holder(trackId) : null;
+      if (phase === 'locked') return {text: lockedText(locked) + ' · ' + say('prep.cancel', '取消'), cancelWait: true};
       if (locked && ['retrying', 'held', 'failed'].includes(phase)) return {text: lockedText(locked), retry: phase === 'failed'};
       // Which step: the vocal line is the slow one (GPU), and says so.
       if ((phase === 'queued' || phase === 'running') && prepare.step && prepare.step(trackId) === 'score-vocals') return {text: say('score.prepVocals', '正在准备人声线…')};
@@ -186,9 +239,32 @@
     // The score keeps clear of this app's own chrome: it sits between the lowest of the top
     // bars and the scene catalogue. With the interface hidden (H) it has the whole window.
     let measured = 0;
+    let albumLayout = false, lastCaption = '';
+    let albumSidebarGap = 0;
+    const albumSidebar = stage.querySelector?.('#scoreSidebar');
+    const albumCaptions = ['#scoreSidebarCaption', '#scoreCompactCaption']
+      .map(selector => stage.querySelector?.(selector)).filter(Boolean);
+    function showAlbumCaption(text = '') {
+      if (text === lastCaption) return;
+      lastCaption = text;
+      for (const node of albumCaptions) {
+        node.textContent = text;
+        node.hidden = !text;
+      }
+    }
     function fit() {
       if (measured-- > 0) return;
       measured = 20;
+      if (view?.options().presentationLayout) { canvas.style.removeProperty('top'); canvas.style.removeProperty('height'); return; }
+      if (albumLayout) {
+        const panel = albumSidebar?.getBoundingClientRect();
+        const gap = panel?.width ? Math.max(0,canvas.getBoundingClientRect().left-panel.right) : 0;
+        if (gap !== albumSidebarGap) {
+          albumSidebarGap = gap;
+          view?.setOptions({albumSidebarGap});
+        }
+        return;
+      }
       const tall = stage.clientHeight;
       let top = 0, bottom = tall;
       if (!stage.classList.contains('ui-hidden')) {
@@ -224,13 +300,29 @@
 
     // The status of the score layers: one light line at the top of the score. Returns its box when it
     // can be clicked (a failure: try again).
+    // Lyrics and their menu live in the DOM, while these short notices are drawn on the canvas.
+    // Keep the usual notice position until one of those rectangles actually intersects it.
+    function noticeTop(left, width, preferred, height) {
+      const words = canvas.nextElementSibling;
+      if (!words?.classList?.contains('score-lyrics') || words.hidden) return preferred;
+      const x = words.offsetLeft - canvas.offsetLeft, y = words.offsetTop - canvas.offsetTop;
+      const collides = (l, t, w, h) => left < l + w && left + width > l && preferred < t + h && preferred + height > t;
+      const popup = words.lastElementChild;
+      if (collides(x, y, words.offsetWidth, words.offsetHeight) ||
+          (popup && !popup.hidden && collides(x + popup.offsetLeft, y + popup.offsetTop, popup.offsetWidth, popup.offsetHeight))) {
+        const sectionHeight = Math.min(34, Math.max(22, canvas.clientHeight * .07));
+        return Math.max(0, Math.floor(canvas.clientHeight - 9 - sectionHeight - 4 - height));
+      }
+      return preferred;
+    }
     function statusLine(text, retry) {
       const ratio = canvas.width / (canvas.clientWidth || 1);
       const context = canvas.getContext('2d');
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.font = '500 12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
       // Below the band where the app's own toast appears (the scene name on switching), so neither covers the other.
-      const wide = context.measureText(text).width + 24, left = (canvas.clientWidth - wide) / 2, top = 40;
+      const wide = context.measureText(text).width + 24, left = (canvas.clientWidth - wide) / 2;
+      const top = noticeTop(left, wide, 40, 24);
       context.fillStyle = 'rgba(13,16,22,.62)';
       context.fillRect(left, top, wide, 24);
       context.fillStyle = retry ? 'rgba(242,190,96,.95)' : 'rgba(232,236,245,.72)';
@@ -247,6 +339,7 @@
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.font = '500 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
       const wide = context.measureText(text).width + 28, left = (canvas.clientWidth - wide) / 2;
+      top = noticeTop(left, wide, top, 28);
       context.fillStyle = 'rgba(13,16,22,.82)';
       context.fillRect(left, top, wide, 28);
       context.fillStyle = 'rgba(232,236,245,.92)';
@@ -258,12 +351,14 @@
     const setLoop = next => { loop = next; if (view) view.setOptions({loop: loop ? [loop.start, loop.end] : null}); };
 
     function touch(event, repeat) {
+      compare?.settle();
       if (!active() || status !== 'ready' || !view) return;
       const box = canvas.getBoundingClientRect();
       const x = event.clientX - box.left, y = event.clientY - box.top;
       // The failed-preparation line is a button: try once more for this song.
       if (!repeat && lineBox && prepare && x >= lineBox.left && x <= lineBox.right && y >= lineBox.top && y <= lineBox.bottom) {
-        prepare.request(trackId);
+        if (lineBox.cancelWait) prepare.cancelWait(trackId);
+        else if (prepare.phase(trackId) === 'failed') prepare.request(trackId);
         return;
       }
       const under = view.hit(x, y);
@@ -286,23 +381,32 @@
       }
     }
 
-    function paint() {
+    function paint(timestamp) {
       frame = 0;
       offer();
       if (!active()) return;
+      scoreDriver?.tick(timestamp);
       fit();
       if (status === 'ready' && view) {
-        const alone = stemSelect && stemSelect.value && stemSelect.value !== 'original' ? stemSelect.value : null;
+        const audible = config.activeStem ? config.activeStem() : stemSelect?.value;
+        const alone = audible && audible !== 'original' ? audible : null;
         if (alone !== solo) { solo = alone; view.setOptions({focusGroup: solo}); }
         if (loop && !audio.paused && (audio.currentTime >= loop.end - 0.02 || audio.currentTime < loop.start - 0.5)) audio.currentTime = loop.start;
         // While a video is being exported the score is not drawn (the export needs the GPU); the
         // last frame stays, the sound goes on.
-        if (!held) { view.resize(); view.draw(); }
+        if (!held) {
+          view.setLyrics?.(root.XinScoreLyricsView?.snapshot?.(trackId));
+          view.resize();
+          const draw = scoreStyle === 'terrain' ? view.draw(undefined, audio.paused || audio.seeking) : view.draw();
+          compare?.update(draw?.time);
+          if (albumLayout) showAlbumCaption(view.options().presentationLayout ? '' : draw?.caption || '');
+        }
         // The help line and the status line are never shown together: the status waits until the help
         // has gone (6 s at most), so the top of the score holds one line besides the app's own toast.
-        const hinting = Boolean(hint && root.performance.now() < hint.until);
-        const prep = held || hinting ? null : prepText();
-        lineBox = prep ? statusLine(prep.text, prep.retry) : null;
+        const hinting = !view.options().presentationLayout && Boolean(hint && root.performance.now() < hint.until);
+        const prep = held || hinting || view.options().presentationLayout ? null : prepText();
+        lineBox = prep ? statusLine(prep.text, prep.retry || prep.cancelWait) : null;
+        if (lineBox && prep.cancelWait) lineBox.cancelWait = true;
         if (hinting) whisper(hint.text, 10);
       }
       else if (status === 'loading') notice(say('score.loading', '正在读这首歌的谱面…'));
@@ -316,6 +420,20 @@
     const wake = () => {
       measured = 0;
       const now = active();
+      const presentationLayout = Boolean(now && stage.classList.contains('is-immersive'));
+      stage.classList.toggle?.('score-presentation-active', presentationLayout);
+      view?.setOptions({presentationLayout});
+      compare?.refresh(scoreStyle);
+      const nextLayout = Boolean(now && stage.classList?.contains('score-layout-active'));
+      if (nextLayout !== albumLayout) {
+        albumLayout = nextLayout;
+        view?.setOptions({albumLayout});
+        showAlbumCaption();
+        if (albumLayout) {
+          canvas.style.removeProperty('top');
+          canvas.style.removeProperty('height');
+        }
+      }
       if (!now) { if (!docked) more.hidden = true; if (!syncDocked) sync.hidden = true; }
       if (now && !frame) frame = root.requestAnimationFrame(paint);
       if (now && !wasActive && trackId && status === 'ready') consider();
@@ -336,11 +454,13 @@
     async function load(id) {
       const ticket = ++sequence;
       const trackChanged = String(id || '') !== trackId;
+      if (trackChanged) showAlbumCaption();
       trackId = String(id || '');
+      if (trackChanged && prepare) prepare.forgetWaiting(trackId);
       root.dispatchEvent(new root.CustomEvent('xin-score-track',{detail:{trackId}}));
       if (trackChanged) setLoop(null);
-      if (!trackId) { status = 'idle'; health = null; return false; }
-      if (status !== 'ready') status = 'loading';
+      if (!trackId) { status = 'idle'; health = null; compare?.refresh(scoreStyle); return false; }
+      if (trackChanged || status !== 'ready') status = 'loading';
       wake();
       let result = null;
       shownLang = interfaceLang();
@@ -350,17 +470,21 @@
       root.dispatchEvent(new root.CustomEvent('xin-score-ready',{detail:{trackId,dynamics:health?.dynamics||null}}));
       if (!result || !result.ok) {
         status = result && result.error === 'score-no-notes' ? 'empty' : 'failed';
+        compare?.refresh(scoreStyle);
         return false;
       }
       // The stems without notes as a low band at the foot (work/score-dynamics-20261114/SPEC-REST.md): always on here.
-      const options = {...reading,fxPreset,fxDynamics,showTexture: true,...shapeOptions(shapes),offsetSeconds: -latency() / 1000};
+      const options = {...reading,...appearanceOptions(appearance),fxPreset,fxDynamics,meteorMotion,scoreStyle,quietText: true,drumNotation: true,denseLaneLabels: true,showTexture: true,liveTextureRaster: true,...shapeOptions(shapes),offsetSeconds: -latency() / 1000};
+      options.albumLayout = albumLayout;
+      options.presentationLayout = stage.classList.contains('is-immersive');
+      Object.assign(options,transients?.values(),directions?.values(),compare?.options(trackId, scoreStyle));
+      options.albumSidebarGap = albumSidebarGap;
       if (view) { view.setModel(result.model); view.setOptions(options); }
-      else view = core.create(canvas, result.model, () => clock.now(), options);
+      else view = (root.XinScorePresentation || core).create(canvas, result.model, () => clock.now(), options);
       shownModel = result.model;
       showCover(result.model, ticket);
       status = 'ready';
-      // Waiting automatic preparations for songs left behind are dropped; a running one finishes.
-      if (trackChanged && prepare) prepare.forgetWaiting(trackId);
+      compare?.refresh(scoreStyle);
       consider();
       offer();
       if (trackChanged) tell('score.help', '点一条轨：只听它，再点回到原曲 · 点段落：跳过去 · 双击段落：循环', 6);
@@ -368,12 +492,15 @@
     }
 
     function reset() {
+      showAlbumCaption();
       sequence++;
       trackId = '';
+      prepare?.forgetWaiting('');
       root.dispatchEvent(new root.CustomEvent('xin-score-track',{detail:{trackId}}));
       status = 'idle';
       health = null;
       setLoop(null);
+      compare?.refresh(scoreStyle);
     }
 
     const dynamicsChanged=()=>{if(trackId)load(trackId);};
@@ -437,8 +564,9 @@
     canvas.addEventListener('pointermove', event => {
       if (event.pointerType === 'touch' || !active() || status !== 'ready' || !view) return;
       const box = canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
-      const under = inNameColumn(x) ? view.hit(x, y) : null;
-      if (under && under.kind === 'lane') showName(laneName(under), x, y, 0);
+      const under = view.hit(x, y);
+      if (under && under.kind === 'section') showName(under.name, x, y, 0);
+      else if (under && under.kind === 'lane' && inNameColumn(x)) showName(laneName(under), x, y, 0);
       else if (!nameTimer) nameTip.hidden = true;
     });
     canvas.addEventListener('pointerleave', () => { if (!nameTimer) nameTip.hidden = true; });
@@ -511,9 +639,7 @@
     earlier.textContent = '\u2212';
     later.textContent = '+';
     sync.append(earlier, shown, later);
-    // In the shell it is a row of the settings drawer's 谱面阅读 group, above 导出视频 (B5: it sat in 画面效果, the
-    // second group, among the FX layer's controls); otherwise it floats over the stage.
-    const group = root.document.querySelector('#xlSettings [data-i18n="score.options"]')?.closest('.xl-group') || null;
+    const group = root.document.getElementById('scoreTimingGroup');
     syncDocked = Boolean(group);
     if (syncDocked) {
       const row = root.document.createElement('div'), label = root.document.createElement('span');
@@ -522,7 +648,7 @@
       label.textContent = say('score.syncLabel', '谱面对齐');
       sync.classList.add('is-docked');
       row.append(label, sync);
-      group.insertBefore(row, group.querySelector(':scope > .score-export'));
+      group.appendChild(row);
     } else stage.appendChild(sync);
     const paintSync = () => {
       const text = say('score.sync', '画面晚 {ms} ms').replace('{ms}', String(latency()));
@@ -536,6 +662,7 @@
     watcher.observe(stage, {attributes: true, attributeFilter: ['data-effect', 'data-fusion-source', 'class']});
     root.addEventListener('resize', () => { measured = 0; });
     wake();
+    const scoreDriver = root.SmokeResonanceFrameClock?.attachScoreDriver?.();
 
     return Object.freeze({
       load, reset, setLatency, makeLayers: () => more.click(), hold: flag => { held = Boolean(flag); },
@@ -544,7 +671,7 @@
       laneTip: under => laneName(under),
       // The render core's handle while a score is shown (score-lyrics.js reads its clock and lane positions), else null.
       viewHandle: () => (view && status === 'ready' ? view : null),
-      status: () => ({status, trackId, active: active(), held, latencyMs: latency(), health, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,shapes,tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
+      status: () => ({presentationLook: view?.options(), status, trackId, active: active(), held, latencyMs: latency(), health, appearance, reading:{...reading},effects:fxPreset,fxPreset,fxDynamics,shapes,meteorMotion,transientTiming:{...transients?.values(),...directions?.values()},tracks:view?view.lanes():[], making, offering: !more.hidden, solo, loop: loop ? {...loop} : null,
                       prep: {auto: autoLayers, plan: prepPlan, phase: prepare && trackId ? prepare.phase(trackId) : 'idle',
                              error: prepare && trackId ? prepare.error(trackId) : null, attempts: prepare && trackId ? prepare.attempts(trackId) : 0,
                              // What is drawn now: no status line while the help line is up (L6).
@@ -552,7 +679,7 @@
                              line: hint && root.performance.now() < hint.until ? null : (prepText() || {}).text || null},
                       layers: view && status === 'ready' ? view.layers() : null,
                       frame: view && status === 'ready' ? view.lastFrame() : null}),
-      destroy: () => { if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; clock.destroy(); }
+      destroy: () => { trackId = ''; prepare?.forgetWaiting(''); if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; scoreDriver?.detach(); clock.destroy(); }
     });
   }
 

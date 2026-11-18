@@ -7,12 +7,12 @@
 // Only timed lyrics count. A record is used only when sameSong() says it is the song (lyrics-core.js). What was found,
 // and what was not, is cached; "not found" is asked again after MISS_DAYS. A song is asked about once at a time; a
 // failed request (timeout, network, 5xx) is not cached but the song is left alone for RETRY_MINUTES; a 429 stops every
-// request for the Retry-After it gives (plus a little). NetEase was checked and left out: its search answers in an
-// encrypted form without a login (work/xml-round-20261115/REPORT-B6.md).
+// request for the Retry-After it gives (plus a little). An optional NetEase song link is previewed before it is bound.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const core = require('../lyrics-core.js');
+const netease = require('./netease-lyrics.cjs');
 
 const LRCLIB = 'https://lrclib.net/api/get';
 const LRCLIB_SEARCH = 'https://lrclib.net/api/search';
@@ -20,6 +20,10 @@ const LRCLIB_SEARCH = 'https://lrclib.net/api/search';
 const METHOD = 2;
 const DEFAULTS = Object.freeze({timeoutMs: 5000, missDays: 7, retryMinutes: 10, userAgent: 'XML-score-lyrics/0.5'});
 const rootFor = (appData, userData) => path.join(path.dirname(require('./score-notes.cjs').notesRoot(appData, userData)), 'Lyrics Cache');
+function storedRecord(row) {
+  return {id:row.id ?? null, lrc:row.syncedLyrics, title:row.trackName ?? row.name ?? '',
+    artist:row.artistName ?? '', album:row.albumName ?? null, duration:Number(row.duration) || 0};
+}
 
 function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Date.now(), timeoutMs = DEFAULTS.timeoutMs,
   missDays = DEFAULTS.missDays, retryMinutes = DEFAULTS.retryMinutes, userAgent = DEFAULTS.userAgent, random = Math.random} = {}) {
@@ -51,20 +55,18 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
   }
   async function writeCache(key, entry) {
     await fs.mkdir(root, {recursive: true});
-    const file = fileOf(key), temp = file + '.' + process.pid + '.tmp';
+    const file = fileOf(key), temp = file + '.' + crypto.randomUUID() + '.tmp';
     await fs.writeFile(temp, JSON.stringify(entry));
     await fs.rename(temp, file);
   }
 
-  async function askLrclib(q) {
-    const params = new URLSearchParams({track_name: q.title, artist_name: q.artist});
-    if (q.album) params.set('album_name', q.album);
-    if (q.duration > 0 && q.duration <= 3600) params.set('duration', String(q.duration));
+  async function lrclibRequest(endpoint, params) {
+    if (now() < blockedUntil) return {error:'rate-limited'};
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     counts.network++;
     try {
-      const response = await fetchImpl(`${LRCLIB}?${params}`, {headers: {'User-Agent': userAgent, Accept: 'application/json'}, signal: controller.signal});
+      const response = await fetchImpl(`${endpoint}?${params}`, {headers: {'User-Agent': userAgent, Accept: 'application/json'}, signal: controller.signal});
       if (response.status === 404) return {miss: true};
       if (response.status === 429) {
         const seconds = Math.max(1, Number(response.headers?.get?.('retry-after')) || 60);
@@ -72,16 +74,51 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
         return {error: 'rate-limited'};
       }
       if (!response.ok) return {error: `http-${response.status}`};
-      const record = await response.json();
-      const got = {title: record?.trackName ?? record?.name, artist: record?.artistName, duration: record?.duration};
-      if (!core.sameSong(q, got)) return {miss: true, reason: 'not-the-song'};
-      if (record.instrumental || !record.syncedLyrics || !core.parseLrc(record.syncedLyrics).timed) return {miss: true, reason: 'no-timed-lyrics'};
-      return {found: {lrc: record.syncedLyrics, id: record.id ?? null, title: got.title, artist: got.artist, album: record.albumName ?? null, duration: got.duration ?? null}};
+      return {body:await response.json()};
     } catch (error) {
       return {error: error?.name === 'AbortError' ? 'timeout' : 'network'};
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function askExact(q) {
+    const params = new URLSearchParams({track_name:q.title, artist_name:q.artist});
+    if (q.album) params.set('album_name', q.album);
+    if (q.duration > 0 && q.duration <= 3600) params.set('duration', String(q.duration));
+    const result = await lrclibRequest(LRCLIB, params);
+    if (!result.body) return result;
+    const row = result.body, got = storedRecord(row);
+    if (!core.sameSong(q, got) || !core.sameRelease(q, got)) return {miss:true, reason:'not-the-song'};
+    if (row.instrumental || !core.parseLrc(got.lrc).timed) return {miss:true, reason:'no-timed-lyrics'};
+    return {found:got};
+  }
+
+  async function searchRows(q, title) {
+    const params = new URLSearchParams({track_name:title});
+    if (q.artist) params.set('artist_name', q.artist);
+    if (q.album) params.set('album_name', q.album);
+    const result = await lrclibRequest(LRCLIB_SEARCH, params);
+    if (result.error) return result;
+    const rows = (Array.isArray(result.body) ? result.body : []).filter(row =>
+      row?.id != null && !row.instrumental && core.sameTitle(title, row.trackName ?? row.name) &&
+      (!q.artist || core.artistsMatch(q.artist, row.artistName)) && core.parseLrc(row.syncedLyrics).timed);
+    return {rows};
+  }
+
+  async function lookup(q, aliases, knownMiss, duration) {
+    const exact = knownMiss ? {miss:true} : await askExact(q);
+    if (!exact.miss || !q.album || !q.duration) return exact;
+    // An alias broadens title search, never the identity of the local recording.
+    for (const alias of aliases) {
+      const result = await searchRows(q, alias);
+      if (result.error) return result;
+      const matches = result.rows.filter(row => row.albumName && core.sameRelease(q,storedRecord(row)) &&
+        Number(row.duration)>0 && Math.abs(row.duration-duration)<=core.MATCH.durationSeconds);
+      matches.sort((a,b) => Math.abs(a.duration-duration)-Math.abs(b.duration-duration));
+      if (matches.length) return {found:storedRecord(matches[0])};
+    }
+    return exact;
   }
 
   // --- the user's own choice for a song (2026-11-15, the lyrics menu) ------------------------------------------------
@@ -91,11 +128,12 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
   async function readChoice(trackId) { try { const v = JSON.parse(await fs.readFile(choiceFile(trackId), 'utf8')); return v && typeof v === 'object' ? v : null; } catch (_) { return null; } }
   async function writeChoice(trackId, value) {
     const file = choiceFile(trackId);
-    if (!value) { await fs.rm(file, {force: true}); return; }
+    if (!value) { await fs.rm(file, {force: true}); inFlight.delete(String(trackId)); return; }
     await fs.mkdir(path.dirname(file), {recursive: true});
-    const temp = file + '.' + process.pid + '.tmp';
+    const temp = file + '.' + crypto.randomUUID() + '.tmp';
     await fs.writeFile(temp, JSON.stringify({schemaVersion: 1, trackId: String(trackId), ...value}));
     await fs.rename(temp, file);
+    inFlight.delete(String(trackId));
   }
   async function readLrcFile(file) {
     try { const text = await fs.readFile(file, 'utf8'); return core.parseLrc(text).timed ? text : null; } catch (_) { return null; }
@@ -103,6 +141,7 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
 
   async function find(track, {force = false} = {}) {
     const choice = await readChoice(track?.id);
+    if (choice?.instrumental) return {ok:false, reason:'instrumental', instrumental:true};
     if (choice?.hidden) return {ok: false, reason: 'hidden', hidden: true};
     if (choice?.file?.path) {
       const text = await readLrcFile(choice.file.path);
@@ -110,30 +149,21 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
       return {ok: false, reason: 'chosen-file-missing', file: path.basename(choice.file.path)};
     }
     if (choice?.lrclib?.lrc) return {ok: true, source: 'lrclib', lrc: choice.lrclib.lrc, chosen: true, id: choice.lrclib.id ?? null};
+    if (choice?.netease?.lrc) return {ok:true, source:'netease', lrc:choice.netease.lrc, chosen:true, id:choice.netease.id};
     const side = await readSideFile(track?.filePath);
     if (side) return {ok: true, source: 'file', lrc: side};
-    if (force) {
-      // 重新查找: what is cached for this song (found or not) is not used; one fresh request.
-      const q = core.query(track);
-      if (!q) return {ok: false, reason: 'no-names'};
-      const key = keyOf(q);
-      if (now() < blockedUntil) return {ok: false, reason: 'rate-limited'};
-      const answer = await askLrclib(q);
-      if (answer.error) return {ok: false, reason: answer.error};
-      failedAt.delete(key);
-      if (answer.found) { await writeCache(key, {schemaVersion: 1, at: now(), source: 'lrclib', asked: q, found: answer.found}); return {ok: true, source: 'lrclib', lrc: answer.found.lrc}; }
-      await writeCache(key, {schemaVersion: 1, at: now(), source: 'lrclib', asked: q, miss: true, reason: answer.reason || 'not-found'});
-      return {ok: false, reason: 'none'};
-    }
     const q = core.query(track);
     if (!q) return {ok: false, reason: 'no-names'};
     const key = keyOf(q);
-    const cached = await readCache(key);
+    const previous = force ? null : await readCache(key);
+    const cached = previous?.asked && Boolean(previous.asked.album) === Boolean(q.album) && core.sameRelease(q,previous.asked) ? previous : null;
+    const aliases = core.titleAliases(q.title).slice(0, 2);
     if (cached?.found) return {ok: true, source: cached.source, lrc: cached.found.lrc, cached: true};
-    if (cached?.miss && now() - cached.at < missDays * 86400000) return {ok: false, reason: 'none', cached: true};
+    const recentMiss = cached?.miss && now() - cached.at < missDays * 86400000;
+    if (recentMiss && (cached.lookupVersion === 2 || !aliases.length)) return {ok: false, reason: 'none', cached: true};
     if (now() < blockedUntil) return {ok: false, reason: 'rate-limited'};
-    if (failedAt.has(key) && now() - failedAt.get(key) < retryMinutes * 60000) return {ok: false, reason: 'waiting'};
-    const answer = await askLrclib(q);
+    if (!force && failedAt.has(key) && now() - failedAt.get(key) < retryMinutes * 60000) return {ok: false, reason: 'waiting'};
+    const answer = await lookup(q, aliases, recentMiss, Number(track.duration) || q.duration);
     // A 429 already stops every request until Retry-After; other failures leave this song alone for a while.
     if (answer.error) { if (answer.error !== 'rate-limited') failedAt.set(key, now()); return {ok: false, reason: answer.error}; }
     failedAt.delete(key);
@@ -141,7 +171,7 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
       await writeCache(key, {schemaVersion: 1, at: now(), source: 'lrclib', asked: q, found: answer.found});
       return {ok: true, source: 'lrclib', lrc: answer.found.lrc};
     }
-    await writeCache(key, {schemaVersion: 1, at: now(), source: 'lrclib', asked: q, miss: true, reason: answer.reason || 'not-found'});
+    await writeCache(key, {schemaVersion: 1, lookupVersion:2, at: now(), source: 'lrclib', asked: q, miss: true, reason: answer.reason || 'not-found'});
     return {ok: false, reason: 'none'};
   }
 
@@ -149,49 +179,66 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
   function get(track, options) {
     const id = String(track?.id || '');
     if (inFlight.has(id)) return inFlight.get(id);
-    const job = find(track, options).finally(() => inFlight.delete(id));
+    const job = find(track, options).then(result => inFlight.get(id) === job ? result : get(track))
+      .finally(() => { if (inFlight.get(id) === job) inFlight.delete(id); });
     inFlight.set(id, job);
     return job;
   }
   // 重新查找: the song's own choice of a record or file is dropped (a hidden song stays hidden), the cache ignored.
   async function refresh(track) {
     const choice = await readChoice(track?.id);
-    if (choice && !choice.hidden) await writeChoice(track.id, null);
+    if (choice && !choice.hidden && !choice.instrumental) await writeChoice(track.id, null);
     return get(track, {force: true});
   }
   // 换一份: LRCLIB's search (GET /api/search, the same names as /api/get: title, artist, album; nothing else) - every
   // record of the song with timed lyrics, nearest in length first. The lyrics of each are kept for choose().
   const searched = new Map();
-  async function candidates(track) {
-    const q = core.query(track);
+  async function candidates(track, input = {}) {
+    const original = core.query(track);
+    const custom = typeof input?.query === 'string' || typeof input?.artist === 'string';
+    const q = custom ? {title:String(input.query ?? original?.title ?? '').trim().slice(0,250),
+      artist:String(input.artist ?? original?.artist ?? '').trim().slice(0,200), album:'', duration:Number(track?.duration) || 0} : original;
     if (!q) return {ok: false, reason: 'no-names'};
-    if (now() < blockedUntil) return {ok: false, reason: 'rate-limited'};
-    const params = new URLSearchParams({track_name: q.title, artist_name: q.artist});
-    if (q.album) params.set('album_name', q.album);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    counts.network++;
-    try {
-      const response = await fetchImpl(`${LRCLIB_SEARCH}?${params}`, {headers: {'User-Agent': userAgent, Accept: 'application/json'}, signal: controller.signal});
-      if (response.status === 429) { blockedUntil = now() + Math.max(1, Number(response.headers?.get?.('retry-after')) || 60) * 1000; return {ok: false, reason: 'rate-limited'}; }
-      if (!response.ok) return {ok: false, reason: `http-${response.status}`};
-      const list = await response.json();
-      const rows = (Array.isArray(list) ? list : []).filter(r => r && r.syncedLyrics && !r.instrumental && core.parseLrc(r.syncedLyrics).timed
-        && core.normalize(r.trackName ?? r.name) === core.normalize(q.title) && core.artistsMatch(q.artist, r.artistName));
-      rows.sort((a, b) => Math.abs((Number(a.duration) || 0) - q.duration) - Math.abs((Number(b.duration) || 0) - q.duration));
-      const out = rows.slice(0, 8).map(r => ({id: r.id ?? null, title: r.trackName ?? r.name ?? '', artist: r.artistName ?? '', album: r.albumName ?? '',
-        duration: Number(r.duration) || 0, lines: core.parseLrc(r.syncedLyrics).lines.filter(l => l.text).length}));
-      searched.set(String(track.id), new Map(rows.slice(0, 8).map(r => [String(r.id), r])));
-      return {ok: true, candidates: out, songSeconds: q.duration};
-    } catch (error) {
-      return {ok: false, reason: error?.name === 'AbortError' ? 'timeout' : 'network'};
-    } finally { clearTimeout(timer); }
+    if (!q.title) return {ok:false, reason:'no-names'};
+    const names = core.titleAliases(q.title).slice(0,2);
+    const id = String(track.id), records = new Map(), pending = new Map();
+    searched.set(id, pending);
+    for (const name of names.length ? names : [q.title]) {
+      const result = await searchRows(q, name);
+      if (searched.get(id) !== pending) return {ok:false, reason:'superseded'};
+      if (result.error && !records.size) return {ok:false, reason:result.error};
+      if (result.error) break;
+      for (const row of result.rows) records.set(String(row.id), row);
+    }
+    const ranked = [...records.values()].sort((a,b) => Math.abs(a.duration-q.duration)-Math.abs(b.duration-q.duration)).slice(0,8);
+    searched.set(id, new Map(ranked.map(row => [String(row.id),row])));
+    return {ok:true, songSeconds:q.duration, candidates:ranked.map(row => ({id:row.id, title:row.trackName ?? row.name ?? '',
+      artist:row.artistName ?? '', album:row.albumName ?? '', duration:Number(row.duration)||0,
+      lines:core.parseLrc(row.syncedLyrics).lines.filter(l => l.text).length}))};
   }
   async function choose(track, id) {
     const record = searched.get(String(track?.id))?.get(String(id));
     if (!record) return {ok: false, reason: 'not-offered'};
-    await writeChoice(track.id, {lrclib: {id: record.id ?? null, lrc: record.syncedLyrics, title: record.trackName ?? '', album: record.albumName ?? '', duration: Number(record.duration) || 0}});
+    await writeChoice(track.id, {lrclib:storedRecord(record)});
     return {ok: true};
+  }
+  const shared = new Map();
+  async function neteasePreview(track, url) {
+    const trackId = String(track.id), ticket = {};
+    shared.set(trackId, ticket);
+    const result = await netease.preview(track, url, fetchImpl, {timeoutMs, userAgent});
+    if (shared.get(trackId) !== ticket) return {ok:false, reason:'superseded'};
+    if (!result.ok) { shared.delete(trackId); return result; }
+    const {lrc, originalLrc, ...publicData} = result;
+    shared.set(trackId, {...result.candidate, lrc, originalLrc});
+    return publicData;
+  }
+  async function neteaseChoose(track, id) {
+    const record = shared.get(String(track.id));
+    if (!record?.lrc || String(id) !== record.id) return {ok:false, reason:'not-offered'};
+    await writeChoice(track.id, {netease:record});
+    shared.delete(String(track.id));
+    return {ok:true};
   }
   async function chooseFile(track, file) {
     if (!file || !path.isAbsolute(file) || !/\.lrc$/i.test(file)) return {ok: false, reason: 'not-lrc'};
@@ -204,6 +251,16 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
     if (hidden) await writeChoice(track.id, {...(choice || {}), hidden: true});
     else if (choice) { const {hidden: _, schemaVersion: __, trackId: ___, ...rest} = choice; await writeChoice(track.id, Object.keys(rest).length ? rest : null); }
     return {ok: true, hidden: Boolean(hidden)};
+  }
+
+  async function setInstrumental(track, instrumental) {
+    const choice = await readChoice(track.id);
+    if (instrumental) await writeChoice(track.id, {...(choice || {}), instrumental:true});
+    else if (choice?.instrumental) {
+      const {instrumental:_, schemaVersion:__, trackId:___, ...rest} = choice;
+      await writeChoice(track.id, Object.keys(rest).length ? rest : null);
+    }
+    return {ok:true, instrumental:Boolean(instrumental)};
   }
 
   // --- per-song offset (B7) ---------------------------------------------------------------------------------------
@@ -245,7 +302,8 @@ function createLyrics({root, fetch: fetchImpl = globalThis.fetch, now = () => Da
     return shown(value);
   }
 
-  return {get, refresh, candidates, choose, chooseFile, hide, offsetFor, nudge, counts: () => ({...counts, blockedUntil})};
+  return {get, refresh, candidates, choose, chooseFile, hide, setInstrumental, neteasePreview, neteaseChoose,
+    offsetFor, nudge, counts: () => ({...counts, blockedUntil})};
 }
 
 module.exports = {createLyrics, rootFor, DEFAULTS, LRCLIB, LRCLIB_SEARCH};
