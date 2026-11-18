@@ -333,3 +333,11 @@ test('radar track sheet: the host\'s facts list reaches the model in order, stri
   assert.deepEqual(built.model.track.facts, [{name: 'COMPOSER', value: '人'}, {name: 'YEAR', value: '2004'}]);
   assert.equal(modelFrom(input()).model.track.facts, undefined);
 });
+
+test('radar track sheet: date, album artist, genre and composer from the host reach the model when they are strings', () => {
+  const built = modelFrom(input({track: {id: 'abc', title: '歌', date: '2004-08-03', albumArtist: ' 周杰伦 ', genre: '', composer: 7}}));
+  assert.equal(built.model.track.date, '2004-08-03');
+  assert.equal(built.model.track.albumArtist, '周杰伦');
+  assert.equal('genre' in built.model.track, false);
+  assert.equal('composer' in built.model.track, false);
+});

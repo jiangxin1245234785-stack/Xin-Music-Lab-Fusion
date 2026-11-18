@@ -407,6 +407,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           number: (tags && parseTrackNumber(tags.TRACKNUMBER)) || parsed.number,
           title: (tags && tags.TITLE) || parsed.title,
           artist: (tags && (tags.ARTIST || tags.ALBUMARTIST)) || albumInfo.artist,
+          // The tag fields the radar's track sheet prints, when the file has them.
+          ...(tags ? Object.fromEntries([['date', 'DATE'], ['albumArtist', 'ALBUMARTIST'], ['genre', 'GENRE'], ['composer', 'COMPOSER']].filter(([, key]) => tags[key]).map(([name, key]) => [name, String(tags[key])])) : {}),
           album: albumInfo.album,
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
@@ -453,6 +455,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
           number: (tags && parseTrackNumber(tags.TRACKNUMBER)) || fallback.number || index + 1,
           title: (tags && tags.TITLE) || fallback.title || stem,
           artist: (tags && (tags.ARTIST || tags.ALBUMARTIST)) || fallback.artist || 'Unknown Artist',
+          ...(tags ? Object.fromEntries([['date', 'DATE'], ['albumArtist', 'ALBUMARTIST'], ['genre', 'GENRE'], ['composer', 'COMPOSER']].filter(([, key]) => tags[key]).map(([name, key]) => [name, String(tags[key])])) : {}),
           album: (tags && tags.ALBUM) || fallback.album || '单曲',
           extension: path.extname(entry.name).slice(1).toUpperCase(),
           bytes: stat.size,
@@ -652,7 +655,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
       const layersBody = await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null);
       const built=adapter.modelFrom({
-        track: { id: track.id, title: track.title, artist: track.artist, album: track.album, number: track.number },
+        track: { id: track.id, title: track.title, artist: track.artist, album: track.album, number: track.number,
+                 date: track.date, albumArtist: track.albumArtist, genre: track.genre, composer: track.composer },
         duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
         stems,
         layers: layersBody,

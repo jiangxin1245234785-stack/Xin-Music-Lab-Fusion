@@ -278,6 +278,8 @@ function modelFrom(input) {
     contract: CONTRACT,
     track: {id: String(track.id || ''), title: String(track.title || ''), artist: String(track.artist || ''),
             album: String(track.album || ''), duration, ...(finite(Number(track.number)) && Number(track.number) > 0 ? {number: Number(track.number)} : {}),
+            // Tag fields the host read from the file (date, album artist, genre, composer), for the radar's track sheet.
+            ...Object.fromEntries(['date', 'albumArtist', 'genre', 'composer'].filter(k => typeof track[k] === 'string' && track[k].trim()).map(k => [k, track[k].trim().slice(0, 200)])),
             // The song's outside facts for the radar's track sheet, as the host gives them: [{name, value}] in order.
             ...(Array.isArray(track.facts) ? {facts: track.facts.filter(f => f && typeof f.name === 'string' && f.name.trim() && (typeof f.value === 'string' || finite(f.value)) && String(f.value).trim())
               .slice(0, 40).map(f => ({name: f.name.trim().slice(0, 32), value: String(f.value).trim().slice(0, 300)}))} : {})},
