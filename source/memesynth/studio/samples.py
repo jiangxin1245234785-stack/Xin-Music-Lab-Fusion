@@ -30,7 +30,7 @@ MAX_BYTES = 50 * 1024 * 1024
 SILENT = 10.0 ** (-60 / 20)                     # a file whose peak is under −60 dBFS holds nothing
 ROOT_LIMITS = (30.0, 5000.0)
 DB_LIMITS = (-24.0, 24.0)
-PITCHED = ('bass', 'guitar', 'piano', 'other')
+PITCHED = ('bass', 'guitar', 'piano', 'other', 'winds')
 PARTS = {'kick': ('drums/kick',), 'snare': ('drums/snare',),
          'cymbal': ('drums/hihat', 'drums/openhat', 'drums/ride', 'drums/crash')}
 PART_ZH = {'kick': '底鼓', 'snare': '军鼓', 'cymbal': '镲'}

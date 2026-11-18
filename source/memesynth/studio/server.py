@@ -56,6 +56,7 @@ SAMPLES = REPO / 'work' / 'memesynth-cache' / 'samples'  # SPEC v26: the user's 
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
 SONGS: dict = {}            # key → song, from the last library scan; the only paths /library/ will serve
+ALBUM_COVERS: dict = {}     # opaque album id → local image found by the last scan
 LEVELS: dict = {}           # (song key, preset) → how its stems are scaled; measured once, it takes a few seconds
 PAGES = {'seen': 0.0, 'bye': 0.0}   # when a page last asked for anything, and when one last said it was closing
 
@@ -137,16 +138,21 @@ def kit_loudness():
 
 def library_listing(extra=()):
     """The song list for the page: no paths, just what to show and whether a vocal is ready."""
+    global SONGS, ALBUM_COVERS
     songs, looked, skipped = library.scan(extra)
-    SONGS.clear()
-    SONGS.update({song['key']: song for song in songs})
+    albums = library.albums_for(songs)
     rows = []
     for song in songs:
+        album = albums[song['albumDirectory'] or song['analysisAlbum']]
         vocal_id = vocals.known(song['vocal']) if song['vocal'] else None
         rows.append({'key': song['key'], 'title': song['title'], 'artist': song['artist'], 'album': song['album'],
+                     'number': song['number'], 'albumId': album['id'], 'albumTitle': album['title'],
+                     'albumArtist': album['artist'], 'coverUrl': f"/album-cover/{album['id']}" if album['cover'] else None,
                      'where': song['where'], 'vocal': bool(song['vocal']), 'prepared': bool(vocal_id),
                      'stems': sorted(song['stems']), 'plan': plan_path('songs', song['key']).is_file(),
                      'voices': vocals.ready_voices(vocal_id) if vocal_id else []})
+    SONGS = {song['key']: song for song in songs}
+    ALBUM_COVERS = {album['id']: album['cover'] for album in albums.values() if album['cover']}
     return {'songs': rows, 'places': looked, 'skipped': skipped}
 
 
@@ -461,6 +467,10 @@ class Handler(BaseHTTPRequestHandler):
         route = self.path.split('?', 1)[0]
         if route in ('/', '/index.html'):
             return self.send_file(HERE / 'app.html')
+        if route in ('/favicon.ico', '/assets/xlr.ico'):
+            return self.send_file(HERE / 'assets' / 'xlr.ico')
+        if route == '/assets/xlr.svg':
+            return self.send_file(HERE / 'assets' / 'xlr.svg')
         if route == '/engine.js':
             return self.send_file(HERE / 'engine.js')
         if route == '/theme.css':
@@ -511,9 +521,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_file(path)
         if route == '/api/library':
             return self.send_json(library_listing(self.server.library_extra))
+        if route.startswith('/album-cover/'):
+            cover = ALBUM_COVERS.get(route[len('/album-cover/'):])
+            if not cover or cover.is_symlink() or not cover.is_file():
+                return self.send_json({'error': '没有这张专辑封面'}, 404)
+            return self.send_file(cover)
         if route.startswith('/library/') and route.endswith('.mid'):
             try:
-                return self.send_file(Path(library_song(route[len('/library/'):-len('.mid')], self.server.library_extra)['midi']))
+                from studio.instrument_midi import for_studio
+                source = library_song(route[len('/library/'):-len('.mid')], self.server.library_extra)['midi']
+                data = for_studio(source)
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/midi')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                return self.wfile.write(data)
             except KeyError as error:
                 return self.send_json({'error': str(error.args[0])}, 404)
         if route.startswith('/listen/') and route.endswith('.wav'):

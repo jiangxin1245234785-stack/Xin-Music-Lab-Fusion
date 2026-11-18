@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
+import io
 import math
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ from memesynth.render import peak_factor, render    # noqa: E402
 from memesynth.score import MIN_DURATION, read_score  # noqa: E402
 from studio import effects                          # noqa: E402
 from studio import xld_stems                        # noqa: E402
+from studio.instrument_midi import for_studio       # noqa: E402
 
 SAMPLE_RATE = 48000
 
@@ -84,7 +86,7 @@ def export(midi_path, kit_paths, out_dir, stems=False, min_duration=MIN_DURATION
     """
     midi_path, out_dir = Path(midi_path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    score = read_score(midi_path, min_duration=min_duration)
+    score = read_score(io.BytesIO(for_studio(midi_path)), min_duration=min_duration)
     if not score.notes:
         raise ValueError('这个 MIDI 里没有可路由的音符')
     results, total = [], max(1, len(kit_paths))
@@ -134,20 +136,22 @@ def export(midi_path, kit_paths, out_dir, stems=False, min_duration=MIN_DURATION
 
 #: The six tracks of a rebuild, the same as XLD's separated stems (SPEC v5 §1). A route belongs
 #: to the first track whose test it passes; whatever is left over is `other`.
-TRACKS = ('drums', 'bass', 'guitar', 'piano', 'vocals', 'other')
+TRACKS = ('drums', 'bass', 'guitar', 'piano', 'vocals', 'other', 'winds')
 
 
 def track_of(route):
     if route.startswith('drums/'):
         return 'drums'
-    if route == 'bass':
+    if route == 'bass' or route.startswith('bass/'):
         return 'bass'
     if route.startswith('guitar'):
         return 'guitar'
-    if route == 'piano':
+    if route == 'piano' or route.startswith('piano/'):
         return 'piano'
     if route == 'vocals' or route.startswith('vocals/'):
         return 'vocals'
+    if route == 'winds' or route.startswith('winds/'):
+        return 'winds'
     return 'other'
 
 
@@ -288,7 +292,7 @@ def levels_from(by_track, stems):
 
 def stem_levels(midi_path, kit_path, stems, min_duration=MIN_DURATION):
     """`levels_from` for a song and a preset kit: what the page asks the server for."""
-    result = render(read_score(Path(midi_path), min_duration=min_duration), load_kit(kit_path, sample_rate=SAMPLE_RATE))
+    result = render(read_score(io.BytesIO(for_studio(midi_path)), min_duration=min_duration), load_kit(kit_path, sample_rate=SAMPLE_RATE))
     by_track = {}
     for route in result.stems:
         name = track_of(route)
@@ -333,8 +337,8 @@ def layer_notes(played, name, octave):
 
 
 # --- the project pack (SPEC v25): what any DAW can take, no DAW's own project format ---------------------
-PACK_ORDER = ('drums', 'bass', 'guitar', 'piano', 'other', 'vocals')
-PACK_ZH = {'drums': '鼓', 'bass': '贝斯', 'guitar': '吉他', 'piano': '钢琴', 'other': '其他', 'vocals': '人声'}
+PACK_ORDER = ('drums', 'bass', 'guitar', 'piano', 'other', 'vocals', 'winds')
+PACK_ZH = {'drums': '鼓', 'bass': '贝斯', 'guitar': '吉他', 'piano': '钢琴', 'other': '其他', 'vocals': '人声', 'winds':'管乐'}
 PACK_KEYS = (('oct', '八度'), ('vel', '力度'), ('gate', '长短'), ('late', '前后'), ('loose', '松紧'), ('thin', '疏密'),
              ('tone', '明暗'), ('echo', '回声'), ('room', '混响'))
 PACK_TICKS = 960                                   # ticks per second: 480 a beat at a fixed 120 BPM, like merged.mid
@@ -508,11 +512,20 @@ def plan_tracks(plan, known, samples_dir=None, lost=None):
         raise ValueError('音色库是空的')
     plan = plan if isinstance(plan, dict) else {}
     tracks = {name: dict(mode='swap', kit=None, db=0.0, solo=False) for name in TRACKS}
-    for name, choice in (plan.get('tracks') or {}).items():
+    saved = plan.get('tracks') if isinstance(plan.get('tracks'), dict) else {}
+    if saved and 'winds' not in saved:
+        tracks['winds']['mode'] = 'mute'  # Six-track projects did not voice winds.
+    for name, choice in saved.items():
         if name in tracks and isinstance(choice, dict):
             tracks[name].update({k: v for k, v in choice.items()
                                  if k in ('mode', 'kit', 'db', 'solo') or k in effects.DEFAULTS
                                  or (name == 'vocals' and k in ('follow', 'treat')) or (name != 'vocals' and k in ('layer', 'sample'))})
+            if name in ('winds', 'other') and isinstance(choice.get('parts'), dict):
+                prefix = 'winds/' if name == 'winds' else 'strings/'
+                parts = {route: kit for route, kit in choice['parts'].items()
+                         if isinstance(route, str) and route.startswith(prefix) and isinstance(kit, str) and kit in known}
+                if parts:
+                    tracks[name]['parts'] = parts
     # A plan can come from a file someone edited or from an older studio: whatever in it does
     # not make sense falls back to the default instead of failing the whole export.
     for name, choice in tracks.items():
@@ -595,7 +608,7 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
     midi_path, out_dir = Path(midi_path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     say = lambda fraction, text: progress and progress(fraction, text)
-    score = read_score(midi_path, min_duration=min_duration)
+    score = read_score(io.BytesIO(for_studio(midi_path)), min_duration=min_duration)
     known = sorted(p.parent.name for p in Path(kits_dir).glob('*/kit.json'))
     lost = {}                                            # SPEC v26: a sample whose file is gone, said in words
     # Without a samples folder no sample can be found, so each one is reported lost and the track plays its kit.
@@ -619,15 +632,34 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
         if tracks[name]['mode'] == 'swap' and not (name == 'vocals' and sung) and 'root' not in (tracks[name].get('sample') or {}):
             wanted.add(tracks[name]['kit'] or preset)    # a pitched track with its own sample does not need its kit
     played = shaped_notes(score, tracks)
+    selected = {name: choice['parts'] for name, choice in tracks.items()
+                if choice.get('parts') and choice['mode'] == 'swap' and not choice.get('sample')}
+    ordinary = set(wanted)
+    for parts in selected.values():
+        wanted.update(kit for route, kit in parts.items() if route in score.routes)
+    part_mix = {}
     kicks = effects.kick_times(played)                   # the pump follows the kicks as they are played (SPEC v20)
     rendered, notes = {}, {}
     for index, kit_name in enumerate(sorted(wanted)):
         say(0.05 + 0.5 * index / len(wanted), f'{kit_name} · 渲染中')
-        result = render(played, load_kit(Path(kits_dir) / kit_name / 'kit.json', sample_rate=SAMPLE_RATE))
+        playing = played
+        if kit_name not in ordinary:
+            routes = {route for parts in selected.values() for route, kit in parts.items() if kit == kit_name}
+            playing = dataclasses.replace(played, notes=tuple(note for note in played.notes if note.route in routes))
+        result = render(playing, load_kit(Path(kits_dir) / kit_name / 'kit.json', sample_rate=SAMPLE_RATE))
         by_track = {}
         for route in result.stems:
             name = track_of(route)
-            by_track[name] = by_track.get(name, 0) + result.stereo_stem(route)
+            audio = result.stereo_stem(route)
+            by_track[name] = by_track.get(name, 0) + audio
+            if name in selected and selected[name].get(route, tracks[name]['kit'] or preset) == kit_name:
+                total = part_mix.get(name)
+                if total is None or len(total) < len(audio):
+                    bigger = np.zeros_like(audio)
+                    if total is not None:
+                        bigger[:len(total)] = total
+                    part_mix[name] = total = bigger
+                total[:len(audio)] += audio
         rendered[kit_name] = by_track
         notes[kit_name] = {'rendered': result.rendered, 'truncated': result.truncated}
     # A layer (SPEC v24): the track's own shaped notes, moved, played by a second kit; only these notes are rendered.
@@ -693,6 +725,8 @@ def rebuild(midi_path, plan, out_dir, kits_dir, stems=None, vocal=None, voice=''
             audio, how = sampled[name]['audio'], sampled[name]['how']
         elif name in sampled or (choice['mode'] == 'swap' and 'root' in (choice.get('sample') or {})):
             audio, how = None, 'empty'                           # its sample had nothing to play
+        elif name in selected:
+            audio, how = part_mix.get(name), choice['kit'] or preset
         elif choice['mode'] == 'swap' and name in rendered[choice['kit'] or preset]:
             audio, how = rendered[choice['kit'] or preset][name], choice['kit'] or preset
         elif name in stacked and stacked[name]['audio'] is not None:
@@ -783,8 +817,9 @@ def inspect(midi_path, min_duration=MIN_DURATION):
     import pretty_midi
 
     midi_path = Path(midi_path)
-    midi = pretty_midi.PrettyMIDI(str(midi_path))
-    score = read_score(midi_path, min_duration=min_duration)
+    data = for_studio(midi_path)
+    midi = pretty_midi.PrettyMIDI(io.BytesIO(data))
+    score = read_score(io.BytesIO(data), min_duration=min_duration)
     amplitude = lambda v: 20 * math.log10(max(v, 1) / 127)
 
     print(f'{midi_path.name} — {len(score.notes)} 个音符 / {score.duration:.1f} 秒 / '

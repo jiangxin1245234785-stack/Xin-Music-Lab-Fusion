@@ -73,8 +73,11 @@ def close(a, b, tolerance):
 
 # --------------------------------------------------------------------------------- batch
 def test_track_of():
-    expected = {'drums/kick': 'drums', 'bass': 'bass', 'guitar': 'guitar', 'guitar/acoustic guitar': 'guitar',
-                'piano': 'piano', 'vocals': 'vocals', 'strings/string ensemble': 'other', 'brass': 'other'}
+    expected = {'drums/kick': 'drums', 'bass': 'bass', 'bass/electric bass': 'bass', 'bass/acoustic bass': 'bass',
+                'guitar': 'guitar', 'guitar/acoustic guitar': 'guitar', 'piano': 'piano',
+                'piano/acoustic piano': 'piano', 'piano/organ': 'piano', 'vocals': 'vocals',
+                'strings/double bass': 'other', 'strings/string ensemble': 'other', 'brass': 'other',
+                'bassoon': 'other', 'pianola': 'other'}
     for route, track in expected.items():
         assert batch.track_of(route) == track, route
 
@@ -197,6 +200,62 @@ def test_library_scan_skips_what_it_cannot_read():
         mine = [s for s in songs if s['where'].startswith('另加')]
         assert [s['title'] for s in mine] == ['好的'] and skipped >= 1
         assert any(not place['found'] for place in library.scan(extra=[str(scratch / 'nowhere')])[1])
+
+
+def test_album_listing_and_local_cover():
+    import base64
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch = Path(scratch)
+        music, analysis = scratch / 'Music', scratch / 'Analysis'
+        release = music / 'Original Artist - Same Title'
+        release.mkdir(parents=True)
+        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lmjoAAAAASUVORK5CYII=')
+        (release / 'COVER.PNG').write_bytes(png)
+        (release / 'front.jpg').write_bytes(b'alternate')
+        (music / 'cover.jpg').write_bytes(b'not a loose-single cover')
+        def add(title, artist, album, number, source_dir):
+            folder = make_song(analysis, title, stems=())
+            track = {'trackId': title, 'title': title, 'artist': artist, 'album': album, 'number': number}
+            if source_dir:
+                track['source'] = str(source_dir / (title + '.flac'))
+            (folder / 'track.json').write_text(json.dumps(track), encoding='utf-8')
+        add('Intro', 'Original Artist', 'Same Title', 1, release)
+        add('Duet', 'Guest', 'Old Tagged Title', '02/10', release)
+        add('Other album', 'Second Artist', 'Same Title', 1, music / 'Second Artist - Same Title')
+        add('Loose', 'Guest', 'Tagged Album', 1, music)
+        add('Loose too', '', '', None, music)
+        add('Old metadata', 'Guest', 'Some Album', 3, None)
+        with patch.object(library, 'roots', return_value=[('test', analysis)]), \
+                patch.object(library, 'configured_root', return_value=music), \
+                patch.object(server, 'SONGS', {}), patch.object(server, 'ALBUM_COVERS', {}), \
+                ThreadingHTTPServer(('127.0.0.1', 0), server.Handler) as httpd:
+            httpd.library_extra = []
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            base = f'http://127.0.0.1:{httpd.server_address[1]}'
+            try:
+                status, _, body = fetch(base + '/api/library')
+                assert status == 200
+                rows = {s['title']: s for s in json.loads(body)['songs']}
+                duet, intro = rows['Duet'], rows['Intro']
+                assert duet['albumId'] == intro['albumId'] != rows['Other album']['albumId']
+                assert (duet['artist'], duet['albumArtist'], duet['albumTitle'], duet['number']) == ('Guest', 'Original Artist', 'Same Title', 2)
+                assert rows['Loose']['albumId'] == rows['Loose too']['albumId']
+                assert (rows['Loose']['albumArtist'], rows['Loose']['albumTitle'], rows['Loose']['coverUrl']) == ('Various Artists', '单曲 · Singles', None)
+                assert rows['Old metadata']['albumTitle'] == 'Some Album' and rows['Old metadata']['coverUrl'] is None
+                assert rows['Loose too']['number'] == 0 and rows['Other album']['coverUrl'] is None
+                assert duet['coverUrl'] == intro['coverUrl'] and str(release) not in duet['coverUrl']
+                status, headers, body = fetch(base + duet['coverUrl'])
+                assert status == 200 and headers['Content-Type'] == 'image/png' and body == png
+                assert fetch(base + '/library/' + duet['key'] + '.mid')[2][:4] == b'MThd'
+                assert fetch(base + '/album-cover/no-such-album')[0] == 404
+                (release / 'COVER.PNG').unlink()
+                assert fetch(base + duet['coverUrl'])[0] == 404
+            finally:
+                httpd.shutdown()
+                thread.join()
 
 
 # -------------------------------------------------------------------------------- server

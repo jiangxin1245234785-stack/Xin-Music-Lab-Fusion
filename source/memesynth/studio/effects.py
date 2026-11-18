@@ -32,11 +32,11 @@ LIMITS = {'oct': (-2, 2), 'vel': (-100, 100), 'gate': (-100, 100), 'late': (-60,
           'tone': (-100, 100), 'echo': (0, 100), 'room': (0, 100)}
 NOTE_KEYS = ('oct', 'vel', 'gate', 'late', 'loose', 'thin')     # these change the notes (SPEC v14, v19)
 #: The page's track order, which `loose` hashes by (it is not `batch.TRACKS`).
-HASH_ORDER = ('drums', 'bass', 'guitar', 'piano', 'other', 'vocals')
+HASH_ORDER = ('drums', 'bass', 'guitar', 'piano', 'other', 'vocals', 'winds')
 MIN_GATE = 0.03                                                   # seconds: no note is shortened below this
 PUMP_DEFAULT = {'depth': 0, 'release': 180}
 PUMP_LIMITS = {'depth': (0, 100), 'release': (60, 400)}
-PUMPED = ('bass', 'guitar', 'piano', 'other')                     # what the kick pushes down (SPEC v20)
+PUMPED = ('bass', 'guitar', 'piano', 'other', 'winds')            # what the kick pushes down (SPEC v20)
 KICK_SLACK = 1e-9                                                 # seconds; see pump_envelope
 
 

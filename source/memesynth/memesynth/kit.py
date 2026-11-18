@@ -69,7 +69,8 @@ class Kit:
         """Return the voice for `route`, falling back to its stem, or None."""
         if route in self.voices:
             return self.voices[route]
-        return self.voices.get(route.split('/')[0])
+        family = route.split('/')[0]
+        return self.voices.get(family) or (self.voices.get('vocals') if family == 'winds' else None)
 
 
 def load_sample_audio(path, sample_rate):

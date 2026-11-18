@@ -23,7 +23,7 @@ const DRUM_CLASSES = {
   49: 'crash', 52: 'crash', 55: 'crash', 57: 'crash',
   51: 'ride', 53: 'ride', 59: 'ride',
 };
-const STEMS = new Set(['bass', 'piano', 'guitar', 'strings', 'drums', 'vocals']);
+const STEMS = new Set(['bass', 'piano', 'guitar', 'strings', 'winds', 'drums', 'vocals']);
 const MIN_DURATION = 0.02;
 
 function parseMidi(buffer) {
@@ -173,7 +173,8 @@ const TAIL_SECONDS = 2.0;
 const pitchToHz = (pitch, transpose) => 440 * Math.pow(2, (pitch + (transpose || 0) - 69) / 12);
 
 function resolveVoice(kit, route) {
-  return kit.voices[route] || kit.voices[route.split('/')[0]] || null;
+  const family = route.split('/')[0];
+  return kit.voices[route] || kit.voices[family] || (family === 'winds' && kit.voices.vocals) || null;
 }
 
 function resample(audio, ratio) {

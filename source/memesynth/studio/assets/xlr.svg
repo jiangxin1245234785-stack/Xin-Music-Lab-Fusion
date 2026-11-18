@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">XLR · 音色工作台</title>
+  <rect x="1.25" y="1.25" width="61.5" height="61.5" rx="11.5" fill="#22262b" stroke="#363c44" stroke-width=".75"/>
+  <path d="M17 15.7v32.6M32 15.7v32.6M47 15.7v32.6" fill="none" stroke="#8f959d" stroke-width="3.15" stroke-linecap="round"/>
+  <g fill="#dddbd5">
+    <rect x="11.3" y="35" width="11.4" height="5.9" rx="2.1"/>
+    <rect x="41.3" y="29" width="11.4" height="5.9" rx="2.1"/>
+  </g>
+  <rect x="26.3" y="20.6" width="11.4" height="5.9" rx="2.1" fill="#f0a830"/>
+</svg>

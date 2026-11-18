@@ -37,7 +37,7 @@ DRUM_CLASSES = {
 DRUM_ROUTES = ('kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride')
 
 #: Stems the MIDI backends can produce. Used only to warn about unexpected track names.
-STEMS = frozenset({'bass', 'piano', 'guitar', 'strings', 'drums', 'vocals'})
+STEMS = frozenset({'bass', 'piano', 'guitar', 'strings', 'winds', 'drums', 'vocals'})
 
 #: Notes shorter than this are transcription artefacts; real exports contain 8 ms notes
 #: that render as clicks (SPEC §9).
@@ -90,7 +90,7 @@ def read_score(path, min_duration=MIN_DURATION):
     their onset but lose their duration, which XLD writes as a constant 0.1 s
     placeholder; the renderer takes the length from the sample instead.
     """
-    midi = pretty_midi.PrettyMIDI(str(Path(path)))
+    midi = pretty_midi.PrettyMIDI(path if hasattr(path, 'read') else str(Path(path)))
     notes, routes, dropped, warnings = [], Counter(), Counter(), []
     for instrument in midi.instruments:
         if not instrument.notes:

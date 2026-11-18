@@ -1,5 +1,5 @@
 <title>XLR · 音色工作台</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2313161a'/%3E%3Cg fill='%23f0a830'%3E%3Crect x='12' y='26' width='7' height='12' rx='3'/%3E%3Crect x='24' y='16' width='7' height='32' rx='3'/%3E%3Crect x='36' y='22' width='7' height='20' rx='3'/%3E%3Crect x='48' y='29' width='7' height='6' rx='3'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/x-icon" href="/assets/xlr.ico">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -7,20 +7,30 @@
 <link rel="stylesheet" href="theme.css">
 
 <div id="top">
-  <div class="brand"><h1>XLR</h1><span>音色工作台</span></div>
-  <div class="songHead"><button type="button" class="plain" id="openLibrary" aria-expanded="true" title="曲库：换一首"><span class="ic"></span>曲库</button><strong id="songTitle" role="button" tabindex="0" title="换一首"></strong><span id="songFacts"></span></div>
+  <div class="brand"><img src="/assets/xlr.svg" width="24" height="24" alt=""><h1>XLR</h1><span>音色工作台</span></div>
+  <div class="songHead">
+    <button type="button" class="plain" id="openLibrary" aria-controls="side" aria-expanded="true" title="打开曲库，选择曲目">
+      <span class="cover" aria-hidden="true">♪</span><span class="nowCopy"><strong id="songTitle">选择曲目</strong><small id="songBy">曲库</small></span><span class="chevron" aria-hidden="true">▾</span>
+    </button>
+    <button type="button" class="plain songStep" id="prevSong" aria-label="上一曲" title="上一曲" disabled>‹</button>
+    <button type="button" class="plain songStep" id="nextSong" aria-label="下一曲" title="下一曲" disabled>›</button>
+    <span id="songFacts"></span>
+  </div>
   <div class="topTools"><span id="tasks"></span>
     <button type="button" class="plain" id="openHelp">说明</button>
     <button type="button" class="plain" id="openExport" disabled>导出</button></div>
 </div>
 
 <div id="app">
-  <aside id="side" class="drawer left" aria-label="曲库">
+  <aside id="side" class="drawer library-drawer" aria-label="曲库">
     <section id="library" hidden style="margin-top:0">
-      <div class="head"><h2>曲库</h2><span class="note" id="libNote"></span></div>
+      <div class="head"><h2>曲库</h2><span class="note" id="libNote" aria-live="polite"></span>
+        <button type="button" class="plain" id="locateSong" title="定位到当前曲目" disabled>定位</button>
+        <button type="button" class="plain" id="closeLibrary" aria-label="关闭曲库" title="关闭曲库" disabled>×</button>
+      </div>
       <div class="card">
-        <input type="search" id="libFilter" placeholder="筛选歌名 / 艺人 / 专辑" aria-label="筛选曲库" spellcheck="false" autocomplete="off">
-        <div class="songs" id="songs" role="group" aria-label="曲库里的歌"></div>
+        <input type="search" id="libFilter" placeholder="搜索专辑、艺人或曲目" aria-label="搜索曲库" spellcheck="false" autocomplete="off">
+        <div class="songs" id="songs" role="group" aria-label="专辑和曲目"></div>
       </div>
     </section>
     <div id="drop" tabindex="0" role="button" aria-label="选择或拖入 MIDI 文件" title="merged.mid：XLD 转谱合并后的文件；只在本机处理">
@@ -40,7 +50,8 @@
           <span class="seg" id="cmp" role="group" aria-label="两套预设对比" hidden></span>
           <button type="button" class="plain" id="cmpSave" hidden title="现在的方案配上 A、B 两套预设，各存一份">存两份</button>
         </span>
-        <span class="grp"><button type="button" class="plain" id="pumpBtn" aria-pressed="false">抽吸</button></span>
+        <span class="grp"><button type="button" class="plain" id="pumpBtn" aria-pressed="false">抽吸</button>
+          <button type="button" class="plain" id="openParts" aria-controls="partsPanel" disabled>管弦分轨</button></span>
         <span class="grp">
           <button type="button" class="plain" id="savePlan">存方案</button>
           <select id="planList" aria-label="套用方案"><option value="">套用方案</option></select>
@@ -55,6 +66,13 @@
     </div>
     <div id="presets" role="group" aria-label="预设"></div>
   </main>
+    <section id="partsPanel" class="drawer" hidden>
+      <div class="head"><h2>管弦乐器</h2><button type="button" class="link closeDrawer">关闭</button></div>
+      <label><input type="checkbox" id="mergeParts" checked> 合并同类乐器声部</label>
+      <p>横条对应当前试听的 12 秒。展开可按乐器指定音色，合并后保留选择。</p>
+      <p>orchestra 的合成铜管适合短促齐奏，vaporwave 的合成萨克斯适合独奏，organ 的拉杆风琴适合持续音。</p>
+      <div id="partRows"></div>
+    </section>
     <section id="voicePanel" class="drawer" hidden>
       <div class="head"><h2>声音</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <div id="vocalDrop" class="card" tabindex="0" role="button" aria-label="选择或拖入人声分轨">
@@ -105,6 +123,7 @@
       <div class="head"><h2>说明</h2><button type="button" class="link closeDrawer">关闭</button></div>
       <p class="lede">把一首分好轨、转好谱的歌一条轨一条轨重新演一遍。</p>
       <h3>听</h3>
+      <p>点顶栏歌名打开曲库。展开专辑后，单击选歌，双击试听重构片段。搜索可直接找到曲目，「定位」回到正在编辑的歌。</p>
       <p>循环播放 12 秒：地图上框住的那一段。点地图把它挪过去；鼠标停在地图上，看那一刻谁在响。</p>
       <p>地图从上到下是鼓、贝斯、吉他、钢琴、其他、人声。越亮响得越满，越高音越高（每条按自己的音域）；鼓分底鼓、军鼓、其余三行；人声没有转谱时画原声的响度。</p>
       <p>「原曲 / 重构」在原来的歌和你的重构之间切（要从曲库打开的歌）。「听整首」把整首渲染出来，和导出同一条路。</p>
@@ -156,16 +175,17 @@
  * vocal), or silent. The page auditions a 12 s window; the export goes through memesynth. */
 const SPAN = 12.0, RATE = 48000, VOCAL_TARGET_DB = -20, FEATURED_SYNTH = 'xiaoxiao', CEILING = 10 ** (-1.5 / 20);
 const TRACKS = [{id:'drums', zh:'鼓'}, {id:'bass', zh:'贝斯'}, {id:'guitar', zh:'吉他'}, {id:'piano', zh:'钢琴'},
-                {id:'other', zh:'其他'}, {id:'vocals', zh:'人声'}];
+                {id:'other', zh:'其他'}, {id:'vocals', zh:'人声'}, {id:'winds', zh:'管乐'}];
 const el = id => document.getElementById(id);
 
 /* A route belongs to the first track whose test it passes; batch.track_of says the same. */
 function trackOf(route) {
   if (route.startsWith('drums/')) return 'drums';
-  if (route === 'bass') return 'bass';
+  if (route === 'bass' || route.startsWith('bass/')) return 'bass';
   if (route.startsWith('guitar')) return 'guitar';
-  if (route === 'piano') return 'piano';
+  if (route === 'piano' || route.startsWith('piano/')) return 'piano';
   if (route === 'vocals' || route.startsWith('vocals/')) return 'vocals';
+  if (route === 'winds' || route.startsWith('winds/')) return 'winds';
   return 'other';
 }
 
@@ -173,6 +193,8 @@ let kitsIndex = null, kitAudio = {}, score = null, midiName = '', midiBytes = nu
 let ctx = null, master = null, sources = [], startedAt = 0, running = false, windowStart = 0;
 let preset = '', previousPreset = '', ab = 'recon', layers = [], renderTicket = 0, kitWindow = {}, stemWindows = {};
 let song = null, songs = [], songKey = '', flagsByTrack = {}, saveTimer = null;
+const pendingPlans = new Map();
+let albums = [], expandedAlbum = '', songRequest = 0, loadingSong = '', previewOnLoad = '';
 let voiceList = [], vocal = null, voiceAudio = {}, wanted = '', pollTimer = null, vocalTicket = 0, vocalBusy = '';
 let vocalPending = false, vocalTouched = false;     // a vocal is on its way; the vocal track was given something
 let voiceTag = '';                                  // the kind of voice the panel is narrowed to
@@ -187,7 +209,7 @@ const FX_LIMITS = {oct: [-2, 2], vel: [-100, 100], gate: [-100, 100], late: [-60
                    tone: [-100, 100], echo: [0, 100], room: [0, 100]};
 /* The pump (SPEC v20): one setting for the plan. Same numbers as effects.py's PUMP_*. */
 const PUMP_DEFAULT = {depth: 0, release: 180}, PUMP_LIMITS = {depth: [0, 100], release: [60, 400]};
-const PUMPED = ['bass', 'guitar', 'piano', 'other'];
+const PUMPED = ['bass', 'guitar', 'piano', 'other', 'winds'];
 let pump = Object.assign({}, PUMP_DEFAULT);
 let pair = [];                                      // the two presets being compared, in the order they were picked
 function resetCast() {
@@ -429,7 +451,7 @@ let knownSamples = new Set();                       // the numbers the server ha
 const sampleAudio = {}, sampleLoads = {};           // number → the sample as the kit loader hears it (mono, 48 kHz)
 const SAMPLE_PARTS = {kick: ['drums/kick'], snare: ['drums/snare'], cymbal: ['drums/hihat', 'drums/openhat', 'drums/ride', 'drums/crash']};
 const PART_ZH = {kick: '底鼓', snare: '军鼓', cymbal: '镲'};
-const PITCHED_TRACKS = ['bass', 'guitar', 'piano', 'other'];
+const PITCHED_TRACKS = ['bass', 'guitar', 'piano', 'other', 'winds'];
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 async function loadSamples() {
   try { knownSamples = new Set((await api('/api/samples')).samples || []); } catch (error) { /* an older server: none */ }
@@ -619,43 +641,41 @@ function cleanPump(value) {
 const songHasKicks = () => !!score && (score.routes['drums/kick'] || 0) > 0;
 
 /* --- a song ---------------------------------------------------------------------- */
-function takeFile(file, done) {
-  midiName = file.name;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      midiBytes = new Uint8Array(reader.result);   // kept so the server can render the same file
-      const midi = Engine.parseMidi(reader.result);
-      score = Engine.buildScore(midi);
-      if (!score.notes.length) throw new Error('这个文件里没有音符');
-      el('drop').classList.add('loaded');
-      el('dropTitle').textContent = midiName;
-      el('dropHint').textContent = '点这里换文件';
-      el('songTitle').textContent = song ? song.title : midiName.replace(/\.midi?$/i, '');
-      el('songFacts').textContent = `${score.notes.length} 个音符 · ${Math.floor(score.duration / 60)}:${String(Math.floor(score.duration % 60)).padStart(2, '0')}`;
-      showVitals(midi);
-      flagsByTrack = trackFlags(midi);
-      const flags = el('flags').children.length;
-      el('vitalsSum').textContent = flags ? String(flags) : '';
-      el('openVitals').title = flags ? `转谱有 ${flags} 条提示` : '';
-      el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false; el('clipBtn').disabled = false;
-      if (!el('side').hidden) closeDrawers();                // a song is open: the library steps aside
-      forgetFull();
-      windowStart = bestWindow();
-      kitWindow = {}; stemWindows = {};
-      drawTimeline();
-      paintRolls();
-      paintTracks();
-      fitWall();
-      renderWindow();
-    } catch (error) {
-      setState(`读不了这个文件（${error.message}），换一个 merged.mid 再试`, true);
-      el('dropHint').textContent = `读不了这个文件（${error.message}）`;
-      if (!score) openDrawer('side');
-    }
-    if (done) done();
-  };
-  reader.readAsArrayBuffer(file);
+function loadMidi(buffer, name, item, plan, keepLibrary) {
+  const midi = Engine.parseMidi(buffer);
+  const nextScore = Engine.buildScore(midi);
+  if (!nextScore.notes.length) throw new Error('这个文件里没有音符');
+  flushPlan();
+  clearVocal(); resetCast(); forgetFull();
+  stopSources(); ++renderTicket; layers = [];
+  song = item; songKey = item ? item.key : ''; ab = 'recon'; levelNotes = null;
+  vocalPending = !!(item && item.vocal);
+  if (plan) takePlan(plan);
+  midiName = name;
+  midiBytes = new Uint8Array(buffer);
+  score = nextScore;
+  el('drop').classList.add('loaded');
+  el('dropTitle').textContent = midiName;
+  el('dropHint').textContent = '点这里换文件';
+  el('songTitle').textContent = song ? song.title : midiName.replace(/\.midi?$/i, '');
+  el('songBy').textContent = item ? [item.artist, item.albumTitle || item.album].filter(Boolean).join(' · ') || '曲库' : 'MIDI 文件';
+  showCover(el('openLibrary').querySelector('.cover'), item && item.coverUrl);
+  updateLibrarySelection();
+  el('songFacts').textContent = `${score.notes.length} 个音符 · ${Math.floor(score.duration / 60)}:${String(Math.floor(score.duration % 60)).padStart(2, '0')}`;
+  showVitals(midi);
+  flagsByTrack = trackFlags(midi);
+  const flags = el('flags').children.length;
+  el('vitalsSum').textContent = flags ? String(flags) : '';
+  el('openVitals').title = flags ? `转谱有 ${flags} 条提示` : '';
+  el('main').hidden = false; el('openExport').disabled = false; el('openFull').disabled = false; el('clipBtn').disabled = false;
+  if (!keepLibrary && !el('side').hidden) closeDrawers();
+  windowStart = bestWindow();
+  kitWindow = {}; stemWindows = {};
+  drawTimeline();
+  paintRolls();
+  paintTracks();
+  fitWall();
+  renderWindow();
 }
 
 /* Which track a flat or narrow MIDI track lands on, so the hint sits on that row. */
@@ -857,12 +877,13 @@ function drawMap() {
   if (!arrangement || !score) return;
   const canvas = el('density'), context = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1;
   const {columns, tracks} = arrangement, width = canvas.width / columns, gap = Math.max(1, Math.round(dpr));
-  const lane = (canvas.height - gap * (TRACKS.length - 1)) / TRACKS.length;
+  const visible = TRACKS.filter(t => t.id !== 'winds' || routesOf('winds').length);
+  const lane = (canvas.height - gap * (visible.length - 1)) / visible.length;
   const style = getComputedStyle(document.body);
   context.clearRect(0, 0, canvas.width, canvas.height);
   const cell = (c, y, h, alpha) => { if (alpha > 0) { context.globalAlpha = base * Math.min(1, alpha); context.fillRect(c * width, y, Math.max(1, width - gap), h); } };
   let base = 1;
-  TRACKS.forEach((track, index) => {
+  visible.forEach((track, index) => {
     const top = index * (lane + gap), data = tracks[track.id];
     base = cast[track.id] && cast[track.id].mode === 'mute' ? 1 / 3 : 1;
     context.fillStyle = style.getPropertyValue(`--t-${track.id}`).trim() || '#888';
@@ -917,6 +938,7 @@ el('timeline').addEventListener('click', event => {
 });
 function moveWindow(start) {
   windowStart = start; kitWindow = {}; stemWindows = {};
+  if (!el('partsPanel').hidden) paintParts();
   positionWindow(); paintStrips(); renderWindow();
 }
 
@@ -1267,12 +1289,15 @@ function paintLock(id) {
   button.setAttribute('aria-label', (TRACKS.find(t => t.id === id) || {}).zh + (on ? ' · 已锁住' : ' · 锁住'));
 }
 function paintTracks() {
+  el('openParts').disabled = !score || !Object.keys(score.routes).some(r => /^(winds|strings)(\/|$)/.test(r));
+  if (!el('partsPanel').hidden) paintParts();
   if (!score) return;
   settle();
   const names = Object.keys(kitsIndex || {});
   for (const track of TRACKS) {
     const row = el('tracks').querySelector(`[data-track="${track.id}"]`), c = cast[track.id];
     const routes = routesOf(track.id), isVocal = track.id === 'vocals';
+    if (track.id === 'winds') row.hidden = !routes.length && !hasStem('winds');
     row.querySelector('small').textContent = routes.length ? `转谱 ${routes.length} 路` : '无转谱';
     paintLock(track.id);
     const can = {
@@ -1461,7 +1486,6 @@ const ICONS = {
   star: '<path d="M12 3l2.700 5.800 6.300.800-4.600 4.300 1.200 6.200L12 17l-5.600 3.100 1.200-6.200L3 9.600l6.300-.800z"/>',
   sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
   note: '<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
-  shelf: '<path d="M5 4v15M9 4v15"/><path d="M13 5.5l3.5-1 3.5 13.5-3.5 1z"/><path d="M3 19.5h18"/>',
   layer: '<path d="M12 5v14M5 12h14"/>',
   lock: '<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   die: '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/>',
@@ -1673,7 +1697,9 @@ async function renderWindowNow() {
   const ticket = ++renderTicket, frames = Math.round(SPAN * RATE);
   // A pitched track with its own sample does not play its kit (SPEC v26); the drums' sample sits in the base kit.
   const playing = [...new Set(TRACKS.filter(t => cast[t.id].mode === 'swap' && !pitchedSample(t.id)).map(t => kitOf(t.id)))];
-  const loading = [...new Set(playing.concat(TRACKS.filter(t => layerOn(t.id)).map(t => cast[t.id].layer.kit)))];
+  const partKits = ['winds','other'].flatMap(id => cast[id].mode === 'swap' && !sampleOn(id) ?
+    routesOf(id).map(route => cast[id].parts?.[route]).filter(Boolean) : []);
+  const loading = [...new Set(playing.concat(partKits,TRACKS.filter(t => layerOn(t.id)).map(t => cast[t.id].layer.kit)))];
   if (loading.some(name => !kitAudio[name])) {
     setState(`载入音色 · ${loading.filter(name => !kitAudio[name]).join('、')}`);
     await Promise.all(loading.map(ensureKit));
@@ -1686,14 +1712,15 @@ async function renderWindowNow() {
     if (ticket !== renderTicket) return;
   }
   const started = performance.now(), notes = shapedScore();
-  const kitTrack = (kit, id) => {
+  const kitTrack = (kit, id, selected = null) => {
     if (!kitAudio[kit]) return null;
     if (!kitWindow[kit]) {
       kitWindow[kit] = Engine.renderScore(notes, {voices: kitAudio[kit].voices}, kitAudio[kit].samples, RATE,
                                           {from: windowStart, to: windowStart + SPAN, trim: true});
     }
-    if (!Object.keys(kitWindow[kit].stems).some(route => trackOf(route) === id)) return null;
-    const out = new Float32Array(frames * 2), data = Engine.mixDown(kitWindow[kit], route => trackOf(route) === id);
+    const accepts = route => trackOf(route) === id && (!selected || (selected[route] || kitOf(id)) === kit);
+    if (!Object.keys(kitWindow[kit].stems).some(accepts)) return null;
+    const out = new Float32Array(frames * 2), data = Engine.mixDown(kitWindow[kit], accepts);
     out.set(data.subarray(0, Math.min(data.length, out.length)));
     return out;
   };
@@ -1774,7 +1801,18 @@ async function renderWindowNow() {
       }
       else if (c.mode === 'swap' && (!vocal || voice === '@kit')) data = kitTrack(kitOf('vocals'), 'vocals');
     } else if (c.mode === 'orig' && originals[track.id]) data = scaled(originals[track.id], factors[track.id] || spare);
-    else if (c.mode === 'swap') data = sampleOn(track.id) ? sampleTrack(track.id) : kitTrack(kitOf(track.id), track.id);
+    else if (c.mode === 'swap') {
+      if (sampleOn(track.id)) data = sampleTrack(track.id);
+      else if (c.parts && Object.keys(c.parts).length) {
+        const chosen = new Set(routesOf(track.id).map(route => c.parts[route] || kitOf(track.id)));
+        for (const kit of chosen) {
+          const part = kitTrack(kit, track.id, c.parts);
+          if (!part) continue;
+          if (!data) data = part;
+          else for (let i = 0; i < data.length; i++) data[i] += part[i];
+        }
+      } else data = kitTrack(kitOf(track.id), track.id);
+    }
     // The layer is added first; the pump, tone / echo / room and the level below are the track's, for both.
     if (track.id !== 'vocals' && c.mode === 'swap' && layerOn(track.id)) {
       const top = layerTrack(track.id);
@@ -1807,7 +1845,11 @@ async function renderWindowNow() {
   const lost = lostLine();                                   // SPEC v26: a missing sample is said first, every time
   setState((lost ? lost + ' · ' : '') + (provisional ? said + ' · 原声音量校准中' : said) + (treatSay ? ' · ' + treatSay : ''),
            !!lost || /没做成/.test(treatSay));
-  if (running) startPlayback(positionInLoop());
+  if (running) startPlayback(sources.length ? positionInLoop() : 0);
+  if (previewOnLoad && previewOnLoad === songKey && layers.length) {
+    previewOnLoad = '';
+    if (!running) await toggle();
+  }
   // The real numbers may have come in while this window was being built: correct it now rather than never.
   if (provisional && levelCache[levelKey(song.key, preset)]) levelsArrived(song.key, preset);
   const other = pair.find(name => name !== preset);          // the other side of a comparison, ready to flip to
@@ -1929,6 +1971,7 @@ async function toggle() {
 }
 el('play').addEventListener('click', toggle);
 document.addEventListener('keydown', event => {
+  if (event.target.closest('#side, .songHead')) return;
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type !== 'range') return;
   const names = Object.keys(kitsIndex || {});
   const slot = event.key === '0' ? 9 : event.key >= '1' && event.key <= '9' ? Number(event.key) - 1 : -1;   // 1…9, then 0 for the tenth
@@ -1992,6 +2035,7 @@ function adoptVocal(title, waiting, request) {
   el('vocalTitle').textContent = title;
   el('vocalDrop').classList.add('loaded');
   const tick = () => {
+    if (ticket !== vocalTicket) return;
     vocalBusy = `${waiting} · ${Math.round((performance.now() - began) / 1000)} 秒`;
     el('vocalHint').textContent = vocalBusy;
     paintTracks();
@@ -2186,25 +2230,98 @@ function watchConversions() {
   }, 1500);
 }
 
-/* One drawer at a time over the page (the library on the left, the rest on the right); the main
+/* One drawer at a time over the page; the main
  * page underneath never grows, and opening or closing one never touches what is playing.
  * With no song open the library stays out: there is nothing else to look at. */
+const partNames = {flutes:'长笛',flute:'长笛',oboe:'双簧管',clarinet:'单簧管','english horn':'英国管',
+  bassoon:'巴松',tuba:'大号','french horn':'圆号',trumpet:'小号',trombone:'长号',
+  'soprano and alto sax':'高音／中音萨克斯','tenor sax':'次中音萨克斯','baritone sax':'上低音萨克斯',
+  violin:'小提琴',viola:'中提琴',cello:'大提琴',contrabass:'低音提琴','string ensemble':'弦乐合奏'};
+function paintParts() {
+  const list = el('partRows'); list.replaceChildren();
+  if (!score) return;
+  const visible = new Map();
+  const stop = windowStart + SPAN;
+  for (const note of score.notes) {
+    if (note.start >= stop) break;
+    if (note.start + note.duration <= windowStart) continue;
+    if (!visible.has(note.route)) visible.set(note.route, []);
+    visible.get(note.route).push(note);
+  }
+  function phrase(routes, track) {
+    const strip = document.createElement('canvas');
+    strip.width = 240; strip.height = 28;
+    strip.setAttribute('aria-hidden','true');
+    const ctx = strip.getContext('2d');
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--t-' + track).trim();
+    for (const route of routes) for (const note of visible.get(route) || []) {
+      const left = Math.max(0,(note.start-windowStart) / SPAN) * strip.width;
+      const right = Math.min(1,(note.start + note.duration-windowStart) / SPAN) * strip.width;
+      const y = (1 - Math.max(0,Math.min(1,(note.pitch - 28) / 75))) * (strip.height-3);
+      ctx.globalAlpha = .4 + .6 * note.velocity / 127;
+      ctx.fillRect(left, y, Math.max(1,right-left), 3);
+    }
+    return strip;
+  }
+  for (const family of ['winds','strings']) {
+    const track = family === 'winds' ? 'winds' : 'other';
+    const routes = routesOf(track).filter(route => route.split('/')[0] === family);
+    if (!routes.length) continue;
+    const heading = document.createElement('h3');
+    heading.textContent = (family === 'winds' ? '管乐' : '弦乐') + ' · ' +
+      routes.reduce((n,route) => n + score.routes[route],0) + ' 个音符';
+    list.append(heading);
+    if (el('mergeParts').checked) {list.append(phrase(routes,track));continue;}
+    for (const route of routes) {
+      const name = route.slice(family.length + 1),row = document.createElement('label');
+      const label = document.createElement('span'),select = document.createElement('select');
+      label.textContent = (partNames[name] || name || '未分乐器') + ' · ' + score.routes[route];
+      row.append(label,phrase([route],track),select); list.append(row);select.dataset.route = route;
+      select.add(new Option('跟随整轨 · ' + (cast[track].kit || preset),''));
+      if (!name) { select.disabled = true;select.title = '融合文件只保留了这条总轨，可在工作台直接给整轨换音色';continue; }
+      for (const key of Object.keys(kitsIndex || {})) select.add(new Option(key,key));
+      select.value = cast[track].parts?.[route] || '';
+      select.disabled = cast[track].mode !== 'swap' || sampleOn(track);
+      select.addEventListener('change',() => {
+        const parts = cast[track].parts ||= {};
+        if (select.value) parts[route] = select.value;else delete parts[route];
+        forgetFull();queueSave();renderWindow();
+      });
+    }
+  }
+}
+el('openParts').addEventListener('click',() => {paintParts();openDrawer('partsPanel');});
+try {el('mergeParts').checked = localStorage.getItem('studio.mergeInstruments') !== 'false';} catch (_) {}
+el('mergeParts').addEventListener('change',() => {
+  try {localStorage.setItem('studio.mergeInstruments',String(el('mergeParts').checked));} catch (_) {}
+  paintParts();
+});
 function openDrawer(id) {
   for (const drawer of document.querySelectorAll('.drawer')) drawer.hidden = drawer.id !== id;
   el('openLibrary').setAttribute('aria-expanded', String(id === 'side'));
 }
 function closeDrawers() { openDrawer(score ? '' : 'side'); }
-function toggleLibrary() { if (el('side').hidden) openDrawer('side'); else closeDrawers(); }
+function toggleLibrary() {
+  if (el('side').hidden) {
+    openDrawer('side');
+    el('libFilter').focus();
+    refreshLibrary();
+  } else closeDrawers();
+}
 el('openLibrary').addEventListener('click', toggleLibrary);
-el('songTitle').addEventListener('click', toggleLibrary);
-el('songTitle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLibrary(); } });
+el('closeLibrary').addEventListener('click', () => { closeDrawers(); el('openLibrary').focus(); });
 document.addEventListener('click', event => {                // a click outside the library puts it away
   if (el('side').hidden || !score) return;
-  if (event.target.closest('#side, #openLibrary, #songTitle')) return;
+  if (event.composedPath().includes(el('side')) || event.target.closest('.songHead')) return;
   closeDrawers();
 });
 for (const button of document.querySelectorAll('.closeDrawer')) button.addEventListener('click', closeDrawers);
-document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawers(); });
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const fromLibrary = !el('side').hidden;
+  closeDrawers();
+  if (fromLibrary && score) el('openLibrary').focus();
+});
 for (const [button, drawer] of [['openHelp', 'helpPanel'], ['openVitals', 'vitalsPanel'], ['openExport', 'exportPanel'], ['openFull', 'fullPanel']]) {
   el(button).addEventListener('click', () => { if (el(drawer).hidden) openDrawer(drawer); else closeDrawers(); });
 }
@@ -2220,87 +2337,198 @@ for (const name of ['dragleave', 'drop']) {
 el('vocalDrop').addEventListener('drop', e => { if (e.dataTransfer.files[0]) takeVocal(e.dataTransfer.files[0]); });
 
 /* --- library ---------------------------------------------------------------------------- */
+const libraryOrder = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+let libraryRequest = 0;
+
 async function loadLibrary() {
-  let listing;
+  const request = ++libraryRequest;
   try {
-    listing = await api('/api/library');
-  } catch (error) { return; }
-  songs = listing.songs;
-  const missing = listing.places.filter(place => !place.found).map(place => place.path);
-  el('libNote').textContent = `${songs.length} 首 · ${songs.filter(s => s.vocal).length} 首有人声`
-    + (listing.skipped ? ` · ${listing.skipped} 个目录读不了` : '') + (missing.length ? ` · 没找到 ${missing.join('、')}` : '');
-  el('library').hidden = false;
-  if (!el('drop').classList.contains('loaded')) el('dropTitle').textContent = '或拖入 MIDI';
-  paintSongs();
+    const listing = await api('/api/library');
+    if (request !== libraryRequest) return;
+    const groups = new Map();
+    for (const item of listing.songs) {
+      let album = groups.get(item.albumId);
+      if (!album) {
+        album = {id: item.albumId, title: item.albumTitle, artist: item.albumArtist, cover: item.coverUrl, tracks: []};
+        groups.set(album.id, album);
+      }
+      album.tracks.push(item);
+    }
+    albums = [...groups.values()].sort((a, b) => libraryOrder.compare(a.artist, b.artist) || libraryOrder.compare(a.title, b.title));
+    for (const album of albums) album.tracks.sort((a, b) =>
+      (a.number || Infinity) - (b.number || Infinity) || libraryOrder.compare(a.title, b.title));
+    songs = albums.flatMap(album => album.tracks);
+    el('libNote').textContent = `${albums.length} 张专辑 · ${songs.length} 首可重构`;
+    const missing = listing.places.filter(place => !place.found).map(place => place.path);
+    el('libNote').title = [listing.skipped ? `${listing.skipped} 个目录读不了` : '', ...missing.map(path => `没找到 ${path}`)].filter(Boolean).join(' · ');
+    if (!score) el('dropTitle').textContent = '或拖入 MIDI';
+    paintSongs();
+  } catch (error) {
+    if (request === libraryRequest) el('libNote').textContent = `曲库读取失败 · ${error.message}`;
+  } finally {
+    el('library').hidden = false;
+  }
 }
 function refreshLibrary() {
-  if (el('library').hidden) return;
-  api('/api/library').then(listing => { songs = listing.songs; paintSongs(); }).catch(() => {});
+  if (!el('library').hidden) return loadLibrary();
 }
+
+function showCover(cover, url) {
+  cover.textContent = '♪';
+  if (!url) return;
+  const img = document.createElement('img');
+  img.alt = ''; img.loading = 'lazy';
+  img.addEventListener('error', () => { if (img.parentNode === cover) cover.textContent = '♪'; });
+  cover.replaceChildren(img); img.src = url;
+}
+
+function updateLibrarySelection() {
+  for (const group of el('songs').querySelectorAll('.album')) group.classList.toggle('has-current', group.dataset.album === song?.albumId);
+  for (const row of el('songs').querySelectorAll('.song')) row.setAttribute('aria-pressed', String(row.dataset.key === songKey));
+  const inLibrary = songs.some(item => item.key === songKey);
+  el('locateSong').disabled = !inLibrary;
+  el('closeLibrary').disabled = !score;
+  el('prevSong').disabled = el('nextSong').disabled = songs.length < 2;
+}
+
+function libraryRow(item) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'song'; button.dataset.key = item.key;
+  const number = document.createElement('span');
+  number.className = 'number'; number.textContent = item.number ? String(item.number).padStart(2, '0') : '—';
+  const title = document.createElement('span');
+  title.className = 't'; title.textContent = item.title;
+  const state = document.createElement('small');
+  state.className = 'songState'; state.textContent = item.plan ? '有方案' : !item.vocal ? '无人声' :
+    item.voices.length ? `声音 ${item.voices.length}` : `分轨 ${item.stems.length}`;
+  button.title = [item.title, item.artist, item.where, '单击选择 · 双击试听'].filter(Boolean).join(' · ');
+  button.append(number, title, state);
+  button.addEventListener('click', () => openSong(item, true));
+  button.addEventListener('dblclick', () => {
+    if (loadingSong !== item.key && songKey !== item.key) openSong(item, true);
+    previewOnLoad = item.key;
+    if (songKey === item.key && !loadingSong && layers.length) {
+      previewOnLoad = '';
+      if (!running) toggle();
+    }
+  });
+  return button;
+}
+
 function paintSongs() {
+  const list = el('songs'), scroll = list.scrollTop, focused = document.activeElement;
+  const focusKey = focused?.closest('.song')?.dataset.key;
+  const focusAlbum = focused?.closest('.albumHead')?.parentElement.dataset.album;
   const words = el('libFilter').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  el('songs').innerHTML = '';
-  for (const item of songs) {
-    const hay = `${item.title} ${item.artist} ${item.album}`.toLowerCase();
-    if (!words.every(word => hay.includes(word))) continue;
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'song'; button.dataset.key = item.key;
-    button.setAttribute('aria-pressed', String(item.key === songKey));
-    const label = document.createElement('span');
-    const title = document.createElement('span'); title.className = 't'; title.textContent = item.title;
-    const by = document.createElement('span'); by.className = 'by';
-    by.textContent = [item.artist, item.album].filter(Boolean).join(' · ') + (item.where === 'XLD 曲库' ? '' : ` · ${item.where}`);
-    label.append(title, by);
-    const tag = document.createElement('span');
-    tag.className = 'tag ' + (item.plan ? 'ok' : item.vocal ? 'narrow' : 'plain');
-    tag.textContent = item.plan ? '有方案' : !item.vocal ? '无人声' : item.voices.length ? `声音 ${item.voices.length}` : `分轨 ${(item.stems || []).length}`;
-    tag.title = item.plan ? '这首存过方案，打开就是上次的样子' : !item.vocal ? '这首没有分离出人声' : item.voices.length ? `已经转换好 ${item.voices.length} 个声音` : `分离出 ${(item.stems || []).length} 条分轨`;
-    button.append(label, tag);
-    button.addEventListener('click', () => {
-      if (score && item.key === songKey) return closeDrawers();   // the song already open: nothing to load again
-      if (score) closeDrawers();
-      openSong(item);
+  const fragment = document.createDocumentFragment();
+  for (const album of albums) {
+    const tracks = album.tracks.filter(item => {
+      const text = `${album.title} ${album.artist} ${item.title} ${item.artist}`.toLowerCase();
+      return words.every(word => text.includes(word));
     });
-    el('songs').appendChild(button);
+    if (!tracks.length) continue;
+    const group = document.createElement('div');
+    group.className = 'album'; group.dataset.album = album.id;
+    const expanded = words.length > 0 || expandedAlbum === album.id;
+    const header = document.createElement('button');
+    header.type = 'button'; header.className = 'albumHead';
+    header.setAttribute('aria-expanded', String(expanded));
+    const caret = document.createElement('span');
+    caret.className = 'caret'; caret.textContent = expanded ? '▾' : '▸'; caret.setAttribute('aria-hidden', 'true');
+    const cover = document.createElement('span'); cover.className = 'cover'; cover.setAttribute('aria-hidden', 'true');
+    showCover(cover, album.cover);
+    const copy = document.createElement('span'); copy.className = 'albumCopy';
+    const title = document.createElement('strong'); title.textContent = album.title;
+    const meta = document.createElement('small'); meta.textContent = `${album.artist} · ${album.tracks.length} 首`;
+    copy.append(title, meta); header.append(caret, cover, copy); group.append(header);
+    header.title = [album.title, album.artist].filter(Boolean).join(' · ');
+    header.addEventListener('click', () => {
+      if (words.length) return; // Search results are always expanded.
+      expandedAlbum = expanded ? '' : album.id; paintSongs();
+    });
+    if (expanded) {
+      const rows = document.createElement('div'); rows.className = 'albumTracks';
+      for (const item of tracks) rows.append(libraryRow(item));
+      group.append(rows);
+    }
+    fragment.append(group);
   }
-  if (!el('songs').children.length) {
-    const none = document.createElement('div');
-    none.className = 'none';
-    none.textContent = songs.length ? '没有符合的歌' : '曲库里还没有歌 · 先在 XLD 里转谱并合并，或把 merged.mid 拖到下面';
-    el('songs').appendChild(none);
+  if (!fragment.childElementCount) {
+    const empty = document.createElement('div'); empty.className = 'none';
+    empty.textContent = songs.length ? '没有匹配的曲目' : '还没有可重构的曲目。可在 XLD 合并 MIDI，或在下方打开 MIDI 文件。';
+    fragment.append(empty);
   }
+  list.replaceChildren(fragment); updateLibrarySelection();
+  const restore = focusKey ? list.querySelector(`.song[data-key="${focusKey}"]`) :
+    focusAlbum ? list.querySelector(`[data-album="${focusAlbum}"] > .albumHead`) : null;
+  if (restore) restore.focus({preventScroll: true});
+  list.scrollTop = scroll;
 }
 
-async function openSong(item) {
-  clearTimeout(saveTimer);
-  try { localStorage.setItem('studio.lastSong', item.key); } catch (error) { /* a window that keeps nothing */ }
-  song = item; songKey = item.key; ab = 'recon'; levelNotes = null;
-  paintSongs(); clearVocal(); resetCast();
-  vocalPending = !!item.vocal;
-  el('dropTitle').textContent = item.title;
-  el('dropHint').textContent = '载入中…';
-  let bytes;
+function reportSongError(error) {
+  const message = `载入曲目失败（${error.message}）`;
+  el('dropHint').textContent = message; setState(message, true);
+  if (!score) openDrawer('side');
+}
+
+async function openSong(item, keepLibrary = false) {
+  if (loadingSong === item.key) return;
+  if (songKey === item.key && score) {
+    if (loadingSong) {
+      ++songRequest; loadingSong = ''; previewOnLoad = '';
+      el('dropHint').textContent = '点这里换文件';
+    }
+    return;
+  }
+  const request = ++songRequest;
+  flushPlan();
+  loadingSong = item.key; previewOnLoad = '';
+  el('dropHint').textContent = `正在载入 ${item.title}…`;
   try {
-    bytes = await fetchBytes(`/library/${item.key}.mid`);
-  } catch (error) { el('dropHint').textContent = error.message; return; }
-  if (songKey !== item.key) return;
-  // What was chosen for this song last time comes back before anything sounds.
-  const saved = await api('/api/plan?song=' + item.key).catch(() => ({plan: null}));
-  if (songKey !== item.key) return;
-  if (saved.plan) takePlan(saved.plan);
-  await new Promise(done => takeFile(new File([bytes], safeName(item.title) + '.mid'), done));
-  if (songKey !== item.key || !item.vocal) return;
-  await adoptVocal(item.title + ' · 人声', item.prepared ? '载入人声' : '整理人声中 · 第一次要分出主唱与和声，约 1 分钟',
-    api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({song: item.key})}));
-  if (songKey === item.key) refreshLibrary();
+    const [bytes, saved] = await Promise.all([fetchBytes(`/library/${item.key}.mid`),
+      pendingPlans.has(item.key) ? {plan:pendingPlans.get(item.key).plan} : api('/api/plan?song=' + item.key)]);
+    if (request !== songRequest) return;
+    loadMidi(bytes, safeName(item.title) + '.mid', item, saved.plan, keepLibrary);
+    loadingSong = '';
+    try { localStorage.setItem('studio.lastSong', item.key); } catch (error) { /* private window */ }
+    if (item.vocal) {
+      await adoptVocal(item.title + ' · 人声', item.prepared ? '载入人声' : '整理人声中 · 第一次要分出主唱与和声，约 1 分钟',
+        api('/api/vocal', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({song: item.key})}));
+      if (request === songRequest) refreshLibrary();
+    }
+  } catch (error) {
+    if (request === songRequest) reportSongError(error);
+  } finally {
+    if (request === songRequest) loadingSong = '';
+  }
 }
 
-/* A file dragged in is not a library song: no stems to keep, nothing remembered. */
-function takeDropped(file) {
-  song = null; songKey = ''; ab = 'recon'; vocalPending = false; levelNotes = null;
-  paintSongs(); clearVocal(); resetCast();
-  takeFile(file);
+async function takeDropped(file) {
+  const request = ++songRequest;
+  loadingSong = ''; previewOnLoad = '';
+  try {
+    const bytes = await file.arrayBuffer();
+    if (request === songRequest) loadMidi(bytes, file.name, null, null, false);
+  } catch (error) {
+    if (request === songRequest) reportSongError(error);
+  }
 }
+
+el('locateSong').addEventListener('click', () => {
+  if (!song) return;
+  el('libFilter').value = ''; expandedAlbum = song.albumId; paintSongs();
+  const row = el('songs').querySelector('.song[aria-pressed="true"]');
+  if (row) { row.focus({preventScroll: true}); row.scrollIntoView({block: 'nearest'}); }
+});
+
+function adjacentSong(direction) {
+  if (songs.length < 2) return;
+  const index = songs.findIndex(item => item.key === (loadingSong || songKey));
+  const next = index < 0 ? (direction > 0 ? 0 : songs.length - 1) : (index + direction + songs.length) % songs.length;
+  openSong(songs[next], !el('side').hidden);
+}
+el('prevSong').addEventListener('click', () => adjacentSong(-1));
+el('nextSong').addEventListener('click', () => adjacentSong(1));
 el('libFilter').addEventListener('input', paintSongs);
 el('drop').addEventListener('click', () => el('file').click());
 el('drop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('file').click(); } });
@@ -2319,6 +2547,7 @@ function currentPlan() {
   for (const track of TRACKS) {
     const c = cast[track.id];
     tracks[track.id] = {mode: c.mode, kit: c.kit, db: c.db, solo: c.solo};
+    if (c.parts && Object.keys(c.parts).length) tracks[track.id].parts = {...c.parts};
     for (const key of FX_KEYS) if (c[key]) tracks[track.id][key] = c[key];     // only what was touched: old plans stay readable
     if (c.lock) tracks[track.id].lock = true;                                  // SPEC v23: only when locked
     if (c.layer) tracks[track.id].layer = Object.assign({}, c.layer);           // SPEC v24: only when there is one
@@ -2336,6 +2565,7 @@ function takePlan(plan) {
   if (!plan || typeof plan !== 'object') return;
   if (typeof plan.preset === 'string' && (kitsIndex || {})[plan.preset]) preset = plan.preset;
   const lostNow = [];
+  if (plan.tracks && Object.keys(plan.tracks).length && !plan.tracks.winds) cast.winds.mode = 'mute';
   for (const track of TRACKS) {
     const saved = plan.tracks && typeof plan.tracks === 'object' ? plan.tracks[track.id] : null;
     if (!saved || typeof saved !== 'object') continue;
@@ -2344,6 +2574,11 @@ function takePlan(plan) {
     c.kit = typeof saved.kit === 'string' && (kitsIndex || {})[saved.kit] ? saved.kit : null;
     c.db = Number.isFinite(db) ? Math.max(-18, Math.min(6, Math.round(db))) : 0;
     c.solo = saved.solo === true;
+    if (track.id === 'winds' || track.id === 'other') {
+      const prefix = track.id === 'winds' ? 'winds/' : 'strings/';
+      c.parts = Object.fromEntries(Object.entries(saved.parts || {}).filter(([route,kit]) =>
+        route.startsWith(prefix) && typeof kit === 'string' && Object.hasOwn(kitsIndex || {},kit)));
+    }
     c.lock = saved.lock === true;
     c.layer = cleanLayer(saved.layer, track.id);
     c.sample = cleanSample(saved.sample, track.id);
@@ -2372,11 +2607,19 @@ const lostLine = () => TRACKS.filter(t => t.id !== 'vocals' && sampleLost(t.id))
 function queueSave() {
   if (!song) return;
   clearTimeout(saveTimer);
-  const key = song.key;
-  saveTimer = setTimeout(() => {
-    api('/api/plan', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                      body: JSON.stringify({song: key, plan: currentPlan()})}).catch(() => {});
-  }, 800);
+  saveTimer = setTimeout(flushPlan, 800);
+}
+function flushPlan() {
+  if (saveTimer === null || !song) return;
+  clearTimeout(saveTimer); saveTimer = null;
+  const key = song.key, plan = currentPlan(), previous = pendingPlans.get(key);
+  const entry = {plan};
+  entry.write = Promise.resolve(previous?.write).then(() => api('/api/plan', {method: 'POST',
+    headers: {'Content-Type':'application/json'},body:JSON.stringify({song:key,plan})})).then(() => {
+    if (pendingPlans.get(key) === entry) pendingPlans.delete(key);
+  }).catch(error => setState('暂未保存曲目方案：' + error.message, true));
+  pendingPlans.set(key,entry);
+  return entry.write;
 }
 async function loadPlans() {
   try {
@@ -2414,7 +2657,7 @@ el('planList').addEventListener('change', async () => {
 });
 
 /* --- the dice (SPEC v17): a whole plan nobody would have picked, one click away and one click back ---- */
-const ROLLED = ['drums', 'bass', 'guitar', 'piano', 'other'];
+const ROLLED = ['drums', 'bass', 'guitar', 'piano', 'other', 'winds'];
 
 /* A new plan from `plan`, changing nothing. `context`: {kits: [names], notes: {track: bool}, stems: {track: bool}};
  * `random` returns 0 ≤ x < 1. Muted tracks, the vocal's mode and voice, and every track's level are left alone. */
@@ -2617,7 +2860,6 @@ el('roll').addEventListener('click', roll);
 el('back').addEventListener('click', rollBack);
 el('nudge').addEventListener('click', nudge);
 el('roll').querySelector('.ic').innerHTML = icon('die');
-el('openLibrary').querySelector('.ic').innerHTML = icon('shelf');
 paintRolls();
 
 /* --- server ------------------------------------------------------------------------------ */
@@ -2913,7 +3155,9 @@ buildTracks();
     let last = '';
     try { last = localStorage.getItem('studio.lastSong') || ''; } catch (error) { /* nothing kept */ }
     const again = songs.find(item => item.key === last);
-    if (again && !start.opened && !score) openSong(again);
+    if (again && !start.opened && !score && !songRequest) {
+      expandedAlbum = again.albumId; paintSongs(); openSong(again);
+    }
     if (start.opened) {
       // A MIDI dropped onto the launcher icon arrives here, already on disk.
       const bytes = await (await fetch('/opened.mid')).arrayBuffer();
