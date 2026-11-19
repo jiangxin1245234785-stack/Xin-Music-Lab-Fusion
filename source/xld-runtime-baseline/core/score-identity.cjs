@@ -26,4 +26,12 @@ function identityState(record, engine) {
   return 'current';
 }
 const isCurrent = (record, engine) => identityState(record, engine) !== 'stale';
-module.exports = {REGISTRY, expected, identityState, isCurrent};
+// A result without an identity is still owed a layer the current version always writes when the earlier one lacks it:
+// score layers with stem levels but no left/right difference (version 1; version 2 always writes `levels.pan`, null
+// parts when there was nothing to measure, so this can never ask twice). A result without levels is left alone.
+const panOwed = record => Boolean(record && record.levels && typeof record.levels === 'object' && record.levels.groups && !('pan' in record.levels));
+// Good enough to be answered from disk instead of run again: made by the current model (or an unknown one) and
+// carrying what this version writes. The one rule for XLD's service cache check (core/analysis-service.cjs) and
+// XML's score-layer state (fusion-runtime-baseline/desktop/score-layers-state.cjs).
+const isUsable = (record, engine) => isCurrent(record, engine) && !(engine === 'score-layers' && panOwed(record));
+module.exports = {REGISTRY, expected, identityState, isCurrent, panOwed, isUsable};

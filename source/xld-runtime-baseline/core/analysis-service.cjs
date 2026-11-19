@@ -413,8 +413,9 @@ function createService(options = {}) {
       } else if (SCORE_ENGINE_IDS.includes(engine) && !runOptions.force) {
         const kept = await readJson(output, null);
         const stems = await readStems(track).catch(() => null);
-        // Also made by the current model (core/score-identity.cjs; a result without a recorded identity stays valid).
-        if (kept?.kind === engine && (kept.source?.stemRunId ?? null) === (stems?.ok ? stems.runId : null) && require('./score-identity.cjs').isCurrent(kept, engine) && !task.cancelled) {
+        // Also made by the current model and carrying what it writes (core/score-identity.cjs isUsable: a result without a
+        // recorded identity stays valid, except score layers with stem levels but no left/right difference, run once more).
+        if (kept?.kind === engine && (kept.source?.stemRunId ?? null) === (stems?.ok ? stems.runId : null) && require('./score-identity.cjs').isUsable(kept, engine) && !task.cancelled) {
           task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '已读取谱面层';
           return { ok: true, kind: 'score', cached: true, result: kept, task: taskSnapshot(task) };
         }

@@ -49,6 +49,36 @@ fs.writeFileSync(out, JSON.stringify({schemaVersion:1,kind:engine,engine:{id:eng
       assert.equal(service.task(), null);
     }
 
+    // The cache check answers from disk only a result that is usable (core/score-identity.cjs isUsable, the rule XML's
+    // score-layer state shares): score layers with stem levels but no left/right difference (before version 2, no
+    // identity) are run once more; with `levels.pan`, or without levels, they are answered from disk. The stand-in
+    // interpreter is configured on every platform here: the check comes before the run, and on Windows the run that
+    // follows a miss fails to start (a .cmd), which is still not a cache hit.
+    {
+      process.env.XLD_MUSCRIPTOR_PYTHON = launcher; process.env.XLD_ROFORMER_PYTHON = launcher;
+      const identity = require('../core/score-identity.cjs');
+      const levels = {hop: 1, groups: {guitar: [-20]}};
+      assert.equal(identity.isUsable({kind: 'score-layers', levels}, 'score-layers'), false, 'levels without pan: owed once');
+      assert.equal(identity.isUsable({kind: 'score-layers', levels: {...levels, pan: {hop: 1, groups: {}, mix: null}}}, 'score-layers'), true, 'version 2, nothing to measure: no loop');
+      assert.equal(identity.isUsable({kind: 'score-layers', levels: null}, 'score-layers'), true, 'no levels: left alone');
+      assert.equal(identity.isUsable({kind: 'score-vocals', levels}, 'score-vocals'), true, 'only score layers owe pan');
+      assert.equal(identity.isUsable({kind: 'score-layers', levels: {...levels, pan: {mix: []}}, identity: {version: 999, weights: {}}}, 'score-layers'), false, 'another version: as before');
+      const kept = path.join(root, 'kept');
+      fs.mkdirSync(kept, {recursive: true});
+      const keptTrack = {...track, id: 'b'.repeat(40), bridgePath: path.join(kept, 'music-lab.json')};
+      const write = body => fs.writeFileSync(path.join(kept, 'score-layers.json'), JSON.stringify({schemaVersion: 1, kind: 'score-layers', source: {stemRunId: null}, ...body}));
+      write({levels});
+      const owed = await service.run(keptTrack, 'score-layers');
+      assert.ok(!owed.cached, 'levels without pan: not a cache hit, run again ' + JSON.stringify(owed).slice(0, 200));
+      write({levels: {...levels, pan: {hop: 1, groups: {}, mix: [0, 1]}}});
+      assert.equal((await service.run(keptTrack, 'score-layers')).cached, true, 'with pan: answered from disk');
+      write({levels: null});
+      assert.equal((await service.run(keptTrack, 'score-layers')).cached, true, 'without levels: answered from disk');
+      // XML's state says the same thing for the same files.
+      const xml = require('../../fusion-runtime-baseline/desktop/score-layers-state.cjs');
+      assert.equal(xml.layersState({kind: 'score-layers', source: {stemRunId: null}, levels}, null), 'stale');
+      assert.equal(xml.layersState({kind: 'score-layers', source: {stemRunId: null}, levels: {...levels, pan: {mix: [0]}}}, null), 'current');
+    }
     // XLD's header no longer has buttons for the score layers (audit fix 1, item 6): XML prepares them itself.
     const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8'), app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
     assert(!/scoreLayers(Track|Album)Button|score-layers-controls/.test(html + app), 'no score-layer buttons in XLD');
