@@ -57,6 +57,13 @@
     hanzi: '"FangSong", "仿宋", "STFangsong", "KaiTi", "楷体", "SimSun", serif'
   });
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  // The channel lamps (score-radar-lamps.js: three jewel lamps a strip, red / amber / green, lit by how loud the
+  // channel is against itself). Loaded before this file in the page; in Node, beside it.
+  const lampsApi = () => root.XinScoreRadarLamps || (typeof require === 'function' ? (() => { try { return require('./score-radar-lamps.js'); } catch (_) { return null; } })() : null);
+  // The user's choice (2026-11-18): rule A, each channel against its own sounding seconds, yellow from the 65th
+  // percentile, red from the 80th, silence below the meters' zero (-45 dB).
+  const LAMP_RULE = Object.freeze({rule: 'own', gateDb: -45, yellowQuantile: .65, redQuantile: .8});
+  const LAMP_SIZE = 12, LAMP_GAP = 14;
   // Tube cathodes: one stroked wire per digit (SVG-like commands M L Q C, absolute, in a 20 x 28 box at 30 px), after
   // the "self-drawn cathode" design the user accepted (work/score-depth-20261118/fonts-gpt, specimens.js).
   const CATHODES = (() => {
@@ -283,7 +290,11 @@
   function create() {
     let prep = null, prepKey = null, prepGen = 0;
     function ensure(env) {
-      if (prepKey !== env.events) { prep = prepare(env.model, env.events); prepKey = env.events; prepGen++; addFill(env); }
+      if (prepKey !== env.events) {
+        prep = prepare(env.model, env.events); prepKey = env.events; prepGen++; addFill(env);
+        const L = lampsApi();
+        prep.lampCut = L && env.model.levels ? L.thresholds(env.model.levels, LAMP_RULE) : null;
+      }
       return prep;
     }
     // FILL needs the bar grid; it is added once the grid is known.
@@ -790,7 +801,8 @@
         write(line1, 57, 51, size1, C.stamp, 'plateBold', 'left', 276);
         write(line2, 57, 74, size2, C.stamp, 'plateBold', 'left', 276);
         out.plate = {line1, line2, size1, size2};
-        lamp(370, 50, 8, 1, '#c8ffd0', C.green);
+        const Lp = lampsApi();
+        if (Lp) Lp.drawLamp(p, 370, 50, 18, 'green', 1); else lamp(370, 50, 8, 1, '#c8ffd0', C.green);
         write('PWR', 370, 74, 12, C.stampDim, 'stamp', 'center');
         // The small plate: owner cell scratched out, type, date code, inspection stamp.
         raisedPlate(390, 24, 114, 64, 4, '#2c2e27', '#55574b', .8);
@@ -889,6 +901,9 @@
             auditShape('keep', auditBox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)), {what: cat.strip + ' scale'});
           }
           write('CH' + (i + 1), 224, y + 54, 12, C.stampDim, 'stamp', 'center');
+          const Lb = lampsApi();
+          if (Lb) Lb.draw(p, 224, y + 25, LAMP_SIZE, undefined, {enabled: false, spacing: LAMP_GAP});
+          if (auditSink) for (const k of [-1, 0, 1]) { const [lx, ly] = toDesign(224, y + 25 + k * LAMP_GAP); auditShape('ring', {cx: lx, cy: ly, r: LAMP_SIZE / 2}); }
           rounded(246, y + 12, 24, 50, 12, '#16170f', '#4c4e44', 1.5);
           inset(box(246, y + 12, 24, 50, 12), .9);
           edge(box(246.75, y + 12.75, 22.5, 48.5, 11.5), 246, y + 12, 24, 50, false, 1.2, .8);
@@ -927,7 +942,16 @@
         p.strokeStyle = '#1b1a16'; p.lineWidth = 2; p.stroke();
         p.restore();
         // Lamp and lever.
-        lamp(224, y + 27, 9, off ? 0 : 1);
+        // Three lamps: lit by the channel's level against its own (off, muted or absent: dark, as the base drew them).
+        const L = lampsApi();
+        if (L && data.lampCut) {
+          const g = off ? {green: 0, yellow: 0, red: 0} : L.glow(env.model.levels, data.lampCut, cat.id, now, {enabled: true});
+          out.lamps = out.lamps || {};
+          out.lamps[cat.id] = {green: +g.green.toFixed(3), yellow: +g.yellow.toFixed(3), red: +g.red.toFixed(3)};
+          [['red', -1], ['yellow', 0], ['green', 1]].forEach(([c, k]) => {
+            if (g[c] > .005) L.drawLamp(p, 224, y + 25 + k * LAMP_GAP, LAMP_SIZE, c, g[c]);
+          });
+        } else lamp(224, y + 27, 9, off ? 0 : 1);
         const lx = 246, ly = y + 12, lw = 24, lh = 50, up = !off;
         const knob = up ? ly + 13 : ly + lh - 13;
         p.beginPath(); p.moveTo(lx + lw / 2, ly + lh / 2); p.lineTo(lx + lw / 2, knob);

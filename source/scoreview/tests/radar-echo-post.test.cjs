@@ -415,3 +415,21 @@ test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readin
   const title = post(steady(lanes, 64, {track: {...song.track, title: 'iiiii秋' + '\u{20BB7}'.repeat(48), artist: '', duration: 64}})).frame(5).motion.teleTitle;
   assert.ok(title.endsWith('…') && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title), 'no half character before the ellipsis');
 });
+
+test('channel lamps (score-radar-lamps.js, rule A at P65 / P80): a channel climbs green, amber, red with its own level; muted or absent stays dark', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 58, 60, 100]]}, {id: 'b', kind: 'pitched', group: 'bass', notes: [[1, 58, 40, 100]]}];
+  // A second a value: guitar -40 dB for 20 s, -25 for 20, -10 for 20; bass steady at -30.
+  const guitar = [...Array(20).fill(-40), ...Array(20).fill(-25), ...Array(20).fill(-10)];
+  const levels = {hop: 1, weighting: 'K', groups: {guitar, bass: Array(60).fill(-30)}};
+  const model = steady(lanes, 64, {levels});
+  const {frame} = post(model);
+  const quiet = frame(10).motion.lamps, loud = frame(50).motion.lamps;
+  assert.ok(quiet.guitar.green > .9 && quiet.guitar.yellow < .05 && quiet.guitar.red < .05, 'quiet: green only');
+  assert.ok(loud.guitar.green > .9 && loud.guitar.yellow > .9 && loud.guitar.red > .4, 'loud: all three');
+  assert.ok(loud.vocals.green === 0 && loud.vocals.red === 0, 'a channel the song lacks is dark');
+  assert.deepEqual(frame(0).motion.lamps.guitar, {green: 0, yellow: 0, red: 0}, 'all dark at 0 s');
+  const solo = post(model, 1440, 900, {...options, focusGroup: 'bass'}).frame(50).motion.lamps;
+  assert.deepEqual(solo.guitar, {green: 0, yellow: 0, red: 0}, 'another channel solo: dark');
+  assert.ok(solo.bass.green > .9);
+  assert.deepEqual(frame(37.3).motion.lamps, frame(37.3).motion.lamps, 'a function of song time');
+});
