@@ -676,3 +676,30 @@ test('SPEC-WEATHER A: the chord wheels show root, accidental and quality; a chan
   }
   assert.equal(post(model).frame(2).motion.chord.scheme, 'light', 'light wheels unless chosen (the user\'s pick)');
 });
+
+test('radar.8 feedback: 88 lamps over a printed keyboard; a lamp lights at its onset, holds while the note sounds, dims to dark; brighter for harder notes', () => {
+  // C4 (60) loud 2 .. 3 s, E4 (64) soft 2 .. 3 s, C#4 (61, a black key) 5 .. 6 s; velocities 30 .. 120 across the song.
+  const notes = [[2, 1, 60, 120], [2, 1, 64, 30], [5, 1, 61, 90], [8, 1, 72, 60]];
+  const model = steady([{id: 'p', kind: 'pitched', group: 'piano', notes}], 20);
+  const {frame, stage} = post(model);
+  const lamps = t => Object.fromEntries(frame(t).motion.keyLamps.lit);
+  assert.equal(frame(2.5).motion.keyLamps.velocity, 'velocity');
+  assert.deepEqual(lamps(1.9), {}, 'nothing lights before its onset');
+  const on = lamps(2.5);
+  assert.ok(on[60] > .95 && on[64] > .2 && on[64] < .45, `loud bright, soft dim (${on[60]}, ${on[64]})`);
+  assert.ok(lamps(3.2)[60] < on[60] && lamps(3.2)[60] > 0, 'after the note ends it dims');
+  assert.equal(lamps(3.45)[60], undefined, 'dark .4 s after the end');
+  assert.ok(lamps(5.5)[61] > 0, 'a black key has its lamp');
+  // The printed keyboard and the 88 holes are hardware (drawn with the base); only lit lenses are drawn live.
+  stage.reset(); frame(0.5);
+  const holes = stage.calls.filter(c => c.name === 'arc' && c.fillStyle === '#141510');
+  assert.ok(holes.length >= 88, 'the 88 holes (and the drum lamps\' own)');
+  // A black key's lamp sits half a row higher than the white keys' row.
+  const at = m => { stage.reset(); frame(m === 61 ? 5.5 : 2.5); return stage.calls.filter(c => c.name === 'arc' && /^rgb\(/.test(String(c.fillStyle))).map(c => c.args.slice(0, 2)); };
+  const ys = new Set([...at(60), ...at(61)].map(([, y]) => Math.round(y)));
+  assert.ok(ys.size >= 2, 'two rows: white keys and, half a row up, black keys');
+  // All velocities alike: every lamp the same.
+  const flat = post(steady([{id: 'p', kind: 'pitched', group: 'piano', notes: notes.map(n => [n[0], n[1], n[2], 80])}], 20)).frame(2.5).motion.keyLamps;
+  assert.equal(flat.velocity, 'flat');
+  assert.deepEqual(flat.lit.map(([, v]) => v), [1, 1]);
+});

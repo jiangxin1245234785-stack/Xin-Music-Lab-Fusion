@@ -33,6 +33,7 @@
   // fast then slow, fully dark at `span`. Bar lamps: span one bar; the rolling strip: its ROLL_BEATS; row lamps: .3 s.
   const lampFade = (age, span) => age < 0 || !(span > 0) || age >= span ? 0 : (1 - age / span) ** 2;
   const ROW_LAMP_SPAN = .3;
+  const KEY_LAMP_SPAN = .4;   // a key lamp after its note ends (radar.8 feedback), on the same curve
   const FIFTHS = Object.freeze(['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F']);
   const FIFTH_PC = Object.freeze([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]);
   // Capitals' height in ems where the canvas cannot measure it (tests): National Park and Barlow are both about .72.
@@ -1773,17 +1774,39 @@
     }
 
     function keys(data, now, out) {
+      // radar.8 feedback: 88 lamps over a printed keyboard (see the note at the top of this change).
       if (pass === 'base') {
         panel(334, 754, 596 + wide / 2, 130, 'plateKeys', ['cross', 'cross', 'cross', 'cross']);
-        write('KEYS', 354, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('88 · ALL CHANNELS SOUNDING NOW', 910 + wide / 2, 782, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('NOTE LAMPS', 354, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write('88 · LIT WHILE SOUNDING · BRIGHTER = HARDER', 910 + wide / 2, 782, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
       }
       const x = 354, y = 795, w = 556 + wide / 2, h = 63;
       const whites = [];
       for (let m = 21; m <= 108; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
-      const ww = (w - 8) / whites.length;
+      const ww = (w - 8) / whites.length, rr = Math.min(ww * .34, 3.6);
+      const WHITE_ROW = y + 20, BLACK_ROW = y + 10, PRINT_TOP = y + 28, PRINT_H = 30;
+      // Each key's lamp: white keys over their key's middle, black keys over the line between their two neighbours.
+      const lampAt = m => {
+        const k = whites.indexOf(m);
+        if (k >= 0) return [x + 4 + k * ww + ww / 2, WHITE_ROW];
+        return [x + 4 + (whites.indexOf(m - 1) + 1) * ww, BLACK_ROW];
+      };
       if (pass === 'base') {
         bed(x, y, w, h, 5, '#16170f', '#4a4c42');
+        // The printed keyboard: a strip of printed plate, the keys' outlines and the black keys in ink (never lit).
+        rect(x + 4, PRINT_TOP, w - 8, PRINT_H, '#a8a088');   // printed plate stock, duller than paper: a print, not keys
+        p.fillStyle = 'rgba(60,52,38,.14)'; p.fillRect(x + 4, PRINT_TOP, w - 8, 2);
+        p.beginPath();
+        for (let k = 0; k <= whites.length; k++) { const kx = x + 4 + k * ww; p.moveTo(kx, PRINT_TOP + .5); p.lineTo(kx, PRINT_TOP + PRINT_H - .5); }
+        p.rect(x + 4.5, PRINT_TOP + .5, w - 9, PRINT_H - 1);
+        p.strokeStyle = 'rgba(46,42,33,.55)'; p.lineWidth = .8; p.stroke();
+        for (let m = 21; m <= 108; m++) {
+          if (whites.includes(m)) continue;
+          const kx = x + 4 + (whites.indexOf(m - 1) + 1) * ww;
+          rect(kx - ww * .3, PRINT_TOP + .5, ww * .6, PRINT_H * .6, 'rgba(38,35,28,.72)');
+        }
+        // 88 holes in the bed, each with its dark lens.
+        for (let m = 21; m <= 108; m++) { const [cx, cy] = lampAt(m); circle(cx, cy, rr + .8, '#141510'); circle(cx, cy, rr - .5, '#2c2d26'); }
         for (let o = 1; o <= 8; o++) {
           const k = whites.indexOf(12 * (o + 1));
           if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 15, C.stampDim, 'plate', 'center');
@@ -1791,25 +1814,38 @@
         return;
       }
       if (pass !== 'live') return;
-      // Which keys sound now (afterglow .12 s after a note ends).
+      // How hard a note was played, on the song's own scale (cached on the data): the 5th to 95th percentile of the
+      // pitched notes' velocities; all alike (a spread under 4) is "flat" and every lamp lights the same.
+      if (!data.keyVelocity) {
+        const v = data.notes.map(n => n.velocity).filter(Number.isFinite).sort((a, b) => a - b);
+        const lo = v.length ? v[Math.floor(v.length * .05)] : 80, hi = v.length ? v[Math.floor(v.length * .95)] : 80;
+        data.keyVelocity = {lo, hi, flat: hi - lo < 4};
+      }
+      const kv = data.keyVelocity, weight = n => kv.flat ? 1 : .3 + .7 * clamp((n.velocity - kv.lo) / (kv.hi - kv.lo), 0, 1);
+      // Which lamps are lit now: a note from its onset to its end at its weight, then dimming to dark; nothing ahead.
       const lit = new Float32Array(128);
       const notes = data.notes;
-      for (let i = lower(notes, now - data.longest - .2, n => n.start); i < notes.length && notes[i].start <= now; i++) {
+      for (let i = lower(notes, now - data.longest - KEY_LAMP_SPAN, n => n.start); i < notes.length && notes[i].start <= now; i++) {
         const n = notes[i];
-        if (n.end + .12 < now) continue;
-        const v = n.end >= now ? 1 : 1 - (now - n.end) / .12;
-        lit[n.pitch] = Math.max(lit[n.pitch] || 0, v);
+        if (n.pitch < 21 || n.pitch > 108 || n.end + KEY_LAMP_SPAN < now) continue;
+        const v = weight(n) * (n.end >= now ? 1 : lampFade(now - n.end, KEY_LAMP_SPAN));
+        lit[n.pitch] = Math.max(lit[n.pitch], v);
       }
-      whites.forEach((m, k) => {
-        const kx = x + 4 + k * ww, v = lit[m];
-        rect(kx, y + 4, ww - 1, h - 8, v > .01 ? mixHex('#d8d2bf', '#ffb24c', v) : '#d8d2bf');
-      });
+      const lens = h => h > .5 ? mixHex('#c8742f', '#ffd27a', (h - .5) / .5) : h > .2 ? mixHex('#7a3418', '#c8742f', (h - .2) / .3) : mixHex('#2c2d26', '#7a3418', h / .2);
       for (let m = 21; m <= 108; m++) {
-        if (![1, 3, 6, 8, 10].includes(m % 12)) continue;
-        const left = whites.indexOf(m - 1), kx = x + 4 + (left + 1) * ww - ww * .32, v = lit[m];
-        rect(kx, y + 4, ww * .64, (h - 8) * .6, v > .01 ? mixHex('#1c1b17', '#ff9a30', v) : '#1c1b17');
+        const h = lit[m];
+        if (h < .005) continue;
+        const [cx, cy] = lampAt(m);
+        if (h > .45) {
+          const g = p.createRadialGradient(cx, cy, rr * .5, cx, cy, rr + 4);
+          g.addColorStop(0, `rgba(255,170,70,${(.45 * (h - .45) / .55).toFixed(3)})`); g.addColorStop(1, 'rgba(255,170,70,0)');
+          p.fillStyle = g; p.fillRect(cx - rr - 4, cy - rr - 4, 2 * rr + 8, 2 * rr + 8);
+        }
+        circle(cx, cy, rr - .5, lens(h));
+        if (h > .3) circle(cx - rr * .3, cy - rr * .3, rr * .28, `rgba(255,240,210,${(.5 * h).toFixed(3)})`);
       }
       out.keys = Array.from(lit).map((v, m) => v > .5 ? m : -1).filter(m => m >= 0);
+      out.keyLamps = {velocity: kv.flat ? 'flat' : 'velocity', lo: kv.lo, hi: kv.hi, lit: Array.from(lit).map((v, m) => v >= .005 ? [m, +v.toFixed(3)] : null).filter(Boolean)};
     }
 
     // The lyric tape: one line moving left past a fixed print head; each character prints its telegraph code first
