@@ -51,6 +51,7 @@
   const FONTS = Object.freeze({
     stamp: '"National Park", "Bahnschrift", "Arial Narrow", sans-serif',
     plate: '"Barlow Condensed", "Bahnschrift Condensed", "Arial Narrow", sans-serif',
+    plateBold: '"Barlow Condensed SemiBold", "Barlow Condensed", "Bahnschrift Condensed", "Arial Narrow", sans-serif',
     mono: '"Courier Prime", "Courier New", monospace',
     marker: '"Permanent Marker", "Ink Free", "Segoe Print", "Comic Sans MS", cursive',
     hanzi: '"FangSong", "仿宋", "STFangsong", "KaiTi", "楷体", "SimSun", serif'
@@ -79,7 +80,9 @@
   // engraved on the panels, Barlow Condensed Medium for the plates and the dial and scale numerals, Courier Prime for
   // the tape and paper text (all SIL OFL 1.1), Permanent Marker (Apache 2.0) for the hand-written tape. Loaded once;
   // the fallbacks above draw until they are in. The tube digits are drawn (tubeDigits), not set in a face.
+  // Barlow Condensed SemiBold (same licence file as the Medium) stamps the rating plate's two lines.
   const FACES = Object.freeze([['National Park', 'NationalPark-SemiBold.ttf'], ['Barlow Condensed', 'BarlowCondensed-Medium.ttf'],
+    ['Barlow Condensed SemiBold', 'BarlowCondensed-SemiBold.ttf'],
     ['Courier Prime', 'CourierPrime-Regular.ttf'], ['Permanent Marker', 'PermanentMarker-Regular.ttf']]);
   const assetBase = (() => { try { return new URL('./assets/', root.document.currentScript.src).href; } catch (_) { return null; } })();
   const fontBase = assetBase && assetBase + 'fonts/';
@@ -777,29 +780,30 @@
         // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from
         // the bundled table, read here, not copied.
         const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
-        raisedPlate(37, 24, 294, 64, 4, '#2a2c25', '#55574b', .9);
-        screw(46, 33); screw(322, 33); screw(46, 79); screw(322, 79);
-        write('RATING', 57, 35, 9, C.stampFaint, 'plate', 'left');
+        raisedPlate(37, 24, 314, 64, 4, '#2a2c25', '#55574b', .9);
+        screw(46, 33); screw(342, 33); screw(46, 79); screw(342, 79);
+        write('RATING', 57, 34, 9, C.stampFaint, 'plate', 'left');
         const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
-        const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('plate', k); if (p.measureText(text).width <= width) break; } return k; };
-        const size1 = fit(line1, 20, 12, 254), size2 = fit(line2, Math.min(size1, 17), 12, 254);
-        write(line1, 57, 50, size1, C.stamp, 'plate', 'left', 256);
-        write(line2, 57, 71, size2, C.stamp, 'plate', 'left', 256);
+        // The first line is the heaviest type on the top bar: SemiBold, as large as fits the plate.
+        const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('plateBold', k); if (p.measureText(text).width <= width) break; } return k; };
+        const size1 = fit(line1, 26, 14, 274), size2 = fit(line2, Math.min(size1 - 4, 20), 13, 274);
+        write(line1, 57, 51, size1, C.stamp, 'plateBold', 'left', 276);
+        write(line2, 57, 74, size2, C.stamp, 'plateBold', 'left', 276);
         out.plate = {line1, line2, size1, size2};
-        lamp(350, 50, 8, 1, '#c8ffd0', C.green);
-        write('PWR', 350, 71, 12, C.stampDim, 'stamp', 'center');
+        lamp(370, 50, 8, 1, '#c8ffd0', C.green);
+        write('PWR', 370, 74, 12, C.stampDim, 'stamp', 'center');
         // The small plate: owner cell scratched out, type, date code, inspection stamp.
-        raisedPlate(370, 24, 114, 64, 4, '#2c2e27', '#55574b', .8);
-        write('PROP. OF', 377, 35, 10, C.stampFaint, 'plate', 'left');
-        p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
-        for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
+        raisedPlate(390, 24, 114, 64, 4, '#2c2e27', '#55574b', .8);
+        write('PROP. OF', 397, 34, 10, C.stampFaint, 'plate', 'left');
+        p.save(); p.beginPath(); p.rect(440, 30, 58, 12); p.clip();
+        for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(438 + k * 5, 43); p.lineTo(446 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
         p.restore();
-        write('TYPE 6R-7C/88', 377, 50, 12, C.stampDim, 'plate', 'left');
-        write('5947', 377, 71, 13, C.stampDim, 'plate', 'left');
-        circle(461, 68, 13, null, '#8f8b78', 1.2);
-        write('INSP.', 461, 64, 8, C.stampDim, 'plate', 'center');
-        write('08', 461, 73, 10, C.stampDim, 'plate', 'center');
-        SECTION_LAMPS.forEach((name, k) => bed(496 + k * 82, 40, 77, 36, 2, '#1a1712', '#4a3d2c'));
+        write('TYPE 6R-7C/88', 397, 51, 12, C.stampDim, 'plate', 'left');
+        write('5947', 397, 74, 13, C.stampDim, 'plate', 'left');
+        circle(481, 68, 13, null, '#8f8b78', 1.2);
+        write('INSP.', 481, 64, 8, C.stampDim, 'plate', 'center');
+        write('08', 481, 73, 10, C.stampDim, 'plate', 'center');
+        SECTION_LAMPS.forEach((name, k) => bed(516 + k * 82, 40, 77, 36, 2, '#1a1712', '#4a3d2c'));
         tubeBase(1101, 28, 72, 42, '888', 'TEMPO');
         tubeBase(1183, 28, 106, 42, '888·8', 'BAR · BEAT');
         tubeBase(1299, 28, 104, 42, '88:88', 'TIME');
@@ -817,7 +821,7 @@
         light[at] = Math.max(light[at], Math.min(into, left));
       }
       SECTION_LAMPS.forEach((name, k) => {
-        const x = 496 + k * 82, y = 40, w = 77, h = 36, v = light[k], has = data.kinds.has(name);
+        const x = 516 + k * 82, y = 40, w = 77, h = 36, v = light[k], has = data.kinds.has(name);
         if (v > .01) {
           const g = p.createLinearGradient(x, y, x, y + h);
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
