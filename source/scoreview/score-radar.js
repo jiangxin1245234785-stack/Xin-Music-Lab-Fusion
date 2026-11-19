@@ -1188,7 +1188,7 @@
       }
       p.restore();
       lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
-      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape.lines};
+      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape.lines, lead: tape.lead};
     }
     // The track sheet: the fields of model.track that are there, in this order. Values as the tags give them.
     const SHEET = Object.freeze([
@@ -1252,27 +1252,36 @@
       lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
       out.teleprinter = {mode: 'sheet', printing, fields: items.map(item => [item.name, item.value]), shown, lines: 0};
     }
-    // The lyric lines as print cells: each line's characters spread evenly over its time, a dot between lines.
+    // The lyric lines as print cells, a dot between lines. A character is sung at its even share of its line's time
+    // (as before); the tape prints ahead of the singing (SPEC-WEATHER, the user: printing is slow, so align it early):
+    // each line starts `radarLead` seconds early (never before the previous line's dot) and is printed by 70 % of its
+    // sung time, so every character is on the tape before it is sung; the clear character follows its code after a
+    // short beat (a quarter of its print step, at most .1 s), not half a step. The lyrics' own timing is not changed.
+    const LEAD = .4, PRINT_BY = .7;   // the three settings are LEADS: .2 / .4 / .7 s
     let tapeCache = null, tapeKey = null;
     function tapeOf(env) {
       const lyrics = env.lyrics;
       if (!lyrics || !(lyrics.enabled || lyrics.alignment) || !Array.isArray(lyrics.lines) || !lyrics.lines.length) return null;
-      const key = [lyrics.lines.length, lyrics.offset, lyrics.enabled, lyrics.alignment, lyrics.lines[0].time, lyrics.lines[lyrics.lines.length - 1].text].join('|');
+      const lead = Number.isFinite(env.options && env.options.radarLead) ? clamp(env.options.radarLead, 0, 1.5) : LEAD;
+      const key = [lyrics.lines.length, lyrics.offset, lyrics.enabled, lyrics.alignment, lyrics.lines[0].time, lyrics.lines[lyrics.lines.length - 1].text, lead].join('|');
       if (tapeKey === key) return tapeCache;
       const offset = lyrics.offset || 0, rows = lyrics.lines.filter(l => typeof l.text === 'string' && l.text.trim());
       const cells = [];
+      let lastDot = -Infinity;
       rows.forEach((row, i) => {
         const chars = Array.from(row.text.replace(/\s+/g, ' ').trim());
         const start = row.time + offset, next = rows[i + 1] ? rows[i + 1].time + offset : start + chars.length * .5 + 1;
         const end = Math.min(next - .05, start + Math.max(1.2, chars.length * .5));
-        const step = (end - start) / Math.max(1, chars.length);
+        const n = Math.max(1, chars.length), sungStep = (end - start) / n;
+        const from = Math.min(start, Math.max(start - lead, lastDot + .05)), until = start + PRINT_BY * (end - start);
+        const step = (until - from) / n, half = Math.min(.1, step / 4);
         chars.forEach((ch, k) => {
           if (ch === ' ') return;
-          cells.push({ch, han: isHan(ch), time: start + k * step, half: step / 2, lineEnd: end, next: start + (k + 1) * step});
+          cells.push({ch, han: isHan(ch), time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step});
         });
-        if (rows[i + 1]) cells.push({dot: true, time: end, half: 0, lineEnd: end, next: next});
+        if (rows[i + 1]) { cells.push({dot: true, time: until, half: 0, lineEnd: until, next: next}); lastDot = until; }
       });
-      tapeCache = {cells, lines: rows.length}; tapeKey = key;
+      tapeCache = {cells, lines: rows.length, lead}; tapeKey = key;
       return tapeCache;
     }
 
@@ -1302,9 +1311,10 @@
       return null;
     }
     ready();
-    return {paint, hit};
+    return {paint, hit, tape: env => tapeOf(env)};
   }
+  const LEADS = Object.freeze([.2, .4, .7]);
   const materials = () => Object.keys(MATERIALS).filter(key => MATERIALS[key]);
-  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
+  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, LEADS, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
   if (typeof module === 'object' && module.exports) module.exports = root.XinScoreRadar;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

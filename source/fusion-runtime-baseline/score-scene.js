@@ -152,20 +152,24 @@
     const compare = root.XinScoreCompareControls?.attach({audio, stage, say,
       getView: () => status === 'ready' ? view : null, getTrackId: () => trackId,
       isLoading: () => status === 'loading', seek: time => { setLoop(null); audio.currentTime = time; }});
-    // The radar look's own two settings (score core 0.32.0: radarFall, radarEcho), kept per viewer.
+    // The radar look's own settings (score core 0.32.0: radarFall, radarEcho; radarLead, how early the lyric tape prints), kept per viewer.
     const RADAR_KEY = 'xin-score-radar-v1', radarBox = root.document.getElementById('scoreRadarOptions');
     const radarFallInput = root.document.getElementById('scoreRadarFall'), radarEchoInput = root.document.getElementById('scoreRadarEcho');
-    const radar = {radarFall: .6, radarEcho: 1};
-    try { const kept = JSON.parse(root.localStorage.getItem(RADAR_KEY)); if ([.35, .6, 1].includes(kept?.radarFall)) radar.radarFall = kept.radarFall; if ([.5, 1].includes(kept?.radarEcho)) radar.radarEcho = kept.radarEcho; } catch (_) {}
+    const radarLeadInput = root.document.getElementById('scoreRadarLead');
+    const radar = {radarFall: .6, radarEcho: 1, radarLead: .4};
+    try { const kept = JSON.parse(root.localStorage.getItem(RADAR_KEY)); if ([.35, .6, 1].includes(kept?.radarFall)) radar.radarFall = kept.radarFall; if ([.5, 1].includes(kept?.radarEcho)) radar.radarEcho = kept.radarEcho; if ([.2, .4, .7].includes(kept?.radarLead)) radar.radarLead = kept.radarLead; } catch (_) {}
     const showRadar = () => { if (radarBox) radarBox.hidden = scoreStyle !== 'glass'; };
     if (radarFallInput && radarEchoInput) {
       radarFallInput.value = String(radar.radarFall); radarEchoInput.value = String(radar.radarEcho);
+      if (radarLeadInput) radarLeadInput.value = String(radar.radarLead);
       const changed = () => {
         radar.radarFall = Number(radarFallInput.value); radar.radarEcho = Number(radarEchoInput.value);
+        if (radarLeadInput) radar.radarLead = Number(radarLeadInput.value);
         try { root.localStorage.setItem(RADAR_KEY, JSON.stringify(radar)); } catch (_) {}
         view?.setOptions({...radar});
       };
       radarFallInput.addEventListener('change', changed); radarEchoInput.addEventListener('change', changed);
+      radarLeadInput?.addEventListener('change', changed);
     }
     if (styleInput) {
       styleInput.value = scoreStyle;

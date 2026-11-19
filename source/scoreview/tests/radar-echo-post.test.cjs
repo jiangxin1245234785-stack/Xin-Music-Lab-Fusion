@@ -140,7 +140,7 @@ test('PAN reads the whole song\'s left minus right; without it the horizon stays
   assert.equal(post(steady(lanes, 64, {levels})).frame(3).motion.pan, 6);
 });
 
-test('the teleprinter prints codes first and characters half a step later; the codes are Unihan\'s', () => {
+test('the teleprinter prints codes first and characters a short beat later; the codes are Unihan\'s', () => {
   assert.equal(Telegraph.code('七'), '0003');
   assert.equal(Telegraph.code('里'), '6849');
   assert.equal(Telegraph.code('香'), '7449');
@@ -150,15 +150,45 @@ test('the teleprinter prints codes first and characters half a step later; the c
   const {frame, view} = post(model);
   view.setLyrics({trackId: song.track.id, enabled: true, offset: 0, lines: [{time: 10, text: '七里香'}, {time: 20, text: 'la'}]});
   assert.equal(frame(9).motion.teleprinter.newest.length, 0, 'nothing before the line');
-  // The line runs 10 .. 11.5 (three characters, at least 1.2 s): 七 at 10, 里 at 10.5, 香 at 11.
+  // The line is sung 10 .. 11.5 (three characters, at least 1.2 s): 七 at 10, 里 at 10.5, 香 at 11. The tape prints it
+  // .4 s early and by 70 % of it (9.6 .. 11.05): 七 at 9.6, 里 at 10.08, 香 at 10.57, each clear .1 s after its code.
   const half = frame(10.6).motion.teleprinter;
-  assert.deepEqual(half.newest.map(g => [g.ch, g.code, g.clear]), [['里', '6849', false], ['七', '0003', true]]);
+  assert.deepEqual(half.newest.map(g => [g.ch, g.code, g.clear]), [['香', '7449', false], ['里', '6849', true], ['七', '0003', true]]);
+  assert.equal(half.lead, .4);
   assert.equal(half.printing, true);
   const done = frame(15).motion.teleprinter;
   assert.equal(done.printing, false);
   assert.deepEqual(done.newest.map(g => g.ch), ['香', '里', '七']);
   const latin = frame(21).motion.teleprinter.newest[0];
   assert.deepEqual([latin.ch, latin.code, latin.clear], ['a', null, true]);
+});
+
+test('the tape prints ahead of the singing: every character is on the tape (clear) before it is sung, lines never overlap, at each lead', () => {
+  const model = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}]);
+  // Lines of every kind: long, short, and two close together (the second starts .3 s after the first is sung).
+  const lines = [{time: 4, text: '院子落葉跟我的思念厚厚一疊'}, {time: 9, text: '幾句是非'}, {time: 10.6, text: '也無法將我的熱情冷卻'},
+    {time: 13.5, text: '妳出現在我詩的每一頁'}, {time: 17, text: 'la la'}];
+  assert.deepEqual(Radar.LEADS, [.2, .4, .7]);
+  for (const lead of [...Radar.LEADS, undefined]) {
+    const opts = {...options, ...(lead === undefined ? {} : {radarLead: lead})};
+    const tape = Radar.create().tape({lyrics: {enabled: true, offset: 0, lines}, options: lead === undefined ? {} : {radarLead: lead}});
+    assert.equal(tape.lead, lead ?? .4, 'the middle one is the default');
+    let lastDot = -Infinity, lineFirst = true;
+    for (const cell of tape.cells) {
+      if (cell.dot) { lastDot = cell.time; lineFirst = true; continue; }
+      assert.ok(cell.time + cell.half <= cell.sung + 1e-9, `${cell.ch} clear at ${cell.time + cell.half}, sung at ${cell.sung}`);
+      assert.ok(cell.half <= .1 + 1e-9);
+      if (lineFirst) assert.ok(cell.time > lastDot, 'a line starts after the one before has finished');
+      if (lineFirst && cell.sung - (lead ?? .4) > lastDot + .05) assert.ok(Math.abs(cell.sung - cell.time - (lead ?? .4)) < 1e-9, 'the full lead where there is room');
+      lineFirst = false;
+    }
+    // The third character of 也無法…: on the tape when it is sung.
+    const third = tape.cells.filter(c => !c.dot)[13 + 4 + 2];
+    assert.equal(third.ch, '法');
+    const {frame, view} = post(model, 1440, 900, opts);
+    view.setLyrics({trackId: song.track.id, enabled: true, offset: 0, lines});
+    assert.ok(frame(third.sung).motion.teleprinter.newest.some(g => g.ch === '法' && g.clear), 'sung now, already printed and clear');
+  }
 });
 
 test('a song without vocals or lyrics: the scope is a flat line, the tape empty, every other instrument reads', () => {
