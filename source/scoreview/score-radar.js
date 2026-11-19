@@ -58,7 +58,10 @@
   // The bundled faces (assets/fonts, with their licences): Saira Stencil One (SIL OFL 1.1) for the stamped names,
   // Permanent Marker (Apache 2.0) for the tape labels. Loaded once; the fallbacks above draw until they are in.
   const FACES = Object.freeze([['Saira Stencil One', 'SairaStencilOne-Regular.ttf'], ['Permanent Marker', 'PermanentMarker-Regular.ttf']]);
-  const fontBase = (() => { try { return new URL('./assets/fonts/', root.document.currentScript.src).href; } catch (_) { return null; } })();
+  const assetBase = (() => { try { return new URL('./assets/', root.document.currentScript.src).href; } catch (_) { return null; } })();
+  const fontBase = assetBase && assetBase + 'fonts/';
+  // Every font or material that arrives bumps this, so the cached hardware layers are drawn again with it.
+  let assetGen = 0;
   let fontsLoading = null;
   function loadFonts() {
     if (fontsLoading) return fontsLoading;
@@ -66,10 +69,34 @@
     if (!fontBase || typeof root.FontFace !== 'function' || !doc || !doc.fonts) return (fontsLoading = Promise.resolve([]));
     fontsLoading = Promise.all(FACES.map(([family, file]) => {
       const face = new root.FontFace(family, `url("${fontBase}${file}")`);
-      return face.load().then(loaded => { doc.fonts.add(loaded); return family; }, () => null);
+      return face.load().then(loaded => { doc.fonts.add(loaded); assetGen++; return family; }, () => null);
     })).then(list => list.filter(Boolean));
     return fontsLoading;
   }
+  // The weathering (work/score-depth-20261118/SPEC-WEATHER.md, materials by the asset pack the user accepted): each of
+  // the six panels has its own plate with its wear already in place, the dial faces are cut from one sheet of paper,
+  // the recorder and the tape from a paper strip, three kinds of screw, a faint glass smudge. All of it is hardware: it
+  // never changes with the song, so it is drawn into the cached layers once. A file that is not in (yet, or at all)
+  // leaves its part to the flat drawing of 0.32.
+  const MATERIAL_FILES = Object.freeze({
+    plateTop: 'plate-top.png', plateLeft: 'plate-left.png', plateRadar: 'plate-radar.png', plateRight: 'plate-right.png',
+    plateKeys: 'plate-keys.png', plateTele: 'plate-teleprinter.png', paperDial: 'paper-dial.png', paperTape: 'paper-tape.png',
+    screwSlot: 'screw-slot.png', screwCross: 'screw-cross.png', screwBrass: 'screw-brass.png', glass: 'glass-smudge.png'});
+  const MATERIALS = {};
+  let materialsLoading = null;
+  function loadMaterials() {
+    if (materialsLoading) return materialsLoading;
+    if (!assetBase || typeof root.Image !== 'function') return (materialsLoading = Promise.resolve([]));
+    materialsLoading = Promise.all(Object.entries(MATERIAL_FILES).map(([key, file]) => {
+      const image = new root.Image();
+      image.src = assetBase + 'radar/' + file;
+      return Promise.resolve(image.decode ? image.decode() : null).then(() => { MATERIALS[key] = image; assetGen++; return key; }, () => null);
+    })).then(list => list.filter(Boolean));
+    return materialsLoading;
+  }
+  // The fonts and the materials; resolves with the fonts that loaded (as 0.32 did), the materials are listed by
+  // materials().
+  const ready = () => Promise.all([loadFonts(), loadMaterials()]).then(([fonts]) => fonts);
   const smooth = x => x * x * (3 - 2 * x);
   const lower = (array, value, key = x => x) => {
     let lo = 0, hi = array.length;
@@ -225,9 +252,9 @@
   }
 
   function create() {
-    let prep = null, prepKey = null;
+    let prep = null, prepKey = null, prepGen = 0;
     function ensure(env) {
-      if (prepKey !== env.events) { prep = prepare(env.model, env.events); prepKey = env.events; addFill(env); }
+      if (prepKey !== env.events) { prep = prepare(env.model, env.events); prepKey = env.events; prepGen++; addFill(env); }
       return prep;
     }
     // FILL needs the bar grid; it is added once the grid is known.
@@ -325,16 +352,77 @@
       if (fill) { p.fillStyle = fill; p.fill(); }
       if (edge) { p.strokeStyle = edge; p.lineWidth = width; p.stroke(); }
     }
-    function screw(x, y) {
-      circle(x, y, 4.2, C.screw, C.seam, 1);
-      p.beginPath(); p.moveTo(x - 2.8, y - 1.2); p.lineTo(x + 2.8, y + 1.2); p.strokeStyle = C.seam; p.lineWidth = 1.2; p.stroke();
+    // Three kinds of screw: slotted old steel, blued cross-heads on the later modules, and a brass one where a lost
+    // screw was replaced. Each sits at its own turn (from where it is, not from chance).
+    const SCREW = {slot: 'screwSlot', cross: 'screwCross', brass: 'screwBrass'};
+    function screw(x, y, kind = 'slot') {
+      const image = MATERIALS[SCREW[kind] || 'screwSlot'];
+      if (!image) {
+        circle(x, y, 4.2, C.screw, C.seam, 1);
+        p.beginPath(); p.moveTo(x - 2.8, y - 1.2); p.lineTo(x + 2.8, y + 1.2); p.strokeStyle = C.seam; p.lineWidth = 1.2; p.stroke();
+        return;
+      }
+      p.save(); p.translate(x, y); p.rotate(((x * 7.31 + y * 3.17) % 360) * Math.PI / 180);
+      p.drawImage(image, -5, -5, 10, 10);
+      p.restore();
     }
-    function panel(x, y, w, h) {
-      rect(x, y, w, h, C.panel);
+    // A panel: its own plate (or the flat paint), the edges and the seam, a screw in each corner (top-left, top-right,
+    // bottom-left, bottom-right).
+    function panel(x, y, w, h, plate, screws = ['slot', 'slot', 'slot', 'slot']) {
+      const image = MATERIALS[plate];
+      if (image) p.drawImage(image, x, y, w, h); else rect(x, y, w, h, C.panel);
       rect(x, y, w, 2, C.panelHi); rect(x, y, 2, h, C.panelHi);
       rect(x, y + h - 2, w, 2, C.panelLo); rect(x + w - 2, y, 2, h, C.panelLo);
       p.strokeStyle = C.seam; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
-      screw(x + 9, y + 9); screw(x + w - 9, y + 9); screw(x + 9, y + h - 9); screw(x + w - 9, y + h - 9);
+      screw(x + 9, y + 9, screws[0]); screw(x + w - 9, y + 9, screws[1]); screw(x + 9, y + h - 9, screws[2]); screw(x + w - 9, y + h - 9, screws[3]);
+    }
+    // A dial face cut from the one sheet of dial paper (crops of 328 x 148 at two source pixels a design pixel; each
+    // face its own part of the sheet), over the flat face colour, with a faint warm margin.
+    const DIAL_CROPS = [[38, 48], [620, 81], [321, 250], [104, 434], [653, 502], [422, 699], [58, 844]];
+    function dialFace(index, x, y, w, h) {
+      rect(x, y, w, h, C.dial);
+      const sheet = MATERIALS.paperDial;
+      if (!sheet) return;
+      const [sx, sy] = DIAL_CROPS[index % DIAL_CROPS.length];
+      p.save(); p.globalAlpha = .83;
+      p.drawImage(sheet, sx, sy, 2 * w, 2 * h, x, y, w, h);
+      p.globalAlpha = 1;
+      for (const [x0, y0, x1, y1, rx, ry, rw, rh] of [
+        [x, y, x, y + 2, x, y, w, 2], [x, y + h, x, y + h - 2, x, y + h - 2, w, 2],
+        [x, y, x + 2, y, x, y + 2, 2, h - 4], [x + w, y, x + w - 2, y, x + w - 2, y + 2, 2, h - 4]]) {
+        const age = p.createLinearGradient(x0, y0, x1, y1);
+        age.addColorStop(0, 'rgba(140,98,36,.10)'); age.addColorStop(1, 'rgba(140,98,36,0)');
+        p.fillStyle = age; p.fillRect(rx, ry, rw, rh);
+      }
+      p.restore();
+    }
+    // A round face (REGISTER) from its own part of the dial sheet.
+    function roundFace(cx, cy, r, sx, sy) {
+      circle(cx, cy, r, C.dial);
+      const sheet = MATERIALS.paperDial;
+      if (!sheet) return;
+      p.save(); circle(cx, cy, r, null); p.clip(); p.globalAlpha = .83;
+      p.drawImage(sheet, sx, sy, 4 * r, 4 * r, cx - r, cy - r, 2 * r, 2 * r);
+      p.restore();
+    }
+    // Recording paper (the recorder sheet, the teleprinter tape) from the paper strip, over the flat paper colour.
+    function recordPaper(kind, x, y, w, h) {
+      const sheet = MATERIALS.paperTape;
+      if (!sheet) return;
+      p.save(); p.globalAlpha = kind === 'recorder' ? .2 : .28;
+      p.drawImage(sheet, 53, kind === 'recorder' ? 12 : 43, 2 * (w - 2), 2 * (h - 2), x + 1, y + 1, w - 2, h - 2);
+      p.restore();
+    }
+    // The glass over a face: a few old finger marks, nearly invisible (the file's strongest pixel is 27 / 255).
+    // `k` is source pixels to a design pixel (2 for the small faces; under 1 stretches the sheet over the big screen).
+    function glass(x, y, w, h, sx, sy, round = false, k = 2) {
+      const smudge = MATERIALS.glass;
+      if (!smudge) return;
+      p.save();
+      if (round) { p.beginPath(); p.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); p.clip(); }
+      const cw = Math.min(512 - sx, k * w), ch = Math.min(512 - sy, k * h);
+      p.drawImage(smudge, sx, sy, cw, ch, x, y, cw / k, ch / k);
+      p.restore();
     }
     function lamp(x, y, r, light, hot = C.amberHot, warm = C.amber) {
       circle(x, y, r + 2.5, '#1b1a15');
@@ -351,16 +439,73 @@
       const ch = s => Math.round(((pa >> s) & 255) + (((pb >> s) & 255) - ((pa >> s) & 255)) * t);
       return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
     }
-    function tube(x, y, w, h, value, label) {
+    // A tube readout: the glass, the unlit cathodes and the label are hardware; the lit digits move.
+    function tubeBase(x, y, w, h, pattern, label) {
       rect(x, y, w, h, C.tubeGlass, '#4b3a2c', 2);
       font('mono', 30, 'bold');
       p.textAlign = 'center'; p.textBaseline = 'middle';
-      p.fillStyle = C.tubeOff; p.fillText(value.replace(/[0-9]/g, '8').replace(/-/g, '8'), x + w / 2, y + h / 2 + 1);
+      p.fillStyle = C.tubeOff; p.fillText(pattern, x + w / 2, y + h / 2 + 1);
+      write(label, x + w / 2, y + h + 12, 12, C.stampDim, 'stamp', 'center');
+    }
+    function tube(x, y, w, h, value) {
+      font('mono', 30, 'bold');
+      p.textAlign = 'center'; p.textBaseline = 'middle';
       p.shadowColor = 'rgba(255,138,42,.8)'; p.shadowBlur = 8;
       p.fillStyle = C.tube; p.fillText(value, x + w / 2, y + h / 2 + 1);
       p.shadowBlur = 0;
-      write(label, x + w / 2, y + h + 12, 12, C.stampDim, 'stamp', 'center');
     }
+
+    // Three passes over the same modules: 'base' is the hardware under everything (plates, faces, scales, stamped
+    // names, empty beds), 'live' is what moves with the song, 'over' is the hardware on top of what moves (tape on the
+    // dial faces, needle caps, the glass). 'base' and 'over' never depend on song time, so they are drawn once into
+    // two cached layers and each frame lays them down with one copy each; where no canvas can be made for them (the
+    // tests), all three are drawn every frame, in the same order.
+    let pass = 'live', layers = null, layerKey = null;
+    function every(which, s, out) {
+      pass = which;
+      try {
+        if (which === 'base') rect(0, 0, DESIGN.width, DESIGN.height, '#1f211b');
+        top(s.data, s.env, s.bars, s.now, out);
+        strips(s.data, s.env, s.now, s.fall, s.muted, out);
+        disc(s.data, s.env, s.bars, s.now, s.echo, s.muted, out);
+        harmony(s.data, s.now, out);
+        drumGrid(s.data, s.env, s.bars, s.now, out);
+        recorder(s.data, s.now, out);
+        keys(s.data, s.now, out);
+        teleprinter(s.env, s.now, out);
+      } finally { pass = 'live'; }
+    }
+    function layerCanvas(ctx, W, H, old) {
+      if (old && old.width === W && old.height === H) return old;
+      const doc = ctx.canvas && ctx.canvas.ownerDocument;
+      const made = doc && typeof doc.createElement === 'function' ? doc.createElement('canvas')
+        : typeof root.OffscreenCanvas === 'function' ? new root.OffscreenCanvas(W, H) : null;
+      if (!made || typeof made.getContext !== 'function') return null;
+      made.width = W; made.height = H;
+      return made;
+    }
+    // The cached layers for this stage size, song, bar grid, tape kind and loaded assets (and nothing that moves).
+    function cachedLayers(ctx, s) {
+      const {env, bars, scale, ox, oy} = s, t = env.model.track || {};
+      const key = [env.W, env.H, prepGen, bars ? bars.source + bars.perBar : '-', env.beats.length >= 2, tapeOf(env) ? 'lyrics' : 'sheet',
+        t.title, t.artist, assetGen].join('|');
+      if (layers && layerKey === key) return layers;
+      const base = layerCanvas(ctx, env.W, env.H, layers && layers.base), over = base && layerCanvas(ctx, env.W, env.H, layers && layers.over);
+      if (!base || !over) return null;
+      // Setting a canvas's size empties it, also when it is the size it was.
+      base.width = env.W; over.width = env.W;
+      const keep = p, out = {};
+      try {
+        p = base.getContext('2d');
+        p.setTransform(1, 0, 0, 1, 0, 0); p.fillStyle = C.void; p.fillRect(0, 0, env.W, env.H);
+        p.setTransform(scale, 0, 0, scale, ox, oy); every('base', s, out);
+        p = over.getContext('2d');
+        p.setTransform(scale, 0, 0, scale, ox, oy); every('over', s, out);
+      } finally { p = keep; }
+      layers = {base, over, out}; layerKey = key; layerDraws++;
+      return layers;
+    }
+    let layerDraws = 0;
 
     function paint(ctx, env) {
       p = ctx;
@@ -368,54 +513,62 @@
       const {now, W, H} = env;
       const scale = Math.min(W / DESIGN.width, H / DESIGN.height);
       const ox = (W - DESIGN.width * scale) / 2, oy = (H - DESIGN.height * scale) / 2;
-      p.setTransform(1, 0, 0, 1, 0, 0); p.fillStyle = C.void; p.fillRect(0, 0, W, H);
-      p.setTransform(scale, 0, 0, scale, ox, oy);
-      rect(0, 0, DESIGN.width, DESIGN.height, '#1f211b');
       const bars = barGrid(env);
       const fall = Number.isFinite(env.options.radarFall) ? env.options.radarFall : .6;
       const echo = Number.isFinite(env.options.radarEcho) ? env.options.radarEcho : 1;
       const solo = env.options.focusGroup ? CAT_OF.get(env.options.focusGroup) : undefined;
       const muted = c => solo !== undefined && c !== solo;
       const out = {kind: 'radar-echo-post', scale, origin: [ox, oy], levers: [], solo: solo === undefined ? null : CATS[solo].id};
-      top(data, env, bars, now, out);
-      strips(data, env, now, fall, muted, out);
-      disc(data, env, bars, now, echo, muted, out);
-      harmony(data, now, out);
-      drumGrid(data, env, bars, now, out);
-      recorder(data, now, out);
-      keys(data, now, out);
-      teleprinter(env, now, out);
+      const s = {data, env, bars, now, fall, echo, muted, scale, ox, oy};
+      const cached = cachedLayers(ctx, s);
+      p = ctx;
       p.setTransform(1, 0, 0, 1, 0, 0);
+      if (cached) { p.drawImage(cached.base, 0, 0); Object.assign(out, cached.out); }
+      else { p.fillStyle = C.void; p.fillRect(0, 0, W, H); p.setTransform(scale, 0, 0, scale, ox, oy); every('base', s, out); }
+      p.setTransform(scale, 0, 0, scale, ox, oy);
+      every('live', s, out);
+      if (cached) { p.setTransform(1, 0, 0, 1, 0, 0); p.drawImage(cached.over, 0, 0); }
+      else { p.setTransform(scale, 0, 0, scale, ox, oy); every('over', s, out); }
+      p.setTransform(1, 0, 0, 1, 0, 0);
+      out.layers = {cached: Boolean(cached), draws: layerDraws, materials: Object.keys(MATERIALS).length};
       return out;
     }
 
     function top(data, env, bars, now, out) {
-      panel(18, 16, 1404, 82);
-      // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from the
-      // bundled table, read here, not copied.
-      const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
-      rect(30, 24, 300, 66, '#2a2c25', '#55574b', 1.5);
-      screw(37, 31); screw(323, 31); screw(37, 83); screw(323, 83);
-      write('RATING', 46, 33, 8, C.stampFaint, 'mono', 'left');
-      const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
-      const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('stamp', k); if (p.measureText(text).width <= width) break; } return k; };
-      const size1 = fit(line1, 20, 12, 268), size2 = fit(line2, Math.min(size1, 17), 12, 268);
-      write(line1, 46, 51, size1, C.stamp, 'stamp', 'left', 270);
-      write(line2, 46, 73, size2, C.stamp, 'stamp', 'left', 270);
-      out.plate = {line1, line2, size1, size2};
-      lamp(350, 50, 8, 1, '#c8ffd0', C.green);
-      write('PWR', 350, 72, 10, C.stampFaint, 'stamp', 'center');
-      // The small plate: owner cell scratched out, type, date code, inspection stamp.
-      rect(370, 26, 114, 62, '#2c2e27', '#55574b', 1);
-      write('PROP. OF', 376, 36, 9, C.stampFaint, 'mono', 'left');
-      p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
-      for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
-      p.restore();
-      write('TYPE 6R-7C/88', 376, 54, 10, C.stampDim, 'mono', 'left');
-      write('5947', 376, 74, 11, C.stampDim, 'mono', 'left');
-      circle(462, 72, 12, null, '#8f8b78', 1.2);
-      write('INSP.', 462, 68, 7, C.stampDim, 'mono', 'center');
-      write('08', 462, 77, 8, C.stampDim, 'mono', 'center');
+      if (pass === 'base') {
+        panel(18, 16, 1404, 82, 'plateTop', ['slot', 'slot', 'slot', 'slot']);
+        // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from
+        // the bundled table, read here, not copied.
+        const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
+        rect(30, 24, 300, 66, '#2a2c25', '#55574b', 1.5);
+        screw(37, 31); screw(323, 31); screw(37, 83); screw(323, 83);
+        write('RATING', 46, 33, 8, C.stampFaint, 'mono', 'left');
+        const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
+        const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('stamp', k); if (p.measureText(text).width <= width) break; } return k; };
+        const size1 = fit(line1, 20, 12, 268), size2 = fit(line2, Math.min(size1, 17), 12, 268);
+        write(line1, 46, 51, size1, C.stamp, 'stamp', 'left', 270);
+        write(line2, 46, 73, size2, C.stamp, 'stamp', 'left', 270);
+        out.plate = {line1, line2, size1, size2};
+        lamp(350, 50, 8, 1, '#c8ffd0', C.green);
+        write('PWR', 350, 72, 10, C.stampFaint, 'stamp', 'center');
+        // The small plate: owner cell scratched out, type, date code, inspection stamp.
+        rect(370, 26, 114, 62, '#2c2e27', '#55574b', 1);
+        write('PROP. OF', 376, 36, 9, C.stampFaint, 'mono', 'left');
+        p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
+        for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
+        p.restore();
+        write('TYPE 6R-7C/88', 376, 54, 10, C.stampDim, 'mono', 'left');
+        write('5947', 376, 74, 11, C.stampDim, 'mono', 'left');
+        circle(462, 72, 12, null, '#8f8b78', 1.2);
+        write('INSP.', 462, 68, 7, C.stampDim, 'mono', 'center');
+        write('08', 462, 77, 8, C.stampDim, 'mono', 'center');
+        SECTION_LAMPS.forEach((name, k) => rect(496 + k * 82, 40, 77, 36, '#1a1712', '#4a3d2c', 1.5));
+        tubeBase(1094, 28, 72, 42, '888', 'TEMPO');
+        tubeBase(1176, 28, 106, 42, '888·8', 'BAR · BEAT');
+        tubeBase(1292, 28, 104, 42, '88:88', 'TIME');
+        return;
+      }
+      if (pass !== 'live') return;
       // Section lamps: the current kind lit, the previous one fading out over .35 s.
       const fade = .35, light = SECTION_LAMPS.map(() => 0);
       const i = lower(data.sections, now + 1e-6, s => s.start) - 1;
@@ -428,7 +581,6 @@
       }
       SECTION_LAMPS.forEach((name, k) => {
         const x = 496 + k * 82, y = 40, w = 77, h = 36, v = light[k], has = data.kinds.has(name);
-        rect(x, y, w, h, '#1a1712', '#4a3d2c', 1.5);
         if (v > .01) {
           const g = p.createLinearGradient(x, y, x, y + h);
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
@@ -456,54 +608,77 @@
         }
       }
       const time = Math.floor(now / 60).toString().padStart(2, '0') + ':' + Math.floor(now % 60).toString().padStart(2, '0');
-      tube(1094, 28, 72, 42, tempo, 'TEMPO');
-      tube(1176, 28, 106, 42, barBeat, 'BAR · BEAT');
-      tube(1292, 28, 104, 42, time, 'TIME');
+      tube(1094, 28, 72, 42, tempo);
+      tube(1176, 28, 106, 42, barBeat);
+      tube(1292, 28, 104, 42, time);
       Object.assign(out, {tempo, barBeat, time});
     }
 
+    // Parts of the glass sheet over the seven dial faces (each face its own finger marks).
+    const GLASS_CROPS = [[0, 0], [180, 30], [40, 190], [150, 300], [10, 360], [170, 120], [90, 60]];
     function strips(data, env, now, fall, muted, out) {
-      panel(18, 112, 296, 772);
-      write('CHANNEL STRIPS', 32, 140, 17, C.stamp, 'stamp', 'left', 200, 'bold');
-      write('MOD. LVL-7', 300, 141, 10, C.stampFaint, 'stamp', 'right');
+      const x = 34, w = 164, h = 74;
+      // The meter geometry: the pivot sits inside the face and the needle ends on the scale; at rest it lies on the
+      // first tick.
+      const dial = y => ({cx: x + w / 2, cy: y + h - 9, r: 54, a0: -Math.PI / 2 - .9, a1: -Math.PI / 2 + .9});
+      if (pass === 'base') {
+        panel(18, 112, 296, 772, 'plateLeft', ['slot', 'slot', 'slot', 'brass']);
+        write('CHANNEL STRIPS', 32, 140, 17, C.stamp, 'stamp', 'left', 200, 'bold');
+        write('MOD. LVL-7', 300, 141, 10, C.stampFaint, 'stamp', 'right');
+        CATS.forEach((cat, i) => {
+          const y = 163 + i * 85, {cx, cy, r, a0, a1} = dial(y);
+          // The meter: a paper face filling its box, a red zone at the top of the scale.
+          rect(x - 2, y - 2, w + 4, h + 4, '#1c1d18');
+          dialFace(i, x, y, w, h);
+          p.strokeStyle = C.dialEdge; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
+          p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip();
+          p.beginPath(); p.arc(cx, cy, r, a0, a1); p.strokeStyle = C.dialInk; p.lineWidth = 1.2; p.stroke();
+          p.beginPath(); p.arc(cx, cy, r, a0 + 1.8 * .78, a1); p.strokeStyle = C.red; p.lineWidth = 4; p.stroke();
+          for (let k = 0; k <= 10; k++) {
+            const a = a0 + (a1 - a0) * k / 10, long = k % 5 === 0;
+            p.beginPath(); p.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+            p.lineTo(cx + Math.cos(a) * (r - (long ? 10 : 6)), cy + Math.sin(a) * (r - (long ? 10 : 6)));
+            p.strokeStyle = k >= 8 ? C.red : C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
+          }
+          p.restore();
+          write('CH' + (i + 1), 224, y + 52, 10, C.stampFaint, 'stamp', 'center');
+          rounded(246, y + 12, 24, 50, 12, '#16170f', '#4c4e44', 1.5);
+        });
+        write('CAUTION', 32, 770, 15, C.stamp, 'stamp', 'left', 160, 'bold');
+        write('MOD. ANN-8', 300, 771, 10, C.stampFaint, 'stamp', 'right');
+        rect(32, 785, 268, 64, '#16170f');
+        return;
+      }
+      if (pass === 'over') {
+        CATS.forEach((cat, i) => {
+          const y = 163 + i * 85, {cx, cy} = dial(y);
+          circle(cx, cy, 5, '#1b1a16');
+          glass(x, y, w, h, GLASS_CROPS[i][0], GLASS_CROPS[i][1]);
+          // The name on tape, stuck on the face's top-left corner.
+          p.save(); p.translate(x + 4, y + 4); p.rotate(-.04);
+          font('marker', 14, 'bold');
+          const tw = p.measureText(cat.strip).width + 10;
+          rect(0, 0, tw, 17, C.tape);
+          p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 15, tw, 2);
+          write(cat.strip, 5, 9, 14, C.tapeInk, 'marker', 'left', 0, 'bold');
+          p.restore();
+        });
+        return;
+      }
       out.meters = {};
       CATS.forEach((cat, i) => {
         const y = 163 + i * 85, has = data.present[i], off = !has || muted(i);
         const value = off ? 0 : needle(data.meter[i], now, fall);
         out.meters[cat.id] = +value.toFixed(3);
-        // The meter: a beige face filling its box, a red zone at the top of the scale, a needle on a pivot below.
-        const x = 34, w = 164, h = 74;
-        rect(x - 2, y - 2, w + 4, h + 4, '#1c1d18');
-        rect(x, y, w, h, C.dial, C.dialEdge, 1);
-        // The pivot sits inside the face and the needle ends on the scale: at rest it lies on the first tick.
-        const cx = x + w / 2, cy = y + h - 9, r = 54, a0 = -Math.PI / 2 - .9, a1 = -Math.PI / 2 + .9;
+        const {cx, cy, r, a0, a1} = dial(y);
         p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip();
-        p.beginPath(); p.arc(cx, cy, r, a0, a1); p.strokeStyle = C.dialInk; p.lineWidth = 1.2; p.stroke();
-        p.beginPath(); p.arc(cx, cy, r, a0 + 1.8 * .78, a1); p.strokeStyle = C.red; p.lineWidth = 4; p.stroke();
-        for (let k = 0; k <= 10; k++) {
-          const a = a0 + (a1 - a0) * k / 10, long = k % 5 === 0;
-          p.beginPath(); p.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-          p.lineTo(cx + Math.cos(a) * (r - (long ? 10 : 6)), cy + Math.sin(a) * (r - (long ? 10 : 6)));
-          p.strokeStyle = k >= 8 ? C.red : C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
-        }
         const a = a0 + (a1 - a0) * value;
         p.beginPath(); p.moveTo(cx, cy); p.lineTo(cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1));
         p.strokeStyle = '#1b1a16'; p.lineWidth = 2; p.stroke();
-        circle(cx, cy, 5, '#1b1a16');
-        p.restore();
-        // The name on tape, stuck on the face's top-left corner.
-        p.save(); p.translate(x + 4, y + 4); p.rotate(-.04);
-        font('marker', 14, 'bold');
-        const tw = p.measureText(cat.strip).width + 10;
-        rect(0, 0, tw, 17, C.tape);
-        p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 15, tw, 2);
-        write(cat.strip, 5, 9, 14, C.tapeInk, 'marker', 'left', 0, 'bold');
         p.restore();
         // Lamp and lever.
         lamp(224, y + 27, 9, off ? 0 : 1);
-        write('CH' + (i + 1), 224, y + 52, 10, C.stampFaint, 'stamp', 'center');
         const lx = 246, ly = y + 12, lw = 24, lh = 50, up = !off;
-        rounded(lx, ly, lw, lh, 12, '#16170f', '#4c4e44', 1.5);
         const knob = up ? ly + 13 : ly + lh - 13;
         p.beginPath(); p.moveTo(lx + lw / 2, ly + lh / 2); p.lineTo(lx + lw / 2, knob);
         p.strokeStyle = '#9a9a8e'; p.lineWidth = 5; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
@@ -513,9 +688,6 @@
         out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other'});
       });
       // Caution lamps.
-      write('CAUTION', 32, 770, 15, C.stamp, 'stamp', 'left', 160, 'bold');
-      write('MOD. ANN-8', 300, 771, 10, C.stampFaint, 'stamp', 'right');
-      rect(32, 785, 268, 64, '#16170f');
       out.caution = {};
       CAUTION.forEach((name, k) => {
         const x = 36 + (k % 4) * 66, y = 789 + Math.floor(k / 4) * 30, w = 62, h = 26;
@@ -527,101 +699,108 @@
     }
 
     function disc(data, env, bars, now, echo, muted, out) {
-      panel(334, 112, 656, 624);
       const cx = 661, cy = 423, bezel = 300, screen = 270;
-      // Bezel with a tick per beat (sixteen to a turn of four 4/4 bars) and finer ones between.
-      circle(cx, cy, bezel, '#1d1e19', '#4a4c42', 2);
-      const perTurn = bars ? bars.perBar * 4 : 16;
-      // Four ticks to a beat: long on the beat, medium on the eighth, short on the sixteenth.
-      for (let k = 0; k < perTurn * 4; k++) {
-        const a = -Math.PI / 2 + k / (perTurn * 4) * Math.PI * 2, long = k % 4 === 0, mid = k % 2 === 0, first = k === 0;
-        const r0 = bezel - 4, r1 = bezel - (first ? 30 : long ? 24 : mid ? 17 : 11);
-        p.beginPath(); p.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); p.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-        p.strokeStyle = first ? '#f0ead2' : long ? '#d8d2bb' : mid ? '#bdb7a0' : '#9a957f'; p.lineWidth = first ? 4 : long ? 3 : mid ? 2.2 : 1.6; p.stroke();
-      }
-      const g = p.createRadialGradient(cx, cy, 0, cx, cy, screen);
-      g.addColorStop(0, C.screenHi); g.addColorStop(1, C.screen);
-      circle(cx, cy, screen, null); p.fillStyle = g; p.fill();
-      circle(cx, cy, screen, null, C.screenRim, 3);
-      p.save(); circle(cx, cy, screen - 1, null); p.clip();
-      // Grid: crosshair and the six rings, each a band from its inner to its outer edge.
-      p.strokeStyle = C.phosFaint; p.lineWidth = 1;
-      p.beginPath(); p.moveTo(cx - screen, cy); p.lineTo(cx + screen, cy); p.moveTo(cx, cy - screen); p.lineTo(cx, cy + screen); p.stroke();
       const outer = screen - 14, inner = 42, band = (outer - inner) / RINGS;
-      for (let r = 0; r <= RINGS; r++) { circle(cx, cy, inner + r * band, null, r === RINGS ? C.phosDim : C.phosFaint, 1); }
-      const turn = turnAt(env, bars, now), phase = ((turn % 1) + 1) % 1, sweep = -Math.PI / 2 + phase * Math.PI * 2;
-      // The phosphor wake behind the sweep.
-      for (let k = 0; k < 24; k++) {
-        const a = sweep - k * .045;
-        p.beginPath(); p.moveTo(cx, cy); p.arc(cx, cy, screen, a - .046, a); p.closePath();
-        p.fillStyle = `rgba(110,240,160,${.10 * (1 - k / 24) ** 2})`; p.fill();
-      }
-      // Echoes: notes from the last `echo` turns, brightest where the sweep just passed, gone after it.
-      let echoes = 0;
-      const from = data.notes, startFrom = lower(from, now - Math.max(data.longest, 1) - 60, n => n.start);
-      const turnLen = Math.max(.5, now - turnTime(env, bars, turn - 1));
-      for (let i = startFrom; i < from.length && from[i].start <= now; i++) {
-        const n = from[i];
-        if (n.cat >= RINGS) continue;
-        const end = Math.min(n.end, now);
-        const ageEnd = turn - turnAt(env, bars, end);
-        if (ageEnd >= echo) continue;
-        if (now - n.start > turnLen * echo + data.longest + 1) continue;
-        const [lo, hi] = data.range[n.cat];
-        const k = hi > lo ? (n.pitch - lo) / (hi - lo) : .5;
-        const ring = n.cat, r = outer - (ring + 1) * band + band * (.18 + .64 * k);
-        const dim = muted(n.cat) ? .18 : 1;
-        const u0 = Math.max(turnAt(env, bars, n.start), turn - echo), u1 = turnAt(env, bars, end);
-        const pieces = Math.max(1, Math.ceil((u1 - u0) * 64));
-        for (let s = 0; s < pieces; s++) {
-          const a0 = u0 + (u1 - u0) * s / pieces, a1 = u0 + (u1 - u0) * (s + 1) / pieces;
-          const age = clamp((turn - a1) / echo, 0, 1), alpha = (1 - age) ** 1.6 * dim;
-          if (alpha < .02) continue;
-          const A0 = -Math.PI / 2 + a0 * Math.PI * 2, A1 = -Math.PI / 2 + a1 * Math.PI * 2;
-          p.strokeStyle = `rgba(130,242,166,${alpha})`;
-          if (u1 - u0 < .004) {
-            circle(cx + Math.cos(A0) * r, cy + Math.sin(A0) * r, 2.6, `rgba(130,242,166,${alpha})`);
-          } else {
-            p.beginPath(); p.arc(cx, cy, r, A0, Math.max(A1, A0 + .01)); p.lineWidth = 3; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
-          }
+      if (pass === 'base') {
+        panel(334, 112, 656, 624, 'plateRadar', ['cross', 'cross', 'brass', 'cross']);
+        // Bezel with a tick per beat (sixteen to a turn of four 4/4 bars) and finer ones between.
+        circle(cx, cy, bezel, '#1d1e19', '#4a4c42', 2);
+        const perTurn = bars ? bars.perBar * 4 : 16;
+        // Four ticks to a beat: long on the beat, medium on the eighth, short on the sixteenth.
+        for (let k = 0; k < perTurn * 4; k++) {
+          const a = -Math.PI / 2 + k / (perTurn * 4) * Math.PI * 2, long = k % 4 === 0, mid = k % 2 === 0, first = k === 0;
+          const r0 = bezel - 4, r1 = bezel - (first ? 30 : long ? 24 : mid ? 17 : 11);
+          p.beginPath(); p.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); p.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+          p.strokeStyle = first ? '#f0ead2' : long ? '#d8d2bb' : mid ? '#bdb7a0' : '#9a957f'; p.lineWidth = first ? 4 : long ? 3 : mid ? 2.2 : 1.6; p.stroke();
         }
-        echoes++;
-      }
-      // The sweep line.
-      p.beginPath(); p.moveTo(cx, cy); p.lineTo(cx + Math.cos(sweep) * screen, cy + Math.sin(sweep) * screen);
-      p.strokeStyle = 'rgba(170,255,200,.85)'; p.lineWidth = 2; p.stroke();
-      circle(cx, cy, 4, '#c8ffd8');
-      // Ring names at 12 o'clock.
-      CATS.slice(0, RINGS).forEach((cat, k) => {
-        const r = outer - k * band - band / 2;
-        rect(cx - 40, cy - r - 8, 30, 16, 'rgba(6,18,12,.85)');
-        write(cat.ring, cx - 12, cy - r, 12, muted(k) || !data.present[k] ? '#2f7a52' : '#8ef5b0', 'mono', 'right', 0, 'bold');
-      });
-      p.restore();
-      // Bar numbers of the turn at the quarters: only on the song's own bar lines.
-      if (bars && bars.source === 'downbeats') {
-        const first = Math.floor(turn) * 4;
-        [[0, -1], [1, 0], [2, 1], [3, 0]].forEach(([q]) => {
-          const a = -Math.PI / 2 + q / 4 * Math.PI * 2, r = screen - 26;
-          write(String(first + q + 1), cx + Math.cos(a) * r + (q === 0 ? 12 : 0), cy + Math.sin(a) * r, 12, C.phosDim, 'mono', 'center');
+        const g = p.createRadialGradient(cx, cy, 0, cx, cy, screen);
+        g.addColorStop(0, C.screenHi); g.addColorStop(1, C.screen);
+        circle(cx, cy, screen, null); p.fillStyle = g; p.fill();
+        circle(cx, cy, screen, null, C.screenRim, 3);
+        p.save(); circle(cx, cy, screen - 1, null); p.clip();
+        // Grid: crosshair and the six rings, each a band from its inner to its outer edge.
+        p.strokeStyle = C.phosFaint; p.lineWidth = 1;
+        p.beginPath(); p.moveTo(cx - screen, cy); p.lineTo(cx + screen, cy); p.moveTo(cx, cy - screen); p.lineTo(cx, cy + screen); p.stroke();
+        for (let r = 0; r <= RINGS; r++) { circle(cx, cy, inner + r * band, null, r === RINGS ? C.phosDim : C.phosFaint, 1); }
+        p.restore();
+        // Stamped name and the one sticker.
+        write('PPI', 968, 132, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('1 REV', 968, 149, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 166, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        font('marker', 13);
+        const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
+        p.save(); p.translate(980 - stickerW, 186); p.rotate(-.05);
+        rect(0, 0, stickerW, 34, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 32, stickerW, 2);
+        write('OUTER = VOX', 6, 10, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
+        write('INNER = BASS', 6, 25, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
+        p.restore();
+      } else if (pass === 'over') {
+        glass(cx - screen, cy - screen, 2 * screen, 2 * screen, 0, 0, true, 512 / (2 * screen));
+      } else {
+        p.save(); circle(cx, cy, screen - 1, null); p.clip();
+        const turn = turnAt(env, bars, now), phase = ((turn % 1) + 1) % 1, sweep = -Math.PI / 2 + phase * Math.PI * 2;
+        // The phosphor wake behind the sweep.
+        for (let k = 0; k < 24; k++) {
+          const a = sweep - k * .045;
+          p.beginPath(); p.moveTo(cx, cy); p.arc(cx, cy, screen, a - .046, a); p.closePath();
+          p.fillStyle = `rgba(110,240,160,${.10 * (1 - k / 24) ** 2})`; p.fill();
+        }
+        // Echoes: notes from the last `echo` turns, brightest where the sweep just passed, gone after it.
+        let echoes = 0;
+        const from = data.notes, startFrom = lower(from, now - Math.max(data.longest, 1) - 60, n => n.start);
+        const turnLen = Math.max(.5, now - turnTime(env, bars, turn - 1));
+        for (let i = startFrom; i < from.length && from[i].start <= now; i++) {
+          const n = from[i];
+          if (n.cat >= RINGS) continue;
+          const end = Math.min(n.end, now);
+          const ageEnd = turn - turnAt(env, bars, end);
+          if (ageEnd >= echo) continue;
+          if (now - n.start > turnLen * echo + data.longest + 1) continue;
+          const [lo, hi] = data.range[n.cat];
+          const k = hi > lo ? (n.pitch - lo) / (hi - lo) : .5;
+          const ring = n.cat, r = outer - (ring + 1) * band + band * (.18 + .64 * k);
+          const dim = muted(n.cat) ? .18 : 1;
+          const u0 = Math.max(turnAt(env, bars, n.start), turn - echo), u1 = turnAt(env, bars, end);
+          const pieces = Math.max(1, Math.ceil((u1 - u0) * 64));
+          for (let s = 0; s < pieces; s++) {
+            const a0 = u0 + (u1 - u0) * s / pieces, a1 = u0 + (u1 - u0) * (s + 1) / pieces;
+            const age = clamp((turn - a1) / echo, 0, 1), alpha = (1 - age) ** 1.6 * dim;
+            if (alpha < .02) continue;
+            const A0 = -Math.PI / 2 + a0 * Math.PI * 2, A1 = -Math.PI / 2 + a1 * Math.PI * 2;
+            p.strokeStyle = `rgba(130,242,166,${alpha})`;
+            if (u1 - u0 < .004) {
+              circle(cx + Math.cos(A0) * r, cy + Math.sin(A0) * r, 2.6, `rgba(130,242,166,${alpha})`);
+            } else {
+              p.beginPath(); p.arc(cx, cy, r, A0, Math.max(A1, A0 + .01)); p.lineWidth = 3; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
+            }
+          }
+          echoes++;
+        }
+        // The sweep line.
+        p.beginPath(); p.moveTo(cx, cy); p.lineTo(cx + Math.cos(sweep) * screen, cy + Math.sin(sweep) * screen);
+        p.strokeStyle = 'rgba(170,255,200,.85)'; p.lineWidth = 2; p.stroke();
+        circle(cx, cy, 4, '#c8ffd8');
+        // Ring names at 12 o'clock.
+        CATS.slice(0, RINGS).forEach((cat, k) => {
+          const r = outer - k * band - band / 2;
+          rect(cx - 40, cy - r - 8, 30, 16, 'rgba(6,18,12,.85)');
+          write(cat.ring, cx - 12, cy - r, 12, muted(k) || !data.present[k] ? '#2f7a52' : '#8ef5b0', 'mono', 'right', 0, 'bold');
         });
+        p.restore();
+        // Bar numbers of the turn at the quarters: only on the song's own bar lines.
+        if (bars && bars.source === 'downbeats') {
+          const first = Math.floor(turn) * 4;
+          [[0, -1], [1, 0], [2, 1], [3, 0]].forEach(([q]) => {
+            const a = -Math.PI / 2 + q / 4 * Math.PI * 2, r = screen - 26;
+            write(String(first + q + 1), cx + Math.cos(a) * r + (q === 0 ? 12 : 0), cy + Math.sin(a) * r, 12, C.phosDim, 'mono', 'center');
+          });
+        }
+        Object.assign(out, {turn: +turn.toFixed(4), angle: +(phase * 360).toFixed(2), echoes});
       }
-      Object.assign(out, {turn: +turn.toFixed(4), angle: +(phase * 360).toFixed(2), echoes});
       // Corner instruments.
       voxScope(data, now, out);
       registerDial(data, now, out);
       panDial(data, now, out);
-      // Stamped name and the one sticker.
-      write('PPI', 968, 132, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-      write('1 REV', 968, 149, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-      write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 166, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-      font('marker', 13);
-      const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
-      p.save(); p.translate(980 - stickerW, 186); p.rotate(-.05);
-      rect(0, 0, stickerW, 34, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 32, stickerW, 2);
-      write('OUTER = VOX', 6, 10, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
-      write('INNER = BASS', 6, 25, 13, C.tapeInk, 'marker', 'left', 0, 'bold');
-      p.restore();
     }
     // The time at which the disc stood at turn position u (inverse of turnAt, by bisection).
     function turnTime(env, bars, u) {
@@ -632,12 +811,19 @@
 
     function voxScope(data, now, out) {
       const cx = 398, cy = 177, r = 55;
-      circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
-      circle(cx, cy, r, C.screen, C.screenRim, 2);
+      if (pass === 'base') {
+        circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
+        circle(cx, cy, r, C.screen, C.screenRim, 2);
+        p.save(); circle(cx, cy, r - 1, null); p.clip();
+        p.strokeStyle = C.phosFaint; p.lineWidth = 1;
+        for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx - r, cy + k * 18); p.lineTo(cx + r, cy + k * 18); p.stroke(); }
+        for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx + k * 22, cy - r); p.lineTo(cx + k * 22, cy + r); p.stroke(); }
+        p.restore();
+        write('VOX PITCH', 344, 246, 13, C.stamp, 'stamp', 'left', 0, 'bold');
+        return;
+      }
+      if (pass === 'over') { glass(cx - r, cy - r, 2 * r, 2 * r, 300, 40, true); return; }
       p.save(); circle(cx, cy, r - 1, null); p.clip();
-      p.strokeStyle = C.phosFaint; p.lineWidth = 1;
-      for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx - r, cy + k * 18); p.lineTo(cx + r, cy + k * 18); p.stroke(); }
-      for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx + k * 22, cy - r); p.lineTo(cx + k * 22, cy + r); p.stroke(); }
       const span = 4, left = cx - r + 4, width = 2 * r - 8, range = data.vocalRange;
       const y = m => range ? cy + 34 - (m - range[0]) / Math.max(1, range[1] - range[0]) * 68 : cy;
       p.beginPath();
@@ -660,36 +846,44 @@
       if (!drawn) { p.moveTo(left, cy); p.lineTo(left + width, cy); }
       p.strokeStyle = C.phos; p.lineWidth = 2; p.shadowColor = 'rgba(130,242,166,.7)'; p.shadowBlur = 4; p.stroke(); p.shadowBlur = 0;
       p.restore();
-      write('VOX PITCH', 344, 246, 13, C.stamp, 'stamp', 'left', 0, 'bold');
       out.vox = drawn > 0;
     }
     function registerDial(data, now, out) {
       const cx = 398, cy = 668, r = 50;
-      write('REGISTER', 344, 599, 13, C.stamp, 'stamp', 'left', 0, 'bold');
-      circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
-      circle(cx, cy, r, C.dial, C.dialEdge, 1);
-      // C2..C6 over 240 degrees; the mean pitch of what sounds, held when nothing does, eased over .4 s.
+      const a0 = Math.PI * .75, a1 = Math.PI * 2.25, at = m => a0 + clamp((m - 36) / 48, 0, 1) * (a1 - a0);
+      if (pass === 'base') {
+        write('REGISTER', 344, 599, 13, C.stamp, 'stamp', 'left', 0, 'bold');
+        circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
+        roundFace(cx, cy, r, 760, 780);
+        circle(cx, cy, r, null, C.dialEdge, 1);
+        // C2..C6 over 240 degrees.
+        for (let m = 36; m <= 84; m += 3) {
+          const a = at(m), long = m % 12 === 0;
+          p.beginPath(); p.moveTo(cx + Math.cos(a) * (r - 3), cy + Math.sin(a) * (r - 3)); p.lineTo(cx + Math.cos(a) * (r - (long ? 11 : 6)), cy + Math.sin(a) * (r - (long ? 11 : 6)));
+          p.strokeStyle = C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
+          if (long) write('C' + (m / 12 - 1), cx + Math.cos(a) * (r - 21), cy + Math.sin(a) * (r - 21), 12, C.dialInk, 'mono', 'center');
+        }
+        return;
+      }
+      if (pass === 'over') { circle(cx, cy, 4, '#1b1a16'); glass(cx - r, cy - r, 2 * r, 2 * r, 120, 380, true); return; }
+      // The mean pitch of what sounds, held when nothing does, eased over .4 s.
       let value = null, n = 0, sum = 0;
       for (let k = 0; k < 8; k++) { const v = sample(data.register, now - k * GRID); if (Number.isFinite(v) && now - k * GRID >= 0) { sum += v; n++; } }
       if (n) value = sum / n;
       else for (let t = now; t >= 0 && t > now - 600; t -= GRID) { const v = sample(data.register, t); if (Number.isFinite(v)) { value = v; break; } }
-      const a0 = Math.PI * .75, a1 = Math.PI * 2.25, at = m => a0 + clamp((m - 36) / 48, 0, 1) * (a1 - a0);
-      for (let m = 36; m <= 84; m += 3) {
-        const a = at(m), long = m % 12 === 0;
-        p.beginPath(); p.moveTo(cx + Math.cos(a) * (r - 3), cy + Math.sin(a) * (r - 3)); p.lineTo(cx + Math.cos(a) * (r - (long ? 11 : 6)), cy + Math.sin(a) * (r - (long ? 11 : 6)));
-        p.strokeStyle = C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
-        if (long) write('C' + (m / 12 - 1), cx + Math.cos(a) * (r - 21), cy + Math.sin(a) * (r - 21), 12, C.dialInk, 'mono', 'center');
-      }
       const a = at(value ?? 36);
       p.beginPath(); p.moveTo(cx, cy); p.lineTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
       p.strokeStyle = '#1b1a16'; p.lineWidth = 2.2; p.stroke();
-      circle(cx, cy, 4, '#1b1a16');
       out.register = value === null ? null : +value.toFixed(2);
     }
     function panDial(data, now, out) {
       const cx = 926, cy = 670, r = 50;
-      write('PAN L / R', 979, 599, 13, C.stamp, 'stamp', 'right', 0, 'bold');
-      circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
+      if (pass === 'base') {
+        write('PAN L / R', 979, 599, 13, C.stamp, 'stamp', 'right', 0, 'bold');
+        circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
+        return;
+      }
+      if (pass === 'over') { glass(cx - r, cy - r, 2 * r, 2 * r, 380, 200, true); return; }
       let db = 0;
       if (data.pan) {
         const {hop, mix} = data.pan;
@@ -719,13 +913,19 @@
     }
 
     function harmony(data, now, out) {
-      panel(1010, 112, 412, 624);
-      write('HARMONY · SIGNAL', 1028, 140, 17, C.stamp, 'stamp', 'left', 260, 'bold');
-      write('MOD. HS-4', 1404, 141, 10, C.stampFaint, 'stamp', 'right');
-      write('CHORD · FIFTHS', 1028, 170, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
-      write('QUALITY', 1246, 170, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
       const cx = 1130, cy = 285, R = 103;
-      circle(cx, cy, R, '#1d1e19', '#4a4c42', 2);
+      if (pass === 'base') {
+        panel(1010, 112, 412, 624, 'plateRight', ['cross', 'cross', 'cross', 'cross']);
+        write('HARMONY · SIGNAL', 1028, 140, 17, C.stamp, 'stamp', 'left', 260, 'bold');
+        write('MOD. HS-4', 1404, 141, 10, C.stampFaint, 'stamp', 'right');
+        write('CHORD · FIFTHS', 1028, 170, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
+        write('QUALITY', 1246, 170, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
+        circle(cx, cy, R, '#1d1e19', '#4a4c42', 2);
+        rect(cx - 40, cy - 28, 80, 56, '#151612', '#5a5c50', 2);
+        rect(1246, 183, 158, 204, '#24261f', '#4a4c42', 1);
+        return;
+      }
+      if (pass !== 'live') return;
       // The current chord and the ones just before it: lit by how long ago they ended.
       const chords = data.chords, i = lower(chords, now + 1e-6, c => c.start) - 1;
       const light = new Array(12).fill(0);
@@ -747,12 +947,10 @@
         if (v > .6) circle(x, y, 14, null, '#ffe0a0', 2);
         write(name, x, y + 1, 12, v > .45 ? '#2a1a08' : '#b9b2a0', 'mono', 'center', 0, 'bold');
       });
-      rect(cx - 40, cy - 28, 80, 56, '#151612', '#5a5c50', 2);
       p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
       const name = current ? current.label : '--';
       write(name, cx, cy + 1, name.length > 5 ? 20 : 27, '#ece6d0', 'mono', 'center', 74, 'bold');
       // Quality lamps, two columns of five.
-      rect(1246, 183, 158, 204, '#24261f', '#4a4c42', 1);
       const lit = current ? current.parts.lamps : new Set();
       QUALITY.forEach((q, k) => {
         const x = 1266 + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
@@ -770,9 +968,14 @@
       const steps = per * 4;
       // Without bar lines but with beats: the last ROLL_BEATS beats roll right to left, beats marked, no bars.
       const roll = !steps && env.beats.length >= 2;
-      write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 407, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
-      write(steps ? steps + ' STEPS' : roll ? 'NO BAR LINES · BEATS ONLY' : 'NO BEATS · LAMPS ONLY', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
-      rect(1028, 420, 376, 122, '#1f201b', '#4a4c42', 1);
+      if (pass === 'base') {
+        write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 407, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
+        write(steps ? steps + ' STEPS' : roll ? 'NO BAR LINES · BEATS ONLY' : 'NO BEATS · LAMPS ONLY', 1404, 407, 10, C.stampFaint, 'stamp', 'right');
+        rect(1028, 420, 376, 122, '#1f201b', '#4a4c42', 1);
+        DRUM_ROWS.forEach((row, r) => write(row.label, 1040, 432 + r * 21 + 7, 12, C.stamp, 'mono', 'left', 0, 'bold'));
+        return;
+      }
+      if (pass !== 'live') return;
       let barStart = null, barEnd = null, step = -1;
       const cells = DRUM_ROWS.map(() => new Array(steps).fill(0));
       if (steps) {
@@ -820,7 +1023,6 @@
       }
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
-        write(row.label, 1040, y + 7, 12, C.stamp, 'mono', 'left', 0, 'bold');
         // The row lamp: lit at the hit, dark again .15 s later.
         const j = lower(data.drums, now + 1e-6, d => d.time) - 1;
         let v = 0;
@@ -839,54 +1041,77 @@
     }
 
     function recorder(data, now, out) {
-      write('RECORDER · LOUDNESS', 1028, 562, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
-      write('WHOLE SONG · 1 SHEET', 1404, 562, 10, C.stampFaint, 'stamp', 'right');
       const x = 1066, y = 576, w = 338, h = 116, lo = -42, hi = 0;
-      [0, -12, -24, -36].forEach(db => write(String(db), 1030, y + 6 + (hi - db) / (hi - lo) * (h - 12), 12, C.stampDim, 'mono'));
-      rect(x, y, w, h, C.paper, '#8d8670', 1);
-      for (let k = 0; k < w; k += 11) { circle(x + 5 + k, y + 4, 1.6, '#5a564a'); circle(x + 5 + k, y + h - 4, 1.6, '#5a564a'); }
       const dur = data.duration || 1, xAt = t => x + 4 + clamp(t / dur, 0, 1) * (w - 8);
-      for (let db = -12; db > lo; db -= 12) { const yy = y + 6 + (hi - db) / (hi - lo) * (h - 12); p.beginPath(); p.moveTo(x, yy); p.lineTo(x + w, yy); p.strokeStyle = '#d0c8ae'; p.lineWidth = 1; p.stroke(); }
-      // Section starts: dashed marks with their short names.
-      p.setLineDash([3, 3]);
-      for (const s of data.sections) {
-        const sx = xAt(s.start);
-        p.beginPath(); p.moveTo(sx, y + 10); p.lineTo(sx, y + h - 8); p.strokeStyle = '#8a8370'; p.lineWidth = 1; p.stroke();
-      }
-      p.setLineDash([]);
-      let lastLabel = -99;
-      for (const s of data.sections) {
-        const sx = xAt(s.start);
-        if (sx - lastLabel < 22) continue;
-        write(SECTION_MARK[s.kind], sx + 3, y + 15, 12, C.paperInk, 'mono'); lastLabel = sx;
-      }
-      const pen = xAt(now);
-      if (data.energy) {
-        const {hop, db} = data.energy, path = [];
+      // The whole song's trace, one point a pixel column (the loudest hop in it); made once per song.
+      const path = () => {
+        if (data.recorderPath) return data.recorderPath;
+        const {hop, db} = data.energy, out = [];
         for (let k = 0; k <= w - 8; k++) {
           const a = Math.floor(k / (w - 8) * dur / hop), b = Math.max(a + 1, Math.floor((k + 1) / (w - 8) * dur / hop));
           let m = -120; for (let i = a; i < Math.min(db.length, b); i++) m = Math.max(m, db[i]);
-          path.push([x + 4 + k, y + 6 + (hi - clamp(m, lo, hi)) / (hi - lo) * (h - 12)]);
+          out.push([x + 4 + k, y + 6 + (hi - clamp(m, lo, hi)) / (hi - lo) * (h - 12)]);
         }
-        const stroke = (clipFrom, clipTo, color, width) => {
-          p.save(); p.beginPath(); p.rect(clipFrom, y, clipTo - clipFrom, h); p.clip();
-          p.beginPath(); path.forEach(([px, py], i) => i ? p.lineTo(px, py) : p.moveTo(px, py));
-          p.strokeStyle = color; p.lineWidth = width; p.stroke(); p.restore();
-        };
-        stroke(x, x + w, C.paperFaint, 1.2);
-        stroke(x, pen, C.paperInk, 1.6);
+        return (data.recorderPath = out);
+      };
+      const stroke = (clipFrom, clipTo, color, width) => {
+        p.save(); p.beginPath(); p.rect(clipFrom, y, clipTo - clipFrom, h); p.clip();
+        p.beginPath(); path().forEach(([px, py], i) => i ? p.lineTo(px, py) : p.moveTo(px, py));
+        p.strokeStyle = color; p.lineWidth = width; p.stroke(); p.restore();
+      };
+      if (pass === 'base') {
+        write('RECORDER · LOUDNESS', 1028, 562, 12, C.stampDim, 'stamp', 'left', 0, 'bold');
+        write('WHOLE SONG · 1 SHEET', 1404, 562, 10, C.stampFaint, 'stamp', 'right');
+        [0, -12, -24, -36].forEach(db => write(String(db), 1030, y + 6 + (hi - db) / (hi - lo) * (h - 12), 12, C.stampDim, 'mono'));
+        rect(x, y, w, h, C.paper);
+        recordPaper('recorder', x, y, w, h);
+        p.strokeStyle = '#8d8670'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
+        for (let k = 0; k < w; k += 11) { circle(x + 5 + k, y + 4, 1.6, '#5a564a'); circle(x + 5 + k, y + h - 4, 1.6, '#5a564a'); }
+        for (let db = -12; db > lo; db -= 12) { const yy = y + 6 + (hi - db) / (hi - lo) * (h - 12); p.beginPath(); p.moveTo(x, yy); p.lineTo(x + w, yy); p.strokeStyle = '#d0c8ae'; p.lineWidth = 1; p.stroke(); }
+        // Section starts: dashed marks with their short names.
+        p.setLineDash([3, 3]);
+        for (const s of data.sections) {
+          const sx = xAt(s.start);
+          p.beginPath(); p.moveTo(sx, y + 10); p.lineTo(sx, y + h - 8); p.strokeStyle = '#8a8370'; p.lineWidth = 1; p.stroke();
+        }
+        p.setLineDash([]);
+        let lastLabel = -99;
+        for (const s of data.sections) {
+          const sx = xAt(s.start);
+          if (sx - lastLabel < 22) continue;
+          write(SECTION_MARK[s.kind], sx + 3, y + 15, 12, C.paperInk, 'mono'); lastLabel = sx;
+        }
+        // The faint whole-song trace is on the sheet from the start.
+        if (data.energy) stroke(x, x + w, C.paperFaint, 1.2);
+        out.recorderBox = {x, y, width: w, height: h, duration: dur};
+        return;
       }
+      if (pass !== 'live') return;
+      const pen = xAt(now);
+      if (data.energy) stroke(x, pen, C.paperInk, 1.6);
       p.beginPath(); p.moveTo(pen, y + 2); p.lineTo(pen, y + h - 2); p.strokeStyle = C.pen; p.lineWidth = 2; p.stroke();
       out.recorder = {pen: +((pen - x - 4) / (w - 8)).toFixed(4), trace: Boolean(data.energy)};
-      out.recorderBox = {x, y, width: w, height: h, duration: dur};
     }
 
     function keys(data, now, out) {
-      panel(334, 754, 596, 130);
-      write('KEYS', 354, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
-      write('88 · ALL CHANNELS SOUNDING NOW', 910, 777, 11, C.stampFaint, 'mono', 'right');
+      if (pass === 'base') {
+        panel(334, 754, 596, 130, 'plateKeys', ['cross', 'cross', 'cross', 'cross']);
+        write('KEYS', 354, 777, 15, C.stamp, 'stamp', 'left', 0, 'bold');
+        write('88 · ALL CHANNELS SOUNDING NOW', 910, 777, 11, C.stampFaint, 'mono', 'right');
+      }
       const x = 354, y = 795, w = 556, h = 63;
-      rect(x, y, w, h, '#16170f', '#4a4c42', 1);
+      const whites = [];
+      for (let m = 21; m <= 108; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
+      const ww = (w - 8) / whites.length;
+      if (pass === 'base') {
+        rect(x, y, w, h, '#16170f', '#4a4c42', 1);
+        for (let o = 1; o <= 8; o++) {
+          const k = whites.indexOf(12 * (o + 1));
+          if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 12, C.stampDim, 'mono', 'center');
+        }
+        return;
+      }
+      if (pass !== 'live') return;
       // Which keys sound now (afterglow .12 s after a note ends).
       const lit = new Float32Array(128);
       const notes = data.notes;
@@ -896,9 +1121,6 @@
         const v = n.end >= now ? 1 : 1 - (now - n.end) / .12;
         lit[n.pitch] = Math.max(lit[n.pitch] || 0, v);
       }
-      const whites = [];
-      for (let m = 21; m <= 108; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
-      const ww = (w - 8) / whites.length;
       whites.forEach((m, k) => {
         const kx = x + 4 + k * ww, v = lit[m];
         rect(kx, y + 4, ww - 1, h - 8, v > .01 ? mixHex('#d8d2bf', '#ffb24c', v) : '#d8d2bf');
@@ -907,10 +1129,6 @@
         if (![1, 3, 6, 8, 10].includes(m % 12)) continue;
         const left = whites.indexOf(m - 1), kx = x + 4 + (left + 1) * ww - ww * .32, v = lit[m];
         rect(kx, y + 4, ww * .64, (h - 8) * .6, v > .01 ? mixHex('#1c1b17', '#ff9a30', v) : '#1c1b17');
-      }
-      for (let o = 1; o <= 8; o++) {
-        const k = whites.indexOf(12 * (o + 1));
-        if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 12, C.stampDim, 'mono', 'center');
       }
       out.keys = Array.from(lit).map((v, m) => v > .5 ? m : -1).filter(m => m >= 0);
     }
@@ -928,44 +1146,49 @@
       write(key, 970, 877, 10, C.stampFaint, 'mono', 'left');
     }
     function teleprinter(env, now, out) {
-      panel(950, 754, 472, 130);
-      teleTitle(env, 'UPPER = CODE · LOWER = CLEAR', out);
       const x = 970, y = 796, w = 316, h = 74, head = x + w - 6;
-      rect(x, y, w, h, C.paper, '#8d8670', 1);
-      rect(x + w, y - 2, 30, h + 4, '#1f201b', '#4a4c42', 1);
-      circle(1378, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(1378, 832, 10, null, '#8d8a7c', 3);
       const tape = tapeOf(env);
+      if (pass === 'base') {
+        panel(950, 754, 472, 130, 'plateTele', ['slot', 'slot', 'slot', 'slot']);
+        // The key under the paper says what the tape holds: lyrics, or the track sheet when there are none.
+        teleTitle(env, tape ? 'UPPER = CODE · LOWER = CLEAR' : 'TRACK SHEET · UPPER = FIELD · LOWER = VALUE', out);
+        rect(x, y, w, h, C.paper);
+        recordPaper('tape', x, y, w, h);
+        p.strokeStyle = '#8d8670'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
+        rect(x + w, y - 2, 30, h + 4, '#1f201b', '#4a4c42', 1);
+        circle(1378, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(1378, 832, 10, null, '#8d8a7c', 3);
+        return;
+      }
+      if (pass !== 'live') return;
       if (!tape) { trackSheet(env, now, out, {x, y, w, h, head}); return; }
       const telegraph = root.XinScoreTelegraph;
       let printing = false;
       const glyphs = [];
-      if (tape) {
-        // Characters printed by now, the newest at the head.
-        const cell = 34;
-        let printed = 0, newest = null;
-        for (const item of tape.cells) {
-          if (item.time > now) break;
-          printed++; newest = item;
-        }
-        // The tape moves one cell per character, gliding over the character's own time.
-        let glide = 0;
-        if (newest && newest.next > newest.time) glide = clamp((now - newest.time) / Math.min(.12, newest.next - newest.time), 0, 1);
-        printing = Boolean(newest && now < newest.lineEnd);
-        p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
-        for (let k = printed - 1, slot = 0; k >= 0; k--, slot++) {
-          const item = tape.cells[k], cx = head - cell / 2 - (slot - 1 + glide) * cell - cell;
-          if (cx < x - cell) break;
-          if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
-          const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
-          if (code) write(code, cx, y + 17, 12, C.paperInk, 'mono', 'center');
-          const clear = !item.han || now >= item.time + item.half;
-          if (clear) write(item.ch, cx, y + 49, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
-          glyphs.push({ch: item.ch, code: code || null, clear});
-        }
-        p.restore();
+      // Characters printed by now, the newest at the head.
+      const cell = 34;
+      let printed = 0, newest = null;
+      for (const item of tape.cells) {
+        if (item.time > now) break;
+        printed++; newest = item;
       }
+      // The tape moves one cell per character, gliding over the character's own time.
+      let glide = 0;
+      if (newest && newest.next > newest.time) glide = clamp((now - newest.time) / Math.min(.12, newest.next - newest.time), 0, 1);
+      printing = Boolean(newest && now < newest.lineEnd);
+      p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
+      for (let k = printed - 1, slot = 0; k >= 0; k--, slot++) {
+        const item = tape.cells[k], cx = head - cell / 2 - (slot - 1 + glide) * cell - cell;
+        if (cx < x - cell) break;
+        if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
+        const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
+        if (code) write(code, cx, y + 17, 12, C.paperInk, 'mono', 'center');
+        const clear = !item.han || now >= item.time + item.half;
+        if (clear) write(item.ch, cx, y + 49, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
+        glyphs.push({ch: item.ch, code: code || null, clear});
+      }
+      p.restore();
       lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
-      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape ? tape.lines : 0};
+      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape.lines};
     }
     // The track sheet: the fields of model.track that are there, in this order. Values as the tags give them.
     const SHEET = Object.freeze([
@@ -997,9 +1220,7 @@
       return items;
     }
     function trackSheet(env, now, out, {x, y, w, h, head}) {
-      // The title row (the song) was written by teleprinter(); the key under the paper says what the tape holds.
-      rect(966, 871, 444, 12, C.panel);
-      write('TRACK SHEET · UPPER = FIELD · LOWER = VALUE', 970, 877, 10, C.stampFaint, 'mono', 'left');
+      // The title row (the song) and the key under the paper are hardware, in teleprinter()'s base pass.
       const items = sheetOf(env), shown = [];
       // What has printed by now, as pieces laid right to left from the head: each a field, then a dot.
       const pieces = [];
@@ -1080,9 +1301,10 @@
       }
       return null;
     }
-    loadFonts();
+    ready();
     return {paint, hit};
   }
-  root.XinScoreRadar = Object.freeze({create, ready: loadFonts, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
+  const materials = () => Object.keys(MATERIALS).filter(key => MATERIALS[key]);
+  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
   if (typeof module === 'object' && module.exports) module.exports = root.XinScoreRadar;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

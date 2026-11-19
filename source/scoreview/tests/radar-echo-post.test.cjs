@@ -244,3 +244,42 @@ test('the rating plate reads 蒋 and 鑫 from the telegraph table; the song sits
   const listed = post(steady(lanes, 64, {track: {...song.track, title: 'X', duration: 64, facts}})).frame(63).motion.teleprinter;
   assert.deepEqual(listed.fields, [['COMPOSER', '周杰伦'], ['RELEASED', '2004-08-03']], 'the list as given, empty values left out, nothing added');
 });
+
+test('the hardware is drawn once into two cached layers; each frame lays them down and draws only what moves (SPEC-WEATHER batch 1)', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100], [9, 2, 64, 90]]}];
+  const {frame, stage} = post(steady(lanes, 64));
+  const made = [];
+  stage.canvas.getContext().canvas = stage.canvas;   // as a real context points back at its canvas
+  stage.canvas.ownerDocument ={createElement: () => { const layer = mockCanvas(); made.push(layer); return layer.canvas; }};
+  const a = frame(2).motion;
+  assert.equal(made.length, 2, 'a base layer and an over layer');
+  assert.deepEqual(a.layers, {cached: true, draws: 1, materials: 0});
+  const [base, over] = made, baseCalls = base.calls.length, overCalls = over.calls.length;
+  assert.ok(base.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'stamped names are in the base layer');
+  assert.ok(over.calls.some(c => c.name === 'fillText' && c.args[0] === 'GUITAR'), 'the tape labels are in the over layer');
+  stage.reset();
+  const b = frame(10).motion;
+  assert.equal(base.calls.length, baseCalls, 'not drawn again');
+  assert.equal(over.calls.length, overCalls);
+  assert.equal(b.layers.draws, 1);
+  assert.equal(stage.calls.filter(c => c.name === 'drawImage').length, 2, 'two copies a frame');
+  assert.ok(!stage.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'no hardware in the moving part');
+  assert.equal(b.plate.line1, 'RESISTANCE 5592–9515 OHMS', 'what the hardware reports is kept with the layer');
+  assert.ok(b.recorderBox && b.teleTitle !== undefined);
+  // The same moment draws the same frame, cached or not.
+  const direct = post(steady(lanes, 64)).frame(10).motion;
+  for (const key of ['meters', 'caution', 'chord', 'drums', 'recorder', 'teleprinter', 'angle', 'echoes', 'plate', 'teleTitle']) {
+    assert.deepEqual(b[key], direct[key], key);
+  }
+});
+
+test('the materials are the files the build ships: every MATERIAL_FILES entry is in assets/radar and in build-local\'s list', () => {
+  const {existsSync} = require('node:fs');
+  const build = readFileSync(join(__dirname, '../../release-tools/build-local.cjs'), 'utf8');
+  assert.equal(Object.keys(Radar.MATERIAL_FILES).length, 12);
+  for (const file of Object.values(Radar.MATERIAL_FILES)) {
+    assert.ok(existsSync(join(__dirname, '../assets/radar', file)), file);
+    assert.ok(build.includes("'" + file.replace(/\.png$/, '') + "'") && build.includes("'assets/radar/'"), file + ' is shipped');
+  }
+  assert.deepEqual(Radar.materials(), [], 'none load without a document (the flat drawing stands in)');
+});
