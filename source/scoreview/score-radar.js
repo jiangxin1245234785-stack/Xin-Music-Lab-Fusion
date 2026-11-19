@@ -1300,7 +1300,7 @@
         Object.assign(out, {turn: +turn.toFixed(4), angle: +(phase * 360).toFixed(2), echoes});
       }
       // Corner instruments.
-      voxScope(data, now, out, env);
+      voxScope(data, now, out, env, bars);
       registerDial(data, now, out);
       panDial(data, now, out);
     }
@@ -1314,7 +1314,10 @@
     // The VOX beam's detector (radar.5 feedback): its grid, its attack and release, how long it warms up before the
     // window, and the noise (peak px) renewed every sweep.
     const VOX_DT = .02, VOX_ATTACK = .1, VOX_RELEASE = .35, VOX_WARM = 1.5, VOX_NOISE = .6, VOX_SWEEP = 1 / 30;
-    function voxScope(data, now, out, env) {
+    // The sweep (radar.8 feedback): the blanked gap ahead of the spot (share of the width), this sweep's trace and the
+    // previous one's brightness, and how long the part just behind the spot stays brighter.
+    const SCAN_GAP = .04, SCAN_NEW = .62, SCAN_OLD = .3, SCAN_FRESH = .5;
+    function voxScope(data, now, out, env, bars) {
       const cx = 396, cy = 178, r = 45;
       if (pass === 'base') {
         cast(disk(cx, cy, r + 6), 1.2);
@@ -1332,13 +1335,13 @@
       }
       if (pass === 'over') { glass(cx - r, cy - r, 2 * r, 2 * r, 300, 40, true); inset(disk(cx, cy, r - .5), 1.2); return; }
       p.save(); circle(cx, cy, r - 1, null); p.clip();
-      // One beam, never broken (radar.5 feedback): the last `span` seconds left to right, now at the right edge; where
-      // the voice sings the beam rides its pitch, where it does not the beam lies on the baseline. The phosphor keeps
-      // the trace and lets it fade with age (bright at now, dim at the left), so when a phrase ends its curve dims
-      // away to the left while the baseline brightens in from the right; nothing vanishes from one frame to the next.
-      const span = 4, left = cx - r + 4, width = 2 * r - 8, range = data.vocalRange, glowFor = 1.3;
+      // The sweep (radar.8 feedback): one sweep per turn of the disc, read from the disc's own turn coordinate; the
+      // spot at this turn's fraction. Where the voice sings the beam rides its pitch, elsewhere it lies on the baseline.
+      const left = cx - r + 4, width = 2 * r - 8, range = data.vocalRange;
       const y = m => range ? cy + 34 - (m - range[0]) / Math.max(1, range[1] - range[0]) * 68 : cy;
-      const vocalNotes = !data.contour && range ? data.notes.filter(n => n.cat === 0 && n.end >= now - span && n.start <= now) : [];
+      const turn = turnAt(env, bars, now), n0 = Math.floor(turn), phase = turn - n0;
+      const sweepFrom = turnTime(env, bars, n0 - 1);   // the previous sweep's start (negative before the song)
+      const vocalNotes = !data.contour && range ? data.notes.filter(n => n.cat === 0 && n.end >= sweepFrom - VOX_WARM && n.start <= now) : [];
       const pitchAt = t => {
         if (t < 0 || !range) return null;
         if (data.contour) { const m = data.contour.midi[Math.round(t / data.contour.hop)]; return Number.isFinite(m) ? m : null; }
@@ -1346,10 +1349,9 @@
         return n ? n.pitch : null;
       };
       // The beam's height (radar.5 feedback: no step between a pitch and the baseline): a causal envelope over a grid
-      // fixed in song time (VOX_DT), from VOX_WARM seconds before the window. Sung: the envelope rises to 1 (time
-      // constant VOX_ATTACK) at the pitch now sung; not sung: it falls to 0 (VOX_RELEASE) holding the last pitch. The
-      // beam is the baseline plus the envelope times the held pitch's offset from it, so it eases in and out.
-      const gridFrom = Math.floor((now - span - VOX_WARM) / VOX_DT), gridTo = Math.ceil(now / VOX_DT);
+      // fixed in song time (VOX_DT), from VOX_WARM seconds before the previous sweep. Sung: the envelope rises to 1
+      // (VOX_ATTACK) at the pitch now sung; not sung: it falls to 0 (VOX_RELEASE) holding the last pitch.
+      const gridFrom = Math.floor((Math.max(0, sweepFrom) - VOX_WARM) / VOX_DT), gridTo = Math.ceil(now / VOX_DT);
       const ka = 1 - Math.exp(-VOX_DT / VOX_ATTACK), kr = Math.exp(-VOX_DT / VOX_RELEASE), beam = [];
       let lvl = 0, held = null;
       for (let g = gridFrom; g <= gridTo; g++) {
@@ -1362,30 +1364,42 @@
         return {off: beam[i].off + (b.off - beam[i].off) * f, sung: beam[Math.round(u)].sung};
       };
       // Low signal-to-noise: each point of the sweep jitters by under a pixel (two hashed values, a fine and a slower
-      // one), new on each sweep (VOX_SWEEP) and the same for the same moment.
+      // one), new on each VOX_SWEEP and the same for the same moment.
       const sweep = Math.floor(now / VOX_SWEEP), jitter = env.options.radarNoise === false ? 0 : VOX_NOISE;
       const hash = k => { const h = Math.sin(k * 12.9898 + sweep * 78.233) * 43758.5453; return h - Math.floor(h) - .5; };
-      // The beam in pieces of ~12 px, each stroked at the brightness of its age (a few strokes a frame, not one per
-      // point, so the glow stays cheap).
-      const step = 1.5, piece = 8, samples = [];
+      // This sweep up to the spot, and what is left of the previous sweep after the blanked gap ahead of it.
+      const step = 1.5, piece = 8, fresh = [], old = [];
+      const point = (x, t) => { const b = beamAt(t), k = Math.round(x / step); return {x, t, y: cy + b.off + jitter * (hash(k) * 1.2 + hash(Math.floor(k / 4) + 977) * .8), sung: b.sung}; };
       for (let x = 0; x <= width + 1e-9; x += step) {
-        const t = now - span + x / width * span, b = beamAt(t), k = Math.round(x / step);
-        const noise = jitter * (hash(k) * 1.2 + (hash(Math.floor(k / 4) + 977) * .8));
-        samples.push({x, y: cy + b.off + noise, sung: b.sung});
+        const u = x / width;
+        if (u < phase) fresh.push(point(x, turnTime(env, bars, n0 + u)));
+        else if (u >= phase + SCAN_GAP) { const t = turnTime(env, bars, n0 - 1 + u); if (t >= 0) old.push(point(x, t)); }
       }
-      const sung = samples.filter(q => q.sung).length;
-      for (let i0 = 0; i0 < samples.length - 1; i0 += piece) {
-        const part = samples.slice(i0, i0 + piece + 1);
-        p.beginPath();
-        part.forEach((q, k) => k ? p.lineTo(left + q.x, q.y) : p.moveTo(left + q.x, q.y));
-        const mid = part[Math.floor(part.length / 2)].x, age = span * (1 - mid / width), alpha = Math.max(.08, Math.exp(-age / glowFor));
-        p.strokeStyle = `rgba(130,242,166,${alpha.toFixed(3)})`; p.lineWidth = 2;
-        p.shadowColor = `rgba(130,242,166,${(.7 * alpha).toFixed(3)})`; p.shadowBlur = 4 * unit; p.stroke();
-      }
+      const spotX = phase * width, spot = point(spotX, now);
+      fresh.push(spot);
+      // Pieces of ~12 px, each stroked at its brightness (a few strokes a frame, so the glow stays cheap).
+      const strokeParts = (pts, alphaOf) => {
+        for (let i0 = 0; i0 < pts.length - 1; i0 += piece) {
+          const part = pts.slice(i0, i0 + piece + 1);
+          p.beginPath();
+          part.forEach((q, k) => k ? p.lineTo(left + q.x, q.y) : p.moveTo(left + q.x, q.y));
+          const alpha = alphaOf(part[Math.floor(part.length / 2)]);
+          p.strokeStyle = `rgba(130,242,166,${alpha.toFixed(3)})`; p.lineWidth = 2;
+          p.shadowColor = `rgba(130,242,166,${(.7 * alpha).toFixed(3)})`; p.shadowBlur = 4 * unit; p.stroke();
+        }
+      };
+      strokeParts(old, () => SCAN_OLD);
+      strokeParts(fresh, q => SCAN_NEW + (1 - SCAN_NEW) * Math.exp(-Math.max(0, now - q.t) / SCAN_FRESH));
       p.shadowBlur = 0;
+      // The spot: the brightest point, a small glow round it.
+      const g = p.createRadialGradient(left + spotX, spot.y, 0, left + spotX, spot.y, 6);
+      g.addColorStop(0, 'rgba(210,255,225,.9)'); g.addColorStop(.4, 'rgba(130,242,166,.45)'); g.addColorStop(1, 'rgba(130,242,166,0)');
+      p.fillStyle = g; p.fillRect(left + spotX - 6, spot.y - 6, 12, 12);
       p.restore();
+      const all = fresh.concat(old), sung = all.filter(q => q.sung).length;
       out.vox = sung > 0;
-      out.voxShare = +(sung / samples.length).toFixed(3);   // the share of the beam on a sung pitch
+      out.voxShare = +(sung / Math.max(1, all.length)).toFixed(3);   // the share of the drawn beam on a sung pitch
+      out.voxSweep = {phase: +phase.toFixed(4), turn: n0, fresh: fresh.length, old: old.length};
     }
     function registerDial(data, now, out) {
       const cx = 396, cy = 672, r = 44;

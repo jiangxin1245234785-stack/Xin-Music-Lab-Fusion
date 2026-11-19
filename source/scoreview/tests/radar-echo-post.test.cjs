@@ -524,19 +524,32 @@ test('radar.5 feedback: each meter is calibrated for its channel, and the lamps 
   assert.ok(checked > 2500 && inRed > 25, 'every channel swept, the red arc reached');
 });
 
-test('radar.5 feedback: the VOX scope never drops its trace at once; when a phrase ends it slides out to the left', () => {
-  // One sung phrase from 2 to 6 s (a vocal note), nothing after it.
+test('radar.8 feedback: the VOX scope sweeps left to right with the disc, the new trace over the old; even in brightness, no dark half', () => {
+  // One sung phrase from 2 to 6 s; 120 bpm 4/4, so one turn of the disc (four bars) is 8 s and so is one sweep.
   const lanes = [{id: 'v', kind: 'pitched', group: 'vocals', notes: [[2, 4, 64, 100]]}, {id: 'g', kind: 'pitched', group: 'guitar', notes: [[0, 20, 60, 100]]}];
   const {frame, stage} = post(steady(lanes, 20));
+  // The spot is where the disc's sweep is: the turn's fraction.
+  for (const t of [9, 10, 12, 14, 15.9]) assert.ok(Math.abs(frame(t).motion.voxSweep.phase - ((t / 8) % 1)) < 1e-3);
+  // Nothing jumps from one frame to the next, across the fly-back at 8 s and 16 s too.
   let last = null;
-  for (let t = 5.5; t < 10.5; t += .05) {
-    stage.reset();
+  for (let t = 5.5; t < 16.5; t += .05) {
     const share = frame(+t.toFixed(2)).motion.voxShare;
     if (last !== null) assert.ok(Math.abs(share - last) < .03, `at ${t.toFixed(2)} the sung part jumped from ${last} to ${share}`);
     last = share;
   }
-  assert.ok(frame(5.9).motion.voxShare > .9 && frame(8).motion.voxShare > .4 && frame(8).motion.voxShare < .6, 'two seconds after the phrase half the beam still holds it');
-  assert.equal(frame(10.2).motion.voxShare, 0, 'gone once it has left the window');
+  // The phrase stays on the screen as the previous sweep until the spot writes over it in the next one.
+  assert.ok(frame(8.1).motion.voxShare > .4, 'just after the fly-back the phrase is still there, from the last sweep');
+  assert.ok(frame(10.2).motion.voxShare > .3, 'ahead of the spot, the old sweep keeps it');
+  assert.equal(frame(14.6).motion.voxShare, 0, 'overwritten once the spot has passed where it was');
+  // Brightness: this sweep's trace never below SCAN_NEW (.62) however far left; the old sweep at .3, only ahead of the spot.
+  for (const t of [8.2, 10, 12, 14, 15.8]) {
+    stage.reset(); const m = frame(t).motion;
+    const scope = stage.calls.filter(c => c.name === 'stroke' && /^rgba\(130,242,166,/.test(String(c.strokeStyle)) && c.lineWidth === 2);
+    const alphas = scope.map(c => +/,([\d.]+)\)$/.exec(c.strokeStyle)[1]);
+    assert.ok(alphas.length > 5);
+    assert.ok(alphas.every(v => Math.abs(v - .3) < 1e-6 || v >= .62 - 1e-6), `at ${t}: ${alphas.join(' ')}`);
+    assert.ok(m.voxSweep.fresh > 0 && m.voxSweep.old > 0 || m.voxSweep.phase > .95);
+  }
   assert.equal(frame(8).motion.vox, true);
 });
 
