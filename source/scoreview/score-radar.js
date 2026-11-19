@@ -42,7 +42,7 @@
   const C = Object.freeze({
     void: '#0b0c0a', panel: '#33362d', panelHi: '#40433a', panelLo: '#25271f', seam: '#1a1b16', screw: '#5b5d52',
     stamp: '#dcd6bf', stampDim: '#b3ad96', stampFaint: '#928d78',
-    dial: '#e7dfc4', dialEdge: '#b9b195', dialInk: '#2b2a23', red: '#b5412d', tape: '#efe6c8', tapeInk: '#2a2722',
+    dial: '#e7dfc4', dialEdge: '#b9b195', dialInk: '#2b2a23', red: '#b5412d', amberInk: '#d08a2a', tape: '#efe6c8', tapeInk: '#2a2722',
     screen: '#0c2117', screenHi: '#123323', screenRim: '#060f0a', phos: '#82f2a6', phosDim: '#3c9c66', phosFaint: '#1f5a3b',
     amber: '#ffb24c', amberHot: '#ffe0a0', amberLow: '#5a3a1c', lampOff: '#2d241b',
     tube: '#ff8a2a', tubeHot: '#ffc27a', tubeOff: '#3b2015', tubeGlass: '#170d08',
@@ -64,6 +64,11 @@
   // The channel meters' scale: the needle rests at METER_ZERO_DB and reaches full scale METER_SPAN_DB above it. The
   // lamps' "sounding" gate is the same zero.
   const METER_ZERO_DB = -45, METER_SPAN_DB = 40;
+  // radar.5 feedback (SPEC-WEATHER): each meter is calibrated for its own channel, as the operators did (the tag and
+  // the crayon marks): the needle rests at METER_ZERO_DB, enters the amber arc at the channel's yellow line, the red
+  // arc at its red line (score-radar-lamps.js thresholds()), and reaches full scale at the channel's loudest second.
+  // The zones sit at the same place on every dial; the lamps light from the zone the needle shows.
+  const METER_AMBER = .6, METER_RED = .8, LAMP_AFTERGLOW = .25;
   // Tube cathodes: one stroked wire per digit (SVG-like commands M L Q C, absolute, in a 20 x 28 box at 30 px), after
   // the "self-drawn cathode" design the user accepted (work/score-depth-20261118/fonts-gpt, specimens.js).
   const CATHODES = (() => {
@@ -180,6 +185,15 @@
     return {pc: ((pc % 12) + 12) % 12, lamps, label: m[0]};
   }
 
+  // A channel's level (dB) as the needle's place on its dial (0..1): zero to amber, amber to red, red to the top, each
+  // stretch straight; without a calibration the plain scale.
+  function meterScale(db, cal) {
+    if (!cal) return clamp((db - METER_ZERO_DB) / METER_SPAN_DB, 0, 1);
+    if (db <= METER_ZERO_DB) return 0;
+    if (db < cal.yellow) return METER_AMBER * (db - METER_ZERO_DB) / Math.max(.5, cal.yellow - METER_ZERO_DB);
+    if (db < cal.red) return METER_AMBER + (METER_RED - METER_AMBER) * (db - cal.yellow) / Math.max(.5, cal.red - cal.yellow);
+    return clamp(METER_RED + (1 - METER_RED) * (db - cal.red) / Math.max(.5, cal.top - cal.red), METER_RED, 1);
+  }
   // Everything that depends only on the model, made once per model.
   function prepare(model, events) {
     const duration = Number(model.track && model.track.duration) || 0;
@@ -213,11 +227,12 @@
     drums.sort((a, b) => a.time - b.time);
     // Channel levels: the loudest member stem's dB on the grid; null when the song has no level for that channel.
     const levels = model.levels && model.levels.groups && model.levels.hop > 0 ? model.levels : null;
+    const Lm = lampsApi(), calibration = levels && Lm ? Lm.thresholds(levels, {gateDb: METER_ZERO_DB}) : null, calibrated = CATS.map(() => null);
     const meter = CATS.map(cat => {
       if (!levels) return null;
       const rows = cat.members.map(g => levels.groups[g]).filter(Array.isArray);
       if (!rows.length) return null;
-      const out = new Float32Array(steps);
+      const out = new Float32Array(steps), series = new Float32Array(steps);
       for (let i = 0; i < steps; i++) {
         const at = i * GRID / levels.hop - .5;
         let best = -120;
@@ -226,8 +241,16 @@
           const db = (row[k] ?? -120) + ((row[k2] ?? -120) - (row[k] ?? -120)) * smooth(f);
           best = Math.max(best, db);
         }
-        out[i] = clamp((best - METER_ZERO_DB) / METER_SPAN_DB, 0, 1);
+        series[i] = best;
       }
+      // Calibrated for this channel when the lamp module gives its lines, else the plain scale (zero to zero + span).
+      const limits = calibration && calibration.channels[cat.id];
+      let top = -Infinity;
+      for (const row of rows) for (const v of row) if (Number.isFinite(v)) top = Math.max(top, v);
+      const cal = limits && Number.isFinite(limits.yellow) && Number.isFinite(limits.red)
+        ? {yellow: limits.yellow, red: Math.max(limits.red, limits.yellow), top: Math.max(top, Math.max(limits.red, limits.yellow) + .5)} : null;
+      calibrated[CATS.indexOf(cat)] = cal ? {channel: cat.id, ...cal} : null;
+      for (let i = 0; i < steps; i++) out[i] = meterScale(series[i], cal);
       return out;
     });
     // Loudness: the song's energy (dBFS, every hop) for the recorder, PEAK and DROP.
@@ -293,7 +316,7 @@
       for (let i = 0; i < steps; i++) if (series[i] > .02) { n++; sum += series[i]; }
       return n ? {channel: c, seconds: n * GRID, mean: sum / n} : null;
     }).filter(Boolean).sort((a, b) => b.seconds - a.seconds || a.channel - b.channel).slice(0, 3);
-    return {duration, steps, present, sounding, meter, caution, register, contour, vocalRange, range, notes, drums, longest, usage,
+    return {duration, steps, present, sounding, meter, calibrated, lampCut: calibration, caution, register, contour, vocalRange, range, notes, drums, longest, usage,
       sections, kinds, chords, energy, pan, firstNote, lastNote};
   }
 
@@ -302,10 +325,6 @@
     function ensure(env) {
       if (prepKey !== env.events) {
         prep = prepare(env.model, env.events); prepKey = env.events; prepGen++; addFill(env);
-        const L = lampsApi();
-        // The rule and its grades are the lamp module's defaults; what counts as sounding is the meters' zero, so a
-        // lamp is lit exactly when its needle has left zero (one number for both).
-        prep.lampCut = L && env.model.levels ? L.thresholds(env.model.levels, {gateDb: METER_ZERO_DB}) : null;
       }
       return prep;
     }
@@ -364,6 +383,21 @@
       let on = 0;
       for (let k = 0; k < n; k++) on += sample(series, t - k * GRID) ? 1 : 0;
       return on / n;
+    }
+    // The three lamps from the needle (radar.5 feedback): green while it is off zero, amber while it is in the amber
+    // arc or beyond, red while in the red arc; each lamp fades over LAMP_AFTERGLOW once the needle has left its zone
+    // (a lamp may go out a little after the needle, never light before it).
+    function needleLamps(series, t, fall, overshoot) {
+      const out = {green: 0, yellow: 0, red: 0};
+      for (let k = 0; k * GRID <= LAMP_AFTERGLOW + 1e-9; k++) {
+        const at = t - k * GRID;
+        if (at <= 0) break;
+        const v = needle(series, at, fall, overshoot), glow = 1 - k * GRID / LAMP_AFTERGLOW;
+        if (v > .005) out.green = Math.max(out.green, glow);
+        if (v >= METER_AMBER) out.yellow = Math.max(out.yellow, glow);
+        if (v >= METER_RED) out.red = Math.max(out.red, glow);
+      }
+      return out;
     }
     // A needle with inertia as a function of song time: rises at once, falls at `fall` of full scale a second.
     function needle(series, t, fall, overshoot = false) {
@@ -977,12 +1011,13 @@
           inset(box(x, y, w, h, 2), 1);
           p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip();
           p.beginPath(); p.arc(cx, cy, r, a0, a1); p.strokeStyle = C.dialInk; p.lineWidth = 1.2; p.stroke();
-          p.beginPath(); p.arc(cx, cy, r, a0 + 1.8 * .78, a1); p.strokeStyle = C.red; p.lineWidth = 4; p.stroke();
+          p.beginPath(); p.arc(cx, cy, r, a0 + (a1 - a0) * METER_AMBER, a0 + (a1 - a0) * METER_RED); p.strokeStyle = C.amberInk; p.lineWidth = 4; p.stroke();
+          p.beginPath(); p.arc(cx, cy, r, a0 + (a1 - a0) * METER_RED, a1); p.strokeStyle = C.red; p.lineWidth = 4; p.stroke();
           for (let k = 0; k <= 10; k++) {
             const a = a0 + (a1 - a0) * k / 10, long = k % 5 === 0;
             p.beginPath(); p.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
             p.lineTo(cx + Math.cos(a) * (r - (long ? 10 : 6)), cy + Math.sin(a) * (r - (long ? 10 : 6)));
-            p.strokeStyle = k >= 8 ? C.red : C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
+            p.strokeStyle = k >= 10 * METER_RED ? C.red : k >= 10 * METER_AMBER ? C.amberInk : C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
           }
           p.restore();
           if (auditSink) {   // the scale band, which the name tape must not cover
@@ -1041,7 +1076,7 @@
         // Three lamps: lit by the channel's level against its own (off, muted or absent: dark, as the base drew them).
         const L = lampsApi();
         if (L) {   // without level data the three stay dark; on / off reads from the lever
-          const g = off || !data.lampCut ? {green: 0, yellow: 0, red: 0} : L.glow(env.model.levels, data.lampCut, cat.id, now, {enabled: true});
+          const g = off || !data.calibrated[i] ? {green: 0, yellow: 0, red: 0} : needleLamps(data.meter[i], now, fall, env.options.radarOvershoot !== false);
           out.lamps = out.lamps || {};
           out.lamps[cat.id] = {green: +g.green.toFixed(3), yellow: +g.yellow.toFixed(3), red: +g.red.toFixed(3)};
           [['red', -1], ['yellow', 0], ['green', 1]].forEach(([c, k]) => {

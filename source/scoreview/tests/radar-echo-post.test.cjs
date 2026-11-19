@@ -444,7 +444,9 @@ test('batch 4: crayon marks on the three busiest meters at their mean level; the
   const {frame} = post(model);
   const marks = frame(5).motion.crayon;
   assert.deepEqual(marks.map(m => m.channel).sort(), ['bass', 'guitar', 'vocals'], 'the three heard longest (piano, ten seconds, has none)');
-  assert.ok(marks.every(m => Math.abs(m.at - .5) < .03), 'each at its mean level while heard');
+  // Each channel sits at one level (-25 dB), which is then its own red line: on its calibrated dial that is the start
+  // of the red arc (METER_RED .8), and the mark goes there.
+  assert.ok(marks.every(m => Math.abs(m.at - .8) < .03), 'each at its mean level while heard: ' + JSON.stringify(marks));
   // A step from silence to -25 dB at 40 s on the guitar's own row (a fresh song): the needle passes .5 and comes back.
   const step = {hop: 1, groups: {guitar: [...Array(40).fill(-90), ...Array(24).fill(-25)]}};
   const stepModel = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 62, 60, 100]]}], 64, {levels: step});
@@ -469,7 +471,8 @@ test('a lamp counts a channel as sounding exactly where its needle leaves zero: 
   for (let t = .5; t < 60; t += .25) {
     const m = frame(t).motion;
     for (const ch of ['guitar', 'drums']) {
-      if (m.meters[ch] === 0) { zeroSeconds++; assert.ok(m.lamps[ch].green < .5, `${ch} at ${t}: needle at zero, green ${m.lamps[ch].green}`); }
+      // At zero for longer than the bulb's afterglow (.25 s): dark.
+      if (m.meters[ch] === 0 && frame(t - .3).motion.meters[ch] === 0) { zeroSeconds++; assert.ok(m.lamps[ch].green < .5, `${ch} at ${t}: needle at zero, green ${m.lamps[ch].green}`); }
     }
   }
   assert.ok(zeroSeconds > 100, 'the residue seconds were looked at');
@@ -479,6 +482,33 @@ test('a lamp counts a channel as sounding exactly where its needle leaves zero: 
   assert.ok([10, 35, 55].every(t => frame(t).motion.lamps.drums.green < .5), 'residue alone never lights a lamp');
   // One number: the meters' zero is the lamps' gate (the source says so, so a change of zero moves both).
   const src = readFileSync(join(__dirname, '../score-radar.js'), 'utf8');
-  assert.match(src, /clamp\(\(best - METER_ZERO_DB\) \/ METER_SPAN_DB, 0, 1\)/);
-  assert.match(src, /L\.thresholds\(env\.model\.levels, \{gateDb: METER_ZERO_DB\}\)/);
+  assert.match(src, /if \(db <= METER_ZERO_DB\) return 0;/);
+  assert.match(src, /Lm\.thresholds\(levels, \{gateDb: METER_ZERO_DB\}\)/);
+});
+
+test('radar.5 feedback: each meter is calibrated for its channel, and the lamps show the zone the needle is in, at every moment', () => {
+  // Three channels with their own ranges, each level moving up and down over the song (a second a value).
+  const wave = (base, swing, period) => Array.from({length: 90}, (_, i) => +(base + swing * Math.sin(i / period)).toFixed(1));
+  const levels = {hop: 1, groups: {vocals: wave(-20, 12, 3.1), guitar: wave(-28, 8, 2.3), bass: wave(-14, 5, 4.7)}};
+  const lanes = ['vocals', 'guitar', 'bass'].map(group => ({id: group, kind: 'pitched', group, notes: [[0, 90, 60, 100]]}));
+  const {frame, stage} = post(steady(lanes, 90, {levels}));
+  const zone = v => v >= .8 ? 3 : v >= .6 ? 2 : v > .005 ? 1 : 0;
+  const lit = l => l.red > .5 ? 3 : l.yellow > .5 ? 2 : l.green > .5 ? 1 : 0;
+  const history = {};
+  let checked = 0, inRed = 0;
+  for (let t = .1; t < 89; t += .1) {
+    stage.reset();   // the recording canvas keeps every call: one frame at a time
+    const m = frame(+t.toFixed(2)).motion;
+    for (const ch of ['vocals', 'guitar', 'bass']) {
+      const z = zone(m.meters[ch]), l = lit(m.lamps[ch]);
+      (history[ch] ||= []).push(z);
+      // The reported needle is rounded to 3 places: a reading within .002 of a zone edge is not judged.
+      if ([.005, .6, .8].some(edge => Math.abs(m.meters[ch] - edge) < .002)) continue;
+      // Never a lamp below the needle's zone; above it only as afterglow (the needle was in that zone within .25 s).
+      assert.ok(l >= z, `${ch} at ${t.toFixed(2)}: needle zone ${z}, lamps ${l}`);
+      if (l > z) assert.ok(history[ch].slice(-4).some(h => h >= l), `${ch} at ${t.toFixed(2)}: a lamp lit before the needle got there`);
+      checked++; if (z === 3) inRed++;
+    }
+  }
+  assert.ok(checked > 2500 && inRed > 25, 'every channel swept, the red arc reached');
 });
