@@ -22,7 +22,7 @@
   function check(records, {panelPad = 2, screwGap = 3, frameGap = 2, ringGap = 4} = {}) {
     const texts = records.filter(r => r.type === 'text' && r.text.trim()), panels = records.filter(r => r.type === 'panel');
     const frames = records.filter(r => r.type === 'frame'), screws = records.filter(r => r.type === 'screw'), rings = records.filter(r => r.type === 'ring');
-    const tapes = records.filter(r => r.type === 'tape'), keeps = records.filter(r => r.type === 'keep');
+    const tapes = records.filter(r => r.type === 'tape'), keeps = records.filter(r => r.type === 'keep'), marks = records.filter(r => r.type === 'mark');
     const problems = [];
     const add = (kind, what, detail) => problems.push({kind, what, detail});
     for (const t of texts) {
@@ -42,6 +42,13 @@
       }
     }
     for (const tape of tapes) for (const k of keeps) if (inter(tape, k)) add('cover', 'tape × ' + k.what, '');
+    // A moving mark (the recorder pen) never runs through a text; a frame never covers part of a screw (its own
+    // screws sit wholly inside it).
+    for (const m of marks) for (const t of texts) if (inter(m, t)) add('mark', m.what + ' × ' + name(t), '');
+    for (const f of frames) for (const sc of screws) {
+      const box = {x: sc.cx - sc.r, y: sc.cy - sc.r, w: 2 * sc.r, h: 2 * sc.r};
+      if (inter(f, box) && !inside(box, f)) add('screw', `frame ${[f.x, f.y, f.w, f.h].map(v => v.toFixed(0)).join(',')}`, `covers part of the screw at ${sc.cx.toFixed(0)},${sc.cy.toFixed(0)}`);
+    }
     for (const tape of tapes) for (const c of rings) if (c.r >= 40 && near(tape, c) && !corners(tape).every(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r)) add('cover', 'tape × dial r ' + c.r.toFixed(0), `at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
     for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
       const a = texts[i], b = texts[j];

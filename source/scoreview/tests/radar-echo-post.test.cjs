@@ -357,4 +357,55 @@ test('layout: no text leaves its panel, overlaps another, sits on a screw or str
   assert.deepEqual(Layout.check([panel, text('A', 10, 10), text('B', 20, 12)]).map(q => q.kind), ['overlap']);
   assert.deepEqual(Layout.check([panel, text('A', 85, 10)]).map(q => q.kind), ['edge']);
   assert.deepEqual(Layout.check([panel, {type: 'tape', x: 0, y: 0, w: 30, h: 10}, {type: 'keep', x: 20, y: 5, w: 30, h: 10, what: 'X scale'}]).map(q => q.kind), ['cover']);
+  assert.deepEqual(Layout.check([panel, text('A', 10, 10), {type: 'mark', x: 15, y: 0, w: 2, h: 90, what: 'pen'}]).map(q => q.kind), ['mark']);
+  assert.deepEqual(Layout.check([panel, {type: 'frame', x: 10, y: 10, w: 40, h: 40}, {type: 'screw', cx: 12, cy: 30, r: 5}]).map(q => q.kind), ['screw']);
+});
+
+test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readings stay in the measured bars, a space takes a tape cell, other metres say they have bar lines, drum cells fill the row', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}];
+  // R01: Fsus4, F#m7b5 and a slash chord are printed whole (by size first, shortened only after).
+  for (const label of ['Fsus4', 'F#m7b5', 'Dbmaj7/F']) {
+    const chord = post(steady(lanes, 64, {chords: [[0, 10, label]]})).frame(5).motion.chord;
+    assert.equal(chord.shown, label, label + ' at ' + chord.size + ' px');
+    assert.ok(chord.size >= 14);
+  }
+  // R02: a song whose bars run 4 .. 60 s (120 bpm, 4/4): no bar reading before the first bar line or after the last
+  // bar; the disc numbers only bars the song has.
+  const beats = Array.from({length: 129}, (_, i) => i / 2), downbeats = beats.filter(t => t >= 4 && t <= 58 && (t - 4) % 2 === 0);
+  const late = {...song, track: {...song.track, duration: 64}, bars: {bpm: 120, beatsPerBar: 4, beats, downbeats, steady: true}, lanes};
+  const {frame} = post(late);
+  assert.equal(frame(1).motion.barBeat, '---·-', 'before the first bar line');
+  assert.equal(frame(4.1).motion.barBeat, '001·1');
+  assert.equal(frame(59).motion.barBeat, '028·3', 'the last bar (58 .. 60), its third beat');
+  assert.equal(frame(61).motion.barBeat, '---·-', 'after the last bar');
+  for (const t of [0, 1, 3, 59, 61, 63]) assert.ok(frame(t).motion.barNumbers.every(n => n >= 1 && n <= downbeats.length), 'disc numbers at ' + t);
+  assert.deepEqual(frame(1).motion.barNumbers, [], 'the turn before the first bar shows none');
+  // R03: WE GO ON is three words: the spaces take a cell each, blank.
+  const tape = Radar.create().tape({lyrics: {enabled: true, offset: 0, lines: [{time: 10, text: 'WE GO ON'}]}, options: {}});
+  assert.deepEqual(tape.cells.map(c => c.blank ? '_' : c.ch).join(''), 'WE_GO_ON');
+  // R05: bar lines of five beats keep the rolling strip and say so (not "no bar lines").
+  const five = Array.from({length: 161}, (_, i) => i / 2), fiveDown = five.filter((_, i) => i % 5 === 0);
+  const fiveFrame = post({...song, track: {...song.track, duration: 80}, bars: {bpm: 120, beatsPerBar: 5, beats: five, downbeats: fiveDown, steady: true}, lanes});
+  Radar.audit(true);
+  try { fiveFrame.view.draw(20); } finally { var five5 = Radar.audited(); Radar.audit(false); }
+  assert.ok(five5.some(r => r.type === 'text' && r.text === '5 BEATS / BAR'));
+  assert.ok(!five5.some(r => r.type === 'text' && /NO BAR LINES/.test(r.text)));
+  // R10: 2, 3 and 4 beats a bar all end their cells 8-12 px inside the bed's right edge (1404).
+  for (const per of [2, 3, 4]) {
+    const b = Array.from({length: 129}, (_, i) => i / 2), d = b.filter((_, i) => i % per === 0);
+    const drums = post({...song, track: {...song.track, duration: 64}, bars: {bpm: 120, beatsPerBar: per, beats: b, downbeats: d, steady: true}, lanes}).frame(10).motion.drums;
+    assert.ok(1404 - drums.right >= 8 && 1404 - drums.right <= 12, per + ' beats: ' + drums.right);
+  }
+  // R16: the recorder's section marks are never the levers' IN / OUT.
+  const marks = Object.values(require('node:vm').runInNewContext('(' + readFileSync(join(__dirname, '../score-radar.js'), 'utf8').match(/SECTION_MARK = Object\.freeze\((\{[^}]*\})\)/)[1] + ')'));
+  assert.ok(marks.every(m => m !== 'IN' && m !== 'OUT' && m.length >= 3), marks.join(' '));
+  // R21: the tag fallback prints RELEASED and 1/12, as XML's facts do.
+  const sheet = post(steady(lanes, 64, {track: {...song.track, title: 'X', date: '2004', number: 1, trackTotal: 12, lyricist: 'Lin', duration: 64}})).frame(63).motion.teleprinter.fields;
+  assert.deepEqual(sheet.filter(f => ['RELEASED', 'TRACK', 'LYRICS BY'].includes(f[0])), [['RELEASED', '2004'], ['TRACK', '1/12'], ['LYRICS BY', 'Lin']]);
+  const xml = require('../../fusion-runtime-baseline/desktop/track-info.cjs');
+  assert.equal(xml.FACT_NAMES.date.toUpperCase(), 'RELEASED');
+  assert.equal(xml.FACT_NAMES.lyricist.toUpperCase(), 'LYRICS BY');
+  // R22: a long title of characters outside the BMP is shortened by whole characters.
+  const title = post(steady(lanes, 64, {track: {...song.track, title: 'iiiii秋' + '\u{20BB7}'.repeat(48), artist: '', duration: 64}})).frame(5).motion.teleTitle;
+  assert.ok(title.endsWith('…') && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title), 'no half character before the ellipsis');
 });

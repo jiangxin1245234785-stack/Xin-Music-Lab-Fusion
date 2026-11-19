@@ -18,7 +18,7 @@
   const CAT_OF = new Map(CATS.flatMap((cat, i) => cat.members.map(group => [group, i])));
   const RINGS = 6;                        // the disc: the first six categories, outside in
   const SECTION_LAMPS = Object.freeze(['INTRO', 'VERSE', 'PRE', 'CHORUS', 'INST', 'BRIDGE', 'OUTRO']);
-  const SECTION_MARK = Object.freeze({INTRO: 'INT', VERSE: 'VRS', PRE: 'PRE', CHORUS: 'CHO', INST: 'INS', BRIDGE: 'BRG', OUTRO: 'OUT'});
+  const SECTION_MARK = Object.freeze({INTRO: 'INT', VERSE: 'VRS', PRE: 'PRE', CHORUS: 'CHO', INST: 'INS', BRIDGE: 'BRG', OUTRO: 'OUTR'});
   const QUALITY = Object.freeze(['MAJ', 'MIN', '6', '7', 'M7', 'SUS2', 'SUS4', 'DIM', 'AUG', 'INV']);
   const FIFTHS = Object.freeze(['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F']);
   const FIFTH_PC = Object.freeze([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]);
@@ -287,6 +287,8 @@
       }
       return null;
     }
+    // Whether a moment is inside the song's measured bars: from the first bar line to one bar after the last.
+    const inBars = (bars, t) => bars.starts.length >= 2 && t >= bars.starts[0] - 1e-6 && t < bars.starts[bars.starts.length - 1] + bars.length - 1e-6;
     // Where a moment is in bars (fractional), or null without a grid.
     function barAt(env, bars, t) {
       const s = bars.starts;
@@ -338,7 +340,10 @@
       font(kind, size, weight);
       p.fillStyle = color; p.textAlign = align; p.textBaseline = baseline;
       let shown = String(value ?? '');
-      if (maxWidth > 0) while (shown.length > 1 && p.measureText(shown).width > maxWidth) shown = shown.slice(0, -2) + '…';
+      if (maxWidth > 0 && p.measureText(shown).width > maxWidth) {
+        const chars = Array.from(shown);
+        do { chars.pop(); shown = chars.join('') + '…'; } while (chars.length > 1 && p.measureText(shown).width > maxWidth);
+      }
       p.fillText(shown, x, y);
       if (auditSink) auditText(shown, x, y, size, kind, align, color);
       return shown;
@@ -392,7 +397,7 @@
     // Thickness (SPEC-WEATHER batch 2): one light from the top left over the whole panel. `depth` is the strength
     // (options.radarDepth: 1 light, 1.6 heavier; 0 flat), `unit` stage pixels to a design pixel (canvas shadows are not
     // scaled by the transform). A part is traced by a function that adds its outline to the current path.
-    let depth = 1, corner = 'round', unit = 1;
+    let depth = 1, corner = 'cut', unit = 1;
     const box = (x, y, w, h, r) => () => p.roundRect(x, y, w, h, r);
     const disk = (cx, cy, r) => () => { p.moveTo(cx + r, cy); p.arc(cx, cy, r, 0, Math.PI * 2); };
     const cut = (x, y, w, h, r) => () => {
@@ -461,7 +466,7 @@
     // bottom-left, bottom-right).
     function panel(x, y, w, h, plate, screws = ['slot', 'slot', 'slot', 'slot']) {
       if (auditSink) auditShape('panel', {x, y, w, h});
-      const image = MATERIALS[plate], R = 5;
+      const image = MATERIALS[plate], R = 8;
       const outline = corner === 'cut' ? cut(x, y, w, h, R) : box(x, y, w, h, R);
       cast(outline, 2.2);
       p.save(); p.beginPath(); outline(); p.clip();
@@ -578,7 +583,7 @@
     }
     // A tube readout: the glass, the unlit cathodes and the label are hardware; the lit digits move.
     function tubeBase(x, y, w, h, pattern, label) {
-      bed(x, y, w, h, 3, C.tubeGlass, '#4b3a2c', 1.2);
+      bed(x, y, w, h, 4, C.tubeGlass, '#4b3a2c', 1.2);
       font('mono', 30, 'bold');
       p.textAlign = 'center'; p.textBaseline = 'middle';
       p.fillStyle = C.tubeOff; p.fillText(pattern, x + w / 2, y + h / 2 + 1);
@@ -659,7 +664,7 @@
       const out = {kind: 'radar-echo-post', scale, origin: [ox, oy], levers: [], solo: solo === undefined ? null : CATS[solo].id};
       const s = {data, env, bars, now, fall, echo, muted, scale, ox, oy};
       depth = Number.isFinite(env.options.radarDepth) ? clamp(env.options.radarDepth, 0, 2) : 1;
-      corner = env.options.radarCorner === 'cut' ? 'cut' : 'round';
+      corner = env.options.radarCorner === 'round' ? 'round' : 'cut';
       unit = scale;
       auditView = {scale, ox, oy};
       const cached = cachedLayers(ctx, s);
@@ -682,32 +687,32 @@
         // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from
         // the bundled table, read here, not copied.
         const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
-        raisedPlate(30, 24, 300, 64, 3, '#2a2c25', '#55574b', .9);
-        screw(39, 33); screw(321, 33); screw(39, 79); screw(321, 79);
-        write('RATING', 50, 35, 8, C.stampFaint, 'mono', 'left');
+        raisedPlate(37, 24, 294, 64, 4, '#2a2c25', '#55574b', .9);
+        screw(46, 33); screw(322, 33); screw(46, 79); screw(322, 79);
+        write('RATING', 57, 35, 8, C.stampFaint, 'mono', 'left');
         const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
         const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('stamp', k); if (p.measureText(text).width <= width) break; } return k; };
-        const size1 = fit(line1, 20, 12, 260), size2 = fit(line2, Math.min(size1, 17), 12, 260);
-        write(line1, 50, 50, size1, C.stamp, 'stamp', 'left', 262);
-        write(line2, 50, 71, size2, C.stamp, 'stamp', 'left', 262);
+        const size1 = fit(line1, 20, 12, 254), size2 = fit(line2, Math.min(size1, 17), 12, 254);
+        write(line1, 57, 50, size1, C.stamp, 'stamp', 'left', 256);
+        write(line2, 57, 71, size2, C.stamp, 'stamp', 'left', 256);
         out.plate = {line1, line2, size1, size2};
         lamp(350, 50, 8, 1, '#c8ffd0', C.green);
         write('PWR', 350, 71, 10, C.stampFaint, 'stamp', 'center');
         // The small plate: owner cell scratched out, type, date code, inspection stamp.
-        raisedPlate(370, 24, 114, 64, 3, '#2c2e27', '#55574b', .8);
+        raisedPlate(370, 24, 114, 64, 4, '#2c2e27', '#55574b', .8);
         write('PROP. OF', 377, 35, 9, C.stampFaint, 'mono', 'left');
         p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
         for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
         p.restore();
-        write('TYPE 6R-7C/88', 377, 50, 10, C.stampDim, 'mono', 'left');
+        write('TYPE 6R-7C/88', 377, 49, 10, C.stampDim, 'mono', 'left');
         write('5947', 377, 71, 11, C.stampDim, 'mono', 'left');
-        circle(460, 69, 14, null, '#8f8b78', 1.2);
-        write('INSP.', 460, 65, 7, C.stampDim, 'mono', 'center');
-        write('08', 460, 74, 8, C.stampDim, 'mono', 'center');
-        SECTION_LAMPS.forEach((name, k) => bed(496 + k * 82, 40, 77, 36, 3, '#1a1712', '#4a3d2c'));
-        tubeBase(1108, 28, 72, 42, '888', 'TEMPO');
-        tubeBase(1190, 28, 106, 42, '888·8', 'BAR · BEAT');
-        tubeBase(1306, 28, 104, 42, '88:88', 'TIME');
+        circle(461, 68, 13, null, '#8f8b78', 1.2);
+        write('INSP.', 461, 64, 7, C.stampDim, 'mono', 'center');
+        write('08', 461, 73, 8, C.stampDim, 'mono', 'center');
+        SECTION_LAMPS.forEach((name, k) => bed(496 + k * 82, 40, 77, 36, 2, '#1a1712', '#4a3d2c'));
+        tubeBase(1101, 28, 72, 42, '888', 'TEMPO');
+        tubeBase(1183, 28, 106, 42, '888·8', 'BAR · BEAT');
+        tubeBase(1299, 28, 104, 42, '88:88', 'TIME');
         return;
       }
       if (pass !== 'live') return;
@@ -741,18 +746,15 @@
         if (bpm > 20 && bpm < 400) tempo = String(Math.round(bpm)).padStart(3, '0');
       }
       let barBeat = '---·-';
-      if (bars && bars.source === 'downbeats' && env.beats.length >= 2) {
-        const at = barAt(env, bars, now), idx = Math.floor(at);
-        if (idx < 0) barBeat = '000·' + clamp(Math.floor(env.beatAt(now) - env.beatAt(bars.starts[0])) + bars.perBar + 1, 1, bars.perBar);
-        else {
-          const beat = clamp(Math.floor(env.beatAt(now) - env.beatAt(bars.starts[Math.min(idx, bars.starts.length - 1)]) + 1e-6) + 1, 1, bars.perBar);
-          barBeat = String(idx + 1).padStart(3, '0') + '·' + beat;
-        }
+      if (bars && bars.source === 'downbeats' && env.beats.length >= 2 && inBars(bars, now)) {
+        const idx = Math.floor(barAt(env, bars, now));
+        const beat = clamp(Math.floor(env.beatAt(now) - env.beatAt(bars.starts[Math.min(idx, bars.starts.length - 1)]) + 1e-6) + 1, 1, bars.perBar);
+        barBeat = String(idx + 1).padStart(3, '0') + '·' + beat;
       }
       const time = Math.floor(now / 60).toString().padStart(2, '0') + ':' + Math.floor(now % 60).toString().padStart(2, '0');
-      tube(1108, 28, 72, 42, tempo);
-      tube(1190, 28, 106, 42, barBeat);
-      tube(1306, 28, 104, 42, time);
+      tube(1101, 28, 72, 42, tempo);
+      tube(1183, 28, 106, 42, barBeat);
+      tube(1299, 28, 104, 42, time);
       Object.assign(out, {tempo, barBeat, time});
     }
 
@@ -770,9 +772,9 @@
         CATS.forEach((cat, i) => {
           const y = 163 + i * 85, {cx, cy, r, a0, a1} = dial(y);
           // The meter: a paper face filling its box, a red zone at the top of the scale.
-          cast(box(x - 2, y - 2, w + 4, h + 4, 3), .9);
-          rounded(x - 2, y - 2, w + 4, h + 4, 3, '#1c1d18');
-          edge(box(x - 1.4, y - 1.4, w + 2.8, h + 2.8, 3), x - 2, y - 2, w + 4, h + 4, true, 1.2);
+          cast(box(x - 2, y - 2, w + 4, h + 4, 4), .9);
+          rounded(x - 2, y - 2, w + 4, h + 4, 4, '#1c1d18');
+          edge(box(x - 1.4, y - 1.4, w + 2.8, h + 2.8, 4), x - 2, y - 2, w + 4, h + 4, true, 1.2);
           p.save(); p.beginPath(); p.roundRect(x, y, w, h, 2); p.clip(); dialFace(i, x, y, w, h); p.restore();
           rounded(x + .5, y + .5, w - 1, h - 1, 2, null, C.dialEdge, 1);
           inset(box(x, y, w, h, 2), 1);
@@ -799,7 +801,7 @@
         });
         write('CAUTION', 32, 799, 15, C.stamp, 'stamp', 'left', 160, 'bold', 'alphabetic');
         write('MOD. ANN-8', 300, 799, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        bed(32, 809, 268, 64, 3, '#16170f', null);
+        bed(32, 809, 268, 64, 5, '#16170f', null);
         return;
       }
       if (pass === 'over') {
@@ -951,8 +953,12 @@
         // Bar numbers of the turn at the quarters: only on the song's own bar lines.
         if (bars && bars.source === 'downbeats') {
           const first = Math.floor(turn) * 4;
+          out.barNumbers = [];
           [[0, -1], [1, 0], [2, 1], [3, 0]].forEach(([q]) => {
-            const a = -Math.PI / 2 + q / 4 * Math.PI * 2 + .14, r = screen - 22, bx = cx + Math.cos(a) * r, by = cy + Math.sin(a) * r;
+            // Only bars the song has (none before the first bar line, none after the last).
+            if (first + q < 0 || first + q >= bars.starts.length) return;
+            out.barNumbers.push(first + q + 1);
+            const a = -Math.PI / 2 + q / 4 * Math.PI * 2 + .14, r = screen - 28, bx = cx + Math.cos(a) * r, by = cy + Math.sin(a) * r;
             font('mono', 12, 'bold');
             const bw = p.measureText(String(first + q + 1)).width + 6;
             rect(bx - bw / 2, by - 8, bw, 16, 'rgba(6,18,12,.85)');
@@ -1031,11 +1037,19 @@
           const a = at(m), long = m % 12 === 0;
           p.beginPath(); p.moveTo(cx + Math.cos(a) * (r - 3), cy + Math.sin(a) * (r - 3)); p.lineTo(cx + Math.cos(a) * (r - (long ? 11 : 6)), cy + Math.sin(a) * (r - (long ? 11 : 6)));
           p.strokeStyle = C.dialInk; p.lineWidth = long ? 1.6 : 1; p.stroke();
-          if (long) write('C' + (m / 12 - 1), cx + Math.cos(a) * (r - 21), cy + Math.sin(a) * (r - 21), 12, C.dialInk, 'mono', 'center');
+          void long;
         }
         return;
       }
-      if (pass === 'over') { circle(cx, cy, 4, '#1b1a16'); glass(cx - r, cy - r, 2 * r, 2 * r, 120, 380, true); inset(disk(cx, cy, r), 1); return; }
+      if (pass === 'over') {
+        for (let m = 36; m <= 84; m += 12) {
+          const a = at(m), lx = cx + Math.cos(a) * (r - 21), ly = cy + Math.sin(a) * (r - 21);
+          font('mono', 12); p.textAlign = 'center'; p.textBaseline = 'middle';
+          p.strokeStyle = C.dial; p.lineWidth = 3; p.lineJoin = 'round'; p.strokeText('C' + (m / 12 - 1), lx, ly); p.lineJoin = 'miter';
+          write('C' + (m / 12 - 1), lx, ly, 12, C.dialInk, 'mono', 'center');
+        }
+        circle(cx, cy, 4, '#1b1a16'); glass(cx - r, cy - r, 2 * r, 2 * r, 120, 380, true); inset(disk(cx, cy, r), 1); return;
+      }
       // The mean pitch of what sounds, held when nothing does, eased over .4 s.
       let value = null, n = 0, sum = 0;
       for (let k = 0; k < 8; k++) { const v = sample(data.register, now - k * GRID); if (Number.isFinite(v) && now - k * GRID >= 0) { sum += v; n++; } }
@@ -1097,7 +1111,7 @@
         circle(cx, cy, R, '#1d1e19', '#4a4c42', 2);
         edge(disk(cx, cy, R - 1), cx - R, cy - R, 2 * R, 2 * R, true, 2);
         bed(cx - 40, cy - 28, 80, 56, 3, '#151612', '#5a5c50');
-        bed(1246, 183, 158, 204, 3, '#24261f', '#4a4c42');
+        bed(1246, 183, 158, 204, 5, '#24261f', '#4a4c42');
         return;
       }
       if (pass !== 'live') return;
@@ -1124,7 +1138,9 @@
       });
       p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
       const name = current ? current.label : '--';
-      write(name, cx, cy + 1, name.length > 5 ? 20 : 27, '#ece6d0', 'mono', 'center', 74, 'bold');
+      let cardSize = 27;
+      for (; cardSize > 14; cardSize -= 1) { font('mono', cardSize, 'bold'); if (p.measureText(name).width <= 72) break; }
+      const cardShown = write(name, cx, cy + 1, cardSize, '#ece6d0', 'mono', 'center', 72, 'bold');
       // Quality lamps, two columns of five.
       const lit = current ? current.parts.lamps : new Set();
       QUALITY.forEach((q, k) => {
@@ -1132,7 +1148,7 @@
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
         write(q, x + 14, y + 1, 13, lit.has(q) ? C.amberHot : C.stampDim, 'mono', 'left', 0, 'bold');
       });
-      out.chord = {name: current ? current.label : null, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
+      out.chord = {name: current ? current.label : null, shown: cardShown, size: cardSize, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
 
     function drumGrid(data, env, bars, now, out) {
@@ -1145,9 +1161,11 @@
       const roll = !steps && env.beats.length >= 2;
       if (pass === 'base') {
         write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write(steps ? steps + ' STEPS' : roll ? 'NO BAR LINES · BEATS ONLY' : 'NO BEATS · LAMPS ONLY', 1404, 411, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        bed(1028, 420, 376, 122, 3, '#1f201b', '#4a4c42');
+        const barred = bars && bars.source === 'downbeats' && bars.perBar > 0;
+        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404, 411, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        bed(1028, 420, 376, 122, 5, '#1f201b', '#4a4c42');
         DRUM_ROWS.forEach((row, r) => write(row.label, 1040, 432 + r * 21 + 7, 12, C.stamp, 'mono', 'left', 0, 'bold'));
+        if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112, 432 + r * 21, 286, 15, 1.5, '#24251f'));
         return;
       }
       if (pass !== 'live') return;
@@ -1168,7 +1186,8 @@
         }
       }
       // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
-      const cellPitch = steps ? Math.min(24, 286 / steps) : 0, cellSize = Math.max(8, cellPitch - 3);
+      // The cells share what is left of the row (1112 .. 1394, 10 px inside the bed) after the 2 px gaps between beats.
+      const gaps = steps ? (steps / 4 - 1) * 2 : 0, cellPitch = steps ? (282 + 3 - gaps) / steps : 0, cellSize = Math.max(8, cellPitch - 3);
       // The rolling strip: x from the beat position, the newest beat at the right edge; a faint line on every beat
       // (none heavier: no bars), each hit a short bar, brighter the more recent.
       const rolled = DRUM_ROWS.map(() => []);
@@ -1183,7 +1202,6 @@
       }
       function rollRow(r, y) {
         const shown = [];
-        rect(left, y, width, 15, '#24251f');
         const from = env.timeAtBeat ? env.timeAtBeat(nowBeat - ROLL_BEATS) : now - 8;
         for (let k = lower(data.drums, from - .01, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
           const d = data.drums[k];
@@ -1207,11 +1225,12 @@
         for (let s = 0; s < steps; s++) {
           const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
           const fill = state === 2 ? (s === step ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : '#2c2d26';
-          rect(x, y, cellSize, 15, fill);
-          if (s === step) { p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.strokeRect(x - .5, y - .5, cellSize + 1, 16); }
+          rounded(x, y, cellSize, 15, 1.5, fill);
+          if (s === step) rounded(x - .5, y - .5, cellSize + 1, 16, 1.5, null, '#f0ead2', 1.5);
         }
       });
       out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')),
+        right: steps ? +(1112 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
         ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
     }
 
@@ -1238,6 +1257,7 @@
         write('RECORDER · LOUDNESS', 1028, 566, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         write('WHOLE SONG · 1 SHEET', 1404, 566, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         [0, -12, -24, -36].forEach(db => write(String(db), 1058, y + 6 + (hi - db) / (hi - lo) * (h - 12), 12, C.stampDim, 'mono', 'right'));
+        raisedPlate(x - 3, y - 3, w + 6, h + 6, 4, '#1c1d18', '#3d3e36', .6);
         rect(x, y, w, h, C.paper);
         recordPaper('recorder', x, y, w, h);
         if (auditSink) auditShape('frame', auditBox(x, y, x + w, y + h));
@@ -1269,7 +1289,8 @@
       if (pass !== 'live') return;
       const pen = xAt(now);
       if (data.energy) stroke(x, pen, C.paperInk, 1.6);
-      p.beginPath(); p.moveTo(pen, y + 2); p.lineTo(pen, y + h - 2); p.strokeStyle = C.pen; p.lineWidth = 2; p.stroke();
+      p.beginPath(); p.moveTo(pen, y + 26); p.lineTo(pen, y + h - 9); p.strokeStyle = C.pen; p.lineWidth = 2; p.stroke();
+      if (auditSink) auditShape('mark', auditBox(pen - 1, y + 26, pen + 1, y + h - 9), {what: 'recorder pen'});
       out.recorder = {pen: +((pen - x - 4) / (w - 8)).toFixed(4), trace: Boolean(data.energy)};
     }
 
@@ -1284,7 +1305,7 @@
       for (let m = 21; m <= 108; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
       const ww = (w - 8) / whites.length;
       if (pass === 'base') {
-        bed(x, y, w, h, 3, '#16170f', '#4a4c42');
+        bed(x, y, w, h, 5, '#16170f', '#4a4c42');
         for (let o = 1; o <= 8; o++) {
           const k = whites.indexOf(12 * (o + 1));
           if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 12, C.stampDim, 'mono', 'center');
@@ -1333,6 +1354,7 @@
         panel(950, 754, 472, 130, 'plateTele', ['slot', 'slot', 'slot', 'slot']);
         // The key under the paper says what the tape holds: lyrics, or the track sheet when there are none.
         teleTitle(env, tape ? ['UPPER = CODE', 'LOWER = CLEAR'] : ['UPPER = FIELD', 'LOWER = VALUE'], out);
+        raisedPlate(x - 3, y - 3, w + 3, h + 6, 4, '#1c1d18', '#3d3e36', .6);
         rect(x, y, w, h, C.paper);
         recordPaper('tape', x, y, w, h);
         if (auditSink) auditShape('frame', auditBox(x, y, x + w, y + h));
@@ -1372,6 +1394,7 @@
         const item = tape.cells[k], cx = head - cell / 2 - (slot - 1 + glide) * cell - cell;
         if (cx < x - cell) break;
         if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
+        if (item.blank) { glyphs.push({ch: ' ', code: null, clear: true}); continue; }
         const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
         if (code) write(code, cx, y + 17, 12, C.paperInk, 'mono', 'center');
         const clear = !item.han || now >= item.time + item.half;
@@ -1387,8 +1410,8 @@
     // The track sheet: the fields of model.track that are there, in this order. Values as the tags give them.
     const SHEET = Object.freeze([
       ['TITLE', t => t.title], ['ARTIST', t => clean(t.artist)], ['ALBUM', t => clean(t.album)], ['ALBUM ARTIST', t => clean(t.albumArtist)],
-      ['DATE', t => t.date || t.year], ['TRACK', t => t.number ? (t.trackTotal ? t.number + ' / ' + t.trackTotal : String(t.number)) : ''],
-      ['DISC', t => t.disc ? (t.discTotal ? t.disc + ' / ' + t.discTotal : String(t.disc)) : ''], ['GENRE', t => t.genre],
+      ['RELEASED', t => t.date || t.year], ['TRACK', t => t.number ? (t.trackTotal ? t.number + '/' + t.trackTotal : String(t.number)) : ''],
+      ['DISC', t => t.disc ? (t.discTotal ? t.disc + '/' + t.discTotal : String(t.disc)) : ''], ['GENRE', t => t.genre],
       ['COMPOSER', t => t.composer], ['LYRICS BY', t => t.lyricist], ['ARRANGER', t => t.arranger], ['LABEL', t => t.label],
       ['LENGTH', t => Number(t.duration) > 0 ? Math.floor(t.duration / 60) + ':' + String(Math.floor(t.duration % 60)).padStart(2, '0') : '']]);
     const SHEET_CHAR = .08;   // seconds a character takes to print
@@ -1473,7 +1496,7 @@
         const from = Math.min(start, Math.max(start - lead, lastDot + .05)), until = start + PRINT_BY * (end - start);
         const step = (until - from) / n, half = Math.min(.1, step / 4);
         chars.forEach((ch, k) => {
-          if (ch === ' ') return;
+          if (ch === ' ') { cells.push({ch, blank: true, han: false, time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step}); return; }
           cells.push({ch, han: isHan(ch), time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step});
         });
         if (rows[i + 1]) { cells.push({dot: true, time: until, half: 0, lineEnd: until, next: next}); lastDot = until; }

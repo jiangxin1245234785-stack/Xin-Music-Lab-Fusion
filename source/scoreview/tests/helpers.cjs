@@ -20,7 +20,7 @@ function mockCanvas(width = 800, height = 400) {
     save: (...args) => { stack.push({...state}); record('save')(...args); },
     restore: (...args) => { if (stack.length) Object.assign(state, stack.pop()); record('restore')(...args); }, beginPath: record('beginPath'), fill: record('fill'),
     stroke: record('stroke'), clip: record('clip'), rect: record('rect'), roundRect: record('roundRect'), fillRect: record('fillRect'), strokeRect: record('strokeRect'),
-    fillText: record('fillText'), moveTo: record('moveTo'), lineTo: record('lineTo'), arc: record('arc'), ellipse: record('ellipse'),
+    fillText: record('fillText'), strokeText: record('strokeText'), moveTo: record('moveTo'), lineTo: record('lineTo'), arc: record('arc'), ellipse: record('ellipse'),
     quadraticCurveTo: record('quadraticCurveTo'), bezierCurveTo: record('bezierCurveTo'), closePath: record('closePath'),
     setTransform: record('setTransform'), drawImage: record('drawImage'), setLineDash: record('setLineDash'),
     translate: record('translate'), rotate: record('rotate'), scale: record('scale'),

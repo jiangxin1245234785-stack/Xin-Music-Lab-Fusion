@@ -355,9 +355,10 @@ function createTrackInfo({root, fetch: fetchImpl = globalThis.fetch, now = () =>
 }
 
 // The score's track sheet (model.track.facts, the radar's teleprinter: name on the upper row, value below, in order):
-// a short English name per item; items a hand-written file names itself keep that name.
+// a short English name per item, the same the core's tag fallback prints (RELEASED, LYRICS BY; track and disc as 1/12);
+// items a hand-written file names itself keep that name.
 const FACT_NAMES = {title: 'Title', artist: 'Artist', album: 'Album', albumArtist: 'Album artist', date: 'Released', track: 'Track',
-  disc: 'Disc', label: 'Label', country: 'Country', genre: 'Genre', composer: 'Composer', lyricist: 'Lyrics', arranger: 'Arranger',
+  disc: 'Disc', label: 'Label', country: 'Country', genre: 'Genre', composer: 'Composer', lyricist: 'Lyrics by', arranger: 'Arranger',
   producer: 'Producer', performer: 'Performers', length: 'Length'};
 const factsOf = items => (Array.isArray(items) ? items : []).filter(i => i && String(i.value || '').trim())
   .map(i => ({name: FACT_NAMES[i.key] || String(i.key), value: String(i.value).trim()})).slice(0, 40);
