@@ -964,6 +964,24 @@
       lead([947, 726, 950, 750, 966, 742, 976, 760], [[947, 726], [976, 760]]);
       lead([1401, 726, 1428, 752, 1420, 786, 1411, 806], [[1401, 726], [1411, 806]]);
     }
+    // A small neon bulb (the counters of the period): a glass bead with its electrode, dull orange-grey when dark, lit
+    // orange with a small glow.
+    function neonBulb(x, y, lit) {
+      if (lit) {
+        const g = p.createRadialGradient(x, y, 0, x, y, 7);
+        g.addColorStop(0, 'rgba(255,110,40,.55)'); g.addColorStop(1, 'rgba(255,110,40,0)');
+        p.fillStyle = g; p.fillRect(x - 7, y - 7, 14, 14);
+      }
+      circle(x, y, 2.7, lit ? '#ff7a3a' : '#3b2c22', '#17120d', .8);
+      if (lit) circle(x, y, 1.1, '#ffd2a0');
+      else circle(x - .8, y - .9, .8, 'rgba(255,240,220,.25)');
+    }
+    // A brass pointer, a small triangle pointing down (dir 1) or up (-1) at (x, y), with its shadow.
+    function brassPointer(x, y, dir) {
+      const tri = dx => { p.beginPath(); p.moveTo(x - 4 + dx, y - 3.5 * dir + dx); p.lineTo(x + 4 + dx, y - 3.5 * dir + dx); p.lineTo(x + dx, y + 3.5 * dir + dx); p.closePath(); };
+      tri(.8); p.fillStyle = 'rgba(0,0,0,.4)'; p.fill();
+      tri(0); p.fillStyle = '#b39a5c'; p.fill(); p.strokeStyle = '#4a3e22'; p.lineWidth = .8; p.stroke();
+    }
     // A rename tape: the new name in marker on tape stock; x is its left end, or its right end when `right` is 1.
     function renameTape(name, x, y, angle, right) {
       font('marker', 12);
@@ -1410,7 +1428,6 @@
         const a = -Math.PI / 2 + k / 12 * Math.PI * 2, x = cx + Math.cos(a) * (R - 22), y = cy + Math.sin(a) * (R - 22);
         const v = light[k];
         circle(x, y, 14, mixHex('#2b2620', '#ffb24c', v), '#14120d', 1.5);
-        if (v > .6) circle(x, y, 14, null, '#ffe0a0', 2);
         write(name, x, y + 1, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center');
       });
       p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
@@ -1475,7 +1492,9 @@
           const x = xOf(k);
           p.beginPath(); p.moveTo(x, 428); p.lineTo(x, 536); p.strokeStyle = '#34352d'; p.lineWidth = 1; p.stroke();
         }
-        p.beginPath(); p.moveTo(left + width, 426); p.lineTo(left + width, 538); p.strokeStyle = '#f0ead2'; p.lineWidth = 1.5; p.stroke();
+        // "Now" is an index line on the bed, with a brass pointer above and below it (no bright screen line).
+        p.beginPath(); p.moveTo(left + width, 427); p.lineTo(left + width, 537); p.strokeStyle = '#6b6350'; p.lineWidth = 1; p.stroke();
+        brassPointer(left + width, 422, 1); brassPointer(left + width, 540, -1);
       }
       function rollRow(r, y) {
         const shown = [];
@@ -1491,6 +1510,18 @@
         }
         return shown;
       }
+      // The current step's indicator (radar.5 feedback; options.radarStep): a row of small neon bulbs over the columns,
+      // the one over the current step lit, as a counter of the period would show it; or a brass cursor on the bed's top
+      // edge over the current column; or the current column backlit (in the cells above).
+      const stepLook = ['neon', 'cursor', 'backlight'].includes(env.options.radarStep) ? env.options.radarStep : 'neon';
+      if (steps) {
+        for (let s = 0; s < steps; s++) {
+          const cx = 1112 + s * cellPitch + Math.floor(s / 4) * 2 + cellSize / 2, lit = s === step;
+          if (stepLook === 'neon') neonBulb(cx, 425.5, lit);
+          else if (stepLook === 'cursor' && lit) brassPointer(cx, 421.5, 1);
+        }
+      }
+      out.stepLook = stepLook;
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
         // The row lamp: lit at the hit, dark again .15 s later.
@@ -1501,9 +1532,10 @@
         if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
           const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
-          const fill = state === 2 ? (s === step ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : '#2c2d26';
+          // The current column: its hits brightest; with 'backlight' its empty cells glow faintly from behind too.
+          const now = s === step, backlit = now && stepLook === 'backlight';
+          const fill = state === 2 ? (now ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : backlit ? '#4a4334' : '#2c2d26';
           rounded(x, y, cellSize, 15, 1.5, fill);
-          if (s === step) rounded(x - .5, y - .5, cellSize + 1, 16, 1.5, null, '#f0ead2', 1.5);
         }
       });
       out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')),

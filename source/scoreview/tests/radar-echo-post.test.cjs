@@ -528,3 +528,22 @@ test('radar.5 feedback: the VOX scope never drops its trace at once; when a phra
   assert.equal(frame(10.2).motion.voxShare, 0, 'gone once it has left the window');
   assert.equal(frame(8).motion.vox, true);
 });
+
+test('radar.5 feedback: no white outline boxes; the drum step shows as neon bulbs, a brass cursor or a backlit column', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}, {id: 'd', kind: 'drums', group: 'drums', hits: [[8, 'kick', 100], [8.5, 'snare', 90]]}];
+  const pale = /^#(f0ead2|ffe0a0)$/i;
+  for (const look of [undefined, 'neon', 'cursor', 'backlight']) {
+    const {frame, stage} = post(steady(lanes, 64, {chords: [[0, 20, 'C']]}), 1440, 900, {...options, ...(look ? {radarStep: look} : {})});
+    stage.reset();
+    const m = frame(8.6).motion;
+    assert.equal(m.stepLook, look || 'neon', 'neon unless chosen');
+    // The bezel's 12 o'clock tick (pale paint on the bezel, 4 px wide) is a mark, not a box: the one pale stroke allowed.
+    const strokes = stage.calls.filter(c => (c.name === 'stroke' || c.name === 'strokeRect') && pale.test(String(c.strokeStyle)) && c.lineWidth !== 4);
+    assert.deepEqual(strokes, [], `${look}: no white / pale gold outline anywhere`);
+  }
+  // Without bar lines the rolling strip's "now" is no white line either.
+  const roll = post({...song, track: {...song.track, duration: 30}, bars: {bpm: 120, beats: Array.from({length: 61}, (_, i) => i / 2)}, lanes});
+  roll.stage.reset();
+  assert.equal(roll.frame(9).motion.drums.mode, 'roll');
+  assert.ok(!roll.stage.calls.some(c => c.name === 'stroke' && pale.test(String(c.strokeStyle)) && c.lineWidth !== 4));
+});
