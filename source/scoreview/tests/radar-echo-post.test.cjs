@@ -282,7 +282,8 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   stage.canvas.getContext().canvas = stage.canvas;   // as a real context points back at its canvas
   stage.canvas.ownerDocument ={createElement: () => { const layer = mockCanvas(); made.push(layer); return layer.canvas; }};
   const a = frame(2).motion;
-  assert.equal(made.length, 3, 'a base layer, an over layer and the small fade at the tape\'s left end');
+  // The first two canvases are the base and over layers; the others are the tape's fade and the lit tube digits.
+  assert.ok(made.length >= 3, 'a base layer, an over layer, the tape fade and the lit digits');
   assert.deepEqual(a.layers, {cached: true, draws: 1, materials: 0});
   const [base, over] = made, baseCalls = base.calls.length, overCalls = over.calls.length;
   assert.ok(base.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'stamped names are in the base layer');
@@ -292,7 +293,10 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   assert.equal(base.calls.length, baseCalls, 'not drawn again');
   assert.equal(over.calls.length, overCalls);
   assert.equal(b.layers.draws, 1);
-  assert.equal(stage.calls.filter(c => c.name === 'drawImage').length, 3, 'two layer copies a frame, and the tape fade');
+  const copies = stage.calls.filter(c => c.name === 'drawImage').map(c => c.args[0]);
+  assert.equal(copies.filter(c => c === base.canvas).length, 1, 'the base layer laid once a frame');
+  assert.equal(copies.filter(c => c === over.canvas).length, 1, 'the over layer laid once a frame');
+  assert.ok(copies.every(c => made.some(m => m.canvas === c)), 'every other copy is a made sprite (fade, lit digits)');
   assert.ok(!stage.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'no hardware in the moving part');
   assert.equal(b.plate.line1, 'RESISTANCE 5592–9515 OHMS', 'what the hardware reports is kept with the layer');
   assert.ok(b.recorderBox && b.teleTitle !== undefined);
@@ -316,11 +320,13 @@ test('the materials are the files the build ships: every MATERIAL_FILES entry is
 
 test('layout: no text leaves its panel, overlaps another, sits on a screw or straddles a frame; no tape covers a scale; the corner dials clear the bezel (SPEC-WEATHER 基础校对)', () => {
   const Layout = require('../tools/radar-layout.cjs');
-  // Node has no fonts: a text's width is estimated from its size (a CJK character a full em, others .57 em, the stamp
-  // face's measured average). The real-font audit is work/score-depth-20261118/weather/audit.cjs.
+  // Node has no fonts: a text's width is estimated from its size and face (a CJK character a full em; the others at
+  // each bundled face's average measured with the real fonts: Barlow Condensed .45 em, National Park .56, Courier
+  // Prime .60, Permanent Marker .66). The real-font audit is work/score-depth-20261118/weather/audit.cjs.
   const measure = ctx => text => {
     const size = Number((/(\d+(?:\.\d+)?)px/.exec(ctx.font) || [])[1]) || 12;
-    return {width: Array.from(String(text)).reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? size : size * .57), 0)};
+    const em = /Barlow/.test(ctx.font) ? .45 : /Marker/.test(ctx.font) ? .66 : /Courier/.test(ctx.font) ? .6 : .56;
+    return {width: Array.from(String(text)).reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? size : size * em), 0)};
   };
   const lanes = ['vocals', 'guitar', 'piano', 'strings', 'winds', 'bass'].map((group, i) => ({id: group, kind: 'pitched', group, notes: [[1 + i, 6, 48 + 4 * i, 100]]}))
     .concat([{id: 'd', kind: 'drums', group: 'drums', hits: [[1, 'kick', 100], [1.5, 'snare', 90]]}]);

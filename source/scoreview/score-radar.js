@@ -41,7 +41,7 @@
   const ROLL_BEATS = 16;    // the drum strip of a song without bar lines: this many beats back from now      // seconds a turn of the disc takes when the song has no beats
   const C = Object.freeze({
     void: '#0b0c0a', panel: '#33362d', panelHi: '#40433a', panelLo: '#25271f', seam: '#1a1b16', screw: '#5b5d52',
-    stamp: '#d8d3bd', stampDim: '#8e8b7a', stampFaint: '#5f5e53',
+    stamp: '#dcd6bf', stampDim: '#b3ad96', stampFaint: '#928d78',
     dial: '#e7dfc4', dialEdge: '#b9b195', dialInk: '#2b2a23', red: '#b5412d', tape: '#efe6c8', tapeInk: '#2a2722',
     screen: '#0c2117', screenHi: '#123323', screenRim: '#060f0a', phos: '#82f2a6', phosDim: '#3c9c66', phosFaint: '#1f5a3b',
     amber: '#ffb24c', amberHot: '#ffe0a0', amberLow: '#5a3a1c', lampOff: '#2d241b',
@@ -49,15 +49,38 @@
     paper: '#e4dcc3', paperInk: '#38362e', paperFaint: '#b9b199', pen: '#b3362b', green: '#6ee08c', greenOff: '#1d3324'
   });
   const FONTS = Object.freeze({
-    stamp: '"Saira Stencil One", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif',
-    mono: '"Consolas", "Cascadia Mono", "Courier New", monospace',
+    stamp: '"National Park", "Bahnschrift", "Arial Narrow", sans-serif',
+    plate: '"Barlow Condensed", "Bahnschrift Condensed", "Arial Narrow", sans-serif',
+    mono: '"Courier Prime", "Courier New", monospace',
     marker: '"Permanent Marker", "Ink Free", "Segoe Print", "Comic Sans MS", cursive',
     hanzi: '"FangSong", "仿宋", "STFangsong", "KaiTi", "楷体", "SimSun", serif'
   });
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-  // The bundled faces (assets/fonts, with their licences): Saira Stencil One (SIL OFL 1.1) for the stamped names,
-  // Permanent Marker (Apache 2.0) for the tape labels. Loaded once; the fallbacks above draw until they are in.
-  const FACES = Object.freeze([['Saira Stencil One', 'SairaStencilOne-Regular.ttf'], ['Permanent Marker', 'PermanentMarker-Regular.ttf']]);
+  // Tube cathodes: one stroked wire per digit (SVG-like commands M L Q C, absolute, in a 20 x 28 box at 30 px), after
+  // the "self-drawn cathode" design the user accepted (work/score-depth-20261118/fonts-gpt, specimens.js).
+  const CATHODES = (() => {
+    const src = {
+      0: 'M10 2 C4 2 3 7 3 14 C3 21 4 26 10 26 C16 26 17 21 17 14 C17 7 16 2 10 2',
+      1: 'M5 8 Q8 6 11 2 L11 26', 2: 'M3 8 Q4 2 10 2 C17 2 19 9 14 14 L4 24 Q3 26 5 26 L17 26',
+      3: 'M3 4 Q10 0 15 3 Q20 9 11 13 C21 13 19 26 10 26 Q5 26 2 23', 4: 'M15 26 L15 3 Q15 1 14 3 L2.5 18.5 L18 18.5',
+      5: 'M17 2.5 L5 2.5 L4 12 Q7 10 11 10 C20 10 20 26 10 26 Q5 26 2.5 23', 6: 'M15 3 C8 3 3 10 3 18 C3 29 18 29 17 18 C16 10 7 10 4 16',
+      7: 'M2.5 3 L17 3 Q18 3 16 6 L7 26', 8: 'M10 13 C2 10 3 2 10 2 C18 2 18 10 10 13 C0 16 2 26 10 26 C19 26 21 16 10 13',
+      9: 'M5 25 C12 24 17 17 17 9 C17 0 3 0 3 9 C3 18 14 19 17 11', '-': 'M5 15 L15 15'};
+    const out = {};
+    for (const [ch, d] of Object.entries(src)) {
+      const path = [];
+      for (const m of d.matchAll(/([MLQC])([^MLQC]*)/g)) path.push([m[1], ...m[2].trim().split(/[\s,]+/).map(Number)]);
+      const xs = path.flatMap(([, ...v]) => v.filter((_, i) => i % 2 === 0));
+      out[ch] = {path, mid: (Math.min(...xs) + Math.max(...xs)) / 2};
+    }
+    return Object.freeze(out);
+  })();
+  // The bundled faces (assets/fonts, each with its licence; SPEC-WEATHER batch 3): National Park SemiBold for what is
+  // engraved on the panels, Barlow Condensed Medium for the plates and the dial and scale numerals, Courier Prime for
+  // the tape and paper text (all SIL OFL 1.1), Permanent Marker (Apache 2.0) for the hand-written tape. Loaded once;
+  // the fallbacks above draw until they are in. The tube digits are drawn (tubeDigits), not set in a face.
+  const FACES = Object.freeze([['National Park', 'NationalPark-SemiBold.ttf'], ['Barlow Condensed', 'BarlowCondensed-Medium.ttf'],
+    ['Courier Prime', 'CourierPrime-Regular.ttf'], ['Permanent Marker', 'PermanentMarker-Regular.ttf']]);
   const assetBase = (() => { try { return new URL('./assets/', root.document.currentScript.src).href; } catch (_) { return null; } })();
   const fontBase = assetBase && assetBase + 'fonts/';
   // Every font or material that arrives bumps this, so the cached hardware layers are drawn again with it.
@@ -332,8 +355,8 @@
     // ---------- drawing ----------
     let p = null;
     function font(kind, size, weight = '') {
-      const display = kind === 'stamp' || kind === 'marker';
-      p.font = `${!display && weight ? weight + ' ' : ''}${size}px ${FONTS[kind]}`;
+      const own = kind !== 'hanzi';   // the bundled faces have one weight each; no synthetic bold
+      p.font = `${!own && weight ? weight + ' ' : ''}${size}px ${FONTS[kind]}`;
     }
     // `baseline` 'middle' (y is the text's middle) or 'alphabetic' (y is its baseline: rows of two sizes).
     function write(value, x, y, size, color, kind = 'stamp', align = 'left', maxWidth = 0, weight = '', baseline = 'middle') {
@@ -343,6 +366,11 @@
       if (maxWidth > 0 && p.measureText(shown).width > maxWidth) {
         const chars = Array.from(shown);
         do { chars.pop(); shown = chars.join('') + '…'; } while (chars.length > 1 && p.measureText(shown).width > maxWidth);
+      }
+      if ((kind === 'stamp' || kind === 'plate') && depth > 0 && (color === C.stamp || color === C.stampDim || color === C.stampFaint)) {
+        p.fillStyle = `rgba(0,0,0,${Math.min(.75, .55 * depth)})`; p.fillText(shown, x - .6, y - .6);
+        p.fillStyle = `rgba(255,248,230,${Math.min(.3, .14 * depth)})`; p.fillText(shown, x + .5, y + .55);
+        p.fillStyle = color;
       }
       p.fillText(shown, x, y);
       if (auditSink) auditText(shown, x, y, size, kind, align, color);
@@ -581,20 +609,82 @@
       const ch = s => Math.round(((pa >> s) & 255) + (((pb >> s) & 255) - ((pa >> s) & 255)) * t);
       return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
     }
-    // A tube readout: the glass, the unlit cathodes and the label are hardware; the lit digits move.
+    // A tube readout: the glass, the unlit cathode stacks and the label are hardware; the lit cathodes move.
+    const TUBE_PX = 28;
     function tubeBase(x, y, w, h, pattern, label) {
       bed(x, y, w, h, 4, C.tubeGlass, '#4b3a2c', 1.2);
-      font('mono', 30, 'bold');
-      p.textAlign = 'center'; p.textBaseline = 'middle';
-      p.fillStyle = C.tubeOff; p.fillText(pattern, x + w / 2, y + h / 2 + 1);
+      tubeDigits(x + w / 2, y + h / 2, pattern, 'off');
       write(label, x + w / 2, y + h + 12, 12, C.stampDim, 'stamp', 'center');
     }
-    function tube(x, y, w, h, value) {
-      font('mono', 30, 'bold');
-      p.textAlign = 'center'; p.textBaseline = 'middle';
-      p.shadowColor = 'rgba(255,138,42,.8)'; p.shadowBlur = 8;
-      p.fillStyle = C.tube; p.fillText(value, x + w / 2, y + h / 2 + 1);
+    function tube(x, y, w, h, value) { tubeDigits(x + w / 2, y + h / 2, value, 'on'); }
+    // The digits of a reading centred at (cx, cy). 'off': every digit position shows its whole stack of unlit
+    // cathodes (0-9), separators their dots; 'on': the lit cathode, a thin bright core with a narrow glow around it.
+    function tubeDigits(cx, cy, value, state) {
+      const k = TUBE_PX / 30, cell = 21 * k, dotCell = 6 * k, chars = Array.from(value);
+      const width = chars.reduce((n, ch) => n + (ch === '·' || ch === ':' ? dotCell : cell), 0);
+      let left = cx - width / 2;
+      p.save();
+      p.lineJoin = 'round'; p.lineCap = 'round';
+      for (const ch of chars) {
+        const w = ch === '·' || ch === ':' ? dotCell : cell;
+        if (ch === '·' || ch === ':') {
+          const dots = ch === '·' ? [14] : [9, 20];
+          for (const dy of dots) {
+            const yy = cy - 14 * k + dy * k;
+            if (state === 'off') circle(left + w / 2, yy, 1.1 * k, C.tubeOff);
+            else { p.shadowColor = 'rgba(255,128,36,.85)'; p.shadowBlur = 5 * unit; circle(left + w / 2, yy, 1.3 * k, C.tube); p.shadowBlur = 0; }
+          }
+        } else if (state === 'off') {
+          for (const d of '0123456789') cathode(d, left, cy, k, C.tubeOff, 1);
+        } else if (CATHODES[ch]) {
+          const sprite = litSprite(ch, k);
+          if (sprite) p.drawImage(sprite, left - SPRITE_PAD, cy - 14 * k - SPRITE_PAD, cell + 2 * SPRITE_PAD, 28 * k + 2 * SPRITE_PAD);
+          else litCathode(ch, left, cy, k);
+        }
+        left += w;
+      }
+      p.restore();
+    }
+    function litCathode(ch, left, cy, k) {
+      p.shadowColor = 'rgba(255,128,36,.85)'; p.shadowBlur = 5 * unit;
+      cathode(ch, left, cy, k, C.tube, 1.7);
       p.shadowBlur = 0;
+      cathode(ch, left, cy, k, C.tubeHot, .7);
+    }
+    // One lit digit with its glow, drawn once per stage scale into a small canvas (design box: the cell plus a pad
+    // for the glow), so a frame lays each lit digit with one copy instead of stroking glowing curves.
+    const SPRITE_PAD = 6, sprites = new Map();
+    function litSprite(ch, k) {
+      const key = ch + '|' + unit.toFixed(4);
+      if (sprites.has(key)) return sprites.get(key);
+      const doc = p.canvas && p.canvas.ownerDocument;
+      let made = null;
+      if (doc && typeof doc.createElement === 'function') {
+        const wd = 21 * k + 2 * SPRITE_PAD, ht = 28 * k + 2 * SPRITE_PAD;
+        made = doc.createElement('canvas');
+        made.width = Math.ceil(wd * unit); made.height = Math.ceil(ht * unit);
+        const keep = p;
+        p = made.getContext('2d');
+        try {
+          p.setTransform(unit, 0, 0, unit, 0, 0);
+          p.lineJoin = 'round'; p.lineCap = 'round';
+          litCathode(ch, SPRITE_PAD, SPRITE_PAD + 14 * k, k);
+        } finally { p = keep; }
+      }
+      sprites.set(key, made);
+      return made;
+    }
+    function cathode(ch, left, cy, k, color, width) {
+      const glyph = CATHODES[ch];
+      if (!glyph) return;
+      const ox = left + (10.5 - glyph.mid) * k, oy = cy - 14 * k;
+      p.beginPath();
+      for (const [op, ...v] of glyph.path) {
+        const q = v.map((n, i) => (i % 2 ? oy + n * k : ox + n * k));
+        if (op === 'M') p.moveTo(q[0], q[1]); else if (op === 'L') p.lineTo(q[0], q[1]);
+        else if (op === 'Q') p.quadraticCurveTo(q[0], q[1], q[2], q[3]); else p.bezierCurveTo(q[0], q[1], q[2], q[3], q[4], q[5]);
+      }
+      p.strokeStyle = color; p.lineWidth = width * k; p.stroke();
     }
 
     // Three passes over the same modules: 'base' is the hardware under everything (plates, faces, scales, stamped
@@ -689,26 +779,26 @@
         const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
         raisedPlate(37, 24, 294, 64, 4, '#2a2c25', '#55574b', .9);
         screw(46, 33); screw(322, 33); screw(46, 79); screw(322, 79);
-        write('RATING', 57, 35, 8, C.stampFaint, 'mono', 'left');
+        write('RATING', 57, 35, 9, C.stampFaint, 'plate', 'left');
         const line1 = 'RESISTANCE ' + ohms[0] + '–' + ohms[1] + ' OHMS', line2 = 'MFD. BY & THE BLESSING INSTR. CO.';
-        const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('stamp', k); if (p.measureText(text).width <= width) break; } return k; };
+        const fit = (text, size, least, width) => { let k = size; for (; k > least; k -= .5) { font('plate', k); if (p.measureText(text).width <= width) break; } return k; };
         const size1 = fit(line1, 20, 12, 254), size2 = fit(line2, Math.min(size1, 17), 12, 254);
-        write(line1, 57, 50, size1, C.stamp, 'stamp', 'left', 256);
-        write(line2, 57, 71, size2, C.stamp, 'stamp', 'left', 256);
+        write(line1, 57, 50, size1, C.stamp, 'plate', 'left', 256);
+        write(line2, 57, 71, size2, C.stamp, 'plate', 'left', 256);
         out.plate = {line1, line2, size1, size2};
         lamp(350, 50, 8, 1, '#c8ffd0', C.green);
-        write('PWR', 350, 71, 10, C.stampFaint, 'stamp', 'center');
+        write('PWR', 350, 71, 12, C.stampDim, 'stamp', 'center');
         // The small plate: owner cell scratched out, type, date code, inspection stamp.
         raisedPlate(370, 24, 114, 64, 4, '#2c2e27', '#55574b', .8);
-        write('PROP. OF', 377, 35, 9, C.stampFaint, 'mono', 'left');
+        write('PROP. OF', 377, 35, 10, C.stampFaint, 'plate', 'left');
         p.save(); p.beginPath(); p.rect(420, 30, 58, 12); p.clip();
         for (let k = 0; k < 14; k++) { p.beginPath(); p.moveTo(418 + k * 5, 43); p.lineTo(426 + k * 5, 29); p.strokeStyle = 'rgba(200,196,176,.45)'; p.lineWidth = 1.1; p.stroke(); }
         p.restore();
-        write('TYPE 6R-7C/88', 377, 49, 10, C.stampDim, 'mono', 'left');
-        write('5947', 377, 71, 11, C.stampDim, 'mono', 'left');
+        write('TYPE 6R-7C/88', 377, 50, 12, C.stampDim, 'plate', 'left');
+        write('5947', 377, 71, 13, C.stampDim, 'plate', 'left');
         circle(461, 68, 13, null, '#8f8b78', 1.2);
-        write('INSP.', 461, 64, 7, C.stampDim, 'mono', 'center');
-        write('08', 461, 73, 8, C.stampDim, 'mono', 'center');
+        write('INSP.', 461, 64, 8, C.stampDim, 'plate', 'center');
+        write('08', 461, 73, 10, C.stampDim, 'plate', 'center');
         SECTION_LAMPS.forEach((name, k) => bed(496 + k * 82, 40, 77, 36, 2, '#1a1712', '#4a3d2c'));
         tubeBase(1101, 28, 72, 42, '888', 'TEMPO');
         tubeBase(1183, 28, 106, 42, '888·8', 'BAR · BEAT');
@@ -733,7 +823,7 @@
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
           p.fillStyle = g; p.fillRect(x + 2, y + 2, w - 4, h - 4);
         }
-        write(name, x + w / 2, y + h / 2 + 1, 13, v > .4 ? '#2a1a08' : has ? '#c9a77a' : '#5e5040', 'stamp', 'center', w - 6);
+        write(name, x + w / 2, y + h / 2 + 1, 16, v > .4 ? '#2a1a08' : has ? '#d2b48a' : '#7a6a56', 'plate', 'center', w - 6);
       });
       out.section = {lamps: Object.fromEntries(SECTION_LAMPS.map((n, k) => [n, +light[k].toFixed(3)])), kinds: [...data.kinds]};
       // TEMPO / BAR · BEAT / TIME.
@@ -768,7 +858,7 @@
       if (pass === 'base') {
         panel(18, 116, 296, 768, 'plateLeft', ['slot', 'slot', 'slot', 'brass']);
         write('CHANNEL STRIPS', 32, 146, 17, C.stamp, 'stamp', 'left', 200, 'bold', 'alphabetic');
-        write('MOD. LVL-7', 300, 146, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('MOD. LVL-7', 300, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         CATS.forEach((cat, i) => {
           const y = 163 + i * 85, {cx, cy, r, a0, a1} = dial(y);
           // The meter: a paper face filling its box, a red zone at the top of the scale.
@@ -794,13 +884,13 @@
             const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
             auditShape('keep', auditBox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)), {what: cat.strip + ' scale'});
           }
-          write('CH' + (i + 1), 224, y + 54, 10, C.stampFaint, 'stamp', 'center');
+          write('CH' + (i + 1), 224, y + 54, 12, C.stampDim, 'stamp', 'center');
           rounded(246, y + 12, 24, 50, 12, '#16170f', '#4c4e44', 1.5);
           inset(box(246, y + 12, 24, 50, 12), .9);
           edge(box(246.75, y + 12.75, 22.5, 48.5, 11.5), 246, y + 12, 24, 50, false, 1.2, .8);
         });
         write('CAUTION', 32, 799, 15, C.stamp, 'stamp', 'left', 160, 'bold', 'alphabetic');
-        write('MOD. ANN-8', 300, 799, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('MOD. ANN-8', 300, 799, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(32, 809, 268, 64, 5, '#16170f', null);
         return;
       }
@@ -841,8 +931,8 @@
         if (depth > 0) circle(lx + lw / 2 + 1.3 * depth, knob + 2 * depth, 8.2, `rgba(0,0,0,${Math.min(.6, .35 * depth)})`);
         circle(lx + lw / 2, knob, 8, has ? '#d6d4c8' : '#6c6b62', '#3a3a33', 1);
         if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${(has ? .55 : .25) * Math.min(1, depth)})`);
-        write('IN', 300, y + 20, 12, up ? C.stamp : C.stampFaint, 'stamp', 'right');
-        write('OUT', 300, y + 54, 12, up ? C.stampFaint : C.stamp, 'stamp', 'right');
+        write('IN', 300, y + 20, 13, up ? C.stamp : C.stampFaint, 'stamp', 'right');
+        write('OUT', 300, y + 54, 13, up ? C.stampFaint : C.stamp, 'stamp', 'right');
         out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other'});
       });
       // Caution lamps.
@@ -852,7 +942,7 @@
         const v = name === 'SPARE' ? 0 : glow(data.caution[k], now);
         out.caution[name] = +v.toFixed(3);
         rounded(x, y, w, h, 2, mixHex('#3a2a1a', '#ffb24c', v), '#14120d', 1);
-        write(name, x + w / 2, y + h / 2 + 1, 12, v > .45 ? '#2a1a08' : name === 'SPARE' ? '#5c5244' : '#c9a77a', 'stamp', 'center', w - 4);
+        write(name, x + w / 2, y + h / 2 + 1, 15, v > .45 ? '#2a1a08' : name === 'SPARE' ? '#7a6a56' : '#d2b48a', 'plate', 'center', w - 4);
       });
     }
 
@@ -885,12 +975,12 @@
         for (let r = 0; r <= RINGS; r++) { circle(cx, cy, inner + r * band, null, r === RINGS ? C.phosDim : C.phosFaint, 1); }
         p.restore();
         // Stamped name and the one sticker.
-        write('PPI', 968, 131, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write('1 REV', 968, 147, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 163, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('PPI', 968, 129, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('1 REV', 968, 144, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 159, 14, C.stamp, 'stamp', 'right', 0, 'bold');
         font('marker', 12);
         const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
-        p.save(); p.translate(978 - stickerW, 178); p.rotate(-.05);
+        p.save(); p.translate(980 - stickerW, 172); p.rotate(-.05);
         if (auditSink) auditShape('tape', auditBox(0, 0, stickerW, 40));
         rect(0, 0, stickerW, 40, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 38, stickerW, 2);
         write('OUTER = VOX', 6, 11, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
@@ -947,7 +1037,7 @@
         CATS.slice(0, RINGS).forEach((cat, k) => {
           const r = outer - k * band - band / 2;
           rect(cx - 40, cy - r - 8, 30, 16, 'rgba(6,18,12,.85)');
-          write(cat.ring, cx - 12, cy - r, 12, muted(k) || !data.present[k] ? '#2f7a52' : '#8ef5b0', 'mono', 'right', 0, 'bold');
+          write(cat.ring, cx - 12, cy - r, 15, muted(k) || !data.present[k] ? '#3f8a62' : '#8ef5b0', 'plate', 'right');
         });
         p.restore();
         // Bar numbers of the turn at the quarters: only on the song's own bar lines.
@@ -959,10 +1049,10 @@
             if (first + q < 0 || first + q >= bars.starts.length) return;
             out.barNumbers.push(first + q + 1);
             const a = -Math.PI / 2 + q / 4 * Math.PI * 2 + .14, r = screen - 28, bx = cx + Math.cos(a) * r, by = cy + Math.sin(a) * r;
-            font('mono', 12, 'bold');
+            font('plate', 15);
             const bw = p.measureText(String(first + q + 1)).width + 6;
             rect(bx - bw / 2, by - 8, bw, 16, 'rgba(6,18,12,.85)');
-            write(String(first + q + 1), bx, by, 12, '#8ef5b0', 'mono', 'center', 0, 'bold');
+            write(String(first + q + 1), bx, by, 15, '#8ef5b0', 'plate', 'center');
           });
         }
         Object.assign(out, {turn: +turn.toFixed(4), angle: +(phase * 360).toFixed(2), echoes});
@@ -992,7 +1082,7 @@
         for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx - r, cy + k * 18); p.lineTo(cx + r, cy + k * 18); p.stroke(); }
         for (let k = -2; k <= 2; k++) { p.beginPath(); p.moveTo(cx + k * 22, cy - r); p.lineTo(cx + k * 22, cy + r); p.stroke(); }
         p.restore();
-        write('VOX PITCH', 344, 246, 13, C.stamp, 'stamp', 'left', 0, 'bold');
+        write('VOX PITCH', 344, 244, 13, C.stamp, 'stamp', 'left', 0, 'bold');
         return;
       }
       if (pass === 'over') { glass(cx - r, cy - r, 2 * r, 2 * r, 300, 40, true); inset(disk(cx, cy, r - .5), 1.2); return; }
@@ -1044,9 +1134,9 @@
       if (pass === 'over') {
         for (let m = 36; m <= 84; m += 12) {
           const a = at(m), lx = cx + Math.cos(a) * (r - 21), ly = cy + Math.sin(a) * (r - 21);
-          font('mono', 12); p.textAlign = 'center'; p.textBaseline = 'middle';
+          font('plate', 15); p.textAlign = 'center'; p.textBaseline = 'middle';
           p.strokeStyle = C.dial; p.lineWidth = 3; p.lineJoin = 'round'; p.strokeText('C' + (m / 12 - 1), lx, ly); p.lineJoin = 'miter';
-          write('C' + (m / 12 - 1), lx, ly, 12, C.dialInk, 'mono', 'center');
+          write('C' + (m / 12 - 1), lx, ly, 15, C.dialInk, 'plate', 'center');
         }
         circle(cx, cy, 4, '#1b1a16'); glass(cx - r, cy - r, 2 * r, 2 * r, 120, 380, true); inset(disk(cx, cy, r), 1); return;
       }
@@ -1104,7 +1194,7 @@
       if (pass === 'base') {
         panel(1010, 116, 412, 618, 'plateRight', ['cross', 'cross', 'cross', 'cross']);
         write('HARMONY · SIGNAL', 1028, 146, 17, C.stamp, 'stamp', 'left', 260, 'bold', 'alphabetic');
-        write('MOD. HS-4', 1404, 146, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('MOD. HS-4', 1404, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         write('CHORD · FIFTHS', 1028, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         write('QUALITY', 1246, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         cast(disk(cx, cy, R), 1.4);
@@ -1134,19 +1224,19 @@
         const v = light[k];
         circle(x, y, 14, mixHex('#2b2620', '#ffb24c', v), '#14120d', 1.5);
         if (v > .6) circle(x, y, 14, null, '#ffe0a0', 2);
-        write(name, x, y + 1, 12, v > .45 ? '#2a1a08' : '#b9b2a0', 'mono', 'center', 0, 'bold');
+        write(name, x, y + 1, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center');
       });
       p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
       const name = current ? current.label : '--';
       let cardSize = 27;
-      for (; cardSize > 14; cardSize -= 1) { font('mono', cardSize, 'bold'); if (p.measureText(name).width <= 72) break; }
-      const cardShown = write(name, cx, cy + 1, cardSize, '#ece6d0', 'mono', 'center', 72, 'bold');
+      for (; cardSize > 14; cardSize -= 1) { font('plate', cardSize); if (p.measureText(name).width <= 72) break; }
+      const cardShown = write(name, cx, cy + 1, cardSize, '#ece6d0', 'plate', 'center', 72);
       // Quality lamps, two columns of five.
       const lit = current ? current.parts.lamps : new Set();
       QUALITY.forEach((q, k) => {
         const x = 1266 + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
-        write(q, x + 14, y + 1, 13, lit.has(q) ? C.amberHot : C.stampDim, 'mono', 'left', 0, 'bold');
+        write(q, x + 14, y + 1, 15, lit.has(q) ? C.amberHot : C.stampDim, 'stamp', 'left');
       });
       out.chord = {name: current ? current.label : null, shown: cardShown, size: cardSize, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
@@ -1162,9 +1252,9 @@
       if (pass === 'base') {
         write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         const barred = bars && bars.source === 'downbeats' && bars.perBar > 0;
-        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404, 411, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(1028, 420, 376, 122, 5, '#1f201b', '#4a4c42');
-        DRUM_ROWS.forEach((row, r) => write(row.label, 1040, 432 + r * 21 + 7, 12, C.stamp, 'mono', 'left', 0, 'bold'));
+        DRUM_ROWS.forEach((row, r) => write(row.label, 1038, 432 + r * 21 + 7, 15, C.stamp, 'stamp', 'left'));
         if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112, 432 + r * 21, 286, 15, 1.5, '#24251f'));
         return;
       }
@@ -1255,8 +1345,8 @@
       };
       if (pass === 'base') {
         write('RECORDER · LOUDNESS', 1028, 566, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('WHOLE SONG · 1 SHEET', 1404, 566, 10, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        [0, -12, -24, -36].forEach(db => write(String(db), 1058, y + 6 + (hi - db) / (hi - lo) * (h - 12), 12, C.stampDim, 'mono', 'right'));
+        write('WHOLE SONG · 1 SHEET', 1404, 566, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        [0, -12, -24, -36].forEach(db => write(String(db), 1057, y + 6 + (hi - db) / (hi - lo) * (h - 12), 15, C.stampDim, 'plate', 'right'));
         raisedPlate(x - 3, y - 3, w + 6, h + 6, 4, '#1c1d18', '#3d3e36', .6);
         rect(x, y, w, h, C.paper);
         recordPaper('recorder', x, y, w, h);
@@ -1276,10 +1366,10 @@
         for (const s of data.sections) {
           const sx = xAt(s.start);
           if (sx - lastLabel < 30) continue;
-          font('mono', 12);
+          font('mono', 15);
           const lx = Math.min(sx + 3, x + w - 5 - p.measureText(SECTION_MARK[s.kind]).width);
-          if (lx - lastLabel < 30) continue;
-          write(SECTION_MARK[s.kind], lx, y + 18, 12, C.paperInk, 'mono'); lastLabel = lx;
+          if (lx - lastLabel < 44) continue;
+          write(SECTION_MARK[s.kind], lx, y + 18, 15, C.paperInk, 'mono'); lastLabel = lx;
         }
         // The faint whole-song trace is on the sheet from the start.
         if (data.energy) stroke(x, x + w, C.paperFaint, 1.2);
@@ -1298,7 +1388,7 @@
       if (pass === 'base') {
         panel(334, 754, 596, 130, 'plateKeys', ['cross', 'cross', 'cross', 'cross']);
         write('KEYS', 354, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('88 · ALL CHANNELS SOUNDING NOW', 910, 782, 11, C.stampFaint, 'mono', 'right', 0, '', 'alphabetic');
+        write('88 · ALL CHANNELS SOUNDING NOW', 910, 782, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
       }
       const x = 354, y = 795, w = 556, h = 63;
       const whites = [];
@@ -1308,7 +1398,7 @@
         bed(x, y, w, h, 5, '#16170f', '#4a4c42');
         for (let o = 1; o <= 8; o++) {
           const k = whites.indexOf(12 * (o + 1));
-          if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 12, C.stampDim, 'mono', 'center');
+          if (k >= 0) write('C' + o, x + 4 + k * ww + ww / 2, y + h + 12, 15, C.stampDim, 'plate', 'center');
         }
         return;
       }
@@ -1343,9 +1433,9 @@
       font('stamp', 15);
       const left = 970 + p.measureText('TELEPRINTER').width + 12;
       const han = /\p{Script=Han}/u.test(song);
-      out.teleTitle = write(song || '— NO SIGNAL —', left, 782, 13, C.stamp, han ? 'hanzi' : 'mono', 'left', 1306 - left, 'bold', 'alphabetic');
-      write(key[0], 1404, 771, 10, C.stampFaint, 'mono', 'right');
-      write(key[1], 1404, 785, 10, C.stampFaint, 'mono', 'right');
+      out.teleTitle = write(song || '— NO SIGNAL —', left, 782, 15, C.stamp, han ? 'hanzi' : 'mono', 'left', 1290 - left, 'bold', 'alphabetic');
+      write(key[0], 1404, 770, 12, C.stampFaint, 'stamp', 'right');
+      write(key[1], 1404, 785, 12, C.stampFaint, 'stamp', 'right');
     }
     function teleprinter(env, now, out) {
       const x = 970, y = 796, w = 316, h = 74, head = x + w - 6;
@@ -1378,7 +1468,7 @@
       let printing = false;
       const glyphs = [];
       // Characters printed by now, the newest at the head.
-      const cell = 34;
+      const cell = 40;
       let printed = 0, newest = null;
       for (const item of tape.cells) {
         if (item.time > now) break;
@@ -1396,7 +1486,7 @@
         if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
         if (item.blank) { glyphs.push({ch: ' ', code: null, clear: true}); continue; }
         const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
-        if (code) write(code, cx, y + 17, 12, C.paperInk, 'mono', 'center');
+        if (code) write(code, cx, y + 17, 15, C.paperInk, 'mono', 'center');
         const clear = !item.han || now >= item.time + item.half;
         if (clear) write(item.ch, cx, y + 49, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
         glyphs.push({ch: item.ch, code: code || null, clear});
@@ -1447,7 +1537,7 @@
         const value = item.chars.slice(0, count).join('');
         font(item.han ? 'hanzi' : 'mono', item.han ? 24 : 20, 'bold');
         const valueW = p.measureText(value).width;
-        font('mono', 12);
+        font('mono', 13);
         const nameW = p.measureText(item.name).width;
         pieces.push({item, value, width: Math.max(valueW, count === item.chars.length ? nameW : 0) + 4});
         if (count === item.chars.length && now >= item.end + .2) pieces.push({dot: true, width: 18});
@@ -1460,7 +1550,7 @@
         const piece = pieces[k], left = right - piece.width;
         if (piece.dot) circle(left + piece.width / 2, y + h / 2 + 8, 2.5, C.paperInk);
         else {
-          write(piece.item.name, left, y + 17, 12, C.paperFaint === undefined ? C.paperInk : '#6b6656', 'mono', 'left');
+          write(piece.item.name, left, y + 17, 13, '#5f5a4b', 'mono', 'left');
           write(piece.value, left, y + 49, piece.item.han ? 24 : 20, C.paperInk, piece.item.han ? 'hanzi' : 'mono', 'left', 0, 'bold');
         }
         right = left - 6;
