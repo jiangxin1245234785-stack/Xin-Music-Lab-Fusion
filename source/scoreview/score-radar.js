@@ -1513,7 +1513,7 @@
       else { const j = lower(chords, now + 1e-6, c => c.start) - 1; if (j >= 0 && chords[j].end <= now) changed = chords[j].end; }
       const target = cellsAt(now), before = changed === null ? target : cellsAt(changed - 1e-6);
       const roll = changed === null ? 1 : clamp((now - changed) / WHEEL_ROLL, 0, 1), eased = roll * roll * (3 - 2 * roll);
-      const scheme = env.options.radarWheel === 'light' ? {face: '#d8d0b6', ink: '#1d1b15', shade: 'rgba(40,30,15,'} : {face: '#16150f', ink: '#ece5cc', shade: 'rgba(0,0,0,'};
+      const scheme = env.options.radarWheel !== 'dark' ? {face: '#d8d0b6', ink: '#1d1b15', shade: 'rgba(40,30,15,'} : {face: '#16150f', ink: '#ece5cc', shade: 'rgba(0,0,0,'};
       const WIN_H = 34, WHEEL_R = 21, PITCH = 23;
       let wx = cx - 46;
       const wheelOut = [];
@@ -1560,7 +1560,7 @@
         write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
       out.chord = {name: current ? current.label : null, shown: cardShown, size: wheelOut[2].size, wheels: wheelOut, rolling: roll < 1,
-        scheme: env.options.radarWheel === 'light' ? 'light' : 'dark', quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
+        scheme: env.options.radarWheel !== 'dark' ? 'light' : 'dark', quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
 
     function drumGrid(data, env, bars, now, out) {
@@ -1644,7 +1644,7 @@
       }
       out.stepLook = stepLook;
       // The cells' look (radar.5 feedback; options.radarCell): 'square' backlit tiles or 'round' lamps behind holes.
-      const cellLook = env.options.radarCell === 'round' ? 'round' : 'square';
+      const cellLook = env.options.radarCell === 'square' ? 'square' : 'round';   // round lamps unless chosen (the user's pick)
       out.cellLook = cellLook;
       // A played cell's heat: 1 at its hit, falling by e^-1 in a third of the bar, never below the ember (.06: a dull red, unlike the brown of a hit still to come).
       const coolTau = Math.max(.2, (barEnd != null && barStart != null ? barEnd - barStart : 2) / 3);

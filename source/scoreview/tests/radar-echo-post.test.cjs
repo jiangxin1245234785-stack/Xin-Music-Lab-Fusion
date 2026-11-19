@@ -597,7 +597,7 @@ test('radar.5 feedback: a played drum cell cools to an ember by its age; hits st
     assert.ok(frame(9.95).motion.drums.heat[3][0] >= .06, 'a bar on, the first hit is an ember, never dark');
     assert.deepEqual(frame(9.05).motion.drums.heat, m.drums.heat, 'a function of song time');
   }
-  assert.equal(post(model).frame(9).motion.cellLook, 'square', 'square tiles unless chosen');
+  assert.equal(post(model).frame(9).motion.cellLook, 'round', 'round lamps unless chosen (the user\'s pick)');
 });
 
 test('radar.5 feedback: the VOX beam eases between a pitch and the baseline, never a step; a faint noise that repeats for the same moment', () => {
@@ -645,5 +645,5 @@ test('SPEC-WEATHER A: the chord wheels show root, accidental and quality; a chan
     const back = at(10.1).wheels[0].pos;
     assert.ok(back < 0 && back > -1, 'blank -> B the short way: ' + back);
   }
-  assert.equal(post(model).frame(2).motion.chord.scheme, 'dark', 'dark wheels unless chosen');
+  assert.equal(post(model).frame(2).motion.chord.scheme, 'light', 'light wheels unless chosen (the user\'s pick)');
 });
