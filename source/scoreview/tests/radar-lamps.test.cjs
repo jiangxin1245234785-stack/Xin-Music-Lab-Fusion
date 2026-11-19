@@ -33,7 +33,7 @@ test('the ordinary browser script and CommonJS expose the lamp API', () => {
 test('A defaults to P65 and P80 of each channel’s valid windows; both percentiles are adjustable', () => {
   const levels = calibration(), cuts = Lamps.thresholds(levels);
   assert.equal(cuts.rule, 'own');
-  assert.equal(cuts.gateDb, null);
+  assert.equal(cuts.gateDb, -45);
   assert.equal(cuts.channels.guitar.yellow, -20.5);
   assert.equal(cuts.channels.guitar.red, -16);
   assert.equal(cuts.channels.bass.yellow, -23.5);
@@ -41,6 +41,20 @@ test('A defaults to P65 and P80 of each channel’s valid windows; both percenti
   const tuned = Lamps.thresholds(levels, {rule: 'own', yellowQuantile: .5, redQuantile: .8});
   assert.equal(tuned.channels.guitar.yellow, -25);
   assert.equal(tuned.channels.guitar.red, -16);
+});
+
+test('the default -45 dB gate excludes windows at and below the gate', () => {
+  const levels = {hop: 1, groups: {guitar: [-45.1, -45, -45, -44.9]}};
+  const cuts = Lamps.thresholds(levels);
+  const explicit = Lamps.thresholds(levels, {gateDb: -45});
+  assert.deepEqual(cuts, explicit);
+  assert.deepEqual(cuts.channels.guitar, {yellow: -44.9, red: -44.9});
+  const times = [.5, 1.5, 3.5];
+  const frames = times.map(t => Lamps.glow(levels, cuts, 'guitar', t));
+  assert.deepEqual(frames, times.map(t => Lamps.glow(levels, explicit, 'guitar', t)));
+  assert.deepEqual(frames[0], off);
+  assert.deepEqual(frames[1], off);
+  assert.ok(frames[2].green > 0);
 });
 
 test('A ignores encoded zero and missing samples, with gain-invariant brightness through silence', () => {
@@ -52,7 +66,8 @@ test('A ignores encoded zero and missing samples, with gain-invariant brightness
   const attenuation = 58;
   const shifted = {hop: levels.hop, groups: Object.fromEntries(Object.entries(levels.groups).map(([id, row]) =>
     [id, row.map(db => Number.isFinite(db) && db > zero ? db - attenuation : db)]))};
-  const cuts = Lamps.thresholds(levels), quietCuts = Lamps.thresholds(shifted);
+  const noGate = {gateDb: null};
+  const cuts = Lamps.thresholds(levels, noGate), quietCuts = Lamps.thresholds(shifted, noGate);
   assert.deepEqual(cuts.channels.winds, {yellow: null, red: null});
   assert.equal(quietCuts.channels.strings.yellow, cuts.channels.strings.yellow - attenuation);
   assert.equal(quietCuts.channels.strings.red, cuts.channels.strings.red - attenuation);
@@ -72,7 +87,7 @@ test('A ignores encoded zero and missing samples, with gain-invariant brightness
   }
   assert.deepEqual(prev, off);
   const floorNeighbor = {hop: 1, groups: {guitar: [zero, -100.6, zero]}};
-  const nearFloor = Lamps.thresholds(floorNeighbor);
+  const nearFloor = Lamps.thresholds(floorNeighbor, noGate);
   assert.equal(nearFloor.channels.guitar.red, -100.6);
   assert.ok(Lamps.glow(floorNeighbor, nearFloor, 'guitar', 1.5).green > .9);
 });

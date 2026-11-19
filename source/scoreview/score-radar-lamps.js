@@ -9,7 +9,7 @@
     ['bass', ['bass']], ['drums', ['drums']]
   ]);
   const DEFAULTS = Object.freeze({
-    rule: 'own', gateDb: null, yellowQuantile: .65, redQuantile: .8,
+    rule: 'own', gateDb: -45, yellowQuantile: .65, redQuantile: .8,
     yellowBelowPeakDb: 6, redBelowPeakDb: 3
   });
   // The layer encoder clamps zero power to 1e-10 before writing the rounded BS.1770 level.
@@ -51,7 +51,8 @@
   // Thresholds use those original windows, counting the loudest member of each visible strip once.
   function thresholds(levels, options = {}) {
     const rule = options.rule === 'song' ? 'song' : DEFAULTS.rule;
-    const gateDb = finite(options.gateDb) ? Math.max(FLOOR, options.gateDb) : DEFAULTS.gateDb;
+    // Match the meter's zero by default. An explicit null uses every valid sounding window.
+    const gateDb = options.gateDb === null ? null : Math.max(FLOOR, option(options.gateDb, DEFAULTS.gateDb));
     const yellowQ = clamp(option(options.yellowQuantile, DEFAULTS.yellowQuantile));
     const redQ = Math.max(yellowQ, clamp(option(options.redQuantile, DEFAULTS.redQuantile)));
     const yellowBelow = Math.max(0, option(options.yellowBelowPeakDb, DEFAULTS.yellowBelowPeakDb));
