@@ -29,6 +29,10 @@
     Object.freeze({cells: Object.freeze(['', '#', 'b', '', '#', 'b']), w: 14, size: 19}),
     Object.freeze({cells: Object.freeze(['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', '6', 'm6', 'dim', 'dim7', 'aug', 'm7b5']), w: 46, size: 19})]);
   const WHEEL_ROLL = .2;   // seconds a wheel takes to roll to its new cell
+  // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
+  // fast then slow, fully dark at `span`. Bar lamps: span one bar; the rolling strip: its ROLL_BEATS; row lamps: .3 s.
+  const lampFade = (age, span) => age < 0 || !(span > 0) || age >= span ? 0 : (1 - age / span) ** 2;
+  const ROW_LAMP_SPAN = .3;
   const FIFTHS = Object.freeze(['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F']);
   const FIFTH_PC = Object.freeze([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]);
   // Capitals' height in ems where the canvas cannot measure it (tests): National Park and Barlow are both about .72.
@@ -1583,21 +1587,25 @@
       }
       if (pass !== 'live') return;
       let barStart = null, barEnd = null, step = -1;
-      const cells = DRUM_ROWS.map(() => new Array(steps).fill(0));
-      const hitAt = DRUM_ROWS.map(() => new Array(steps).fill(null));   // a played cell's hit time (its ember's age)
+      const hitAt = DRUM_ROWS.map(() => new Array(steps).fill(null));   // each lamp's last hit at or before now
+      let fadeSpan = 0;
       if (steps) {
         const b = Math.floor(barAt(env, bars, now));
         if (b >= 0 && b < bars.starts.length) {
           barStart = bars.starts[b]; barEnd = bars.starts[b + 1] ?? barStart + bars.length;
-          const b0 = env.beatAt(barStart);
-          const stepOf = t => Math.floor(((env.beatAt(t) - b0) / per) * steps + .5);
-          step = clamp(Math.floor(((env.beatAt(now) - b0) / per) * steps), 0, steps - 1);
-          for (let k = lower(data.drums, barStart - .03, d => d.time); k < data.drums.length && data.drums[k].time < barEnd - .03; k++) {
-            const d = data.drums[k], s = stepOf(d.time);
-            if (s < 0 || s > steps - 1) continue;
-            cells[d.row][s] = d.time <= now + 1e-6 ? 2 : 1;
-            if (cells[d.row][s] === 2) hitAt[d.row][s] = Math.max(hitAt[d.row][s] ?? -Infinity, d.time);
-          }
+          step = clamp(Math.floor(((env.beatAt(now) - env.beatAt(barStart)) / per) * steps), 0, steps - 1);
+        }
+        // A lamp dims to dark in about a bar (the bar now, else the grid's bar length).
+        fadeSpan = barStart != null ? barEnd - barStart : bars.length || 2;
+        // Every hit of the last span, at the step it fell on in its own bar (a hit rounding up to the next bar's first
+        // step is that step); the latest per lamp wins. Hits after now are not looked at: nothing lights ahead.
+        for (let k = lower(data.drums, now - fadeSpan - 1e-6, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
+          const d = data.drums[k], hb = Math.floor(barAt(env, bars, d.time + 1e-6));
+          if (hb < 0 || hb >= bars.starts.length) continue;
+          const at = Math.floor(((env.beatAt(d.time) - env.beatAt(bars.starts[hb])) / per) * steps + .5);
+          if (at < 0) continue;
+          const st = at % steps;
+          hitAt[d.row][st] = Math.max(hitAt[d.row][st] ?? -Infinity, d.time);
         }
       }
       // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
@@ -1617,6 +1625,9 @@
         p.beginPath(); p.moveTo(left + width, 427); p.lineTo(left + width, 537); p.strokeStyle = '#6b6350'; p.lineWidth = 1; p.stroke();
         brassPointer(left + width, 422, 1); brassPointer(left + width, 540, -1);
       }
+      function emberFill(h) {
+        return h > .5 ? mixHex('#c8742f', '#ffd27a', (h - .5) / .5) : h > .2 ? mixHex('#7a3418', '#c8742f', (h - .2) / .3) : mixHex('#2c2d26', '#7a3418', h / .2);
+      }
       function rollRow(r, y) {
         const shown = [];
         const from = env.timeAtBeat ? env.timeAtBeat(nowBeat - ROLL_BEATS) : now - 8;
@@ -1626,7 +1637,9 @@
           const beat = env.beatAt(d.time), age = nowBeat - beat;
           if (age < 0 || age > ROLL_BEATS) continue;
           const x = xOf(beat);
-          rect(x - 2, y + 1, 4, 13, mixHex('#6a4426', '#ffc06a', clamp(1 - age / ROLL_BEATS, 0, 1) * .8 + .2));
+          const h = lampFade(age, ROLL_BEATS);   // the bar lamps' curve, over the strip's beats: dark at its left edge
+          if (h < .005) continue;
+          rect(x - 2, y + 1, 4, 13, emberFill(h));
           shown.push(+beat.toFixed(2));
         }
         return shown;
@@ -1646,26 +1659,25 @@
       // The cells' look (radar.5 feedback; options.radarCell): 'square' backlit tiles or 'round' lamps behind holes.
       const cellLook = env.options.radarCell === 'square' ? 'square' : 'round';   // round lamps unless chosen (the user's pick)
       out.cellLook = cellLook;
-      // A played cell's heat: 1 at its hit, falling by e^-1 in a third of the bar, never below the ember (.06: a dull red, unlike the brown of a hit still to come).
-      const coolTau = Math.max(.2, (barEnd != null && barStart != null ? barEnd - barStart : 2) / 3);
-      const heatOf = (r, s) => hitAt[r][s] == null ? 0 : Math.max(.06, Math.exp(-Math.max(0, now - hitAt[r][s]) / coolTau));
-      const emberFill = heat => heat > .5 ? mixHex('#c8742f', '#ffd27a', (heat - .5) / .5) : mixHex('#7a3418', '#c8742f', (heat - .06) / .44);
+      // A lamp's heat from its own last hit (lampFade over about a bar), and its colour from hot through orange and a
+      // dull red down to the unlit lens.
+      const heatOf = (r, s) => hitAt[r][s] == null ? 0 : lampFade(now - hitAt[r][s], fadeSpan);
       const heat = DRUM_ROWS.map(() => new Array(steps).fill(0));
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
-        // The row lamp: lit at the hit, dark again .15 s later.
+        // The row lamp: the same curve from the row's last hit, over ROW_LAMP_SPAN (a quick flash on each hit).
         const j = lower(data.drums, now + 1e-6, d => d.time) - 1;
         let v = 0;
-        for (let k = j; k >= 0 && now - data.drums[k].time < .15; k--) if (data.drums[k].row === r) { v = 1 - (now - data.drums[k].time) / .15; break; }
+        for (let k = j; k >= 0 && now - data.drums[k].time < ROW_LAMP_SPAN; k--) if (data.drums[k].row === r) { v = lampFade(now - data.drums[k].time, ROW_LAMP_SPAN); break; }
         lamp(1094 + wide / 2, y + 7.5, 6, v);
         if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
-          const x = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
-          // Played: an ember by its age (the newest the hottest); to come: a dark lens, visible; with 'backlight' the
-          // current column's empty cells glow faintly from behind.
-          const backlit = s === step && stepLook === 'backlight', h = state === 2 ? heatOf(r, s) : 0;
+          const x = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2;
+          // Lit by its own last hit and dimming to dark; unlit otherwise (nothing ahead is shown); with 'backlight' the
+          // current column's dark lamps glow faintly from behind.
+          const backlit = s === step && stepLook === 'backlight', h = heatOf(r, s);
           heat[r][s] = +h.toFixed(3);
-          const fill = state === 2 ? emberFill(h) : state === 1 ? '#4a3524' : backlit ? '#4a4334' : '#2c2d26';
+          const fill = h >= .005 ? emberFill(h) : backlit ? '#4a4334' : '#2c2d26';
           if (cellLook === 'round') {
             // A small lamp behind a round hole in the bed: the hole's dark rim, the lens, a glow round a hot lens.
             const cx = x + cellSize / 2, cy = y + 7.5, rr = Math.min(cellSize, 15) / 2 - 1;
@@ -1680,7 +1692,7 @@
           } else rounded(x, y, cellSize, 15, 1.5, fill);
         }
       });
-      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')), heat,
+      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: heat.map(row => row.map(h => h >= .005 ? '2' : '0').join('')), heat,
         right: steps ? +(1112 + wide / 2 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
         ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
     }

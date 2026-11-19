@@ -581,23 +581,39 @@ test('radar.5 feedback: engraved, printed and stuck-on text keeps one colour wha
   assert.ok([...seen.keys()].some(k => k.startsWith('IN@300,')) && [...seen.keys()].some(k => k.startsWith('OUT@300,')), 'IN / OUT are drawn by every lever');
 });
 
-test('radar.5 feedback: a played drum cell cools to an ember by its age; hits still to come stay visible; square tiles or round lamps', () => {
-  // 120 bpm, a bar 2 s (8 .. 10), four steps a beat: hits at 8, 8.5, 9 and 9.5 are steps 0, 4, 8 and 12 of one row.
-  // A third of a bar (.667 s) cools a hit by e^-1.
-  const lanes = [{id: 'd', kind: 'drums', group: 'drums', hits: [[8, 'kick', 100], [8.5, 'kick', 100], [9, 'snare', 90], [9.5, 'kick', 100]]}];
+test('radar.8 feedback: a drum lamp lights only when its step is hit, dims by itself to dark in about a bar, and nothing is cleared at a bar line', () => {
+  // 120 bpm, a bar 2 s, four steps a beat: one row hit at 8, 8.5, 9, 9.5 (bar 5, steps 0 / 4 / 8 / 12) and at 10.5
+  // (bar 6, step 4). The curve: (1 - age / 2 s)^2.
+  const lanes = [{id: 'd', kind: 'drums', group: 'drums', hits: [[8, 'kick', 100], [8.5, 'kick', 100], [9, 'snare', 90], [9.5, 'kick', 100], [10.5, 'kick', 100]]}];
   const model = steady(lanes);
   for (const look of ['square', 'round']) {
     const {frame} = post(model, 1440, 900, {...options, radarCell: look});
-    const m = frame(9.05).motion, row = m.drums.heat[3];
-    assert.equal(m.cellLook, look);
-    assert.ok(row[8] > .9, `${look}: the newest hit is hot`);
-    assert.ok(row[0] > .06 && row[0] < row[4] && row[4] < row[8], `${look}: older hits are cooler (${row[0]}, ${row[4]}, ${row[8]})`);
-    assert.equal(m.drums.hits[3][12], '1', `${look}: the hit still to come in the bar is shown`);
-    assert.equal(row[12], 0, 'and is not lit');
-    assert.ok(frame(9.95).motion.drums.heat[3][0] >= .06, 'a bar on, the first hit is an ember, never dark');
-    assert.deepEqual(frame(9.05).motion.drums.heat, m.drums.heat, 'a function of song time');
+    const at = t => frame(t).motion.drums.heat[3];
+    assert.equal(frame(9.05).motion.cellLook, look);
+    const r = at(9.05);
+    assert.ok(r[8] > .9, `${look}: the newest hit is bright`);
+    assert.ok(r[0] > 0 && r[0] < r[4] && r[4] < r[8], `${look}: older hits are dimmer (${r[0]}, ${r[4]}, ${r[8]})`);
+    assert.equal(r[12], 0, 'a hit still to come in the bar is not shown');
+    assert.equal(frame(9.05).motion.drums.hits[3][12], '0');
+    assert.ok(Math.abs(r[0] - (1 - 1.05 / 2) ** 2) < 2e-3, 'one curve: (1 - age / bar)^2');
+    // Across the bar line (10 s): nothing cleared; the last bar's lamps keep dimming, each by its own age.
+    const before = at(9.98), after = at(10.02);
+    for (const st of [4, 8, 12]) assert.ok(after[st] > 0 && after[st] < before[st] && before[st] - after[st] < .05, `step ${st} dims on smoothly across the bar line`);
+    // Dark to the end: a bar after its hit a lamp is out, until its step is hit again.
+    assert.equal(at(10.01)[0], 0, 'the hit at 8 s is dark two seconds later');
+    assert.ok(at(10.55)[4] > .9, 'step 4 lit again by the hit at 10.5');
+    assert.equal(at(11.6)[8], 0, 'the hit at 9 s is out by 11 s');
+    // A function of song time: a seek shows the afterglow of the hits before it.
+    assert.deepEqual(post(model, 1440, 900, {...options, radarCell: look}).frame(10.3).motion.drums.heat, frame(10.3).motion.drums.heat);
   }
   assert.equal(post(model).frame(9).motion.cellLook, 'round', 'round lamps unless chosen (the user\'s pick)');
+  // The rolling strip (no bar lines) and the row lamps follow the same curve, to dark.
+  const roll = post({...song, track: {...song.track, duration: 30}, bars: {bpm: 120, beats: Array.from({length: 61}, (_, i) => i / 2)}, lanes});
+  assert.equal(roll.frame(9).motion.drums.mode, 'roll');
+  assert.ok(roll.frame(9.6).motion.drums.rolled[3].length >= 1);
+  assert.equal(roll.frame(19).motion.drums.rolled[3].length, 0, 'eight seconds (16 beats) after the last hit the strip is dark');
+  const lamps = post(model).frame(10.79);
+  assert.ok(lamps.motion.drums.heat[3][4] > .5);
 });
 
 test('radar.5 feedback: the VOX beam eases between a pitch and the baseline, never a step; a faint noise that repeats for the same moment', () => {
