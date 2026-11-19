@@ -207,14 +207,17 @@ test('a song without vocals or lyrics: the scope is a flat line, the tape empty,
   assert.ok(shown.register > 59 && shown.register < 61);
 });
 
-test('any window shape: the panel scales whole and sits centred', () => {
+test('any window shape: the panel scales whole and sits centred; wider than 16:10 it widens up to 16:9 (SPEC-WEATHER B)', () => {
   const model = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}]);
-  for (const [w, h] of [[1920, 1080], [1080, 1080], [800, 1200]]) {
+  // 16:10 and narrower: 1440 wide; 16:9: 1600, no bars; between: in between, smoothly; 21:9: 1600 and bars beside.
+  for (const [w, h, design] of [[1440, 900, 1440], [1920, 1080, 1600], [1530, 900, 1530], [2520, 1080, 1600], [1080, 1080, 1440], [800, 1200, 1440]]) {
     const {frame} = post(model, w, h);
     const m = frame(2).motion, W = Math.round(w / h * 1080);
-    assert.ok(Math.abs(m.scale - Math.min(W / 1440, 1080 / 900)) < 1e-6);
-    assert.ok(Math.abs(m.origin[0] * 2 + 1440 * m.scale - W) < 1e-6 && Math.abs(m.origin[1] * 2 + 900 * m.scale - 1080) < 1e-6);
+    assert.equal(m.design[0], design, `${w} x ${h}`);
+    assert.ok(Math.abs(m.scale - Math.min(W / design, 1080 / 900)) < 1e-6);
+    assert.ok(Math.abs(m.origin[0] * 2 + design * m.scale - W) < 1e-6 && Math.abs(m.origin[1] * 2 + 900 * m.scale - 1080) < 1e-6);
   }
+  assert.equal(post(model, 1920, 1080).frame(2).motion.origin[0], 0, '1920 x 1080: no bars at the sides');
 });
 
 test('the drum grid stands on the song\'s own bar lines: three beats = twelve steps; beats without bar lines = lamps only', () => {
@@ -336,8 +339,9 @@ test('layout: no text leaves its panel, overlaps another, sits on a screw or str
     {model: steady(lanes, 64), at: 9, lyrics: [{time: 2, text: '院子落葉跟我的思念厚厚一疊'}, {time: 8, text: '幾句是非也無法將我的熱情冷卻'}]},
     {model: steady(lanes, 64, {track: {...song.track, ...long, duration: 64}}), at: 40},
     {model: {...song, track: {...song.track, duration: 30}, bars: {bpm: 100}, lanes}, at: 0}];
-  for (const {model, at, lyrics} of cases) {
-    const {view, stage} = post(model);
+  // At the layout's own size and at 16:9 (SPEC-WEATHER B: the widened layout passes the same check).
+  for (const [width, height] of [[1440, 900], [1600, 900]]) for (const {model, at, lyrics} of cases) {
+    const {view, stage} = post(model, width, height);
     const ctx = stage.canvas.getContext();
     ctx.measureText = measure(ctx);
     // A transform stack, so translated / rotated texts are recorded where they land.
@@ -352,7 +356,7 @@ test('layout: no text leaves its panel, overlaps another, sits on a screw or str
     Radar.audit(true);
     try { view.draw(at); } finally { var records = Radar.audited(); Radar.audit(false); }
     assert.ok(records.filter(r => r.type === 'text').length > 100, 'every text is recorded');
-    assert.deepEqual(Layout.check(records), [], model.track.title + ' at ' + at);
+    assert.deepEqual(Layout.check(records), [], model.track.title + ' at ' + at + ', ' + width + ' x ' + height);
     const disc = records.find(r => r.type === 'ring' && r.r === 300);
     for (const dial of records.filter(r => r.type === 'ring' && r.r < 60 && r.r > 40 && Math.hypot(r.cx - disc.cx, r.cy - disc.cy) > 300)) {
       assert.ok(Math.hypot(dial.cx - disc.cx, dial.cy - disc.cy) - disc.r - dial.r >= 6, 'a corner dial clears the bezel by 6 px');

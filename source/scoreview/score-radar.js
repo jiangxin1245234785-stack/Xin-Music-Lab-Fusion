@@ -5,6 +5,8 @@
 (function (root) {
   'use strict';
   const DESIGN = Object.freeze({width: 1440, height: 900});
+  // Wider than 16:10 the layout widens (SPEC-WEATHER B), by at most this much (1600 x 900 is 16:9).
+  const WIDE_MAX = 160;
   const GRID = .05;                       // seconds per step of the precomputed series
   const CATS = Object.freeze([
     {id: 'vocals', ring: 'VOX', strip: 'VOX', members: ['vocals']},
@@ -802,10 +804,11 @@
     // two cached layers and each frame lays them down with one copy each; where no canvas can be made for them (the
     // tests), all three are drawn every frame, in the same order.
     let pass = 'live', layers = null, layerKey = null;
+    let wide = 0;   // the layout's extra width this frame (SPEC-WEATHER B): 0 at 16:10 or narrower, WIDE_MAX at 16:9
     function every(which, s, out) {
       pass = which;
       try {
-        if (which === 'base') rect(0, 0, DESIGN.width, DESIGN.height, '#171813');
+        if (which === 'base') rect(0, 0, DESIGN.width + wide, DESIGN.height, '#171813');
         top(s.data, s.env, s.bars, s.now, out);
         strips(s.data, s.env, s.now, s.fall, s.muted, out);
         disc(s.data, s.env, s.bars, s.now, s.echo, s.muted, out);
@@ -853,14 +856,18 @@
       p = ctx;
       const data = ensure(env);
       const {now, W, H} = env;
-      const scale = Math.min(W / DESIGN.width, H / DESIGN.height);
-      const ox = (W - DESIGN.width * scale) / 2, oy = (H - DESIGN.height * scale) / 2;
+      // 16:10 or narrower: the 1440 x 900 layout scaled whole. Wider: the layout grows as wide as the canvas asks, up
+      // to 16:9, and only beyond that are there bars at the sides.
+      wide = W > 0 && H > 0 ? clamp(DESIGN.height * W / H - DESIGN.width, 0, WIDE_MAX) : 0;
+      const designW = DESIGN.width + wide;
+      const scale = Math.min(W / designW, H / DESIGN.height);
+      const ox = (W - designW * scale) / 2, oy = (H - DESIGN.height * scale) / 2;
       const bars = barGrid(env);
       const fall = Number.isFinite(env.options.radarFall) ? env.options.radarFall : .6;
       const echo = Number.isFinite(env.options.radarEcho) ? env.options.radarEcho : 1;
       const solo = env.options.focusGroup ? CAT_OF.get(env.options.focusGroup) : undefined;
       const muted = c => solo !== undefined && c !== solo;
-      const out = {kind: 'radar-echo-post', scale, origin: [ox, oy], levers: [], solo: solo === undefined ? null : CATS[solo].id};
+      const out = {kind: 'radar-echo-post', scale, origin: [ox, oy], design: [+designW.toFixed(2), DESIGN.height], wide: +wide.toFixed(2), levers: [], solo: solo === undefined ? null : CATS[solo].id};
       const s = {data, env, bars, now, fall, echo, muted, scale, ox, oy};
       depth = Number.isFinite(env.options.radarDepth) ? clamp(env.options.radarDepth, 0, 2) : 1;
       corner = env.options.radarCorner === 'round' ? 'round' : 'cut';
@@ -882,7 +889,7 @@
 
     function top(data, env, bars, now, out) {
       if (pass === 'base') {
-        panel(18, 16, 1404, 80, 'plateTop', ['slot', 'slot', 'slot', 'slot']);
+        panel(18, 16, 1404 + wide, 80, 'plateTop', ['slot', 'slot', 'slot', 'slot']);
         // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from
         // the bundled table, read here, not copied.
         const T = root.XinScoreTelegraph, ohms = [T && T.code('蒋') || '----', T && T.code('鑫') || '----'];
@@ -910,10 +917,11 @@
         circle(481, 68, 13, null, '#8f8b78', 1.2);
         write('INSP.', 481, 64, 8, C.stampDim, 'plate', 'center');
         write('08', 481, 73, 10, C.stampDim, 'plate', 'center');
-        SECTION_LAMPS.forEach((name, k) => bed(516 + k * 82, 40, 77, 36, 2, '#1a1712', '#4a3d2c'));
-        tubeBase(1101, 28, 72, 42, '888', 'TEMPO');
-        tubeBase(1183, 28, 106, 42, '888·8', 'BAR · BEAT');
-        tubeBase(1299, 28, 104, 42, '88:88', 'TIME');
+        // Wider (SPEC-WEATHER B): the section windows share the extra width, so they still reach the tubes.
+        SECTION_LAMPS.forEach((name, k) => bed(516 + k * (82 + wide / 7), 40, 77 + wide / 7, 36, 2, '#1a1712', '#4a3d2c'));
+        tubeBase(1101 + wide, 28, 72, 42, '888', 'TEMPO');
+        tubeBase(1183 + wide, 28, 106, 42, '888·8', 'BAR · BEAT');
+        tubeBase(1299 + wide, 28, 104, 42, '88:88', 'TIME');
         return;
       }
       if (pass !== 'live') return;
@@ -928,7 +936,7 @@
         light[at] = Math.max(light[at], Math.min(into, left));
       }
       SECTION_LAMPS.forEach((name, k) => {
-        const x = 516 + k * 82, y = 40, w = 77, h = 36, v = light[k], has = data.kinds.has(name);
+        const x = 516 + k * (82 + wide / 7), y = 40, w = 77 + wide / 7, h = 36, v = light[k], has = data.kinds.has(name);
         if (v > .01) {
           const g = p.createLinearGradient(x, y, x, y + h);
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
@@ -953,9 +961,9 @@
         barBeat = String(idx + 1).padStart(3, '0') + '·' + beat;
       }
       const time = Math.floor(now / 60).toString().padStart(2, '0') + ':' + Math.floor(now % 60).toString().padStart(2, '0');
-      tube(1101, 28, 72, 42, tempo);
-      tube(1183, 28, 106, 42, barBeat);
-      tube(1299, 28, 104, 42, time);
+      tube(1101 + wide, 28, 72, 42, tempo);
+      tube(1183 + wide, 28, 106, 42, barBeat);
+      tube(1299 + wide, 28, 104, 42, time);
       Object.assign(out, {tempo, barBeat, time});
     }
 
@@ -997,8 +1005,9 @@
         p.restore();
         for (const [px, py] of plugs) { if (auditSink) auditShape('mark', auditBox(px - 5, py - 5, px + 5, py + 5), {what: 'jumper plug'}); cast(disk(px, py, 5), .5); circle(px, py, 5, '#8c8268', '#3a352a', 1); circle(px - 1.4, py - 1.6, 1.6, 'rgba(255,248,226,.5)'); }
       };
-      lead([947, 726, 950, 750, 966, 742, 976, 760], [[947, 726], [976, 760]]);
-      lead([1401, 726, 1428, 752, 1420, 786, 1411, 806], [[1401, 726], [1411, 806]]);
+      const a = wide / 2, b = wide;   // the radar panel's corner and the teleprinter move wide/2; the right column's corner wide
+      lead([947 + a, 726, 950 + a, 750, 966 + a, 742, 976 + a, 760], [[947 + a, 726], [976 + a, 760]]);
+      lead([1401 + b, 726, 1428 + b, 752, 1420 + b, 786, 1411 + b, 806], [[1401 + b, 726], [1411 + b, 806]]);
     }
     // A small neon bulb (the counters of the period): a glass bead with its electrode, dull orange-grey when dark, lit
     // orange with a small glow.
@@ -1162,10 +1171,10 @@
     }
 
     function disc(data, env, bars, now, echo, muted, out) {
-      const cx = 661, cy = 425, bezel = 300, screen = 270;
+      const cx = 661 + wide / 4, cy = 425, bezel = 300, screen = 270;
       const outer = screen - 14, inner = 42, band = (outer - inner) / RINGS;
       if (pass === 'base') {
-        panel(334, 116, 656, 618, 'plateRadar', ['cross', 'cross', 'brass', 'cross']);
+        panel(334, 116, 656 + wide / 2, 618, 'plateRadar', ['cross', 'cross', 'brass', 'cross']);
         // Bezel with a tick per beat (sixteen to a turn of four 4/4 bars) and finer ones between.
         cast(disk(cx, cy, bezel), 2.4);
         circle(cx, cy, bezel, '#1d1e19', '#4a4c42', 2);
@@ -1192,7 +1201,7 @@
         // Stamped name and the one sticker.
         // A dial that was taken out of this corner: its hole closed by a round cover plate on two screws; the
         // operators' sticker went on the plate. The PPI legend is stamped under it.
-        const pcx = 932, pcy = 172, pr = 48;
+        const pcx = 932 + wide / 2, pcy = 172, pr = 48;
         cast(disk(pcx, pcy, pr), 1.3);
         if (MATERIALS.coverPlate) p.drawImage(MATERIALS.coverPlate, pcx - pr * 512 / 500, pcy - pr * 512 / 500, pr * 2 * 512 / 500, pr * 2 * 512 / 500);
         else circle(pcx, pcy, pr, '#3a3e34');
@@ -1200,9 +1209,9 @@
         edge(disk(pcx, pcy, pr - .8), pcx - pr, pcy - pr, 2 * pr, 2 * pr, true, 1.6);
         if (auditSink) auditShape('ring', {cx: pcx, cy: pcy, r: pr, plate: true});
         screw(pcx, pcy - pr + 8, 'slot'); screw(pcx, pcy + pr - 8, 'slot');
-        write('PPI', 979, 229, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write('1 REV', 979, 243, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 979, 257, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('PPI', 979 + wide / 2, 229, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('1 REV', 979 + wide / 2, 243, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 979 + wide / 2, 257, 14, C.stamp, 'stamp', 'right', 0, 'bold');
         font('marker', 12);
         const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
         p.save(); p.translate(pcx, pcy); p.rotate(-.06); p.translate(-stickerW / 2, -20);
@@ -1417,10 +1426,10 @@
       out.register = value === null ? null : +value.toFixed(2);
     }
     function panDial(data, now, out) {
-      const cx = 928, cy = 672, r = 44;
+      const cx = 928 + wide / 2, cy = 672, r = 44;
       if (pass === 'base') {
-        write('ATTITUDE IND.', 980, 598, 12, C.stampDim, 'plate', 'right');
-        renameTape('PAN L / R', 982, 600, -.04, 1);
+        write('ATTITUDE IND.', 980 + wide / 2, 598, 12, C.stampDim, 'plate', 'right');
+        renameTape('PAN L / R', 982 + wide / 2, 600, -.04, 1);
         cast(disk(cx, cy, r + 6), 1.2);
         circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
         edge(disk(cx, cy, r + 5), cx - r - 6, cy - r - 6, 2 * r + 12, 2 * r + 12, true, 2);
@@ -1457,19 +1466,19 @@
     }
 
     function harmony(data, now, out, env) {
-      const cx = 1130, cy = 285, R = 103;
+      const cx = 1130 + wide * .75, cy = 285, R = 103;   // wider: the ring centred in the space before QUALITY
       if (pass === 'base') {
-        panel(1010, 116, 412, 618, 'plateRight', ['cross', 'cross', 'cross', 'cross']);
-        write('HARMONY · SIGNAL', 1028, 146, 17, C.stamp, 'stamp', 'left', 260, 'bold', 'alphabetic');
-        write('MOD. HS-4', 1404, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        write('CHORD · FIFTHS', 1028, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('QUALITY', 1246, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        panel(1010 + wide / 2, 116, 412 + wide / 2, 618, 'plateRight', ['cross', 'cross', 'cross', 'cross']);
+        write('HARMONY · SIGNAL', 1028 + wide / 2, 146, 17, C.stamp, 'stamp', 'left', 260, 'bold', 'alphabetic');
+        write('MOD. HS-4', 1404 + wide, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('CHORD · FIFTHS', 1028 + wide / 2, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write('QUALITY', 1246 + wide, 174, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         cast(disk(cx, cy, R), 1.4);
         circle(cx, cy, R, '#1d1e19', '#4a4c42', 2);
         edge(disk(cx, cy, R - 1), cx - R, cy - R, 2 * R, 2 * R, true, 2);
         // The chord wheels' recess (three windows, SPEC-WEATHER A).
         bed(cx - 50, cy - 23, 100, 46, 3, '#151612', '#5a5c50');
-        bed(1246, 183, 158, 204, 5, '#24261f', '#4a4c42');
+        bed(1246 + wide, 183, 158, 204, 5, '#24261f', '#4a4c42');
         return;
       }
       if (pass !== 'live') return;
@@ -1546,7 +1555,7 @@
       // Quality lamps, two columns of five.
       const lit = current ? current.parts.lamps : new Set();
       QUALITY.forEach((q, k) => {
-        const x = 1266 + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
+        const x = 1266 + wide + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
         write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
@@ -1563,13 +1572,13 @@
       // Without bar lines but with beats: the last ROLL_BEATS beats roll right to left, beats marked, no bars.
       const roll = !steps && env.beats.length >= 2;
       if (pass === 'base') {
-        write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         const barred = bars && bars.source === 'downbeats' && bars.perBar > 0;
-        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        bed(1028, 420, 376, 122, 5, '#1f201b', '#4a4c42');
+        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404 + wide, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        bed(1028 + wide / 2, 420, 376 + wide / 2, 122, 5, '#1f201b', '#4a4c42');
         // The row names, one column right-aligned 6 px before their lamps (1094), capitals on the row's centre line.
-        DRUM_ROWS.forEach((row, r) => write(row.label, 1082, 432 + r * 21 + 7.5, 15, C.stamp, 'stamp', 'right', 0, '', 'cap'));
-        if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112, 432 + r * 21, 286, 15, 1.5, '#24251f'));
+        DRUM_ROWS.forEach((row, r) => write(row.label, 1082 + wide / 2, 432 + r * 21 + 7.5, 15, C.stamp, 'stamp', 'right', 0, '', 'cap'));
+        if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112 + wide / 2, 432 + r * 21, 286 + wide / 2, 15, 1.5, '#24251f'));
         return;
       }
       if (pass !== 'live') return;
@@ -1593,11 +1602,11 @@
       }
       // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
       // The cells share what is left of the row (1112 .. 1394, 10 px inside the bed) after the 2 px gaps between beats.
-      const gaps = steps ? (steps / 4 - 1) * 2 : 0, cellPitch = steps ? (282 + 3 - gaps) / steps : 0, cellSize = Math.max(8, cellPitch - 3);
+      const gaps = steps ? (steps / 4 - 1) * 2 : 0, cellPitch = steps ? (282 + wide / 2 + 3 - gaps) / steps : 0, cellSize = Math.max(8, cellPitch - 3);
       // The rolling strip: x from the beat position, the newest beat at the right edge; a faint line on every beat
       // (none heavier: no bars), each hit a short bar, brighter the more recent.
       const rolled = DRUM_ROWS.map(() => []);
-      const left = 1112, width = 286, nowBeat = roll ? env.beatAt(now) : 0, perBeat = width / ROLL_BEATS;
+      const left = 1112 + wide / 2, width = 286 + wide / 2, nowBeat = roll ? env.beatAt(now) : 0, perBeat = width / ROLL_BEATS;
       const xOf = beat => left + width - (nowBeat - beat) * perBeat;
       if (roll) {
         for (let k = Math.ceil(nowBeat - ROLL_BEATS); k <= Math.floor(nowBeat); k++) {
@@ -1628,7 +1637,7 @@
       const stepLook = ['neon', 'cursor', 'backlight'].includes(env.options.radarStep) ? env.options.radarStep : 'neon';
       if (steps) {
         for (let s = 0; s < steps; s++) {
-          const cx = 1112 + s * cellPitch + Math.floor(s / 4) * 2 + cellSize / 2, lit = s === step;
+          const cx = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2 + cellSize / 2, lit = s === step;
           if (stepLook === 'neon') neonBulb(cx, 425.5, lit);
           else if (stepLook === 'cursor' && lit) brassPointer(cx, 421.5, 1);
         }
@@ -1648,10 +1657,10 @@
         const j = lower(data.drums, now + 1e-6, d => d.time) - 1;
         let v = 0;
         for (let k = j; k >= 0 && now - data.drums[k].time < .15; k--) if (data.drums[k].row === r) { v = 1 - (now - data.drums[k].time) / .15; break; }
-        lamp(1094, y + 7.5, 6, v);
+        lamp(1094 + wide / 2, y + 7.5, 6, v);
         if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
-          const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
+          const x = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
           // Played: an ember by its age (the newest the hottest); to come: a dark lens, visible; with 'backlight' the
           // current column's empty cells glow faintly from behind.
           const backlit = s === step && stepLook === 'backlight', h = state === 2 ? heatOf(r, s) : 0;
@@ -1672,16 +1681,17 @@
         }
       });
       out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')), heat,
-        right: steps ? +(1112 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
+        right: steps ? +(1112 + wide / 2 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
         ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
     }
 
     function recorder(data, now, out) {
-      const x = 1066, y = 576, w = 338, h = 140, lo = -42, hi = 0;
+      const x = 1066 + wide / 2, y = 576, w = 338 + wide / 2, h = 140, lo = -42, hi = 0;
       const dur = data.duration || 1, xAt = t => x + 4 + clamp(t / dur, 0, 1) * (w - 8);
       // The whole song's trace, one point a pixel column (the loudest hop in it); made once per song.
       const path = () => {
-        if (data.recorderPath) return data.recorderPath;
+        if (data.recorderPath && data.recorderPathWidth === w) return data.recorderPath;   // one trace a sheet width
+        data.recorderPathWidth = w;
         const {hop, db} = data.energy, out = [];
         for (let k = 0; k <= w - 8; k++) {
           const a = Math.floor(k / (w - 8) * dur / hop), b = Math.max(a + 1, Math.floor((k + 1) / (w - 8) * dur / hop));
@@ -1696,9 +1706,9 @@
         p.strokeStyle = color; p.lineWidth = width; p.stroke(); p.restore();
       };
       if (pass === 'base') {
-        write('RECORDER · LOUDNESS', 1028, 566, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('WHOLE SONG · 1 SHEET', 1404, 566, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        [0, -12, -24, -36].forEach(db => write(String(db), 1057, y + 6 + (hi - db) / (hi - lo) * (h - 12), 15, C.stampDim, 'plate', 'right', 0, '', 'cap'));
+        write('RECORDER · LOUDNESS', 1028 + wide / 2, 566, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write('WHOLE SONG · 1 SHEET', 1404 + wide, 566, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        [0, -12, -24, -36].forEach(db => write(String(db), 1057 + wide / 2, y + 6 + (hi - db) / (hi - lo) * (h - 12), 15, C.stampDim, 'plate', 'right', 0, '', 'cap'));
         raisedPlate(x - 3, y - 3, w + 6, h + 6, 4, '#1c1d18', '#3d3e36', .6);
         rect(x, y, w, h, C.paper);
         recordPaper('recorder', x, y, w, h);
@@ -1738,11 +1748,11 @@
 
     function keys(data, now, out) {
       if (pass === 'base') {
-        panel(334, 754, 596, 130, 'plateKeys', ['cross', 'cross', 'cross', 'cross']);
+        panel(334, 754, 596 + wide / 2, 130, 'plateKeys', ['cross', 'cross', 'cross', 'cross']);
         write('KEYS', 354, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        write('88 · ALL CHANNELS SOUNDING NOW', 910, 782, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write('88 · ALL CHANNELS SOUNDING NOW', 910 + wide / 2, 782, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
       }
-      const x = 354, y = 795, w = 556, h = 63;
+      const x = 354, y = 795, w = 556 + wide / 2, h = 63;
       const whites = [];
       for (let m = 21; m <= 108; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
       const ww = (w - 8) / whites.length;
@@ -1781,19 +1791,19 @@
     // The teleprinter's title row: the song being taken down, in its own language, cut to fit; the key under the paper.
     function teleTitle(env, key, out) {
       const t = env.model.track || {}, song = [t.title, clean(t.artist)].filter(Boolean).join(' · ');
-      write('TELEPRINTER', 970, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
+      write('TELEPRINTER', 970 + wide / 2, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
       font('stamp', 15);
-      const left = 970 + p.measureText('TELEPRINTER').width + 12;
+      const left = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 12;
       const han = /\p{Script=Han}/u.test(song);
-      out.teleTitle = write(song || '— NO SIGNAL —', left, 782, 15, C.stamp, han ? 'hanzi' : 'mono', 'left', 1290 - left, 'bold', 'alphabetic');
-      write(key[0], 1404, 770, 12, C.stampFaint, 'stamp', 'right');
-      write(key[1], 1404, 785, 12, C.stampFaint, 'stamp', 'right');
+      out.teleTitle = write(song || '— NO SIGNAL —', left, 782, 15, C.stamp, han ? 'hanzi' : 'mono', 'left', 1290 + wide - left, 'bold', 'alphabetic');
+      write(key[0], 1404 + wide, 770, 12, C.stampFaint, 'stamp', 'right');
+      write(key[1], 1404 + wide, 785, 12, C.stampFaint, 'stamp', 'right');
     }
     function teleprinter(env, now, out) {
-      const x = 970, y = 796, w = 316, h = 74, head = x + w - 6;
+      const x = 970 + wide / 2, y = 796, w = 316 + wide / 2, h = 74, head = x + w - 6;
       const tape = tapeOf(env);
       if (pass === 'base') {
-        panel(950, 754, 472, 130, 'plateTele', ['slot', 'slot', 'slot', 'slot']);
+        panel(950 + wide / 2, 754, 472 + wide / 2, 130, 'plateTele', ['slot', 'slot', 'slot', 'slot']);
         // The key under the paper says what the tape holds: lyrics, or the track sheet when there are none.
         teleTitle(env, tape ? ['UPPER = CODE', 'LOWER = CLEAR'] : ['UPPER = FIELD', 'LOWER = VALUE'], out);
         raisedPlate(x - 3, y - 3, w + 3, h + 6, 4, '#1c1d18', '#3d3e36', .6);
@@ -1803,9 +1813,10 @@
         p.strokeStyle = '#8d8670'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
         inset(box(x, y, w, h, 0), .7);
         raisedPlate(x + w, y - 2, 30, h + 4, 2, '#1f201b', '#4a4c42', .7);
-        cast(disk(1378, 832, 23), 1.2);
-        circle(1378, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(1378, 832, 10, null, '#8d8a7c', 3);
-        edge(disk(1378, 832, 23), 1355, 809, 46, 46, true, 1.5);
+        const knob = 1378 + wide;
+        cast(disk(knob, 832, 23), 1.2);
+        circle(knob, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(knob, 832, 10, null, '#8d8a7c', 3);
+        edge(disk(knob, 832, 23), knob - 23, 809, 46, 46, true, 1.5);
         return;
       }
       if (pass === 'over') {
@@ -1968,10 +1979,10 @@
       if (box && dx >= box.x && dx <= box.x + box.width && dy >= box.y && dy <= box.y + box.height) {
         return {kind: 'time', time: clamp((dx - box.x - 4) / (box.width - 8), 0, 1) * box.duration};
       }
-      const r = Math.hypot(dx - 661, dy - 425);
+      const r = Math.hypot(dx - (661 + wide / 4), dy - 425);
       if (r <= 270) {
         const bars = barGrid(env), turn = turnAt(env, bars, env.now);
-        let phase = (Math.atan2(dy - 425, dx - 661) + Math.PI / 2) / (Math.PI * 2);
+        let phase = (Math.atan2(dy - 425, dx - (661 + wide / 4)) + Math.PI / 2) / (Math.PI * 2);
         phase = ((phase % 1) + 1) % 1;
         let delta = phase - ((turn % 1) + 1) % 1;
         if (delta > .5) delta -= 1; if (delta < -.5) delta += 1;
