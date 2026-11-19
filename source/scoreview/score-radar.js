@@ -1264,7 +1264,7 @@
         Object.assign(out, {turn: +turn.toFixed(4), angle: +(phase * 360).toFixed(2), echoes});
       }
       // Corner instruments.
-      voxScope(data, now, out);
+      voxScope(data, now, out, env);
       registerDial(data, now, out);
       panDial(data, now, out);
     }
@@ -1275,7 +1275,10 @@
       return lo;
     }
 
-    function voxScope(data, now, out) {
+    // The VOX beam's detector (radar.5 feedback): its grid, its attack and release, how long it warms up before the
+    // window, and the noise (peak px) renewed every sweep.
+    const VOX_DT = .02, VOX_ATTACK = .1, VOX_RELEASE = .35, VOX_WARM = 1.5, VOX_NOISE = .6, VOX_SWEEP = 1 / 30;
+    function voxScope(data, now, out, env) {
       const cx = 396, cy = 178, r = 45;
       if (pass === 'base') {
         cast(disk(cx, cy, r + 6), 1.2);
@@ -1306,12 +1309,33 @@
         const n = vocalNotes.find(v => v.start <= t && v.end >= t);
         return n ? n.pitch : null;
       };
+      // The beam's height (radar.5 feedback: no step between a pitch and the baseline): a causal envelope over a grid
+      // fixed in song time (VOX_DT), from VOX_WARM seconds before the window. Sung: the envelope rises to 1 (time
+      // constant VOX_ATTACK) at the pitch now sung; not sung: it falls to 0 (VOX_RELEASE) holding the last pitch. The
+      // beam is the baseline plus the envelope times the held pitch's offset from it, so it eases in and out.
+      const gridFrom = Math.floor((now - span - VOX_WARM) / VOX_DT), gridTo = Math.ceil(now / VOX_DT);
+      const ka = 1 - Math.exp(-VOX_DT / VOX_ATTACK), kr = Math.exp(-VOX_DT / VOX_RELEASE), beam = [];
+      let lvl = 0, held = null;
+      for (let g = gridFrom; g <= gridTo; g++) {
+        const m = pitchAt(g * VOX_DT);
+        if (m !== null) { held = m; lvl += (1 - lvl) * ka; } else lvl *= kr;
+        beam.push({sung: m !== null, off: held === null ? 0 : (y(held) - cy) * lvl});
+      }
+      const beamAt = t => {
+        const u = clamp(t / VOX_DT - gridFrom, 0, beam.length - 1), i = Math.floor(u), f = u - i, b = beam[Math.min(i + 1, beam.length - 1)];
+        return {off: beam[i].off + (b.off - beam[i].off) * f, sung: beam[Math.round(u)].sung};
+      };
+      // Low signal-to-noise: each point of the sweep jitters by under a pixel (two hashed values, a fine and a slower
+      // one), new on each sweep (VOX_SWEEP) and the same for the same moment.
+      const sweep = Math.floor(now / VOX_SWEEP), jitter = env.options.radarNoise === false ? 0 : VOX_NOISE;
+      const hash = k => { const h = Math.sin(k * 12.9898 + sweep * 78.233) * 43758.5453; return h - Math.floor(h) - .5; };
       // The beam in pieces of ~12 px, each stroked at the brightness of its age (a few strokes a frame, not one per
       // point, so the glow stays cheap).
       const step = 1.5, piece = 8, samples = [];
       for (let x = 0; x <= width + 1e-9; x += step) {
-        const t = now - span + x / width * span, m = pitchAt(t);
-        samples.push({x, y: m === null ? cy : y(m), sung: m !== null});
+        const t = now - span + x / width * span, b = beamAt(t), k = Math.round(x / step);
+        const noise = jitter * (hash(k) * 1.2 + (hash(Math.floor(k / 4) + 977) * .8));
+        samples.push({x, y: cy + b.off + noise, sung: b.sung});
       }
       const sung = samples.filter(q => q.sung).length;
       for (let i0 = 0; i0 < samples.length - 1; i0 += piece) {

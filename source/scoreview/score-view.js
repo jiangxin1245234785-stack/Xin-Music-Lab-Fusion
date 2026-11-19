@@ -130,6 +130,7 @@
     radarDepth: 1, radarCorner: 'cut',  // the echo post's thickness (0 flat, 1 light, 1.6 heavier; 0–2) and panel corners ('cut' 8 px 45°, or 'round')
     radarLead: .4,  // the echo post's lyric tape prints this many seconds ahead of the singing (0–1.5; XML offers .2 / .4 / .7)
     radarJumpers: false, radarOvershoot: true, radarBloom: true, radarInk: true,  // the echo post's batch 4 switches
+    radarNoise: true,  // the VOX beam's faint noise (radar.5 feedback)
     radarStep: 'neon',  // the drum grid's current step (radar.5 feedback): 'neon' bulbs, a brass 'cursor', or a 'backlight' column
     radarCell: 'square',  // the drum grid's cells (radar.5 feedback): 'square' backlit tiles or 'round' lamps behind holes
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
@@ -1479,7 +1480,7 @@ function canonicalOnsets(rows) {
       if (finite(patch.radarLead) && patch.radarLead >= 0 && patch.radarLead <= 1.5) next.radarLead = patch.radarLead;
       if (finite(patch.radarDepth) && patch.radarDepth >= 0 && patch.radarDepth <= 2) next.radarDepth = patch.radarDepth;
       if (patch.radarCorner === 'round' || patch.radarCorner === 'cut') next.radarCorner = patch.radarCorner;
-      for (const key of ['radarJumpers', 'radarOvershoot', 'radarBloom', 'radarInk']) if (typeof patch[key] === 'boolean') next[key] = patch[key];
+      for (const key of ['radarJumpers', 'radarOvershoot', 'radarBloom', 'radarInk', 'radarNoise']) if (typeof patch[key] === 'boolean') next[key] = patch[key];
       if (['neon', 'cursor', 'backlight'].includes(patch.radarStep)) next.radarStep = patch.radarStep;
       if (['square', 'round'].includes(patch.radarCell)) next.radarCell = patch.radarCell;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;

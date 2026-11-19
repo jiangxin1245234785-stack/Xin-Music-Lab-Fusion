@@ -593,3 +593,25 @@ test('radar.5 feedback: a played drum cell cools to an ember by its age; hits st
   }
   assert.equal(post(model).frame(9).motion.cellLook, 'square', 'square tiles unless chosen');
 });
+
+test('radar.5 feedback: the VOX beam eases between a pitch and the baseline, never a step; a faint noise that repeats for the same moment', () => {
+  // One sung phrase from 2 to 6 s (64, then 70 from 4 s: about 20 px below and above the baseline); the beam's points read from its strokes (the phosphor green).
+  const lanes = [{id: 'v', kind: 'pitched', group: 'vocals', notes: [[2, 2, 64, 100], [4, 2, 70, 100]]}, {id: 'g', kind: 'pitched', group: 'guitar', notes: [[0, 20, 60, 100]]}];
+  const beam = (v, t) => {
+    v.stage.reset(); v.frame(t);
+    return v.stage.strokes().filter(s => /^rgba\(130,242,166/.test(String(s.style))).flatMap(s => s.points).filter(q => q.x > 300 && q.x < 500)
+      .sort((a, b) => a.x - b.x).filter((q, i, all) => !i || q.x - all[i - 1].x > .01);
+  };
+  // The steepest step between neighbouring points in the window's part [from, to] (fractions of its 4 s, left to right).
+  const steepest = (points, from = 0, to = 1) => { const part = points.slice(Math.floor(from * (points.length - 1)), Math.ceil(to * (points.length - 1)) + 1);
+    return Math.max(...part.slice(1).map((q, i) => Math.abs(q.y - part[i].y))); };
+  const quiet = post(steady(lanes, 20), 1440, 900, {...options, radarNoise: false});
+  // At 6.8 s the window is 2.8 .. 6.8 s: the phrase end (6 s) at .8 of it. At 3 s the window is -1 .. 3 s: the onset at .75.
+  assert.ok(steepest(beam(quiet, 6.8), .7) < 8, 'the phrase end falls to the baseline over several points');
+  assert.ok(steepest(beam(quiet, 3), .6) < 20, 'the onset rises over more than one point');
+  const noisy = post(steady(lanes, 20));
+  const a = beam(noisy, 15).map(q => q.y), b = beam(noisy, 15).map(q => q.y);
+  assert.deepEqual(a, b, 'the same moment, the same noise');
+  const flat = beam(quiet, 15).map(q => q.y);
+  assert.ok(a.some((y, i) => Math.abs(y - flat[i]) > .05) && a.every((y, i) => Math.abs(y - flat[i]) <= 1.2), 'the baseline jitters by under a pixel and a bit');
+});
