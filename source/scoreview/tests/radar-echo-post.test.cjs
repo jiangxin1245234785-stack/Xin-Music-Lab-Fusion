@@ -458,3 +458,27 @@ test('batch 4: crayon marks on the three busiest meters at their mean level; the
   const view = readFileSync(join(__dirname, '../score-view.js'), 'utf8');
   assert.match(view, /radarJumpers: false, radarOvershoot: true, radarBloom: true, radarInk: true/);
 });
+
+test('a lamp counts a channel as sounding exactly where its needle leaves zero: separation residue lights nothing', () => {
+  // Guitar: 30 s of separation residue at -80 dB, then a rise from -35 to -6 dB over 30 s; drums the residue only.
+  const guitar = [...Array(30).fill(-80), ...Array.from({length: 30}, (_, i) => -35 + i)];
+  const levels = {hop: 1, groups: {guitar, drums: Array(60).fill(-80)}};
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 58, 60, 100]]}, {id: 'd', kind: 'drums', group: 'drums', hits: [[1, 'kick', 100], [40, 'kick', 100]]}];
+  const {frame} = post(steady(lanes, 64, {levels}));
+  let zeroSeconds = 0;
+  for (let t = .5; t < 60; t += .25) {
+    const m = frame(t).motion;
+    for (const ch of ['guitar', 'drums']) {
+      if (m.meters[ch] === 0) { zeroSeconds++; assert.ok(m.lamps[ch].green < .5, `${ch} at ${t}: needle at zero, green ${m.lamps[ch].green}`); }
+    }
+  }
+  assert.ok(zeroSeconds > 100, 'the residue seconds were looked at');
+  // The residue does not pull the grades down: guitar's amber and red only on its loud part, drums never lit.
+  const at = t => frame(t).motion.lamps.guitar;
+  assert.ok(at(20).green < .5 && at(33).green > .5 && at(33).red < .5 && at(58).red > .5, 'green from the meter zero, red on the loudest part only');
+  assert.ok([10, 35, 55].every(t => frame(t).motion.lamps.drums.green < .5), 'residue alone never lights a lamp');
+  // One number: the meters' zero is the lamps' gate (the source says so, so a change of zero moves both).
+  const src = readFileSync(join(__dirname, '../score-radar.js'), 'utf8');
+  assert.match(src, /clamp\(\(best - METER_ZERO_DB\) \/ METER_SPAN_DB, 0, 1\)/);
+  assert.match(src, /L\.thresholds\(env\.model\.levels, \{gateDb: METER_ZERO_DB\}\)/);
+});

@@ -9,14 +9,15 @@ const Lamps = require('../score-radar-lamps.js');
 const off = {green: 0, yellow: 0, red: 0};
 const on = {green: 1, yellow: 1, red: 1};
 const channels = ['green', 'yellow', 'red'];
+const zero = -100.7;
 
 function calibration() {
   const guitar = [-40, -37, -34, -31, -28, -25, -22, -19, -16, -13, -10];
   return {hop: 1, groups: {
-    guitar: [-90, ...guitar, -90],
-    bass: [-90, ...guitar.map(db => db - 3), -90],
+    guitar: [zero, ...guitar, zero],
+    bass: [zero, ...guitar.map(db => db - 3), zero],
     other: Array(13).fill(-1),
-    winds: Array(13).fill(-99)
+    winds: Array(13).fill(zero)
   }};
 }
 
@@ -29,15 +30,51 @@ test('the ordinary browser script and CommonJS expose the lamp API', () => {
   }
 });
 
-test('own uses the sounding windows of each channel; both quantiles can be changed', () => {
-  const levels = calibration(), cuts = Lamps.thresholds(levels, {rule: 'own'});
-  assert.equal(cuts.channels.guitar.yellow, -19);
-  assert.equal(cuts.channels.guitar.red, -13);
-  assert.equal(cuts.channels.bass.yellow, -22);
-  assert.equal(cuts.channels.bass.red, -16);
+test('A defaults to P65 and P80 of each channel’s valid windows; both percentiles are adjustable', () => {
+  const levels = calibration(), cuts = Lamps.thresholds(levels);
+  assert.equal(cuts.rule, 'own');
+  assert.equal(cuts.gateDb, null);
+  assert.equal(cuts.channels.guitar.yellow, -20.5);
+  assert.equal(cuts.channels.guitar.red, -16);
+  assert.equal(cuts.channels.bass.yellow, -23.5);
+  assert.equal(cuts.channels.bass.red, -19);
   const tuned = Lamps.thresholds(levels, {rule: 'own', yellowQuantile: .5, redQuantile: .8});
   assert.equal(tuned.channels.guitar.yellow, -25);
   assert.equal(tuned.channels.guitar.red, -16);
+});
+
+test('A ignores encoded zero and missing samples, with gain-invariant brightness through silence', () => {
+  const levels = {hop: .5, groups: {
+    strings: [zero, -42, -40, -36, -31, null, -31, -31, -120, -Infinity, -35],
+    violin: [zero, zero, -39, -35, -30, NaN, -32, zero, -120, -Infinity],
+    winds: [zero, -120, null, NaN, -Infinity, undefined]
+  }};
+  const attenuation = 58;
+  const shifted = {hop: levels.hop, groups: Object.fromEntries(Object.entries(levels.groups).map(([id, row]) =>
+    [id, row.map(db => Number.isFinite(db) && db > zero ? db - attenuation : db)]))};
+  const cuts = Lamps.thresholds(levels), quietCuts = Lamps.thresholds(shifted);
+  assert.deepEqual(cuts.channels.winds, {yellow: null, red: null});
+  assert.equal(quietCuts.channels.strings.yellow, cuts.channels.strings.yellow - attenuation);
+  assert.equal(quietCuts.channels.strings.red, cuts.channels.strings.red - attenuation);
+  assert.deepEqual(Lamps.glow(shifted, quietCuts, 'strings', .25), off);
+  assert.ok(Lamps.glow(shifted, quietCuts, 'strings', 2.25).red > .9);
+  assert.deepEqual(Lamps.glow(shifted, quietCuts, 'winds', 2.25), off);
+  let prev = off;
+  for (let ms = 1; ms <= 5900; ms++) {
+    const t = ms / 1000;
+    const normal = Lamps.glow(levels, cuts, 'strings', t), quiet = Lamps.glow(shifted, quietCuts, 'strings', t);
+    assert.ok(1 >= quiet.green && quiet.green >= quiet.yellow && quiet.yellow >= quiet.red && quiet.red >= 0);
+    for (const color of channels) {
+      assert.ok(Math.abs(normal[color] - quiet[color]) < 1e-7, `${color} changed after attenuation at ${t}s`);
+      assert.ok(Math.abs(prev[color] - quiet[color]) < .06, `${color} jumped within 1 ms at ${t}s`);
+    }
+    prev = quiet;
+  }
+  assert.deepEqual(prev, off);
+  const floorNeighbor = {hop: 1, groups: {guitar: [zero, -100.6, zero]}};
+  const nearFloor = Lamps.thresholds(floorNeighbor);
+  assert.equal(nearFloor.channels.guitar.red, -100.6);
+  assert.ok(Lamps.glow(floorNeighbor, nearFloor, 'guitar', 1.5).green > .9);
 });
 
 test('song references one peak across the radar channels; offset and gate adjustments work', () => {
@@ -51,7 +88,7 @@ test('song references one peak across the radar channels; offset and gate adjust
   assert.equal(custom.channels.bass.yellow, -19);
   assert.equal(custom.channels.bass.red, -14);
   const quiet = {hop: 1, groups: {bass: [-50, -50, -50]}};
-  assert.deepEqual(Lamps.glow(quiet, Lamps.thresholds(quiet, {rule: 'song'}), 'bass', 1.5), off);
+  assert.deepEqual(Lamps.glow(quiet, Lamps.thresholds(quiet, {rule: 'song', gateDb: -45}), 'bass', 1.5), off);
   const lowerGate = Lamps.thresholds(quiet, {rule: 'song', gateDb: -55});
   assert.ok(Lamps.glow(quiet, lowerGate, 'bass', 1.5).green > .9);
 });
@@ -70,7 +107,7 @@ test('multiple stems feeding one meter form one channel, sampled by their maximu
 
 // A short, loud pulse well inside the recording. Each array value describes a whole hop.
 const pulse = {hop: .01, groups: {guitar: Array.from({length: 140}, (_, i) =>
-  i >= 30 && i < 70 ? -10 : -95)}};
+  i >= 30 && i < 70 ? -10 : zero)}};
 
 test('pause, repeated calls and backward seeks reproduce the same filament state', () => {
   const cuts = Lamps.thresholds(pulse, {rule: 'song'});

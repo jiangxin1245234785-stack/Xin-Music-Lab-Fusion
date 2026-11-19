@@ -60,11 +60,10 @@
   // The channel lamps (score-radar-lamps.js: three jewel lamps a strip, red / amber / green, lit by how loud the
   // channel is against itself). Loaded before this file in the page; in Node, beside it.
   const lampsApi = () => root.XinScoreRadarLamps || (typeof require === 'function' ? (() => { try { return require('./score-radar-lamps.js'); } catch (_) { return null; } })() : null);
-  // Provisional (2026-11-18, the rule is not settled): rule A, each channel against its own sounding seconds, yellow
-  // from the 65th percentile, red from the 80th, silence below the meters' zero (-45 dB). To be replaced by the lamp
-  // module's own default when its next version comes (the one place the rule is set).
-  const LAMP_RULE = Object.freeze({rule: 'own', gateDb: -45, yellowQuantile: .65, redQuantile: .8});
   const LAMP_SIZE = 12, LAMP_GAP = 14;
+  // The channel meters' scale: the needle rests at METER_ZERO_DB and reaches full scale METER_SPAN_DB above it. The
+  // lamps' "sounding" gate is the same zero.
+  const METER_ZERO_DB = -45, METER_SPAN_DB = 40;
   // Tube cathodes: one stroked wire per digit (SVG-like commands M L Q C, absolute, in a 20 x 28 box at 30 px), after
   // the "self-drawn cathode" design the user accepted (work/score-depth-20261118/fonts-gpt, specimens.js).
   const CATHODES = (() => {
@@ -227,7 +226,7 @@
           const db = (row[k] ?? -120) + ((row[k2] ?? -120) - (row[k] ?? -120)) * smooth(f);
           best = Math.max(best, db);
         }
-        out[i] = clamp((best + 45) / 40, 0, 1);
+        out[i] = clamp((best - METER_ZERO_DB) / METER_SPAN_DB, 0, 1);
       }
       return out;
     });
@@ -304,7 +303,9 @@
       if (prepKey !== env.events) {
         prep = prepare(env.model, env.events); prepKey = env.events; prepGen++; addFill(env);
         const L = lampsApi();
-        prep.lampCut = L && env.model.levels ? L.thresholds(env.model.levels, LAMP_RULE) : null;
+        // The rule and its grades are the lamp module's defaults; what counts as sounding is the meters' zero, so a
+        // lamp is lit exactly when its needle has left zero (one number for both).
+        prep.lampCut = L && env.model.levels ? L.thresholds(env.model.levels, {gateDb: METER_ZERO_DB}) : null;
       }
       return prep;
     }

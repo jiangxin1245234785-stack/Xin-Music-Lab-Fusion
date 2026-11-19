@@ -9,9 +9,11 @@
     ['bass', ['bass']], ['drums', ['drums']]
   ]);
   const DEFAULTS = Object.freeze({
-    rule: 'own', gateDb: -45, yellowQuantile: .7, redQuantile: .9,
+    rule: 'own', gateDb: null, yellowQuantile: .65, redQuantile: .8,
     yellowBelowPeakDb: 6, redBelowPeakDb: 3
   });
+  // The layer encoder clamps zero power to 1e-10 before writing the rounded BS.1770 level.
+  const ENCODED_ZERO = -100.7;
   const FLOOR = -120;
   const STEP = .005;
   const ATTACK = .05;
@@ -49,7 +51,7 @@
   // Thresholds use those original windows, counting the loudest member of each visible strip once.
   function thresholds(levels, options = {}) {
     const rule = options.rule === 'song' ? 'song' : DEFAULTS.rule;
-    const gateDb = Math.max(FLOOR, option(options.gateDb, DEFAULTS.gateDb));
+    const gateDb = finite(options.gateDb) ? Math.max(FLOOR, options.gateDb) : DEFAULTS.gateDb;
     const yellowQ = clamp(option(options.yellowQuantile, DEFAULTS.yellowQuantile));
     const redQ = Math.max(yellowQ, clamp(option(options.redQuantile, DEFAULTS.redQuantile)));
     const yellowBelow = Math.max(0, option(options.yellowBelowPeakDb, DEFAULTS.yellowBelowPeakDb));
@@ -68,7 +70,7 @@
       for (let i = 0; i < count; i++) {
         let db = FLOOR;
         for (const row of rows) db = Math.max(db, levelAtIndex(row, i));
-        if (db <= gateDb) continue;
+        if (db <= (gateDb ?? ENCODED_ZERO)) continue;
         channelPeak = Math.max(channelPeak, db);
         if (rule === 'own') audible.push(db);
       }
@@ -81,8 +83,8 @@
       }
     }
     if (rule === 'song' && peakDb !== null) {
-      const yellow = Math.max(gateDb, peakDb - yellowBelow);
-      const red = Math.max(gateDb, peakDb - redBelow);
+      const yellow = Math.max(gateDb ?? -Infinity, peakDb - yellowBelow);
+      const red = Math.max(gateDb ?? -Infinity, peakDb - redBelow);
       for (const id of audibleChannels) {
         channels[id] = {yellow, red};
       }
@@ -90,22 +92,37 @@
     return {rule, gateDb, peakDb, channels};
   }
 
-  // As on the VU strip, sample each member at window centres, then take the loudest.
-  // The first measurement covers the start. The last holds to its window end, then fades away.
-  function interpolatedLevel(rows, hop, seconds) {
+  // Sample each member at window centres. The last window holds to its end, then fades.
+  function lampTargets(rows, hop, seconds, gate, limits) {
     const at = Math.max(0, seconds / hop - .5);
     const i = Math.floor(at);
     const fraction = ease(at - i);
-    let best = FLOOR;
+    let green = 0, yellow = 0, red = 0;
     for (const row of rows) {
       const last = row.length - 1;
       if (last < 0) continue;
-      const db = i < last
-        ? levelAtIndex(row, i) * (1 - fraction) + levelAtIndex(row, i + 1) * fraction
-        : FLOOR + (levelAtIndex(row, last) - FLOOR) * (1 - ease((seconds - row.length * hop) / ATTACK));
-      best = Math.max(best, db);
+      const left = levelAtIndex(row, Math.min(i, last));
+      const right = i < last ? levelAtIndex(row, i + 1) : FLOOR;
+      const blend = i < last ? fraction : ease((seconds - row.length * hop) / ATTACK);
+      let db, active;
+      if (gate !== null) {
+        db = i < last ? left * (1 - blend) + right * blend : FLOOR + (left - FLOOR) * (1 - blend);
+        active = ease(db - gate);
+        yellow = Math.max(yellow, Math.min(active, ease(db - limits.yellow + .5)));
+        red = Math.max(red, Math.min(active, ease(db - limits.red + .5)));
+      } else {
+        const hasLeft = left > ENCODED_ZERO;
+        const hasRight = right > ENCODED_ZERO;
+        if (!hasLeft && !hasRight) continue;
+        // Fade presence at a silence boundary while holding the valid endpoint's level.
+        db = hasLeft && hasRight ? left + (right - left) * blend : hasLeft ? left : right;
+        active = hasLeft && hasRight ? 1 : hasLeft ? 1 - blend : blend;
+        yellow = Math.max(yellow, active * ease(db - limits.yellow + .5));
+        red = Math.max(red, active * ease(db - limits.red + .5));
+      }
+      green = Math.max(green, active);
     }
-    return best;
+    return [green, yellow, red];
   }
 
   // An exponential approach clipped at the target gives a faster rise than fall, with
@@ -124,11 +141,10 @@
     const values = new Float32Array(end * 3);
     let green = 0, yellow = 0, red = 0;
     for (let i = 1; i < end; i++) {
-      const db = interpolatedLevel(rows, levels.hop, i * STEP);
-      const active = ease(db - gate);
+      const [active, amber, crimson] = lampTargets(rows, levels.hop, i * STEP, gate, limits);
       green = respond(green, active);
-      yellow = respond(yellow, Math.min(active, ease(db - limits.yellow + .5)));
-      red = respond(red, Math.min(active, ease(db - limits.red + .5)));
+      yellow = respond(yellow, amber);
+      red = respond(red, crimson);
       values[i * 3] = green;
       values[i * 3 + 1] = yellow;
       values[i * 3 + 2] = red;
@@ -142,7 +158,8 @@
     if (options.enabled === false || !finite(seconds) || seconds <= 0 || !validLevels(levels)) return DARK;
     const limits = cutoffs?.channels?.[channelId];
     const members = MEMBERS.get(channelId);
-    if (!members || !finite(cutoffs?.gateDb) || !finite(limits?.yellow) || !finite(limits.red)) return DARK;
+    if (!members || (cutoffs?.gateDb !== null && !finite(cutoffs?.gateDb)) ||
+        !finite(limits?.yellow) || !finite(limits.red)) return DARK;
     let byLevels = envelopes.get(cutoffs);
     if (!byLevels) envelopes.set(cutoffs, byLevels = new WeakMap());
     let byChannel = byLevels.get(levels);
