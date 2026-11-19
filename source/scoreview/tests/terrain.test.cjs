@@ -225,6 +225,28 @@ test('the carriage: the LED header gets title, artist, the song\'s own sections 
   } finally { globalThis.XinScoreTerrainLed = prior; }
 });
 
+test('the roadside: off by default; kick-snare keeps only poles and posts; an object passes "now" at its hit; the plains stay bare', () => {
+  const kit = {id: 'kit', group: 'drums', kind: 'drums', rows: ['kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride'],
+    hits: [[50, 0, 110], [50.2, 0, 90], [51, 1, 100], [50.5, 2, 80], [50.7, 2, 80], [52, 4, 90], [53, 5, 120], [55, 5, 120], [56, 5, 120], [62, 5, 120], [2, 0, 120], [118, 0, 120]]};
+  const s = song({lanes: [...song().lanes.filter(l => l.kind !== 'drums'), kit]});
+  const draw = (t, mode) => { const m = mockCanvas(1123, 783); return terrain.draw(Object.assign(m.canvas.getContext('2d'), {arcTo() {}}), frame(s, t, mode ? {terrainRoadside: mode} : {})); };
+  assert.equal(draw(50).roadside, null);
+  const all = draw(50, 'all').roadside, ks = draw(50, 'kick-snare').roadside;
+  assert.ok(all.fence >= 2 && all.tom >= 1 && all.crash >= 1);
+  assert.deepEqual(Object.keys(ks).filter(k => k !== 'poles' && ks[k]).sort(), ['kick', 'kickstub', 'snare']);
+  const L = layout(1123, 783);
+  const at50 = draw(50, 'all').roadside.poles.find(p => p.t === 50);
+  assert.ok(Math.abs(at50.x - L.nowM) < 1e-9, 'the kick at 0:50 is at now at 0:50');
+  // tall or stub is fixed per hit for the whole song, whatever else is in the window
+  assert.deepEqual(draw(49.5, 'all').roadside.poles.map(p => p.tall), draw(50.3, 'all').roadside.poles.filter(p => p.t >= 50).map(p => p.tall));
+  assert.deepEqual(draw(50, 'all').roadside.poles.filter(p => p.t >= 50).map(p => p.tall), [true, false]);
+  // crashes: a windpump, a flock 2 s later, nothing 1 s after that (a flock within 3 s), a windpump again after 7 s
+  const road = terrain._internal.roadLines(s);
+  assert.deepEqual(road.crash.map(o => o.t), [53, 62]);
+  assert.deepEqual(road.flock.map(o => o.t), [55]);
+  for (const t of [0, 1, D - 1, D]) { const r = draw(t, 'all').roadside; assert.equal(r.poles.length + (r.snare || 0) + (r.fence || 0), 0, 'bare plain at ' + t); }
+});
+
 test('draw paints the window through the presentation\'s frame and hands back the scene (rasters on, with a fake offscreen canvas)', () => {
   const prior = globalThis.OffscreenCanvas;
   const made = [];

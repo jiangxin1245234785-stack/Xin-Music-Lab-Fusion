@@ -271,7 +271,29 @@
       return {id, i, d, span, f: span / 16, dt: span * COL / M_W, pps: M_W / span, amp: lerp(150, 250, Math.pow(d, 1.1)), rw: lerp(1, .6, d), seed: 100 + i * 9,
         R: new Map(), P: new Map(), E: new Map()};
     });
-    const src = {duration, basis, estimated: estimated.filter(id => groups[id]), ids, layers, notes, rocks, onsets, stemDb, density,
+    // drum hits for the roadside: one object per hit; crashes thinned as in the sketch (a windmill only if none in the
+    // last 7 s, else a flock of birds if none in the last 3 s, else nothing). Fixed per song, not per frame.
+    const ROW = {kick: 0, snare: 1, hihat: 2, openhat: 3, tom: 4, crash: 5, ride: 6};
+    let hits = [];
+    for (const lane of Array.isArray(song.lanes) ? song.lanes : []) {
+      if (!lane || lane.kind !== 'drums' || !Array.isArray(lane.hits)) continue;
+      const rows = Array.isArray(lane.rows) ? lane.rows : Object.keys(ROW);
+      for (const h of lane.hits) {
+        const r = ROW[rows[h && h[1]]];
+        if (Array.isArray(h) && Number.isFinite(h[0]) && r !== undefined) hits.push([h[0], r, Number.isFinite(h[2]) ? h[2] : 100]);
+      }
+    }
+    hits.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let lastMill = -99, lastFlock = -99, lastCrash = -99;
+    hits = hits.filter(h => {
+      if (h[1] !== 5) return true;
+      if (h[0] - lastCrash < .6) return false;
+      lastCrash = h[0];
+      if (h[0] - lastMill > 7) { lastMill = h[0]; return true; }
+      if (h[0] - lastFlock > 3 && h[0] - lastMill > 1.5) { lastFlock = h[0]; h[1] = 7; return true; } // 7 = a flock
+      return false;
+    });
+    const src = {duration, basis, hits, hitTimes: hits.map(h => h[0]), estimated: estimated.filter(id => groups[id]), ids, layers, notes, rocks, onsets, stemDb, density,
       plainStart: Math.min(first, PLAIN_MAX), plainEnd: Math.max(last, duration - PLAIN_MAX), first, last};
     songCache.set(song, src);
     return src;
@@ -877,6 +899,8 @@
     const air = ctx.createLinearGradient(0, HORIZON - 150, 0, HORIZON + 40);
     air.addColorStop(0, css(LT.air.c, 0)); air.addColorStop(.8, css(LT.air.c, LT.air.a)); air.addColorStop(1, css(LT.air.c, 0));
     ctx.fillStyle = air; ctx.fillRect(L.left - 10, HORIZON - 150, L.Wm + 20, 190);
+    // the roadside option arrives with the frame (XML's settings pass it once batch 4 wires it; default off)
+    S.roadside = roadside(ctx, S.src, L, t, LT, dpr, frame.terrainRoadside || (frame.options && frame.options.terrainRoadside) || 'off');
     if (R && R.bed) {
       const y = 820, g = ctx.createLinearGradient(0, y - 4, 0, M_BOTTOM);
       g.addColorStop(0, 'rgba(110,98,80,0)'); g.addColorStop(.35, 'rgba(110,98,80,.9)'); g.addColorStop(1, 'rgba(80,72,60,1)');
@@ -895,6 +919,272 @@
     ctx.restore();
     S.light = LT.name;
     return S;
+  }
+
+  // ---------- the roadside: one drum hit = one object passing "now" at the moment of the hit (option terrainRoadside) ----------
+  // off (default) / all / kick-snare. Lines and objects as in the sketch (mock6, round 3 + 6 fixes): kick = telegraph pole
+  // (a kick within 0.38 s of the last tall pole = a short stub with a guy wire), snare = mile post or whistle post,
+  // hi-hat = fence post (open = taller, braced), tom = rock pile or sage, crash = windpump (or a flock), ride = birds
+  // lifting off the fence. Each line moves at its ground depth's speed; motion blur is baked into per-variant sprites.
+  const LINE = {crash: 712, fence: 742, tom: 760, pole: 790, post: 812};
+  const PX_PER_M = .316, BLUR = .6 / 60, STUB_GAP = .38;
+  const mAtY = y => (y - HORIZON) * PX_PER_M;
+  const WOOD = rgb('#3a3129'), DARKWOOD = rgb('#2a241f'), IRON = rgb('#2b2e30'), CONCRETE = rgb('#cfc8b6'), CAST = [46, 38, 30];
+  const vBucket = v => Math.min(3, Math.floor(clamp(v / 127) * 4)), vOf = b => (b + .5) / 4 * 127;
+  // velocity steps per sprite: four for the poles (their height shows it), two for the small objects
+  const repVel = (type, v) => type === 'pole' ? vOf(vBucket(v)) : v >= 64 ? 96 : 32;
+  function roadLines(src) {
+    if (src.road) return src.road;
+    const by = rows => src.hits.filter(h => rows.includes(h[1]));
+    const collapse = (list, gap) => { const out = []; for (const [t, row, v] of list) { const last = out[out.length - 1]; if (last && t - last.t < gap) { last.v = Math.max(last.v, v); continue; } out.push({t, row, v}); } return out; };
+    const pole = collapse(by([0]), .09);
+    let lastTall = -9;
+    for (const p of pole) { p.tall = p.t - lastTall >= STUB_GAP; if (p.tall) lastTall = p.t; }
+    src.road = {crash: collapse(by([5]), .6), flock: collapse(by([7]), .6), fence: collapse(by([2, 3]), .04), ride: collapse(by([6]), .25),
+      tom: collapse(by([4]), .08), pole, post: collapse(by([1]), .06)};
+    for (const k of Object.keys(src.road)) src.road[k].times = src.road[k].map(o => o.t);
+    return src.road;
+  }
+  function shadow(c, LT, x, y, len, w, a) {
+    len *= LT.castLen; a *= LT.castA;
+    c.fillStyle = css(CAST, a);
+    if (len > 2) { c.beginPath(); c.moveTo(x - w * .5, y); c.lineTo(x + len, y + len * .05); c.lineTo(x + len, y + len * .05 + w * .5); c.lineTo(x + w * .5, y + 1.5); c.closePath(); c.fill(); }
+    c.fillStyle = css(CAST, Math.min(.6, a * 1.6)); c.beginPath(); const cw = Math.min(w * 1.1 + 1.5, 14); c.ellipse(x + cw * .25, y + .5, cw, Math.max(1.2, cw * .2), 0, 0, Math.PI * 2); c.fill();
+  }
+  function post(c, LT, x, y, h, w, col, lit) {
+    shadow(c, LT, x, y, h * 1.1, w, .3);
+    c.fillStyle = css(col); c.fillRect(x - w / 2, y - h, w, h + 1);
+    c.fillStyle = css(mix(col, LT.light, .35), .8); c.fillRect(x - w / 2, y - h, Math.max(1, w * .3), h);
+    if (lit) { c.fillStyle = css(mix(col, LT.shade, .4), .7); c.fillRect(x + w * .15, y - h, w * .35, h); }
+  }
+  const PAINT = {
+    pole(c, LT, M, vel) {
+      const H = 9.5 * M * (.95 + .1 * vel / 127), w = .3 * M, col = mix(WOOD, DARKWOOD, .3 + .5 * vel / 127);
+      shadow(c, LT, 0, 0, H, w * 1.2, .26);
+      c.fillStyle = css(col);
+      c.beginPath(); c.moveTo(-w / 2, 1); c.lineTo(-w * .36, -H); c.lineTo(w * .36, -H); c.lineTo(w / 2, 1); c.closePath(); c.fill();
+      c.fillStyle = css(mix(col, LT.light, .45), .75); c.fillRect(-w * .44, -H, Math.max(1, w * .22), H);
+      const arms = [H - .55 * M, H - 1.35 * M];
+      for (let a = 0; a < 2; a++) {
+        const ay = -arms[a], half = (a ? 1.0 : 1.25) * M;
+        c.fillStyle = css(col); c.fillRect(-half, ay - .07 * M, half * 2, .16 * M);
+        c.fillStyle = css(mix(rgb('#9fb4b8'), LT.light, .2), .85);
+        for (const p of a ? [-.85, .85] : [-1.1, -.45, .45, 1.1]) c.fillRect(p * M - .05 * M, ay - .26 * M, .1 * M, .2 * M);
+      }
+      c.strokeStyle = css(col); c.lineWidth = Math.max(1, .05 * M);
+      c.beginPath(); c.moveTo(-.8 * M, -arms[0]); c.lineTo(0, -arms[0] + .7 * M); c.lineTo(.8 * M, -arms[0]); c.stroke();
+    },
+    stub(c, LT, M, vel) {
+      const h = (2.0 + .5 * vel / 127) * M, w = .2 * M, col = mix(WOOD, DARKWOOD, .5);
+      post(c, LT, 0, 0, h, w, col, false);
+      c.fillStyle = css(DARKWOOD); c.fillRect(-w * .7, -h - .1 * M, w * 1.4, .18 * M);
+    },
+    fence(c, LT, M, vel, variant) { // variant 0..5 closed hi-hat, 6..8 open
+      const open = variant >= 6, hk = open ? (variant - 6) / 2 : variant / 5;
+      const ph = (open ? 1.85 : 1.3) * M * (.95 + .1 * vel / 127) * (open ? 1 : .94 + .1 * hk);
+      post(c, LT, 0, 0, ph, (open ? .2 : .13) * M, mix(WOOD, DARKWOOD, hk), false);
+      if (open) { c.strokeStyle = css(WOOD); c.lineWidth = Math.max(1.5, .08 * M); c.beginPath(); c.moveTo(0, -ph * .8); c.lineTo(1.3 * M, 0); c.stroke(); }
+    },
+    tom(c, LT, M, vel, variant) { // variant 0..7: the first four sage, the rest rock piles
+      const s = (.8 + .4 * vel / 127) * 1.8, key = 1000 + variant * 37;
+      if (variant < 4) {
+        shadow(c, LT, 0, 0, 1.4 * M * s, 1.2 * M * s, .28);
+        for (let j = 0; j < 7; j++) {
+          const ox = (hash(key + j, 72) - .5) * 1.1 * M * s, r = (.25 + .2 * hash(key + j, 73)) * M * s, oy = -r * .8 - hash(key + j, 74) * .3 * M * s;
+          c.fillStyle = css(mix(rgb('#4c5139'), rgb('#6e7352'), hash(key + j, 75))); c.beginPath(); c.ellipse(ox, oy, r * 1.15, r, 0, 0, Math.PI * 2); c.fill();
+        }
+        c.fillStyle = css(mix(rgb('#8c906a'), LT.light, .2), .5); c.beginPath(); c.ellipse(-.25 * M * s, -.6 * M * s, .3 * M * s, .15 * M * s, 0, 0, Math.PI * 2); c.fill();
+      } else {
+        shadow(c, LT, 0, 0, 1.2 * M * s, 1.3 * M * s, .3);
+        const n = 3 + Math.floor(hash(key, 76) * 3);
+        for (let j = 0; j < n; j++) {
+          const r = (.22 + .22 * hash(key + j, 77)) * M * s, ox = (hash(key + j, 78) - .5) * 1.2 * M * s, oy = j > 2 ? -r * 1.3 : 0;
+          const col = mix(rgb('#6b5848'), rgb('#8a7560'), hash(key + j, 79));
+          c.fillStyle = css(col); c.beginPath();
+          for (let q = 0; q < 7; q++) { const a = Math.PI + q / 6 * Math.PI, rr = r * (.8 + .3 * hash(key * 7 + q + j, 80)); c.lineTo(ox + Math.cos(a) * rr * 1.2, oy + Math.sin(a) * rr); }
+          c.closePath(); c.fill();
+          c.fillStyle = css(mix(col, LT.light, .45), .7); c.beginPath(); c.ellipse(ox - r * .4, oy - r * .55, r * .4, r * .2, -.3, 0, Math.PI * 2); c.fill();
+        }
+      }
+    },
+    post(c, LT, M, vel, variant) { // variant 0 concrete mile post, 1 whistle post
+      const s = (.92 + .16 * vel / 127) * 1.45;
+      if (variant === 0) {
+        const h = 1.25 * M * s, w = .2 * M * 1.15;
+        post(c, LT, 0, 0, h, w, mix(CONCRETE, LT.shade, .1), true);
+        c.fillStyle = css(rgb('#2b2a27')); c.fillRect(-w * .62, -h + .12 * M, w * 1.24, .36 * M);
+        c.fillStyle = css(rgb('#e9e3d2'), .8); c.fillRect(-w * .3, -h + .2 * M, w * .25, .2 * M);
+      } else {
+        const h = 1.6 * M * s;
+        post(c, LT, 0, 0, h - .1 * M, .15 * M, IRON, false);
+        c.fillStyle = css(IRON); c.fillRect(-.26 * M, -h - .1 * M, .52 * M, .5 * M);
+        c.fillStyle = css(mix(CONCRETE, LT.light, .2)); c.fillRect(-.2 * M, -h - .05 * M, .3 * M, .4 * M);
+      }
+    },
+    crash(c, LT, M, vel, variant) { // windpump with its stock tank; variant = the wheel's turn
+      const s = .9 + .2 * vel / 127, col = mix(IRON, LT.haze, .16), H = 9 * M * s;
+      shadow(c, LT, 0, 0, H * .9, 2.2 * M, .14);
+      c.fillStyle = css(mix(col, LT.haze, .1)); c.beginPath(); c.ellipse(2.6 * M, -.35 * M, 1.5 * M, .5 * M, 0, 0, Math.PI * 2); c.fill();
+      c.fillRect(1.1 * M, -.8 * M, 3 * M, .5 * M);
+      c.strokeStyle = css(col); c.lineCap = 'round';
+      const bw = 1.3 * M, tw = .25 * M, top = -H;
+      c.lineWidth = Math.max(1.2, .14 * M);
+      c.beginPath(); c.moveTo(-bw, 0); c.lineTo(-tw, top); c.moveTo(bw, 0); c.lineTo(tw, top); c.stroke();
+      c.lineWidth = Math.max(.7, .06 * M); c.beginPath();
+      for (let m = 0; m < 4; m++) {
+        const y0 = lerp(0, top, m / 4), y1 = lerp(0, top, (m + 1) / 4), w0 = lerp(bw, tw, m / 4), w1 = lerp(bw, tw, (m + 1) / 4);
+        c.moveTo(-w0, y0); c.lineTo(w1, y1); c.moveTo(w0, y0); c.lineTo(-w1, y1); c.moveTo(-w1, y1); c.lineTo(w1, y1);
+      }
+      c.stroke();
+      const R = 1.55 * M * s, cx = -.2 * M, cy = top - .3 * M, rot = variant / 3 * Math.PI;
+      c.lineWidth = Math.max(.8, .1 * M);
+      c.beginPath(); c.ellipse(cx, cy, R * .55, R, 0, 0, Math.PI * 2); c.stroke();
+      c.beginPath();
+      for (let b = 0; b < 18; b++) { const a = rot + b / 18 * Math.PI * 2; c.moveTo(cx + Math.cos(a) * R * .12, cy + Math.sin(a) * R * .2); c.lineTo(cx + Math.cos(a) * R * .55, cy + Math.sin(a) * R); }
+      c.stroke();
+      c.fillStyle = css(col);
+      c.beginPath(); c.moveTo(cx + .2 * M, cy - .1 * M); c.lineTo(cx + 2.4 * M, cy - .25 * M); c.lineTo(cx + 2.6 * M, cy - 1.0 * M); c.lineTo(cx + 3.4 * M, cy - .9 * M); c.lineTo(cx + 3.3 * M, cy + .5 * M); c.lineTo(cx + 2.5 * M, cy + .35 * M); c.lineTo(cx + .2 * M, cy + .15 * M); c.closePath(); c.fill();
+      c.beginPath(); c.arc(cx, cy, .25 * M, 0, Math.PI * 2); c.fill();
+    }
+  };
+  // sprite bounds in metres around the base point: [left, top, right, bottom]; the shadow runs right
+  const BOUNDS = {pole: [-2, -11, 20, 1], stub: [-1, -3.2, 6, 1], fence: [-1, -2.4, 5, 1], tom: [-2.4, -2.4, 6, 1], post: [-1, -3, 6, 1], crash: [-2.5, -12.5, 18, 1.2]};
+  const spriteCache = new Map();
+  function sprite(L, LT, dpr, type, y, vel, variant, blurK = 1) {
+    const rv = repVel(type, vel), key = [lightIds.get(LT), L.s, dpr, type, y, rv, variant].join('|');
+    if (spriteCache.has(key)) return spriteCache.get(key);
+    const M = mAtY(y), blur = speedAtY(y) * BLUR * blurK, B = BOUNDS[type];
+    const x0 = B[0] * M - blur, y0 = B[1] * M, w = (B[2] - B[0]) * M + 2 * blur, h = (B[3] - B[1]) * M, k = L.s * dpr;
+    const a = makeCanvas(w * k, h * k);
+    let out = null;
+    if (a) {
+      const g = a.getContext('2d');
+      g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+      PAINT[type](g, LT, M, rv, variant);
+      let c = a;
+      if (blur * k >= 1.5) { // horizontal motion blur: the average of shifted copies
+        const b = makeCanvas(a.width, a.height), bg = b.getContext('2d'), K = Math.max(5, Math.round(blur * k));
+        bg.globalCompositeOperation = 'lighter'; bg.globalAlpha = 1 / K;
+        for (let q = 0; q < K; q++) bg.drawImage(a, (q / (K - 1) - .5) * blur * k, 0);
+        c = b;
+      }
+      out = {c, x0, y0, w, h};
+    }
+    if (spriteCache.size > 160) spriteCache.delete(spriteCache.keys().next().value);
+    spriteCache.set(key, out);
+    return out;
+  }
+  const stamp = (ctx, sp, x, y, scale = 1) => { if (sp) ctx.drawImage(sp.c, x + sp.x0 * scale, y + sp.y0 * scale, sp.w * scale, sp.h * scale); };
+  function birds(ctx, x, y, M, dt, key, n) {
+    if (dt < 0) return; // not drawn before the hit (birds sitting on the ground read as debris)
+    ctx.strokeStyle = css(DARKWOOD, .9); ctx.lineCap = 'round'; ctx.beginPath();
+    for (let j = 0; j < n; j++) {
+      const sz = (.3 + .1 * hash(key + j, 62)) * M, vx = (hash(key + j, 63) - .45) * 160, vy = 160 + 120 * hash(key + j, 64);
+      const bx = x + (hash(key + j, 61) - .5) * 3.2 * M + vx * dt, by = y - .4 * M - vy * dt - 30 * dt * dt;
+      const flap = (hash(key + j, 65) - .5) * 1.4, wing = sz * 1.5;
+      ctx.moveTo(bx - wing, by - wing * (.35 + flap * .5)); ctx.quadraticCurveTo(bx - wing * .4, by - wing * .1, bx, by); ctx.quadraticCurveTo(bx + wing * .4, by - wing * .1, bx + wing, by - wing * (.35 - flap * .5));
+    }
+    ctx.lineWidth = Math.max(1.1, .3 * M * .2); ctx.stroke();
+  }
+  // every sprite this song will need, made on its first roadside frame (not when an object first shows mid-song)
+  function warmRoad(src, road, L, LT, dpr, mode) {
+    const key = [lightIds.get(LT), L.s, dpr, mode].join('|');
+    if (src.roadWarm === key) return;
+    src.roadWarm = key;
+    const has = list => ({lo: list.some(o => o.v < 64), hi: list.some(o => o.v >= 64)});
+    const vels = list => { const h = has(list); return [h.lo ? 32 : null, h.hi ? 96 : null].filter(v => v !== null); };
+    for (const b of [0, 1, 2, 3]) if (road.pole.some(o => o.tall && vBucket(o.v) === b)) sprite(L, LT, dpr, 'pole', LINE.pole, vOf(b), 0);
+    for (const v of vels(road.pole.filter(o => !o.tall))) sprite(L, LT, dpr, 'stub', LINE.pole, v, 0);
+    for (const v of vels(road.post)) for (const k of [0, 1]) sprite(L, LT, dpr, 'post', LINE.post, v, k, .45);
+    if (mode !== 'all') return;
+    for (const v of vels(road.fence)) for (let k = 0; k < 9; k++) sprite(L, LT, dpr, 'fence', LINE.fence, v, k);
+    for (const v of vels(road.tom)) for (let k = 0; k < 8; k++) sprite(L, LT, dpr, 'tom', LINE.tom, v, k);
+    for (const v of vels(road.crash)) for (let k = 0; k < 3; k++) sprite(L, LT, dpr, 'crash', LINE.crash, v, k);
+  }
+  function roadside(ctx, src, L, t, LT, dpr, mode) {
+    if (mode !== 'all' && mode !== 'kick-snare') return null;
+    const road = roadLines(src), counts = {}, poles = [];
+    warmRoad(src, road, L, LT, dpr, mode);
+    // the plain stays bare: nothing that would be in the window before the plain ends or after it starts again
+    const visible = (list, y, padL, padR) => {
+      const sp = speedAtY(y), lo = t + (L.left - padL - L.nowM) / sp, hi = t + (L.right + padR - L.nowM) / sp;
+      const from = Math.max(src.plainStart + (L.right - L.nowM) / sp, lo), to = Math.min(src.plainEnd - (L.nowM - L.left) / sp, hi);
+      const a = firstAt(list.times, from), b = firstAt(list.times, to);
+      return {a, b, sp};
+    };
+    const X = (T, sp) => L.nowM + (T - t) * sp;
+    const count = (k, n) => { counts[k] = (counts[k] || 0) + n; };
+    const all = mode === 'all';
+    if (all) { // windpumps and flocks on the far line
+      const y = LINE.crash, M = mAtY(y);
+      let v = visible(road.crash, y, 20 * M, 3 * M);
+      for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), X(o.t, v.sp), y); }
+      count('crash', v.b - v.a);
+      v = visible(road.flock, y, 300, 300);
+      for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, 5 + Math.floor(hash(key, 60) * 4)); }
+      count('flock', v.b - v.a);
+    }
+    if (all) { // the fence: wires first, then the posts; birds lifting off it on a ride
+      const y = LINE.fence, M = mAtY(y), list = road.fence, v = visible(list, y, 6 * M, 300);
+      ctx.strokeStyle = 'rgba(52,46,40,.55)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let i = Math.max(1, v.a); i <= Math.min(list.length - 1, v.b); i++) {
+        const p = list[i - 1], q = list[i];
+        if (q.t - p.t > 1.6 || p.t < src.plainStart || q.t > src.plainEnd) continue;
+        if (i - 1 < v.a - 1 || i > v.b) continue;
+        const xa = X(p.t, v.sp), xb = X(q.t, v.sp), sag = Math.min(3, (xb - xa) * .006);
+        for (const hh of [.4, .68, .95]) { const ya = y - hh * M * 1.3; ctx.moveTo(xa, ya); ctx.quadraticCurveTo((xa + xb) / 2, ya + sag * 2, xb, ya); }
+      }
+      ctx.stroke();
+      for (let i = v.a; i < v.b; i++) {
+        const o = list[i], key = Math.round(o.t * 50), open = o.row === 3;
+        stamp(ctx, sprite(L, LT, dpr, 'fence', y, o.v, open ? 6 + Math.floor(hash(key, 52) * 3) : Math.floor(hash(key, 51) * 6)), X(o.t, v.sp), y);
+      }
+      count('fence', v.b - v.a);
+      const r = visible(road.ride, y, 300, 300);
+      for (let i = r.a; i < r.b; i++) { const o = road.ride[i], key = Math.round(o.t * 50); birds(ctx, X(o.t, r.sp), y, M, t - o.t, key, 3 + Math.floor(hash(key, 60) * 5)); }
+      count('ride', r.b - r.a);
+    }
+    if (all) { // rock piles and sage, each at its own depth
+      const y0 = LINE.tom, list = road.tom, v = visible(list, y0, 4 * mAtY(y0), 300);
+      for (let i = v.a; i < v.b; i++) {
+        const o = list[i], key = Math.round(o.t * 50), y = y0 + (hash(key, 81) - .5) * 14;
+        stamp(ctx, sprite(L, LT, dpr, 'tom', y0, o.v, Math.floor(hash(key, 71) * 8)), L.nowM + (o.t - t) * speedAtY(y), y, mAtY(y) / mAtY(y0));
+      }
+      count('tom', v.b - v.a);
+    }
+    { // telegraph poles (kick): a kick right after a tall pole is a stub with a guy wire up to that pole
+      const y = LINE.pole, M = mAtY(y), list = road.pole, v = visible(list, y, 20 * M, 400);
+      const tops = o => { const H = 9.5 * M * (.95 + .1 * repVel('pole', o.v) / 127), ay = y - (H - .55 * M) - .24 * M, x = X(o.t, v.sp); return [-1.1, -.45, .45, 1.1].map(dx => [x + dx * M, ay]); };
+      ctx.strokeStyle = 'rgba(34,32,30,.6)'; ctx.lineWidth = 1.1; ctx.beginPath();
+      let prev = null;
+      for (let i = Math.max(0, v.a - 1); i <= Math.min(list.length - 1, v.b); i++) {
+        const o = list[i]; if (!o.tall) continue;
+        if (prev && o.t - prev.t <= 3 && prev.t >= src.plainStart && o.t <= src.plainEnd && (i >= v.a || prev === null)) {
+          const a = tops(prev), b = tops(o), sag = Math.min(1.1 * M, Math.abs(b[0][0] - a[0][0]) * .045);
+          for (let j = 0; j < 4; j++) { ctx.moveTo(a[j][0], a[j][1]); ctx.quadraticCurveTo((a[j][0] + b[j][0]) / 2, (a[j][1] + b[j][1]) / 2 + sag * 2, b[j][0], b[j][1]); }
+        }
+        prev = o;
+      }
+      ctx.stroke();
+      let tall = null;
+      for (let i = v.a - 1; i >= 0; i--) if (list[i].tall) { tall = list[i]; break; }
+      ctx.strokeStyle = 'rgba(34,32,30,.55)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let i = v.a; i < v.b; i++) {
+        const o = list[i], x = X(o.t, v.sp);
+        poles.push({t: o.t, x, tall: o.tall});
+        if (o.tall) { stamp(ctx, sprite(L, LT, dpr, 'pole', y, o.v, 0), x, y); tall = o; count('kick', 1); continue; }
+        stamp(ctx, sprite(L, LT, dpr, 'stub', y, o.v, 0), x, y); count('kickstub', 1);
+        const first = i === 0 || list[i - 1].tall;
+        if (tall && first) { const h = (2.0 + .5 * repVel('stub', o.v) / 127) * M; ctx.moveTo(x, y - h); ctx.lineTo(X(tall.t, v.sp), y - 5.5 * M); }
+      }
+      ctx.stroke();
+    }
+    { // mile posts and whistle posts (snare), half the blur so they read
+      const y = LINE.post, M = mAtY(y), list = road.post, v = visible(list, y, 2 * M, 300);
+      for (let i = v.a; i < v.b; i++) { const o = list[i]; stamp(ctx, sprite(L, LT, dpr, 'post', y, o.v, hash(Math.round(o.t * 50), 91) < .68 ? 0 : 1, .45), X(o.t, v.sp), y); }
+      count('snare', v.b - v.a);
+    }
+    return Object.assign(counts, {poles});
   }
 
   // ---------- the carriage: the LED displays (score-terrain-led.js, global XinScoreTerrainLed) ----------
@@ -945,7 +1235,7 @@
   const invalidate = song => { songCache.delete(song); };
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate,
     // for tests and measurements only
-    _internal: Object.freeze({layout, analysePixels, coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
+    _internal: Object.freeze({layout, analysePixels, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);
       return {L, src, ranges: geometry(src, L, clamp(frame.time, 0, duration), margin)};
     }})});
