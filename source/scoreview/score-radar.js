@@ -20,6 +20,13 @@
   const SECTION_LAMPS = Object.freeze(['INTRO', 'VERSE', 'PRE', 'CHORUS', 'INST', 'BRIDGE', 'OUTRO']);
   const SECTION_MARK = Object.freeze({INTRO: 'INT', VERSE: 'VRS', PRE: 'PRE', CHORUS: 'CHO', INST: 'INS', BRIDGE: 'BRG', OUTRO: 'OUTR'});
   const QUALITY = Object.freeze(['MAJ', 'MIN', '6', '7', 'M7', 'SUS2', 'SUS4', 'DIM', 'AUG', 'INV']);
+  // The chord wheels (SPEC-WEATHER A): root, accidental and quality, each a ring of printed cells. The accidental's
+  // three cells repeat so a change rolls the short way; the quality wheel holds the library's suffixes.
+  const WHEELS = Object.freeze([
+    Object.freeze({cells: Object.freeze(['', 'C', 'D', 'E', 'F', 'G', 'A', 'B']), w: 22, size: 23}),
+    Object.freeze({cells: Object.freeze(['', '#', 'b', '', '#', 'b']), w: 14, size: 19}),
+    Object.freeze({cells: Object.freeze(['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', '6', 'm6', 'dim', 'dim7', 'aug', 'm7b5']), w: 46, size: 19})]);
+  const WHEEL_ROLL = .2;   // seconds a wheel takes to roll to its new cell
   const FIFTHS = Object.freeze(['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F']);
   const FIFTH_PC = Object.freeze([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]);
   // Capitals' height in ems where the canvas cannot measure it (tests): National Park and Barlow are both about .72.
@@ -184,7 +191,23 @@
       else if (/^6/.test(rest)) lamps.add('6');
     }
     if (m[4]) lamps.add('INV');
-    return {pc: ((pc % 12) + 12) % 12, lamps, label: m[0]};
+    // The quality wheel's cell: the library's suffixes; extensions read as their seventh (9 -> 7, m11 -> m7).
+    let wheel = '';
+    if (/^(m7b5|ø|hdim7?|min7b5)/i.test(s)) wheel = 'm7b5';
+    else if (/^dim7/i.test(s)) wheel = 'dim7';
+    else if (/^(dim|°)/i.test(s)) wheel = 'dim';
+    else if (/^(aug|\+)/i.test(s)) wheel = 'aug';
+    else if (/^sus2/i.test(s)) wheel = 'sus2';
+    else if (/^sus/i.test(s)) wheel = 'sus4';
+    else {
+      const minor = /^(m(?!aj)|min|-)/.test(s), rest = s.replace(/^(min|m(?!aj)|-)/, '');
+      if (/^(maj7|maj9|M7|Δ)/.test(rest)) wheel = minor ? 'm' : 'maj7';
+      else if (/^(7|9|11|13)/.test(rest)) wheel = minor ? 'm7' : '7';
+      else if (/^6/.test(rest)) wheel = minor ? 'm6' : '6';
+      else wheel = minor ? 'm' : '';
+    }
+    const acc = /[#♯]/.test(m[2]) ? '#' : /[b♭]/.test(m[2]) ? 'b' : '';
+    return {pc: ((pc % 12) + 12) % 12, lamps, label: m[0], wheels: [m[1], acc, wheel]};
   }
 
   // A channel's level (dB) as the needle's place on its dial (0..1): zero to amber, amber to red, red to the top, each
@@ -491,7 +514,7 @@
     }
     function auditShape(type, box, extra) { if (auditSink) auditSink.push({type, pass, ...box, ...extra}); }
     function rect(x, y, w, h, fill, edge, width = 1) {
-      p.fillStyle = fill; p.fillRect(x, y, w, h);
+      if (fill) { p.fillStyle = fill; p.fillRect(x, y, w, h); }   // no fill: an outline only (not the last fill again)
       if (edge) { p.strokeStyle = edge; p.lineWidth = width; p.strokeRect(x + width / 2, y + width / 2, w - width, h - width); }
       if (edge && auditSink) auditShape('frame', auditBox(x, y, x + w, y + h));
     }
@@ -786,7 +809,7 @@
         top(s.data, s.env, s.bars, s.now, out);
         strips(s.data, s.env, s.now, s.fall, s.muted, out);
         disc(s.data, s.env, s.bars, s.now, s.echo, s.muted, out);
-        harmony(s.data, s.now, out);
+        harmony(s.data, s.now, out, s.env);
         drumGrid(s.data, s.env, s.bars, s.now, out);
         recorder(s.data, s.now, out);
         keys(s.data, s.now, out);
@@ -1433,7 +1456,7 @@
       out.pan = data.pan ? +db.toFixed(2) : null;
     }
 
-    function harmony(data, now, out) {
+    function harmony(data, now, out, env) {
       const cx = 1130, cy = 285, R = 103;
       if (pass === 'base') {
         panel(1010, 116, 412, 618, 'plateRight', ['cross', 'cross', 'cross', 'cross']);
@@ -1444,7 +1467,8 @@
         cast(disk(cx, cy, R), 1.4);
         circle(cx, cy, R, '#1d1e19', '#4a4c42', 2);
         edge(disk(cx, cy, R - 1), cx - R, cy - R, 2 * R, 2 * R, true, 2);
-        bed(cx - 40, cy - 28, 80, 56, 3, '#151612', '#5a5c50');
+        // The chord wheels' recess (three windows, SPEC-WEATHER A).
+        bed(cx - 50, cy - 23, 100, 46, 3, '#151612', '#5a5c50');
         bed(1246, 183, 158, 204, 5, '#24261f', '#4a4c42');
         return;
       }
@@ -1469,11 +1493,56 @@
         circle(x, y, 14, mixHex('#2b2620', '#ffb24c', v), '#14120d', 1.5);
         write(name, x, y, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center', 0, '', 'cap');
       });
-      p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
-      const name = current ? current.label : '--';
-      let cardSize = 27;
-      for (; cardSize > 14; cardSize -= 1) { font('plate', cardSize); if (p.measureText(name).width <= 72) break; }
-      const cardShown = write(name, cx, cy + 1, cardSize, '#ece6d0', 'plate', 'center', 72);
+      // The chord wheels (SPEC-WEATHER A). What the wheels show at a moment: the sounding chord's cells, or blanks.
+      const cellsAt = t => {
+        const j = lower(chords, t + 1e-6, c => c.start) - 1, c = chords[j];
+        return c && c.parts && c.start <= t && c.end > t ? c.parts.wheels : ['', '', ''];
+      };
+      // The last change at or before now: a chord's start, or the end of one with nothing after it.
+      let changed = null;
+      if (current) changed = current.start;
+      else { const j = lower(chords, now + 1e-6, c => c.start) - 1; if (j >= 0 && chords[j].end <= now) changed = chords[j].end; }
+      const target = cellsAt(now), before = changed === null ? target : cellsAt(changed - 1e-6);
+      const roll = changed === null ? 1 : clamp((now - changed) / WHEEL_ROLL, 0, 1), eased = roll * roll * (3 - 2 * roll);
+      const scheme = env.options.radarWheel === 'light' ? {face: '#d8d0b6', ink: '#1d1b15', shade: 'rgba(40,30,15,'} : {face: '#16150f', ink: '#ece5cc', shade: 'rgba(0,0,0,'};
+      const WIN_H = 34, WHEEL_R = 21, PITCH = 23;
+      let wx = cx - 46;
+      const wheelOut = [];
+      WHEELS.forEach((wheel, k) => {
+        const n = wheel.cells.length;
+        // From the cell shown before the change to the nearest cell holding the new glyph, the short way round.
+        const a = Math.max(0, wheel.cells.indexOf(before[k]));
+        let b = a, best = Infinity;
+        wheel.cells.forEach((g, i) => { if (g !== target[k]) return; const d = ((i - a) % n + n + n / 2) % n - n / 2; if (Math.abs(d) < Math.abs(best)) { best = d; b = i; } });
+        const pos = a + (best === Infinity ? 0 : best) * eased;
+        const x = wx, y = cy - WIN_H / 2, w = wheel.w;
+        p.save(); p.beginPath(); p.rect(x, y, w, WIN_H); p.clip();
+        auditClip = {x, y, w, h: WIN_H};
+        rect(x, y, w, WIN_H, scheme.face);
+        // The cells round the drum: each glyph at its angle, foreshortened toward the window's edges.
+        for (let i = Math.floor(pos) - 2; i <= Math.ceil(pos) + 2; i++) {
+          const th = (i - pos) * PITCH / WHEEL_R;
+          if (Math.abs(th) >= Math.PI / 2) continue;
+          const glyph = wheel.cells[((i % n) + n) % n];
+          if (!glyph) continue;
+          p.save(); p.translate(x + w / 2, cy + WHEEL_R * Math.sin(th)); p.scale(1, Math.cos(th));
+          let size = wheel.size;
+          for (; size > 11; size -= 1) { font('plate', size, 'bold'); if (p.measureText(glyph).width <= w - 5) break; }
+          write(glyph, 0, 0, size, scheme.ink, 'plate', 'center', 0, 'bold', 'cap');
+          p.restore();
+        }
+        auditClip = null;
+        // The drum's curve: darker toward the top and bottom of the window, and the window's own shadow on top.
+        const g = p.createLinearGradient(0, y, 0, y + WIN_H);
+        g.addColorStop(0, scheme.shade + '.85)'); g.addColorStop(.32, scheme.shade + '0)'); g.addColorStop(.68, scheme.shade + '0)'); g.addColorStop(1, scheme.shade + '.85)');
+        p.fillStyle = g; p.fillRect(x, y, w, WIN_H);
+        rect(x, y, w, 2, 'rgba(0,0,0,.45)');
+        p.restore();
+        rect(x - .5, y - .5, w + 1, WIN_H + 1, null, '#0b0b09', 1.2);
+        wheelOut.push({glyph: target[k], pos: +pos.toFixed(3), size: (() => { let sz = wheel.size; for (; sz > 11; sz -= 1) { font('plate', sz, 'bold'); if (p.measureText(target[k]).width <= w - 5) break; } return sz; })()});
+        wx += w + 4;
+      });
+      const cardShown = target.join('');
       // Quality lamps, two columns of five.
       const lit = current ? current.parts.lamps : new Set();
       QUALITY.forEach((q, k) => {
@@ -1481,7 +1550,8 @@
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
         write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
-      out.chord = {name: current ? current.label : null, shown: cardShown, size: cardSize, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
+      out.chord = {name: current ? current.label : null, shown: cardShown, size: wheelOut[2].size, wheels: wheelOut, rolling: roll < 1,
+        scheme: env.options.radarWheel === 'light' ? 'light' : 'dark', quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
 
     function drumGrid(data, env, bars, now, out) {

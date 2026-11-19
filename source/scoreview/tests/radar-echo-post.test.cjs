@@ -375,11 +375,13 @@ test('layout: no text leaves its panel, overlaps another, sits on a screw or str
 
 test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readings stay in the measured bars, a space takes a tape cell, other metres say they have bar lines, drum cells fill the row', () => {
   const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}];
-  // R01: Fsus4, F#m7b5 and a slash chord are printed whole (by size first, shortened only after).
-  for (const label of ['Fsus4', 'F#m7b5', 'Dbmaj7/F']) {
+  // R01 (on the chord wheels, SPEC-WEATHER A): Fsus4 and F#m7b5 read whole on the three wheels, the longest quality at
+  // 14 px or more; a slash chord shows its chord on the wheels and its bass as the INV lamp.
+  for (const [label, wheels] of [['Fsus4', 'F|sus4'], ['F#m7b5', 'F|#|m7b5'], ['Dbmaj7/F', 'D|b|maj7']]) {
     const chord = post(steady(lanes, 64, {chords: [[0, 10, label]]})).frame(5).motion.chord;
-    assert.equal(chord.shown, label, label + ' at ' + chord.size + ' px');
-    assert.ok(chord.size >= 14);
+    assert.equal(chord.wheels.map(w => w.glyph).filter(Boolean).join('|'), wheels, label + ' at ' + chord.size + ' px');
+    assert.ok(chord.size >= 14, label + ': the quality at ' + chord.size + ' px');
+    if (label.includes('/')) assert.ok(chord.quality.includes('INV'));
   }
   // R02: a song whose bars run 4 .. 60 s (120 bpm, 4/4): no bar reading before the first bar line or after the last
   // bar; the disc numbers only bars the song has.
@@ -614,4 +616,30 @@ test('radar.5 feedback: the VOX beam eases between a pitch and the baseline, nev
   assert.deepEqual(a, b, 'the same moment, the same noise');
   const flat = beam(quiet, 15).map(q => q.y);
   assert.ok(a.some((y, i) => Math.abs(y - flat[i]) > .05) && a.every((y, i) => Math.abs(y - flat[i]) <= 1.2), 'the baseline jitters by under a pixel and a bit');
+});
+
+test('SPEC-WEATHER A: the chord wheels show root, accidental and quality; a change rolls the short way in .2 s; no chord leaves them blank', () => {
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 20, 60, 100]]}];
+  // C (0 .. 4), F#m7b5 (4 .. 8), nothing (8 .. 10), Bbsus4 (10 .. 14).
+  const model = steady(lanes, 20, {chords: [[0, 4, 'C'], [4, 8, 'F#m7b5'], [10, 14, 'Bbsus4']]});
+  for (const scheme of ['dark', 'light']) {
+    const {frame} = post(model, 1440, 900, {...options, radarWheel: scheme});
+    const at = t => frame(t).motion.chord;
+    assert.equal(at(2).scheme, scheme);
+    assert.deepEqual(at(2).wheels.map(w => w.glyph), ['C', '', '']);
+    assert.deepEqual(at(6).wheels.map(w => w.glyph), ['F', '#', 'm7b5']);
+    assert.deepEqual(at(9).wheels.map(w => w.glyph), ['', '', ''], 'no chord: every wheel on its blank cell');
+    assert.deepEqual(at(12).wheels.map(w => w.glyph), ['B', 'b', 'sus4']);
+    // Halfway through a change, between the two cells; settled after .2 s; a paused frame repeats.
+    const half = at(4.1), root = half.wheels[0].pos;
+    assert.equal(half.rolling, true);
+    assert.ok(root > 1 && root < 4, 'C (cell 1) rolling toward F (cell 4): ' + root);
+    assert.equal(at(4.25).rolling, false);
+    assert.equal(at(4.25).wheels[0].pos, 4);
+    assert.deepEqual(at(4.1), half);
+    // The short way: blank (cell 0) to B (cell 7) rolls backwards through the wrap, not forward through C .. A.
+    const back = at(10.1).wheels[0].pos;
+    assert.ok(back < 0 && back > -1, 'blank -> B the short way: ' + back);
+  }
+  assert.equal(post(model).frame(2).motion.chord.scheme, 'dark', 'dark wheels unless chosen');
 });

@@ -132,6 +132,7 @@
     radarJumpers: false, radarOvershoot: true, radarBloom: true, radarInk: true,  // the echo post's batch 4 switches
     radarNoise: true,  // the VOX beam's faint noise (radar.5 feedback)
     radarStep: 'neon',  // the drum grid's current step (radar.5 feedback): 'neon' bulbs, a brass 'cursor', or a 'backlight' column
+    radarWheel: 'dark',  // the chord wheels (SPEC-WEATHER A): 'dark' wheels with light figures or 'light' with dark
     radarCell: 'square',  // the drum grid's cells (radar.5 feedback): 'square' backlit tiles or 'round' lamps behind holes
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
@@ -1483,6 +1484,7 @@ function canonicalOnsets(rows) {
       for (const key of ['radarJumpers', 'radarOvershoot', 'radarBloom', 'radarInk', 'radarNoise']) if (typeof patch[key] === 'boolean') next[key] = patch[key];
       if (['neon', 'cursor', 'backlight'].includes(patch.radarStep)) next.radarStep = patch.radarStep;
       if (['square', 'round'].includes(patch.radarCell)) next.radarCell = patch.radarCell;
+      if (['dark', 'light'].includes(patch.radarWheel)) next.radarWheel = patch.radarWheel;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
       if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));
