@@ -282,7 +282,7 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   stage.canvas.getContext().canvas = stage.canvas;   // as a real context points back at its canvas
   stage.canvas.ownerDocument ={createElement: () => { const layer = mockCanvas(); made.push(layer); return layer.canvas; }};
   const a = frame(2).motion;
-  assert.equal(made.length, 2, 'a base layer and an over layer');
+  assert.equal(made.length, 3, 'a base layer, an over layer and the small fade at the tape\'s left end');
   assert.deepEqual(a.layers, {cached: true, draws: 1, materials: 0});
   const [base, over] = made, baseCalls = base.calls.length, overCalls = over.calls.length;
   assert.ok(base.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'stamped names are in the base layer');
@@ -292,7 +292,7 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   assert.equal(base.calls.length, baseCalls, 'not drawn again');
   assert.equal(over.calls.length, overCalls);
   assert.equal(b.layers.draws, 1);
-  assert.equal(stage.calls.filter(c => c.name === 'drawImage').length, 2, 'two copies a frame');
+  assert.equal(stage.calls.filter(c => c.name === 'drawImage').length, 3, 'two layer copies a frame, and the tape fade');
   assert.ok(!stage.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'no hardware in the moving part');
   assert.equal(b.plate.line1, 'RESISTANCE 5592–9515 OHMS', 'what the hardware reports is kept with the layer');
   assert.ok(b.recorderBox && b.teleTitle !== undefined);
@@ -312,4 +312,49 @@ test('the materials are the files the build ships: every MATERIAL_FILES entry is
     assert.ok(build.includes("'" + file.replace(/\.png$/, '') + "'") && build.includes("'assets/radar/'"), file + ' is shipped');
   }
   assert.deepEqual(Radar.materials(), [], 'none load without a document (the flat drawing stands in)');
+});
+
+test('layout: no text leaves its panel, overlaps another, sits on a screw or straddles a frame; no tape covers a scale; the corner dials clear the bezel (SPEC-WEATHER 基础校对)', () => {
+  const Layout = require('../tools/radar-layout.cjs');
+  // Node has no fonts: a text's width is estimated from its size (a CJK character a full em, others .57 em, the stamp
+  // face's measured average). The real-font audit is work/score-depth-20261118/weather/audit.cjs.
+  const measure = ctx => text => {
+    const size = Number((/(\d+(?:\.\d+)?)px/.exec(ctx.font) || [])[1]) || 12;
+    return {width: Array.from(String(text)).reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? size : size * .57), 0)};
+  };
+  const lanes = ['vocals', 'guitar', 'piano', 'strings', 'winds', 'bass'].map((group, i) => ({id: group, kind: 'pitched', group, notes: [[1 + i, 6, 48 + 4 * i, 100]]}))
+    .concat([{id: 'd', kind: 'drums', group: 'drums', hits: [[1, 'kick', 100], [1.5, 'snare', 90]]}]);
+  const long = {title: 'Ballade for the Long Night Shift at the Listening Post (Extended Version)', artist: 'The Very Long Name Orchestra & Friends', album: 'An Album With A Long Name', genre: 'Post-rock / Ambient'};
+  const cases = [
+    {model: steady(lanes, 64), at: 9, lyrics: [{time: 2, text: '院子落葉跟我的思念厚厚一疊'}, {time: 8, text: '幾句是非也無法將我的熱情冷卻'}]},
+    {model: steady(lanes, 64, {track: {...song.track, ...long, duration: 64}}), at: 40},
+    {model: {...song, track: {...song.track, duration: 30}, bars: {bpm: 100}, lanes}, at: 0}];
+  for (const {model, at, lyrics} of cases) {
+    const {view, stage} = post(model);
+    const ctx = stage.canvas.getContext();
+    ctx.measureText = measure(ctx);
+    // A transform stack, so translated / rotated texts are recorded where they land.
+    let m = {a: 1, b: 0, c: 0, d: 1, e: 0, f: 0};
+    const stack = [], mul = (n) => { m = {a: m.a * n.a + m.c * n.b, b: m.b * n.a + m.d * n.b, c: m.a * n.c + m.c * n.d, d: m.b * n.c + m.d * n.d, e: m.a * n.e + m.c * n.f + m.e, f: m.b * n.e + m.d * n.f + m.f}; };
+    const {save, restore} = ctx;
+    Object.assign(ctx, {
+      getTransform: () => ({...m}), setTransform: (a, b, c, d, e, f) => { m = {a, b, c, d, e, f}; },
+      translate: (x, y) => mul({a: 1, b: 0, c: 0, d: 1, e: x, f: y}), rotate: r => mul({a: Math.cos(r), b: Math.sin(r), c: -Math.sin(r), d: Math.cos(r), e: 0, f: 0}),
+      save: (...a) => { stack.push(m); save(...a); }, restore: (...a) => { m = stack.pop() || m; restore(...a); }});
+    if (lyrics) view.setLyrics({trackId: song.track.id, enabled: true, offset: 0, lines: lyrics});
+    Radar.audit(true);
+    try { view.draw(at); } finally { var records = Radar.audited(); Radar.audit(false); }
+    assert.ok(records.filter(r => r.type === 'text').length > 100, 'every text is recorded');
+    assert.deepEqual(Layout.check(records), [], model.track.title + ' at ' + at);
+    const disc = records.find(r => r.type === 'ring' && r.r === 300);
+    for (const dial of records.filter(r => r.type === 'ring' && r.r < 60 && r.r > 40 && Math.hypot(r.cx - disc.cx, r.cy - disc.cy) > 300)) {
+      assert.ok(Math.hypot(dial.cx - disc.cx, dial.cy - disc.cy) - disc.r - dial.r >= 6, 'a corner dial clears the bezel by 6 px');
+    }
+  }
+  // The check bites: an overlap, a text off its panel, a tape on a scale.
+  const panel = {type: 'panel', x: 0, y: 0, w: 100, h: 100};
+  const text = (t, x, y) => ({type: 'text', text: t, x, y, w: 20, h: 10});
+  assert.deepEqual(Layout.check([panel, text('A', 10, 10), text('B', 20, 12)]).map(q => q.kind), ['overlap']);
+  assert.deepEqual(Layout.check([panel, text('A', 85, 10)]).map(q => q.kind), ['edge']);
+  assert.deepEqual(Layout.check([panel, {type: 'tape', x: 0, y: 0, w: 30, h: 10}, {type: 'keep', x: 20, y: 5, w: 30, h: 10, what: 'X scale'}]).map(q => q.kind), ['cover']);
 });

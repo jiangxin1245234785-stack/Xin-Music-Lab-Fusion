@@ -1,0 +1,80 @@
+// The radar look's layout check (work/score-depth-20261118/SPEC-WEATHER.md 基础校对): over what one frame drew with
+// XinScoreRadar.audit(true) (texts, frames, screws, rings, panels, in design pixels), it lists every text that leaves
+// its panel, overlaps another text, sits on a screw or straddles a frame or a ring's edge, and every ring that cuts
+// into another. Deliberate overlaps are in ALLOWED with the reason. Used by tests/radar-echo-post.test.cjs (with an
+// estimated text width) and by the real-font audit in work/score-depth-20261118/weather (Electron).
+(function (root) {
+  'use strict';
+  const EPS = .5;   // a box may touch another by half a pixel
+  // [text pattern, what it may overlap (pattern of the other text, or 'frame' / 'ring' / 'screw'), why]
+  // Text on the moving tape (recorded clipped to the paper window) is set in fixed cells and left out of the overlap
+  // check between two such texts. Nothing else is allowed so far.
+  const ALLOWED = [];
+  const allowed = (a, b) => ALLOWED.some(([x, y]) => (x.test(a) && y.test(b)) || (x.test(b) && y.test(a)));
+  const inter = (a, b) => a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
+  const inside = (a, b, pad = 0) => a.x >= b.x + pad - EPS && a.y >= b.y + pad - EPS && a.x + a.w <= b.x + b.w - pad + EPS && a.y + a.h <= b.y + b.h - pad + EPS;
+  const near = (box, c) => {   // a box and a circle meet
+    const dx = Math.max(box.x - c.cx, 0, c.cx - box.x - box.w), dy = Math.max(box.y - c.cy, 0, c.cy - box.y - box.h);
+    return dx * dx + dy * dy < (c.r - EPS) ** 2;
+  };
+  const corners = b => [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]];
+  const name = t => JSON.stringify(t.text);
+  function check(records, {panelPad = 2, screwGap = 3, frameGap = 2, ringGap = 4} = {}) {
+    const texts = records.filter(r => r.type === 'text' && r.text.trim()), panels = records.filter(r => r.type === 'panel');
+    const frames = records.filter(r => r.type === 'frame'), screws = records.filter(r => r.type === 'screw'), rings = records.filter(r => r.type === 'ring');
+    const tapes = records.filter(r => r.type === 'tape'), keeps = records.filter(r => r.type === 'keep');
+    const problems = [];
+    const add = (kind, what, detail) => problems.push({kind, what, detail});
+    for (const t of texts) {
+      const home = panels.find(pa => t.x + t.w / 2 >= pa.x && t.x + t.w / 2 <= pa.x + pa.w && t.y + t.h / 2 >= pa.y && t.y + t.h / 2 <= pa.y + pa.h);
+      if (!home) add('outside', name(t), 'not on any panel');
+      else if (!inside(t, home, panelPad)) add('edge', name(t), `leaves its panel (or is within ${panelPad} px of its edge)`);
+      for (const s of screws) if (near(t, {...s, r: s.r + screwGap})) add('screw', name(t), `on or within ${screwGap} px of the screw at ${s.cx.toFixed(0)},${s.cy.toFixed(0)}`);
+      for (const f of frames) {
+        if (allowed(t.text, 'frame')) continue;
+        if (inter(t, f) && !inside(t, f) && !inside(f, t)) add('frame', name(t), `straddles the frame ${[f.x, f.y, f.w, f.h].map(v => v.toFixed(0)).join(',')}`);
+        else if (inside(t, f) && !inside(t, f, frameGap) && !t.clipped) add('tight', name(t), `within ${frameGap} px of the frame ${[f.x, f.y, f.w, f.h].map(v => v.toFixed(0)).join(',')}`);
+      }
+      for (const c of rings) {
+        const ins = corners(t).map(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r);
+        if (ins.some(Boolean) && !ins.every(Boolean) && near(t, c) && !allowed(t.text, 'ring')) add('ring', name(t), `straddles the ring r ${c.r.toFixed(0)} at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
+        else if (c.r >= 40 && !ins.some(Boolean) && near(t, {...c, r: c.r + ringGap})) add('tight', name(t), `within ${ringGap} px of the dial r ${c.r.toFixed(0)} at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
+      }
+    }
+    for (const tape of tapes) for (const k of keeps) if (inter(tape, k)) add('cover', 'tape × ' + k.what, '');
+    for (const tape of tapes) for (const c of rings) if (c.r >= 40 && near(tape, c) && !corners(tape).every(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r)) add('cover', 'tape × dial r ' + c.r.toFixed(0), `at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
+    for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
+      const a = texts[i], b = texts[j];
+      if (a.clipped && b.clipped) continue;
+      if (inter(a, b) && !allowed(a.text, b.text)) add('overlap', name(a) + ' × ' + name(b), '');
+    }
+    for (let i = 0; i < rings.length; i++) for (let j = i + 1; j < rings.length; j++) {
+      const a = rings[i], b = rings[j], d = Math.hypot(a.cx - b.cx, a.cy - b.cy);
+      if (d < 1) continue;   // the same centre: rings of one dial
+      if (d < a.r + b.r - EPS && d > Math.abs(a.r - b.r) + EPS) add('rings', `r ${a.r.toFixed(0)} at ${a.cx.toFixed(0)},${a.cy.toFixed(0)} × r ${b.r.toFixed(0)} at ${b.cx.toFixed(0)},${b.cy.toFixed(0)}`, `cut by ${(a.r + b.r - d).toFixed(1)} px`);
+    }
+    // One problem once: the same text on the same thing.
+    const seen = new Set();
+    return problems.filter(q => { const k = q.kind + q.what + q.detail; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  // Near misses (warnings, not failures): on one panel, texts set to the same side (left / right / centre) whose
+  // anchors are 0.6–3 px apart, and texts in what reads as one row whose middles are 0.6–3 px apart: meant to line up
+  // but not quite. Moving tape text and rotated tape labels are left out.
+  function alignment(records) {
+    const panels = records.filter(r => r.type === 'panel');
+    const texts = records.filter(r => r.type === 'text' && r.text.trim() && !r.clipped && Number.isFinite(r.ax));
+    const out = [];
+    for (const pa of panels) {
+      const mine = texts.filter(t => t.ax >= pa.x && t.ax <= pa.x + pa.w && t.ay >= pa.y && t.ay <= pa.y + pa.h);
+      for (let i = 0; i < mine.length; i++) for (let j = i + 1; j < mine.length; j++) {
+        const a = mine[i], b = mine[j];
+        const dx = Math.abs(a.ax - b.ax), dy = Math.abs(a.ay - b.ay);
+        if (a.align === b.align && dx >= .6 && dx <= 3) out.push({panel: [pa.x, pa.y].join(','), label: a.align, a: a.text, b: b.text, d: +dx.toFixed(1)});
+        if (dy >= .6 && dy <= 3) out.push({panel: [pa.x, pa.y].join(','), label: 'row', a: a.text, b: b.text, d: +dy.toFixed(1)});
+      }
+    }
+    return out;
+  }
+  const api = {check, alignment, ALLOWED};
+  if (typeof module === 'object' && module.exports) module.exports = api; else root.XinRadarLayout = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
