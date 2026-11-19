@@ -512,3 +512,19 @@ test('radar.5 feedback: each meter is calibrated for its channel, and the lamps 
   }
   assert.ok(checked > 2500 && inRed > 25, 'every channel swept, the red arc reached');
 });
+
+test('radar.5 feedback: the VOX scope never drops its trace at once; when a phrase ends it slides out to the left', () => {
+  // One sung phrase from 2 to 6 s (a vocal note), nothing after it.
+  const lanes = [{id: 'v', kind: 'pitched', group: 'vocals', notes: [[2, 4, 64, 100]]}, {id: 'g', kind: 'pitched', group: 'guitar', notes: [[0, 20, 60, 100]]}];
+  const {frame, stage} = post(steady(lanes, 20));
+  let last = null;
+  for (let t = 5.5; t < 10.5; t += .05) {
+    stage.reset();
+    const share = frame(+t.toFixed(2)).motion.voxShare;
+    if (last !== null) assert.ok(Math.abs(share - last) < .03, `at ${t.toFixed(2)} the sung part jumped from ${last} to ${share}`);
+    last = share;
+  }
+  assert.ok(frame(5.9).motion.voxShare > .9 && frame(8).motion.voxShare > .4 && frame(8).motion.voxShare < .6, 'two seconds after the phrase half the beam still holds it');
+  assert.equal(frame(10.2).motion.voxShare, 0, 'gone once it has left the window');
+  assert.equal(frame(8).motion.vox, true);
+});

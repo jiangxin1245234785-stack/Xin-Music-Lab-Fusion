@@ -1260,29 +1260,39 @@
       }
       if (pass === 'over') { glass(cx - r, cy - r, 2 * r, 2 * r, 300, 40, true); inset(disk(cx, cy, r - .5), 1.2); return; }
       p.save(); circle(cx, cy, r - 1, null); p.clip();
-      const span = 4, left = cx - r + 4, width = 2 * r - 8, range = data.vocalRange;
+      // One beam, never broken (radar.5 feedback): the last `span` seconds left to right, now at the right edge; where
+      // the voice sings the beam rides its pitch, where it does not the beam lies on the baseline. The phosphor keeps
+      // the trace and lets it fade with age (bright at now, dim at the left), so when a phrase ends its curve dims
+      // away to the left while the baseline brightens in from the right; nothing vanishes from one frame to the next.
+      const span = 4, left = cx - r + 4, width = 2 * r - 8, range = data.vocalRange, glowFor = 1.3;
       const y = m => range ? cy + 34 - (m - range[0]) / Math.max(1, range[1] - range[0]) * 68 : cy;
-      p.beginPath();
-      let drawn = 0, pen = false;
-      if (data.contour && range) {
-        const {hop, midi} = data.contour;
-        for (let x = 0; x <= width; x += 1.5) {
-          const t = now - span + x / width * span, m = midi[Math.round(t / hop)];
-          if (t < 0 || !Number.isFinite(m)) { pen = false; continue; }
-          if (pen) p.lineTo(left + x, y(m)); else p.moveTo(left + x, y(m));
-          pen = true; drawn++;
-        }
-      } else if (range) {
-        for (const n of data.notes) {
-          if (n.cat !== 0 || n.end < now - span || n.start > now) continue;
-          const a = left + (Math.max(n.start, now - span) - (now - span)) / span * width, b = left + (Math.min(n.end, now) - (now - span)) / span * width;
-          p.moveTo(a, y(n.pitch)); p.lineTo(b, y(n.pitch)); drawn++;
-        }
+      const vocalNotes = !data.contour && range ? data.notes.filter(n => n.cat === 0 && n.end >= now - span && n.start <= now) : [];
+      const pitchAt = t => {
+        if (t < 0 || !range) return null;
+        if (data.contour) { const m = data.contour.midi[Math.round(t / data.contour.hop)]; return Number.isFinite(m) ? m : null; }
+        const n = vocalNotes.find(v => v.start <= t && v.end >= t);
+        return n ? n.pitch : null;
+      };
+      // The beam in pieces of ~12 px, each stroked at the brightness of its age (a few strokes a frame, not one per
+      // point, so the glow stays cheap).
+      const step = 1.5, piece = 8, samples = [];
+      for (let x = 0; x <= width + 1e-9; x += step) {
+        const t = now - span + x / width * span, m = pitchAt(t);
+        samples.push({x, y: m === null ? cy : y(m), sung: m !== null});
       }
-      if (!drawn) { p.moveTo(left, cy); p.lineTo(left + width, cy); }
-      p.strokeStyle = C.phos; p.lineWidth = 2; p.shadowColor = 'rgba(130,242,166,.7)'; p.shadowBlur = 4; p.stroke(); p.shadowBlur = 0;
+      const sung = samples.filter(q => q.sung).length;
+      for (let i0 = 0; i0 < samples.length - 1; i0 += piece) {
+        const part = samples.slice(i0, i0 + piece + 1);
+        p.beginPath();
+        part.forEach((q, k) => k ? p.lineTo(left + q.x, q.y) : p.moveTo(left + q.x, q.y));
+        const mid = part[Math.floor(part.length / 2)].x, age = span * (1 - mid / width), alpha = Math.max(.08, Math.exp(-age / glowFor));
+        p.strokeStyle = `rgba(130,242,166,${alpha.toFixed(3)})`; p.lineWidth = 2;
+        p.shadowColor = `rgba(130,242,166,${(.7 * alpha).toFixed(3)})`; p.shadowBlur = 4 * unit; p.stroke();
+      }
+      p.shadowBlur = 0;
       p.restore();
-      out.vox = drawn > 0;
+      out.vox = sung > 0;
+      out.voxShare = +(sung / samples.length).toFixed(3);   // the share of the beam on a sung pitch
     }
     function registerDial(data, now, out) {
       const cx = 396, cy = 672, r = 44;
