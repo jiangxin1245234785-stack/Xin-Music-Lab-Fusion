@@ -547,3 +547,25 @@ test('radar.5 feedback: no white outline boxes; the drum step shows as neon bulb
   assert.equal(roll.frame(9).motion.drums.mode, 'roll');
   assert.ok(!roll.stage.calls.some(c => c.name === 'stroke' && pale.test(String(c.strokeStyle)) && c.lineWidth !== 4));
 });
+
+test('radar.5 feedback: engraved, printed and stuck-on text keeps one colour whatever the data does; only lamp legends change', () => {
+  // Four frames: every channel sounding, all dark at 0 s, one channel soloed (the rest off), and a song with no
+  // channels at all. Text drawn at the same place with the same words must keep its colour and font in every frame,
+  // except the legends lit from behind by their lamps.
+  const full = {...fullModel(), bars: steady([]).bars};
+  const frames = [post(full), post(full), post(full, 1440, 900, {...options, focusGroup: 'vocals'}), post({...full, lanes: []})];
+  const at = [9, 0, 9, 9];
+  const seen = new Map(), changed = new Set();
+  frames.forEach((v, k) => {
+    v.frame(at[k]); v.stage.reset(); v.frame(at[k] + .01);
+    for (const t of v.stage.texts()) {
+      if (/^rgba\(/.test(t.style)) continue;   // the relief's shadow and highlight passes
+      const key = `${t.text}@${Math.round(t.x)},${Math.round(t.y)}`, look = t.style + '|' + t.font;
+      if (!seen.has(key)) seen.set(key, look); else if (seen.get(key) !== look) changed.add(t.text);
+    }
+  });
+  const LIT = new Set([...Radar.SECTION_LAMPS, ...Radar.CAUTION]);
+  const unexpected = [...changed].filter(text => !LIT.has(text) && !/^[A-G][#b♯♭]?$/.test(text));
+  assert.deepEqual(unexpected, [], 'engraved text changed colour with the data: ' + unexpected.join(', '));
+  assert.ok([...seen.keys()].some(k => k.startsWith('IN@300,')) && [...seen.keys()].some(k => k.startsWith('OUT@300,')), 'IN / OUT are drawn by every lever');
+});

@@ -431,6 +431,10 @@
       const own = kind !== 'hanzi';   // the bundled faces have one weight each; no synthetic bold
       p.font = `${!own && weight ? weight + ' ' : ''}${size}px ${FONTS[kind]}`;
     }
+    // The rule for colour (radar.5 feedback): what is engraved, printed or stuck on the panel keeps one brightness and
+    // colour whatever the data does. Only these change with the song: lamps and the legends lit from behind by them
+    // (section lamps, caution cells, the fifths lamps' letters), needles, what the screens draw (the echoes, the
+    // scope's beam, the bar numbers), the tube digits, the tape as it prints, and the positions of levers.
     // `baseline` 'middle' (y is the text's middle) or 'alphabetic' (y is its baseline: rows of two sizes).
     function write(value, x, y, size, color, kind = 'stamp', align = 'left', maxWidth = 0, weight = '', baseline = 'middle') {
       font(kind, size, weight);
@@ -898,7 +902,7 @@
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
           p.fillStyle = g; p.fillRect(x + 2, y + 2, w - 4, h - 4);
         }
-        write(name, x + w / 2, y + h / 2 + 1, 16, v > .4 ? '#2a1a08' : has ? '#d2b48a' : '#7a6a56', 'plate', 'center', w - 6);
+        write(name, x + w / 2, y + h / 2 + 1, 16, v > .4 ? '#2a1a08' : '#b9a27c', 'plate', 'center', w - 6);
       });
       out.section = {lamps: Object.fromEntries(SECTION_LAMPS.map((n, k) => [n, +light[k].toFixed(3)])), kinds: [...data.kinds]};
       // TEMPO / BAR · BEAT / TIME.
@@ -1049,6 +1053,9 @@
           if (Lb) Lb.draw(p, 224, y + 25, LAMP_SIZE, undefined, {enabled: false, spacing: LAMP_GAP});
           if (auditSink) for (const k of [-1, 0, 1]) { const [lx, ly] = toDesign(224, y + 25 + k * LAMP_GAP); auditShape('ring', {cx: lx, cy: ly, r: LAMP_SIZE / 2}); }
           rounded(246, y + 12, 24, 50, 12, '#16170f', '#4c4e44', 1.5);
+          // IN / OUT are engraved: one brightness, whatever the lever does (the lever's position says which).
+          write('IN', 300, y + 20, 13, C.stamp, 'stamp', 'right');
+          write('OUT', 300, y + 54, 13, C.stamp, 'stamp', 'right');
           inset(box(246, y + 12, 24, 50, 12), .9);
           edge(box(246.75, y + 12.75, 22.5, 48.5, 11.5), 246, y + 12, 24, 50, false, 1.2, .8);
         });
@@ -1106,10 +1113,9 @@
         p.beginPath(); p.moveTo(lx + lw / 2, ly + lh / 2); p.lineTo(lx + lw / 2, knob);
         p.strokeStyle = '#9a9a8e'; p.lineWidth = 5; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
         if (depth > 0) circle(lx + lw / 2 + 1.3 * depth, knob + 2 * depth, 8.2, `rgba(0,0,0,${Math.min(.6, .35 * depth)})`);
-        circle(lx + lw / 2, knob, 8, has ? '#d6d4c8' : '#6c6b62', '#3a3a33', 1);
-        if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${(has ? .55 : .25) * Math.min(1, depth)})`);
-        write('IN', 300, y + 20, 13, up ? C.stamp : C.stampFaint, 'stamp', 'right');
-        write('OUT', 300, y + 54, 13, up ? C.stampFaint : C.stamp, 'stamp', 'right');
+        circle(lx + lw / 2, knob, 8, '#d6d4c8', '#3a3a33', 1);
+        if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${.55 * Math.min(1, depth)})`);
+
         out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other'});
       });
       // Caution lamps.
@@ -1228,7 +1234,7 @@
         CATS.slice(0, RINGS).forEach((cat, k) => {
           const r = outer - k * band - band / 2;
           rect(cx - 40, cy - r - 8, 30, 16, 'rgba(6,18,12,.85)');
-          write(cat.ring, cx - 12, cy - r, 15, muted(k) || !data.present[k] ? '#3f8a62' : '#8ef5b0', 'plate', 'right');
+          write(cat.ring, cx - 12, cy - r, 15, '#79d79c', 'plate', 'right');   // printed on the graticule overlay: one colour
         });
         p.restore();
         // Bar numbers of the turn at the quarters: only on the song's own bar lines.
@@ -1440,7 +1446,7 @@
       QUALITY.forEach((q, k) => {
         const x = 1266 + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
-        write(q, x + 14, y + 1, 15, lit.has(q) ? C.amberHot : C.stampDim, 'stamp', 'left');
+        write(q, x + 14, y + 1, 15, C.stampDim, 'stamp', 'left');   // engraved: the lamp beside it lights, not the name
       });
       out.chord = {name: current ? current.label : null, shown: cardShown, size: cardSize, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
