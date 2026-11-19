@@ -134,6 +134,7 @@
     radarStep: 'neon',  // the drum grid's current step (radar.5 feedback): 'neon' bulbs, a brass 'cursor', or a 'backlight' column
     radarWheel: 'light',  // the chord wheels (SPEC-WEATHER A): 'light' wheels with dark figures (the user's pick) or 'dark' with light
     radarCell: 'round',  // the drum grid's cells (radar.5 feedback): 'round' lamps behind holes (the user's pick) or 'square' backlit tiles
+    terrainRoadside: 'off',  // 车窗地貌: the drums as things passing by the line - 'off' (default until the user has looked), 'all', 'kick-snare'
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
@@ -1485,6 +1486,7 @@ function canonicalOnsets(rows) {
       if (['neon', 'cursor', 'backlight'].includes(patch.radarStep)) next.radarStep = patch.radarStep;
       if (['square', 'round'].includes(patch.radarCell)) next.radarCell = patch.radarCell;
       if (['dark', 'light'].includes(patch.radarWheel)) next.radarWheel = patch.radarWheel;
+      if (['off', 'all', 'kick-snare'].includes(patch.terrainRoadside)) next.terrainRoadside = patch.terrainRoadside;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
       if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));

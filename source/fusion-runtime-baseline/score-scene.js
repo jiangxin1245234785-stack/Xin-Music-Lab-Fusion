@@ -171,6 +171,25 @@
       radarFallInput.addEventListener('change', changed); radarEchoInput.addEventListener('change', changed);
       radarLeadInput?.addEventListener('change', changed);
     }
+    // 车窗地貌's own setting (batch 4, 2026-11-19): the drums as things passing by the line - off / all / kick and snare only,
+    // kept per viewer. With this look the title, sections and lyrics are on its carriage displays, so the stage carries
+    // score-led-words and the compact lyric line (sidebar collapsed or H) does not lay words over the scenery.
+    const TERRAIN_KEY = 'xin-score-terrain-v1', terrainBox = root.document.getElementById('scoreTerrainOptions');
+    const roadsideInput = root.document.getElementById('scoreTerrainRoadside');
+    const terrain = {terrainRoadside: 'off'};
+    try { const kept = JSON.parse(root.localStorage.getItem(TERRAIN_KEY)); if (['off', 'all', 'kick-snare'].includes(kept?.terrainRoadside)) terrain.terrainRoadside = kept.terrainRoadside; } catch (_) {}
+    const showTerrain = () => {
+      if (terrainBox) terrainBox.hidden = scoreStyle !== 'terrain';
+      stage.classList?.toggle?.('score-led-words', scoreStyle === 'terrain');
+    };
+    if (roadsideInput) {
+      roadsideInput.value = terrain.terrainRoadside;
+      roadsideInput.addEventListener('change', () => {
+        if (['off', 'all', 'kick-snare'].includes(roadsideInput.value)) terrain.terrainRoadside = roadsideInput.value;
+        try { root.localStorage.setItem(TERRAIN_KEY, JSON.stringify(terrain)); } catch (_) {}
+        view?.setOptions({...terrain});
+      });
+    }
     // The radar look reads its materials and fonts (about 5 MB) only when it is first used. Switching to it, or
     // opening a song with it, waits for them (view.ready()) before drawing, at most RADAR_WAIT ms: meanwhile the
     // canvas keeps what it showed and the sound goes on; past the limit it draws with its fallbacks and the
@@ -191,13 +210,13 @@
       styleInput.addEventListener('change', () => {
         scoreStyle = root.XinScoreMood.normalize(styleInput.value);
         try { root.localStorage.setItem('xin-score-style-v1', scoreStyle); } catch (_) {}
-        showRadar();
+        showRadar(); showTerrain();
         view?.setOptions({scoreStyle, ...compare?.options(trackId, scoreStyle)});
         awaitLook();
         compare?.refresh(scoreStyle);
       });
     }
-    showRadar();
+    showRadar(); showTerrain();
     const transients = root.XinScoreTransientControls?.attach(patch=>view?.setOptions(patch));
     const directions = root.XinScoreDirectionControls?.attach(patch=>view?.setOptions(patch));
     transients?.setActive(true);
@@ -514,7 +533,7 @@
       const options = {...reading,...appearanceOptions(appearance),fxPreset,fxDynamics,meteorMotion,scoreStyle,quietText: true,drumNotation: true,denseLaneLabels: true,showTexture: true,liveTextureRaster: true,...shapeOptions(shapes),offsetSeconds: -latency() / 1000};
       options.albumLayout = albumLayout;
       options.presentationLayout = stage.classList.contains('is-immersive');
-      Object.assign(options,transients?.values(),directions?.values(),compare?.options(trackId, scoreStyle),radar);
+      Object.assign(options,transients?.values(),directions?.values(),compare?.options(trackId, scoreStyle),radar,terrain);
       options.albumSidebarGap = albumSidebarGap;
       options.lang = shownLang;
       if (view) { view.setModel(result.model); view.setOptions(options); }
@@ -526,7 +545,7 @@
       compare?.refresh(scoreStyle);
       consider();
       offer();
-      if (trackChanged) tell('score.help', '点一条轨：只听它，再点回到原曲 · 点段落：跳过去 · 双击段落：循环', 6);
+      if (trackChanged && scoreStyle !== 'terrain') tell('score.help', '点一条轨：只听它，再点回到原曲 · 点段落：跳过去 · 双击段落：循环', 6);
       return true;
     }
 

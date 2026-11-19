@@ -28,6 +28,30 @@
     while(lo<hi){const mid=(lo+hi)>>>1;if(rows[mid].time<=t)lo=mid+1;else hi=mid;}
     return lo?rows[lo-1].text:'';
   }
+  // 车窗地貌's sill line (2026-11-19, batch 4): the line being sung and how far into it the song is (0-1: from its own
+  // time to the next line's, or to the end of its section for the last one), for scrolling a line too long for the sill.
+  // Dark where lyricAt is dark, and also before the first section row, after the last one, and in sections whose kind or
+  // name says nobody sings (器乐段 too, which lyricAt lets through).
+  const QUIET_KIND=/^(intro|inst|interlude|instrumental|outro|solo)$/i;
+  function sillLyric(snapshot,time,sections){
+    const none={line:'',progress:null};
+    if(!snapshot?.enabled)return none;
+    const rows=(Array.isArray(sections)?sections:[]).filter(r=>Array.isArray(r)&&Number.isFinite(r[0])&&Number.isFinite(r[1]));
+    if(rows.length){
+      if(time<Math.min(...rows.map(r=>r[0]))||time>=Math.max(...rows.map(r=>r[1])))return none;
+      const row=rows.find(r=>r[0]<=time&&time<r[1]);
+      if(row&&(QUIET_KIND.test(String(row[4]||''))||/^(intro|interlude|outro|引子|前奏|间奏|尾奏|尾声|器乐段?|独奏)(\s|\d|$)/i.test(String(row[2]||'').trim())))return none;
+    }
+    const t=time-(snapshot.offset||0),lines=snapshot.lines||[];
+    let lo=0,hi=lines.length;
+    while(lo<hi){const mid=(lo+hi)>>>1;if(lines[mid].time<=t)lo=mid+1;else hi=mid;}
+    const at=lines[lo-1];
+    if(!at||!at.text)return none;
+    const own=rows.find(r=>r[0]<=time&&time<r[1]);
+    let end=lo<lines.length?lines[lo].time:own?own[1]-(snapshot.offset||0):NaN;
+    if(!(end>at.time))end=at.time+6;
+    return {line:at.text,progress:Math.max(0,Math.min(1,(t-at.time)/(end-at.time)))};
+  }
   function fitFooterText(context, text, width, continuation = false) {
     const glyphs = Array.from(String(text || ''));
     if (!glyphs.length || width <= 0) return {line: '', rest: ''};
@@ -190,10 +214,14 @@
       const sectionName = (model.sections || []).find(row => row[0] <= time && time < row[1])?.[2];
       const flag = options.scoreStyle === 'flag';
       const section = flag && /^zh\b/i.test(options.lang) ? String(sectionName || '') : sectionLabel(sectionName);
-      const lyric = lyricAt(lyrics, time, section);
+      // 车窗地貌 shows title, sections and words only on its carriage displays: the sill gets its own line and progress,
+      // and the roadside option rides with the frame.
+      const terrain = options.scoreStyle === 'terrain', sill = terrain ? sillLyric(lyrics, time, model.sections) : null;
+      const lyric = terrain ? sill.line : lyricAt(lyrics, time, section);
       artFrame = {w, h, song:model, key:model.track.id, time, duration:model.track.duration, playing:!locating,
         section, lyric, cover, presentationLayout:options.presentationLayout, albumLayout:options.albumLayout,
-        ...(flag ? {lang:options.lang, hidden:options.hidden, focusGroup:options.focusGroup} : {})};
+        ...(flag ? {lang:options.lang, hidden:options.hidden, focusGroup:options.focusGroup} : {}),
+        ...(terrain ? {terrainRoadside:options.terrainRoadside || 'off', ...(sill.line ? {lyricProgress:sill.progress} : {})} : {})};
       ctx.save();
       try {
         ctx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
@@ -284,5 +312,5 @@
       start:()=>{if(raf!==null)return;const tick=()=>{raf=root.requestAnimationFrame(tick);draw()};raf=root.requestAnimationFrame(tick)},stop,destroy:()=>{stop();mist?.destroy();surface?.destroy();mood?.destroy?.()}};
     resize();return api;
   }
-  return Object.freeze({create,sectionLabel,lyricsSnapshot,variationSnapshot,lyricAt,drawFooter});
+  return Object.freeze({create,sectionLabel,lyricsSnapshot,variationSnapshot,lyricAt,sillLyric,drawFooter});
 });

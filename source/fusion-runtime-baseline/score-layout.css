@@ -250,9 +250,11 @@
 .score-layout-active #scoreCompactLyrics .score-lyrics__now { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-layout-active #scoreCompactLyrics .score-lyrics__menu:not([hidden]) { margin-inline: auto; max-width: 270px !important; }
 .score-layout-active #scoreCompactLyrics:has(.score-lyrics:not([hidden]) .score-lyrics__now:not(:empty)) #scoreCompactCaption { display: none; }
-.stage.score-layout-collapsed:not(.ui-hidden):not(.is-immersive):has(#scoreCompactLyrics:not([hidden]) :is(.score-lyrics:not([hidden]) .score-lyrics__now:not(:empty), #scoreCompactCaption:not([hidden]))) #scoreCanvas {
+.stage.score-layout-collapsed:not(.ui-hidden):not(.is-immersive):not(.score-led-words):has(#scoreCompactLyrics:not([hidden]) :is(.score-lyrics:not([hidden]) .score-lyrics__now:not(:empty), #scoreCompactCaption:not([hidden]))) #scoreCanvas {
   height: calc(100% - var(--album-foot) - 2.2em);
 }
+/* 车窗地貌 shows the words on its sill display: the compact line keeps only its menu button (not over the scenery). */
+.stage.score-led-words #scoreCompactLyrics .score-lyrics :is(.score-lyrics__now, .score-lyrics__near) { display: none; }
 .stage.score-layout-active:is(.ui-hidden, .is-immersive) { --album-left: 0px; --album-foot: 0px; }
 .stage.score-layout-active:is(.ui-hidden, .is-immersive) :is(#scoreSidebar, #scoreSceneDock, #scoreCompactTransport, .xl-drawer, .score-lyrics__menu) { display: none !important; }
 .stage.score-layout-active:is(.ui-hidden, .is-immersive) #scoreCanvas { inset: 0; width: 100%; height: 100%; }
