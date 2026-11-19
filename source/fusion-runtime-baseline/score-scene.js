@@ -171,6 +171,21 @@
       radarFallInput.addEventListener('change', changed); radarEchoInput.addEventListener('change', changed);
       radarLeadInput?.addEventListener('change', changed);
     }
+    // The radar look reads its materials and fonts (about 5 MB) only when it is first used. Switching to it, or
+    // opening a song with it, waits for them (view.ready()) before drawing, at most RADAR_WAIT ms: meanwhile the
+    // canvas keeps what it showed and the sound goes on; past the limit it draws with its fallbacks and the
+    // materials replace them as they arrive.
+    const RADAR_WAIT = 2000;
+    let lookWait = null;
+    const awaitLook = () => {
+      if (scoreStyle !== 'glass' || !view || typeof view.ready !== 'function') return;
+      const wait = lookWait = {until: root.performance.now() + RADAR_WAIT};
+      Promise.resolve().then(() => view.ready()).catch(() => {}).then(() => { if (lookWait === wait) lookWait = null; });
+    };
+    const lookPending = () => {
+      if (lookWait && root.performance.now() >= lookWait.until) lookWait = null;
+      return Boolean(lookWait);
+    };
     if (styleInput) {
       styleInput.value = scoreStyle;
       styleInput.addEventListener('change', () => {
@@ -178,6 +193,7 @@
         try { root.localStorage.setItem('xin-score-style-v1', scoreStyle); } catch (_) {}
         showRadar();
         view?.setOptions({scoreStyle, ...compare?.options(trackId, scoreStyle)});
+        awaitLook();
         compare?.refresh(scoreStyle);
       });
     }
@@ -415,7 +431,7 @@
         if (loop && !audio.paused && (audio.currentTime >= loop.end - 0.02 || audio.currentTime < loop.start - 0.5)) audio.currentTime = loop.start;
         // While a video is being exported the score is not drawn (the export needs the GPU); the
         // last frame stays, the sound goes on.
-        if (!held) {
+        if (!held && !lookPending()) {
           view.setLyrics?.(root.XinScoreLyricsView?.snapshot?.(trackId));
           view.resize();
           const draw = view.draw(undefined, audio.paused || audio.seeking);
@@ -503,6 +519,7 @@
       options.lang = shownLang;
       if (view) { view.setModel(result.model); view.setOptions(options); }
       else view = (root.XinScorePresentation || core).create(canvas, result.model, () => clock.now(), options);
+      awaitLook();
       shownModel = result.model;
       showCover(result.model, ticket);
       status = 'ready';
