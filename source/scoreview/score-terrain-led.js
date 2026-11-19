@@ -122,12 +122,14 @@
     return {
       cols, rows, a,
       set(x, y, l) { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < cols && y >= 0 && y < rows && a[y * cols + x] < l) a[y * cols + x] = l; },
-      text(str, size, x, y, l, x0 = 0, x1 = cols) {
+      // whole = true: a character that would be cut by x0 or x1 is left out entirely (no half characters at the edges)
+      text(str, size, x, y, l, x0 = 0, x1 = cols, whole = false) {
         let cx = x;
         for (const ch of chars(str)) {
           const g = glyph(ch, size);
           if (cx >= x1) break;
-          if (g.bits && cx + g.w > x0) for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (g.bits[j * g.w + i] && cx + i >= x0 && cx + i < x1) this.set(cx + i, y + j, l);
+          const cut = cx < x0 || cx + g.w > x1;
+          if (g.bits && cx + g.w > x0 && !(whole && cut)) for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (g.bits[j * g.w + i] && cx + i >= x0 && cx + i < x1) this.set(cx + i, y + j, l);
           cx += g.w;
         }
         return cx - x;
@@ -204,8 +206,12 @@
     if (P.artist && title === P.title && x + width(P.artist, big) <= mx0 - gap) M.text(P.artist, big, x, yA, 2);
     let mx = mx0;
     for (const [s, l, after] of mid) mx += M.text(s, big, mx, yA, l) + after;
-    // ---- row B: the route
+    // ---- row B: the route (a song without sections has none: title and time only)
     const S = P.S, r = P.plan(cols), yL = yA + big + 2, step = r.step, sx = k => Math.round(r.x0 + step * k);
+    // the parts that change by themselves while nothing else does: the running time, and the lit route ahead of the
+    // current station (each redrawn on its own, over a strip that has them blank)
+    const regions = {time: {x0: tx, x1: tx + tw, y0: yA, y1: yA + big}, route: null};
+    if (!S.length) return {map: M, mid: mid.map(p => p[0]).join('|'), title, plan: r, labels: null, regions};
     const endX = Math.round(r.x0 + step * Math.max(1, S.length)) - 2;
     for (let xx = sx(0); xx <= endX; xx++) {
       const pos = (xx - r.x0) / step;
@@ -228,7 +234,17 @@
         M.text(c, small, x0 - 1, yL + 3, l, 0, cols);
       }
     }
-    return {map: M, mid: mid.map(p => p[0]).join('|'), title, plan: r, labels: some ? labels : null};
+    regions.route = {x0: sx(r.cur) + 2, x1: endX + 1, y0: yL, y1: yL + 1};
+    return {map: M, mid: mid.map(p => p[0]).join('|'), title, plan: r, labels: some ? labels : null, regions};
+  }
+  // a copy of the map with only (keep = true) or without (keep = false) the given regions
+  function masked(map, regs, keep) {
+    const out = dotMap(map.cols, map.rows);
+    for (let y = 0; y < map.rows; y++) for (let x = 0; x < map.cols; x++) {
+      const inside = regs.some(g => g && x >= g.x0 && x < g.x1 && y >= g.y0 && y < g.y1);
+      if (inside === keep) out.a[y * map.cols + x] = map.a[y * map.cols + x];
+    }
+    return out;
   }
   const headerRows = (big, small) => big + small + 7;
 
@@ -247,7 +263,11 @@
     if (scroll) {
       const view = cols - 4, over = Math.max(0, textW - view);
       const k = clamp((num(progress) - .1) / .8, 0, 1); // hold the start, hold the end
-      offset = Math.round(k * over);
+      // scroll a whole character at a time, so the left edge never shows half a character; at the end, far enough to
+      // show the last one whole
+      const edges = [0]; for (const ch of chars(line)) edges.push(edges[edges.length - 1] + glyph(ch, LYRIC_SIZE).w);
+      const want = k * over;
+      offset = k >= 1 ? edges.find(e => e >= over) : edges.reduce((b, e) => Math.abs(e - want) < Math.abs(b - want) ? e : b, 0);
     }
     return {rows, pitch, cols, inset, scroll, offset, textW, p0, x: scroll ? 2 - offset : Math.round((cols - textW) / 2)};
   }
@@ -350,16 +370,67 @@
   }
 
   // ---------- public drawing ----------
+  // The header in three cached pieces: the strip without the running parts (rebuilt when the title, the station or the
+  // layout changes), the time digits (once a second) and the lit route ahead of the current station (when the lit end
+  // moves a dot). The two small pieces hold lit dots only and are added onto the strip's unlit ones.
+  const overlays = new Map();
+  function overlay(ctx, rect, key, region, pitch, grid, dpr, mapFn) {
+    if (!region) return 'hit';
+    let hit = overlays.get(key), state = 'hit';
+    if (hit === undefined) {
+      state = 'partial';
+      const map = masked(mapFn(), [region], true), w = (region.x1 - region.x0 + 2) * pitch, h = (region.y1 - region.y0 + 2) * pitch;
+      const c = newCanvas(w * dpr, h * dpr), g = context(c);
+      if (g) {
+        g.save(); g.scale && g.scale(dpr, dpr); g.globalCompositeOperation = 'lighter';
+        for (let y = region.y0; y < region.y1; y++) for (let x = region.x0; x < region.x1; x++) {
+          const l = map.a[y * map.cols + x];
+          if (l) putDot(g, (x - region.x0 + 1) * pitch, (y - region.y0 + 1) * pitch, l, pitch, dpr);
+        }
+        g.restore();
+        hit = {canvas: c, w, h};
+      } else hit = null;
+      remember(overlays, key, hit);
+    }
+    if (hit) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(hit.canvas, rect.x + grid.gx + (region.x0 - 1) * pitch, rect.y + grid.gy + (region.y0 - 1) * pitch, hit.w, hit.h);
+      ctx.restore();
+    }
+    return state;
+  }
   function drawHeader(ctx, rect, d, opts) {
     opts = opts || {}; d = d || {};
     const dpr = opts.dpr || 1, big = opts.big || 16, small = opts.small || 12, rows = headerRows(big, small), W = rect.w, H = rect.h;
     const pitch = opts.pitch || Math.min(H / (rows + ROW_PAD), W / 200);
     const ins = pitch * 1.7, cols = Math.max(20, Math.floor((W - 2 * ins) / pitch));
-    const P = headerParts(d), r = P.plan(cols);
-    const key = ['H', W, H, pitch, dpr, cols, big, small, P.title, P.artist, P.curName, P.nextName, fmt(P.time), fmt(P.duration),
-      P.S.map(s => s.name).join('\u0001'), r.cur, r.litX].join('|');
+    const P = headerParts(d), r = P.plan(cols), t = fmt(P.time);
+    const layout = ['H', W, H, pitch, dpr, cols, big, small].join('|');
+    const key = [layout, P.title, P.artist, P.curName, P.nextName, t.length, fmt(P.duration), P.S.map(s => s.name).join('\u0001'), r.cur].join('|');
     const grid = gridOf(W, H, pitch, cols, rows, pitch);
-    return blit(ctx, rect, key, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => headerModel(d, cols, rows, big, small).map);
+    let model = null;
+    const full = () => model || (model = headerModel(d, cols, rows, big, small));
+    // where the running parts sit depends only on the static key: remember it with the strip
+    let regs = regionCache.get(key);
+    if (!regs) { regs = full().regions; remember(regionCache, key, regs); }
+    if (canCache === null) canCache = Boolean(context(newCanvas(1, 1)));
+    if (!canCache) { // no canvas to cache into: paint the whole header straight onto the target
+      return blit(ctx, rect, key + '|' + t + '|' + r.litX, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => full().map);
+    }
+    const s = blit(ctx, rect, key, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => masked(full().map, [regs.time, regs.route], false));
+    const a = overlay(ctx, rect, key + '|T|' + t, regs.time, pitch, grid, dpr, () => full().map);
+    const b = overlay(ctx, rect, key + '|R|' + r.litX, regs.route, pitch, grid, dpr, () => full().map);
+    return s === 'cold' ? 'cold' : a === 'partial' || b === 'partial' ? 'partial' : 'hit';
+  }
+  const regionCache = new Map();
+  let canCache = null;
+  // fill the glyph cache for strings that will show later (station names, digits), so no later frame rasterises them
+  function warm(list, opts) {
+    opts = opts || {};
+    const sizes = [opts.big || 16, opts.small || 12, LYRIC_SIZE];
+    for (const s of list) for (const size of sizes) width(s, size);
+    for (const s of list) for (const c of nameCandidates(String(s))) width(c, opts.small || 12);
+    return glyphCache.size;
   }
   function drawLyric(ctx, rect, d, opts) {
     opts = opts || {}; d = d || {};
@@ -370,7 +441,7 @@
     const key = ['L', W, H, pitch, dpr, cols, plan.x, line].join('|');
     return blit(ctx, rect, key, ['LB', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => {
       const M = dotMap(cols, rows);
-      if (line) M.text(line, LYRIC_SIZE, plan.x, 0, 3, plan.scroll ? 2 : 0, plan.scroll ? cols - 2 : cols);
+      if (line) M.text(line, LYRIC_SIZE, plan.x, 0, 3, plan.scroll ? 2 : 0, plan.scroll ? cols - 2 : cols, plan.scroll);
       return M;
     });
   }
@@ -390,10 +461,10 @@
   }
 
   function setCanvasFactory(fn) { factory = typeof fn === 'function' ? fn : null; clearCaches(); }
-  function clearCaches() { glyphCache.clear(); measurers.clear(); sprites.clear(); strips.clear(); bases.clear(); }
+  function clearCaches() { glyphCache.clear(); measurers.clear(); sprites.clear(); strips.clear(); bases.clear(); overlays.clear(); regionCache.clear(); canCache = null; }
   const cacheSize = () => ({glyphs: glyphCache.size, sprites: sprites.size, strips: strips.size, bases: bases.size});
 
-  const api = Object.freeze({drawHeader, drawLyric, drawNowTick, localizeSection, setCanvasFactory, clearCaches, cacheSize,
+  const api = Object.freeze({drawHeader, drawLyric, drawNowTick, localizeSection, setCanvasFactory, clearCaches, cacheSize, warm,
     headerModel, headerRows, lyricPlan, fit, width, glyph, dotMap, fmt, defaults: Object.freeze({big: 16, small: 12, lyricSize: LYRIC_SIZE})});
   root.XinScoreTerrainLed = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

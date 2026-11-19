@@ -64,14 +64,38 @@ test('drawing is a pure function of its arguments: same input, same calls, whate
   assert.equal(stamp(b.calls), stamp(a.calls));
 });
 
-test('the cache: an unchanged frame is one blit and builds nothing; a new second rebuilds only that strip', () => {
+test('the cache: an unchanged frame is three blits and builds nothing; a new second rebuilds only the time digits', () => {
   const m = mockCanvas(1123, 200), g = m.canvas.getContext('2d'), rect = {x: 10, y: 8, w: 1103, h: 100};
   assert.equal(Led.drawHeader(g, rect, data(104)), 'cold');
   m.reset(); made = 0;
   assert.equal(Led.drawHeader(g, rect, data(104.4)), 'hit');
   assert.equal(made, 0);
-  assert.deepEqual(m.calls.map(c => c.name), ['drawImage']);
-  assert.equal(Led.drawHeader(g, rect, data(105)), 'cold');
+  assert.deepEqual(m.calls.filter(c => c.name === 'drawImage').length, 3, 'strip, time, lit route');
+  m.reset(); made = 0;
+  assert.equal(Led.drawHeader(g, rect, data(105)), 'partial');
+  assert.ok(made <= 2, 'the time digits (and the new digit glyph), not the strip: ' + made);
+  const timeBlit = m.calls.filter(c => c.name === 'drawImage')[1];
+  assert.ok(timeBlit.args[3] < rect.w / 4, 'the rebuilt piece is small: ' + timeBlit.args[3]);
+  assert.equal(Led.drawHeader(g, rect, data(140)), 'cold', 'a new station rebuilds the strip');
+});
+
+test('the strip plus its two running pieces light exactly the dots of the whole header', () => {
+  const model = Led.headerModel(data(104.4), 300, 35, 16, 12);
+  const {time, route} = model.regions;
+  assert.ok(time && route && time.x1 > time.x0 && route.x1 > route.x0);
+  const none = Led.headerModel(data(104.4, {sections: []}), 300, 35, 16, 12);
+  assert.equal(none.regions.route, null, 'no sections: no route row');
+  const yL = 1 + 16 + 2;
+  assert.equal(none.map.a.slice(yL * 300, (yL + 1) * 300).some(Boolean), false);
+});
+
+test('a scrolling lyric moves a whole character at a time and never shows half of one at the edges', () => {
+  const very = '我们坐着火车横穿过那一片望不到头的荒原，窗外的远山一重接着一重，像是永远也走不完的路，直到夕阳把最后一座山染成了琥珀色';
+  const edges = [0]; for (const ch of Array.from(very)) edges.push(edges.at(-1) + Led.glyph(ch, 12).w);
+  for (const p of [0, .2, .37, .5, .81, 1]) {
+    const plan = Led.lyricPlan(very, p, 900, 44);
+    assert.ok(edges.includes(plan.offset), 'offset on a character edge at ' + p + ': ' + plan.offset);
+  }
 });
 
 test('the header: time text, station call and the title all land on the dot map', () => {

@@ -198,6 +198,33 @@ test('light: a cover only turns the low sky and the haze; the zenith stays blue;
   assert.equal(terrain.inspect(frame(song(), 60)).light, 'afternoon');
 });
 
+test('the carriage: the LED header gets title, artist, the song\'s own sections and the time; the sill lights only with a lyric; arrows at now', () => {
+  const prior = globalThis.XinScoreTerrainLed, seen = [];
+  globalThis.XinScoreTerrainLed = {
+    localizeSection: n => n === 'Chorus 2' ? '副歌 2' : n, warm: list => seen.push(['warm', list]),
+    drawHeader: (ctx, rect, d) => seen.push(['header', rect, d]), drawLyric: (ctx, rect, d) => seen.push(['lyric', rect, d]),
+    drawNowTick: (ctx, x, top, bottom) => seen.push(['now', x, top, bottom])
+  };
+  try {
+    const s = song({track: {id: 'led', title: '七里香', artist: '周杰伦', duration: D}, sections: [[3, 30, '引子'], [30, 60, '主歌 1'], [60, 90, 'Chorus 2']]});
+    const draw = extra => { const m = mockCanvas(1123, 783); return terrain.draw(Object.assign(m.canvas.getContext('2d'), {arcTo() {}}), frame(s, 44, extra)); };
+    const S = draw({lyric: ''});
+    const header = seen.find(x => x[0] === 'header'), now = seen.find(x => x[0] === 'now');
+    assert.deepEqual([header[2].title, header[2].artist, header[2].time, header[2].duration], ['七里香', '周杰伦', 44, D]);
+    assert.deepEqual(header[2].sections.map(r => r[2]), ['引子', '主歌 1', '副歌 2']);
+    assert.deepEqual(header[1], S.layout.header);
+    assert.deepEqual(now.slice(1), [S.detail.playheadX, S.layout.win.y, S.layout.win.y + S.layout.win.h]);
+    assert.equal(seen.some(x => x[0] === 'lyric'), false, 'no lyric: the sill stays dark');
+    assert.equal(seen.filter(x => x[0] === 'warm').length, 1);
+    seen.length = 0;
+    draw({lyric: '窗外的远山一重又一重'});
+    const lyric = seen.find(x => x[0] === 'lyric');
+    assert.equal(lyric[2].line, '窗外的远山一重又一重');
+    assert.ok(lyric[2].progress >= 0 && lyric[2].progress <= 1);
+    assert.equal(seen.filter(x => x[0] === 'warm').length, 0, 'warmed once per song');
+  } finally { globalThis.XinScoreTerrainLed = prior; }
+});
+
 test('draw paints the window through the presentation\'s frame and hands back the scene (rasters on, with a fake offscreen canvas)', () => {
   const prior = globalThis.OffscreenCanvas;
   const made = [];

@@ -889,11 +889,39 @@
     if (tile && typeof ctx.createPattern === 'function') {
       let p = patterns.get(ctx);
       if (!p) { p = ctx.createPattern(tile, 'repeat'); patterns.set(ctx, p); }
-      if (p) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = p; ctx.fillRect(0, 0, ctx.canvas ? ctx.canvas.width : L.w * dpr, ctx.canvas ? ctx.canvas.height : L.h * dpr); }
+      if (p) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = p; ctx.fillRect(0, 0, ctx.canvas ? ctx.canvas.width : L.w * dpr, ctx.canvas ? ctx.canvas.height : L.h * dpr); ctx.restore(); }
     }
+    S.carriage = carriage(ctx, frame, S, dpr);
     ctx.restore();
     S.light = LT.name;
     return S;
+  }
+
+  // ---------- the carriage: the LED displays (score-terrain-led.js, global XinScoreTerrainLed) ----------
+  // Above the window: title, artist, this station / next, time, the route of all sections. On the sill: the lyric line
+  // (nothing lit when there is none). On the frame: the two "now" arrows. Section names come from the song's own rows
+  // (Chinese in the bundles; English labels go through the module's fallback).
+  const warmed = new WeakSet();
+  function carriage(ctx, frame, S, dpr) {
+    const Led = globalThis.XinScoreTerrainLed;
+    if (!Led) return null;
+    const L = S.layout, song = frame.song, track = song.track || {}, opts = {dpr};
+    const sections = (Array.isArray(song.sections) ? song.sections : [])
+      .filter(r => Array.isArray(r) && Number.isFinite(r[0]))
+      .map(r => [r[0], r[1], Led.localizeSection(String(r[2] == null ? '' : r[2]))]);
+    if (!warmed.has(song) && Led.warm) { // the first frame of a song rasterises every name it will show, not later frames
+      warmed.add(song);
+      Led.warm([String(track.title || ''), String(track.artist || ''), ...sections.map(r => r[2]), '0123456789:/ …', '本站下一站终点'], opts);
+    }
+    Led.drawHeader(ctx, L.header, {title: track.title || '', artist: track.artist || '', sections, time: S.time, duration: S.duration}, opts);
+    // a lyric line too long for the sill scrolls; its progress comes with the frame when the host knows the line's timing
+    // (lyricProgress), otherwise it sweeps back and forth on song time (a whole character at a time, in the module)
+    const line = typeof frame.lyric === 'string' ? frame.lyric : frame.lyric && frame.lyric.text || '';
+    let progress = Number.isFinite(frame.lyricProgress) ? frame.lyricProgress : null;
+    if (progress === null) { const period = Math.max(6, Array.from(line).length * .45), u = (S.time / period) % 2; progress = 1 - Math.abs(u - 1); }
+    if (line) Led.drawLyric(ctx, L.sill, {line, progress}, opts);
+    Led.drawNowTick(ctx, L.nowX, L.win.y, L.win.y + L.win.h, {pitch: 3 * L.u, dpr});
+    return {sections: sections.length, lyric: line};
   }
 
   function inspect(frame) {
