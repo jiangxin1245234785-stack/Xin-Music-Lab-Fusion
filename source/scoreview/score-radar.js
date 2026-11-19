@@ -22,6 +22,8 @@
   const QUALITY = Object.freeze(['MAJ', 'MIN', '6', '7', 'M7', 'SUS2', 'SUS4', 'DIM', 'AUG', 'INV']);
   const FIFTHS = Object.freeze(['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F']);
   const FIFTH_PC = Object.freeze([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]);
+  // Capitals' height in ems where the canvas cannot measure it (tests): National Park and Barlow are both about .72.
+  const CAP_HEIGHT = .72;
   const DRUM_ROWS = Object.freeze([
     {label: 'CYM', names: ['crash', 'ride']}, {label: 'HAT', names: ['hihat', 'openhat']},
     {label: 'TOM', names: ['tom']}, {label: 'SNR', names: ['snare']}, {label: 'KICK', names: ['kick']}]);
@@ -435,10 +437,16 @@
     // colour whatever the data does. Only these change with the song: lamps and the legends lit from behind by them
     // (section lamps, caution cells, the fifths lamps' letters), needles, what the screens draw (the echoes, the
     // scope's beam, the bar numbers), the tube digits, the tape as it prints, and the positions of levers.
-    // `baseline` 'middle' (y is the text's middle) or 'alphabetic' (y is its baseline: rows of two sizes).
+    // `baseline` 'middle' (y is the text's middle), 'alphabetic' (y is its baseline: rows of two sizes) or 'cap' (y
+    // is the middle of its capitals: labels beside a lamp, a row of cells or a grid line sit on its centre line; 'middle'
+    // centres the em box, which sets capitals 1-1.5 px high).
     function write(value, x, y, size, color, kind = 'stamp', align = 'left', maxWidth = 0, weight = '', baseline = 'middle') {
       font(kind, size, weight);
-      p.fillStyle = color; p.textAlign = align; p.textBaseline = baseline;
+      p.fillStyle = color; p.textAlign = align; p.textBaseline = baseline === 'cap' ? 'alphabetic' : baseline;
+      if (baseline === 'cap') {
+        const m = p.measureText('H');
+        y += (Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : size * CAP_HEIGHT) / 2;
+      }
       let shown = String(value ?? '');
       if (maxWidth > 0 && p.measureText(shown).width > maxWidth) {
         const chars = Array.from(shown);
@@ -663,6 +671,7 @@
       p.restore();
     }
     function lamp(x, y, r, light, hot = C.amberHot, warm = C.amber) {
+      if (auditSink) { const [cx, cy] = toDesign(x, y); auditShape('lamp', {cx, cy, r}); }
       // The housing throws a small shadow, its rim catches the light; the lens is dark glass when off.
       if (depth > 0) circle(x + .9 * depth, y + 1.3 * depth, r + 2.6, `rgba(0,0,0,${Math.min(.6, .35 * depth)})`);
       circle(x, y, r + 2.5, '#1b1a15');
@@ -902,7 +911,7 @@
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
           p.fillStyle = g; p.fillRect(x + 2, y + 2, w - 4, h - 4);
         }
-        write(name, x + w / 2, y + h / 2 + 1, 16, v > .4 ? '#2a1a08' : '#b9a27c', 'plate', 'center', w - 6);
+        write(name, x + w / 2, y + h / 2, 16, v > .4 ? '#2a1a08' : '#b9a27c', 'plate', 'center', w - 6, '', 'cap');
       });
       out.section = {lamps: Object.fromEntries(SECTION_LAMPS.map((n, k) => [n, +light[k].toFixed(3)])), kinds: [...data.kinds]};
       // TEMPO / BAR · BEAT / TIME.
@@ -1054,8 +1063,8 @@
           if (auditSink) for (const k of [-1, 0, 1]) { const [lx, ly] = toDesign(224, y + 25 + k * LAMP_GAP); auditShape('ring', {cx: lx, cy: ly, r: LAMP_SIZE / 2}); }
           rounded(246, y + 12, 24, 50, 12, '#16170f', '#4c4e44', 1.5);
           // IN / OUT are engraved: one brightness, whatever the lever does (the lever's position says which).
-          write('IN', 300, y + 20, 13, C.stamp, 'stamp', 'right');
-          write('OUT', 300, y + 54, 13, C.stamp, 'stamp', 'right');
+          write('IN', 300, y + 25, 13, C.stamp, 'stamp', 'right', 0, '', 'cap');
+          write('OUT', 300, y + 49, 13, C.stamp, 'stamp', 'right', 0, '', 'cap');
           inset(box(246, y + 12, 24, 50, 12), .9);
           edge(box(246.75, y + 12.75, 22.5, 48.5, 11.5), 246, y + 12, 24, 50, false, 1.2, .8);
         });
@@ -1125,7 +1134,7 @@
         const v = name === 'SPARE' ? 0 : glow(data.caution[k], now);
         out.caution[name] = +v.toFixed(3);
         rounded(x, y, w, h, 2, mixHex('#3a2a1a', '#ffb24c', v), '#14120d', 1);
-        write(name, x + w / 2, y + h / 2 + 1, 15, v > .45 ? '#2a1a08' : name === 'SPARE' ? '#7a6a56' : '#d2b48a', 'plate', 'center', w - 4);
+        write(name, x + w / 2, y + h / 2, 15, v > .45 ? '#2a1a08' : name === 'SPARE' ? '#7a6a56' : '#d2b48a', 'plate', 'center', w - 4, '', 'cap');
       });
     }
 
@@ -1434,7 +1443,7 @@
         const a = -Math.PI / 2 + k / 12 * Math.PI * 2, x = cx + Math.cos(a) * (R - 22), y = cy + Math.sin(a) * (R - 22);
         const v = light[k];
         circle(x, y, 14, mixHex('#2b2620', '#ffb24c', v), '#14120d', 1.5);
-        write(name, x, y + 1, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center');
+        write(name, x, y, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center', 0, '', 'cap');
       });
       p.beginPath(); p.moveTo(cx - 38, cy); p.lineTo(cx + 38, cy); p.strokeStyle = '#000'; p.lineWidth = 1; p.stroke();
       const name = current ? current.label : '--';
@@ -1446,7 +1455,7 @@
       QUALITY.forEach((q, k) => {
         const x = 1266 + (k % 2) * 70, y = 205 + Math.floor(k / 2) * 39;
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
-        write(q, x + 14, y + 1, 15, C.stampDim, 'stamp', 'left');   // engraved: the lamp beside it lights, not the name
+        write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
       out.chord = {name: current ? current.label : null, shown: cardShown, size: cardSize, quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
@@ -1464,13 +1473,15 @@
         const barred = bars && bars.source === 'downbeats' && bars.perBar > 0;
         write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(1028, 420, 376, 122, 5, '#1f201b', '#4a4c42');
-        DRUM_ROWS.forEach((row, r) => write(row.label, 1038, 432 + r * 21 + 7, 15, C.stamp, 'stamp', 'left'));
+        // The row names, one column right-aligned 6 px before their lamps (1094), capitals on the row's centre line.
+        DRUM_ROWS.forEach((row, r) => write(row.label, 1082, 432 + r * 21 + 7.5, 15, C.stamp, 'stamp', 'right', 0, '', 'cap'));
         if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112, 432 + r * 21, 286, 15, 1.5, '#24251f'));
         return;
       }
       if (pass !== 'live') return;
       let barStart = null, barEnd = null, step = -1;
       const cells = DRUM_ROWS.map(() => new Array(steps).fill(0));
+      const hitAt = DRUM_ROWS.map(() => new Array(steps).fill(null));   // a played cell's hit time (its ember's age)
       if (steps) {
         const b = Math.floor(barAt(env, bars, now));
         if (b >= 0 && b < bars.starts.length) {
@@ -1482,6 +1493,7 @@
             const d = data.drums[k], s = stepOf(d.time);
             if (s < 0 || s > steps - 1) continue;
             cells[d.row][s] = d.time <= now + 1e-6 ? 2 : 1;
+            if (cells[d.row][s] === 2) hitAt[d.row][s] = Math.max(hitAt[d.row][s] ?? -Infinity, d.time);
           }
         }
       }
@@ -1528,23 +1540,44 @@
         }
       }
       out.stepLook = stepLook;
+      // The cells' look (radar.5 feedback; options.radarCell): 'square' backlit tiles or 'round' lamps behind holes.
+      const cellLook = env.options.radarCell === 'round' ? 'round' : 'square';
+      out.cellLook = cellLook;
+      // A played cell's heat: 1 at its hit, falling by e^-1 in a third of the bar, never below the ember (.06: a dull red, unlike the brown of a hit still to come).
+      const coolTau = Math.max(.2, (barEnd != null && barStart != null ? barEnd - barStart : 2) / 3);
+      const heatOf = (r, s) => hitAt[r][s] == null ? 0 : Math.max(.06, Math.exp(-Math.max(0, now - hitAt[r][s]) / coolTau));
+      const emberFill = heat => heat > .5 ? mixHex('#c8742f', '#ffd27a', (heat - .5) / .5) : mixHex('#7a3418', '#c8742f', (heat - .06) / .44);
+      const heat = DRUM_ROWS.map(() => new Array(steps).fill(0));
       DRUM_ROWS.forEach((row, r) => {
         const y = 432 + r * 21;
         // The row lamp: lit at the hit, dark again .15 s later.
         const j = lower(data.drums, now + 1e-6, d => d.time) - 1;
         let v = 0;
         for (let k = j; k >= 0 && now - data.drums[k].time < .15; k--) if (data.drums[k].row === r) { v = 1 - (now - data.drums[k].time) / .15; break; }
-        lamp(1094, y + 7, 6, v);
+        lamp(1094, y + 7.5, 6, v);
         if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
           const x = 1112 + s * cellPitch + Math.floor(s / 4) * 2, state = cells[r][s];
-          // The current column: its hits brightest; with 'backlight' its empty cells glow faintly from behind too.
-          const now = s === step, backlit = now && stepLook === 'backlight';
-          const fill = state === 2 ? (now ? '#ffd27a' : '#c8742f') : state === 1 ? '#4a3524' : backlit ? '#4a4334' : '#2c2d26';
-          rounded(x, y, cellSize, 15, 1.5, fill);
+          // Played: an ember by its age (the newest the hottest); to come: a dark lens, visible; with 'backlight' the
+          // current column's empty cells glow faintly from behind.
+          const backlit = s === step && stepLook === 'backlight', h = state === 2 ? heatOf(r, s) : 0;
+          heat[r][s] = +h.toFixed(3);
+          const fill = state === 2 ? emberFill(h) : state === 1 ? '#4a3524' : backlit ? '#4a4334' : '#2c2d26';
+          if (cellLook === 'round') {
+            // A small lamp behind a round hole in the bed: the hole's dark rim, the lens, a glow round a hot lens.
+            const cx = x + cellSize / 2, cy = y + 7.5, rr = Math.min(cellSize, 15) / 2 - 1;
+            if (h > .45) {
+              const g = p.createRadialGradient(cx, cy, rr * .6, cx, cy, rr + 4);
+              g.addColorStop(0, `rgba(255,170,70,${(.45 * (h - .45) / .55).toFixed(3)})`); g.addColorStop(1, 'rgba(255,170,70,0)');
+              p.fillStyle = g; p.fillRect(cx - rr - 4, cy - rr - 4, 2 * rr + 8, 2 * rr + 8);
+            }
+            circle(cx, cy, rr + .8, '#141510');
+            circle(cx, cy, rr - .6, fill);
+            if (h > .3) circle(cx - rr * .3, cy - rr * .3, rr * .3, `rgba(255,240,210,${(.5 * h).toFixed(3)})`);
+          } else rounded(x, y, cellSize, 15, 1.5, fill);
         }
       });
-      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')),
+      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: cells.map(row => row.join('')), heat,
         right: steps ? +(1112 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
         ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
     }
@@ -1571,7 +1604,7 @@
       if (pass === 'base') {
         write('RECORDER · LOUDNESS', 1028, 566, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         write('WHOLE SONG · 1 SHEET', 1404, 566, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
-        [0, -12, -24, -36].forEach(db => write(String(db), 1057, y + 6 + (hi - db) / (hi - lo) * (h - 12), 15, C.stampDim, 'plate', 'right'));
+        [0, -12, -24, -36].forEach(db => write(String(db), 1057, y + 6 + (hi - db) / (hi - lo) * (h - 12), 15, C.stampDim, 'plate', 'right', 0, '', 'cap'));
         raisedPlate(x - 3, y - 3, w + 6, h + 6, 4, '#1c1d18', '#3d3e36', .6);
         rect(x, y, w, h, C.paper);
         recordPaper('recorder', x, y, w, h);

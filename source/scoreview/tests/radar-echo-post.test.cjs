@@ -366,6 +366,11 @@ test('layout: no text leaves its panel, overlaps another, sits on a screw or str
   assert.deepEqual(Layout.check([panel, {type: 'tape', x: 0, y: 0, w: 30, h: 10}, {type: 'keep', x: 20, y: 5, w: 30, h: 10, what: 'X scale'}]).map(q => q.kind), ['cover']);
   assert.deepEqual(Layout.check([panel, text('A', 10, 10), {type: 'mark', x: 15, y: 0, w: 2, h: 90, what: 'pen'}]).map(q => q.kind), ['mark']);
   assert.deepEqual(Layout.check([panel, {type: 'frame', x: 10, y: 10, w: 40, h: 40}, {type: 'screw', cx: 12, cy: 30, r: 5}]).map(q => q.kind), ['screw']);
+  // Labels beside a column of lamps share the edge facing the lamps (radar.5 feedback: the drum row names).
+  const lampAt = cy => ({type: 'lamp', cx: 80, cy, r: 6});
+  const label = (s, right, cy, align) => ({type: 'text', text: s, x: right - 6 * s.length, y: cy - 5, w: 6 * s.length, h: 10, align, ax: align === 'right' ? right : right - 6 * s.length, ay: cy});
+  assert.deepEqual(Layout.check([panel, lampAt(20), lampAt(40), label('CYM', 66, 20, 'left'), label('KICK', 70, 40, 'left')]).map(q => q.kind), ['column'], 'ragged before the lamps');
+  assert.deepEqual(Layout.check([panel, lampAt(20), lampAt(40), label('CYM', 68, 20, 'right'), label('KICK', 68, 40, 'right')]), [], 'one right edge before the lamps');
 });
 
 test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readings stay in the measured bars, a space takes a tape cell, other metres say they have bar lines, drum cells fill the row', () => {
@@ -568,4 +573,23 @@ test('radar.5 feedback: engraved, printed and stuck-on text keeps one colour wha
   const unexpected = [...changed].filter(text => !LIT.has(text) && !/^[A-G][#b♯♭]?$/.test(text));
   assert.deepEqual(unexpected, [], 'engraved text changed colour with the data: ' + unexpected.join(', '));
   assert.ok([...seen.keys()].some(k => k.startsWith('IN@300,')) && [...seen.keys()].some(k => k.startsWith('OUT@300,')), 'IN / OUT are drawn by every lever');
+});
+
+test('radar.5 feedback: a played drum cell cools to an ember by its age; hits still to come stay visible; square tiles or round lamps', () => {
+  // 120 bpm, a bar 2 s (8 .. 10), four steps a beat: hits at 8, 8.5, 9 and 9.5 are steps 0, 4, 8 and 12 of one row.
+  // A third of a bar (.667 s) cools a hit by e^-1.
+  const lanes = [{id: 'd', kind: 'drums', group: 'drums', hits: [[8, 'kick', 100], [8.5, 'kick', 100], [9, 'snare', 90], [9.5, 'kick', 100]]}];
+  const model = steady(lanes);
+  for (const look of ['square', 'round']) {
+    const {frame} = post(model, 1440, 900, {...options, radarCell: look});
+    const m = frame(9.05).motion, row = m.drums.heat[3];
+    assert.equal(m.cellLook, look);
+    assert.ok(row[8] > .9, `${look}: the newest hit is hot`);
+    assert.ok(row[0] > .06 && row[0] < row[4] && row[4] < row[8], `${look}: older hits are cooler (${row[0]}, ${row[4]}, ${row[8]})`);
+    assert.equal(m.drums.hits[3][12], '1', `${look}: the hit still to come in the bar is shown`);
+    assert.equal(row[12], 0, 'and is not lit');
+    assert.ok(frame(9.95).motion.drums.heat[3][0] >= .06, 'a bar on, the first hit is an ember, never dark');
+    assert.deepEqual(frame(9.05).motion.drums.heat, m.drums.heat, 'a function of song time');
+  }
+  assert.equal(post(model).frame(9).motion.cellLook, 'square', 'square tiles unless chosen');
 });

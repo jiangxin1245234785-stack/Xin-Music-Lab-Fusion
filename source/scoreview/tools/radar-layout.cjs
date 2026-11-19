@@ -64,9 +64,42 @@
       if (d < 1) continue;   // the same centre: rings of one dial
       if (d < a.r + b.r - EPS && d > Math.abs(a.r - b.r) + EPS) add('rings', `r ${a.r.toFixed(0)} at ${a.cx.toFixed(0)},${a.cy.toFixed(0)} × r ${b.r.toFixed(0)} at ${b.cx.toFixed(0)},${b.cy.toFixed(0)}`, `cut by ${(a.r + b.r - d).toFixed(1)} px`);
     }
+    for (const q of lampColumns(records).problems) add('column', q.what, q.detail);
     // One problem once: the same text on the same thing.
     const seen = new Set();
     return problems.filter(q => { const k = q.kind + q.what + q.detail; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  // Labels beside lamps (radar.5 feedback: "CYM，HAT，TOM这些字体也对齐一下"). A label belongs to a lamp when its
+  // middle is within the lamp's radius of the lamp's centre line and its near edge is within 40 px of the lamp. Lamps
+  // with one x (within 1 px) make a column; the labels on one side of it share one anchor and are aligned on the side
+  // facing the lamps. `offRow` lists each label's distance from its lamp's centre line (a warning with real fonts).
+  function lampColumns(records) {
+    const lamps = records.filter(r => r.type === 'lamp');
+    const texts = records.filter(r => r.type === 'text' && r.text.trim() && !r.clipped && Number.isFinite(r.ax));
+    const groups = new Map(), offRow = [];
+    for (const t of texts) {
+      const mid = t.y + t.h / 2;
+      for (const l of lamps) {
+        if (Math.abs(mid - l.cy) > l.r) continue;
+        const before = t.x + t.w <= l.cx - l.r + EPS && l.cx - l.r - (t.x + t.w) <= 40;
+        const after = t.x >= l.cx + l.r - EPS && t.x - (l.cx + l.r) <= 40;
+        if (!before && !after) continue;
+        const key = (before ? 'before ' : 'after ') + Math.round(l.cx);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(t);
+        offRow.push({text: t.text, d: +(mid - l.cy).toFixed(2)});
+        break;
+      }
+    }
+    const problems = [];
+    for (const [key, list] of groups) {
+      if (list.length < 2) continue;
+      const side = key.startsWith('before') ? 'right' : 'left';
+      const names = list.map(t => JSON.stringify(t.text)).join(' ');
+      if (list.some(t => t.align !== side)) problems.push({what: names, detail: `labels ${key.split(' ')[0]} the lamps at x ${key.split(' ')[1]} are not all ${side}-aligned (the side facing the lamps)`});
+      else if (Math.max(...list.map(t => t.ax)) - Math.min(...list.map(t => t.ax)) > .6) problems.push({what: names, detail: `labels beside the lamps at x ${key.split(' ')[1]} do not share one edge`});
+    }
+    return {problems, offRow};
   }
   // Near misses (warnings, not failures): on one panel, texts set to the same side (left / right / centre) whose
   // anchors are 0.6–3 px apart, and texts in what reads as one row whose middles are 0.6–3 px apart: meant to line up
@@ -84,8 +117,10 @@
         if (dy >= .6 && dy <= 3) out.push({panel: [pa.x, pa.y].join(','), label: 'row', a: a.text, b: b.text, d: +dy.toFixed(1)});
       }
     }
+    // A label beside a lamp whose capitals sit more than 1 px off the lamp's centre line (meaningful with real fonts).
+    for (const o of lampColumns(records).offRow) if (Math.abs(o.d) > 1) out.push({panel: 'lamp row', label: 'off row', a: o.text, b: 'lamp', d: o.d});
     return out;
   }
-  const api = {check, alignment, ALLOWED};
+  const api = {check, alignment, lampColumns, ALLOWED};
   if (typeof module === 'object' && module.exports) module.exports = api; else root.XinRadarLayout = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
