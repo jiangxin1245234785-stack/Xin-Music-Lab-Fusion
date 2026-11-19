@@ -310,7 +310,7 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
 test('the materials are the files the build ships: every MATERIAL_FILES entry is in assets/radar and in build-local\'s list', () => {
   const {existsSync} = require('node:fs');
   const build = readFileSync(join(__dirname, '../../release-tools/build-local.cjs'), 'utf8');
-  assert.equal(Object.keys(Radar.MATERIAL_FILES).length, 12);
+  assert.equal(Object.keys(Radar.MATERIAL_FILES).length, 17, 'twelve from batch 1, five from batch 4');
   for (const file of Object.values(Radar.MATERIAL_FILES)) {
     assert.ok(existsSync(join(__dirname, '../assets/radar', file)), file);
     assert.ok(build.includes("'" + file.replace(/\.png$/, '') + "'") && build.includes("'assets/radar/'"), file + ' is shipped');
@@ -321,12 +321,13 @@ test('the materials are the files the build ships: every MATERIAL_FILES entry is
 test('layout: no text leaves its panel, overlaps another, sits on a screw or straddles a frame; no tape covers a scale; the corner dials clear the bezel (SPEC-WEATHER 基础校对)', () => {
   const Layout = require('../tools/radar-layout.cjs');
   // Node has no fonts: a text's width is estimated from its size and face (a CJK character a full em; the others at
-  // each bundled face's average measured with the real fonts: Barlow Condensed .45 em, National Park .56, Courier
-  // Prime .60, Permanent Marker .66). The real-font audit is work/score-depth-20261118/weather/audit.cjs.
+  // each bundled face's average measured with the real fonts: Barlow Condensed .43 em, National Park .56, Courier
+  // Prime .60, Permanent Marker .64). The real-font audit is work/score-depth-20261118/weather/audit.cjs.
   const measure = ctx => text => {
     const size = Number((/(\d+(?:\.\d+)?)px/.exec(ctx.font) || [])[1]) || 12;
-    const em = /Barlow/.test(ctx.font) ? .45 : /Marker/.test(ctx.font) ? .66 : /Courier/.test(ctx.font) ? .6 : .56;
-    return {width: Array.from(String(text)).reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? size : size * em), 0)};
+    const em = /Barlow/.test(ctx.font) ? .43 : /Marker/.test(ctx.font) ? .64 : /Courier/.test(ctx.font) ? .6 : .56;
+    // Narrow marks (I, 1, l, full stops, spaces, the middle dot, slashes) take about half a letter in every face.
+    return {width: Array.from(String(text)).reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? size : /[I1l.,:;' ·/|]/.test(ch) ? size * em * .5 : size * em), 0)};
   };
   const lanes = ['vocals', 'guitar', 'piano', 'strings', 'winds', 'bass'].map((group, i) => ({id: group, kind: 'pitched', group, notes: [[1 + i, 6, 48 + 4 * i, 100]]}))
     .concat([{id: 'd', kind: 'drums', group: 'drums', hits: [[1, 'kick', 100], [1.5, 'snare', 90]]}]);
@@ -432,4 +433,28 @@ test('channel lamps (score-radar-lamps.js, rule A at P65 / P80): a channel climb
   assert.deepEqual(solo.guitar, {green: 0, yellow: 0, red: 0}, 'another channel solo: dark');
   assert.ok(solo.bass.green > .9);
   assert.deepEqual(frame(37.3).motion.lamps, frame(37.3).motion.lamps, 'a function of song time');
+});
+
+test('batch 4: crayon marks on the three busiest meters at their mean level; the needle overshoots after a rise and settles; the switches', () => {
+  const lanes = ['vocals', 'guitar', 'piano', 'bass'].map(group => ({id: group, kind: 'pitched', group, notes: [[1, 50, 60, 100]]}));
+  // A second a value: guitar loud for 40 s, bass for 30, vocals for 20, piano for 10 (all at -25 dB = .5 of the scale).
+  const run = n => [...Array(n).fill(-25), ...Array(60 - n).fill(-90)];
+  const levels = {hop: 1, groups: {vocals: run(20), guitar: run(40), piano: run(10), bass: run(30)}};
+  const model = steady(lanes, 64, {levels});
+  const {frame} = post(model);
+  const marks = frame(5).motion.crayon;
+  assert.deepEqual(marks.map(m => m.channel).sort(), ['bass', 'guitar', 'vocals'], 'the three heard longest (piano, ten seconds, has none)');
+  assert.ok(marks.every(m => Math.abs(m.at - .5) < .03), 'each at its mean level while heard');
+  // A step from silence to -25 dB at 40 s on the guitar's own row (a fresh song): the needle passes .5 and comes back.
+  const step = {hop: 1, groups: {guitar: [...Array(40).fill(-90), ...Array(24).fill(-25)]}};
+  const stepModel = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 62, 60, 100]]}], 64, {levels: step});
+  const swing = post(stepModel), plain = post(stepModel, 1440, 900, {...options, radarOvershoot: false});
+  const peak = Math.max(...[40.05, 40.1, 40.15, 40.2].map(t => swing.frame(t).motion.meters.guitar));
+  const flat = plain.frame(40.1).motion.meters.guitar;
+  assert.ok(peak > flat + .02, `overshoot: ${peak} over ${flat}`);
+  assert.ok(Math.abs(swing.frame(41).motion.meters.guitar - plain.frame(41).motion.meters.guitar) < .01, 'settled a second later');
+  assert.equal(swing.frame(40.1).motion.meters.guitar, swing.frame(40.1).motion.meters.guitar, 'a function of song time');
+  // Switches: through the core's option list (score-view.js), jumpers off by default.
+  const view = readFileSync(join(__dirname, '../score-view.js'), 'utf8');
+  assert.match(view, /radarJumpers: false, radarOvershoot: true, radarBloom: true, radarInk: true/);
 });

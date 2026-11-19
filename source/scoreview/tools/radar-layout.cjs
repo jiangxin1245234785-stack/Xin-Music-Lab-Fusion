@@ -9,7 +9,11 @@
   // [text pattern, what it may overlap (pattern of the other text, or 'frame' / 'ring' / 'screw'), why]
   // Text on the moving tape (recorded clipped to the paper window) is set in fixed cells and left out of the overlap
   // check between two such texts. Nothing else is allowed so far.
-  const ALLOWED = [];
+  const ALLOWED = [
+    [/^ALTIMETER·FT$/, /^REGISTER$/, 'salvaged dial: the new name on tape over the lower part of the old engraving'],
+    [/^ATTITUDE IND\.$/, /^PAN L \/ R$/, 'salvaged dial: the new name on tape over the lower part of the old engraving'],
+    [/^(OUTER = VOX|INNER = BASS)$/, /^ring$/, 'the operators\' sticker on the cover plate is wider than the plate and laps over its edge']
+  ];
   const allowed = (a, b) => ALLOWED.some(([x, y]) => (x.test(a) && y.test(b)) || (x.test(b) && y.test(a)));
   const inter = (a, b) => a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS;
   const inside = (a, b, pad = 0) => a.x >= b.x + pad - EPS && a.y >= b.y + pad - EPS && a.x + a.w <= b.x + b.w - pad + EPS && a.y + a.h <= b.y + b.h - pad + EPS;
@@ -38,7 +42,7 @@
       for (const c of rings) {
         const ins = corners(t).map(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r);
         if (ins.some(Boolean) && !ins.every(Boolean) && near(t, c) && !allowed(t.text, 'ring')) add('ring', name(t), `straddles the ring r ${c.r.toFixed(0)} at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
-        else if (c.r >= 40 && !ins.some(Boolean) && near(t, {...c, r: c.r + ringGap})) add('tight', name(t), `within ${ringGap} px of the dial r ${c.r.toFixed(0)} at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
+        else if (c.r >= 40 && !ins.some(Boolean) && near(t, {...c, r: c.r + ringGap}) && !allowed(t.text, 'ring')) add('tight', name(t), `within ${ringGap} px of the dial r ${c.r.toFixed(0)} at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
       }
     }
     for (const tape of tapes) for (const k of keeps) if (inter(tape, k)) add('cover', 'tape × ' + k.what, '');
@@ -49,7 +53,7 @@
       const box = {x: sc.cx - sc.r, y: sc.cy - sc.r, w: 2 * sc.r, h: 2 * sc.r};
       if (inter(f, box) && !inside(box, f)) add('screw', `frame ${[f.x, f.y, f.w, f.h].map(v => v.toFixed(0)).join(',')}`, `covers part of the screw at ${sc.cx.toFixed(0)},${sc.cy.toFixed(0)}`);
     }
-    for (const tape of tapes) for (const c of rings) if (c.r >= 40 && near(tape, c) && !corners(tape).every(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r)) add('cover', 'tape × dial r ' + c.r.toFixed(0), `at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
+    for (const tape of tapes) for (const c of rings) if (c.r >= 40 && !c.plate && near(tape, c) && !corners(tape).every(([x, y]) => Math.hypot(x - c.cx, y - c.cy) < c.r)) add('cover', 'tape × dial r ' + c.r.toFixed(0), `at ${c.cx.toFixed(0)},${c.cy.toFixed(0)}`);
     for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
       const a = texts[i], b = texts[j];
       if (a.clipped && b.clipped) continue;

@@ -60,8 +60,9 @@
   // The channel lamps (score-radar-lamps.js: three jewel lamps a strip, red / amber / green, lit by how loud the
   // channel is against itself). Loaded before this file in the page; in Node, beside it.
   const lampsApi = () => root.XinScoreRadarLamps || (typeof require === 'function' ? (() => { try { return require('./score-radar-lamps.js'); } catch (_) { return null; } })() : null);
-  // The user's choice (2026-11-18): rule A, each channel against its own sounding seconds, yellow from the 65th
-  // percentile, red from the 80th, silence below the meters' zero (-45 dB).
+  // Provisional (2026-11-18, the rule is not settled): rule A, each channel against its own sounding seconds, yellow
+  // from the 65th percentile, red from the 80th, silence below the meters' zero (-45 dB). To be replaced by the lamp
+  // module's own default when its next version comes (the one place the rule is set).
   const LAMP_RULE = Object.freeze({rule: 'own', gateDb: -45, yellowQuantile: .65, redQuantile: .8});
   const LAMP_SIZE = 12, LAMP_GAP = 14;
   // Tube cathodes: one stroked wire per digit (SVG-like commands M L Q C, absolute, in a 20 x 28 box at 30 px), after
@@ -114,7 +115,9 @@
   const MATERIAL_FILES = Object.freeze({
     plateTop: 'plate-top.png', plateLeft: 'plate-left.png', plateRadar: 'plate-radar.png', plateRight: 'plate-right.png',
     plateKeys: 'plate-keys.png', plateTele: 'plate-teleprinter.png', paperDial: 'paper-dial.png', paperTape: 'paper-tape.png',
-    screwSlot: 'screw-slot.png', screwCross: 'screw-cross.png', screwBrass: 'screw-brass.png', glass: 'glass-smudge.png'});
+    screwSlot: 'screw-slot.png', screwCross: 'screw-cross.png', screwBrass: 'screw-brass.png', glass: 'glass-smudge.png',
+    // Batch 4: tape stock for the hand-written names, the calibration tag, the cover plate over a removed dial.
+    stickerA: 'sticker-a.png', stickerB: 'sticker-b.png', stickerC: 'sticker-c.png', tagCal: 'tag-cal.png', coverPlate: 'cover-plate.png'});
   const MATERIALS = {};
   // The layout audit's record (null when off) and the frame's placement, see write().
   let auditSink = null, auditView = null, auditClip = null;
@@ -283,7 +286,15 @@
     const chords = (model.chords || []).map(row => ({start: row[0], end: row[1], label: row[2], parts: chordParts(row[2])}))
       .sort((a, b) => a.start - b.start);
     const pan = model.levels && model.levels.pan && Array.isArray(model.levels.pan.mix) && model.levels.pan.hop > 0 ? model.levels.pan : null;
-    return {duration, steps, present, sounding, meter, caution, register, contour, vocalRange, range, notes, drums, longest,
+    // Crayon marks (batch 4): an operator marked "normal" on the three meters that move most, at where each sits on
+    // average while its channel sounds. Real data: the meter series, not a guess.
+    const usage = meter.map((series, c) => {
+      if (!series || !present[c]) return null;
+      let n = 0, sum = 0;
+      for (let i = 0; i < steps; i++) if (series[i] > .02) { n++; sum += series[i]; }
+      return n ? {channel: c, seconds: n * GRID, mean: sum / n} : null;
+    }).filter(Boolean).sort((a, b) => b.seconds - a.seconds || a.channel - b.channel).slice(0, 3);
+    return {duration, steps, present, sounding, meter, caution, register, contour, vocalRange, range, notes, drums, longest, usage,
       sections, kinds, chords, energy, pan, firstNote, lastNote};
   }
 
@@ -354,7 +365,7 @@
       return on / n;
     }
     // A needle with inertia as a function of song time: rises at once, falls at `fall` of full scale a second.
-    function needle(series, t, fall) {
+    function needle(series, t, fall, overshoot = false) {
       if (!series || t <= 0) return 0;
       let v = 0;
       const n = Math.ceil(1 / fall / GRID);
@@ -362,6 +373,19 @@
         const at = t - k * GRID;
         if (at < 0) break;
         v = Math.max(v, sample(series, at) - fall * k * GRID);
+      }
+      // A needle that arrives with a little too much (batch 4): each rise of the level swings it past by a damped
+      // half-wave and back, over about .4 s. Read from the series behind the moment, so any frame is the same.
+      if (overshoot) {
+        const step = Math.floor(t / GRID);
+        for (let k = 0; k < 9; k++) {
+          const i = step - k;
+          if (i < 1) break;
+          const rise = sample(series, i * GRID) - sample(series, (i - 1) * GRID);
+          if (rise <= .01) continue;
+          const age = t - i * GRID;
+          v += rise * .22 * Math.exp(-age / .11) * Math.sin(Math.PI * age / .17);
+        }
       }
       return clamp(v, 0, 1);
     }
@@ -864,6 +888,69 @@
       Object.assign(out, {tempo, barBeat, time});
     }
 
+    // The hand-written tapes (batch 4): each strip's name on its own piece of tape stock, stuck at its own angle.
+    const TAPE_ANGLES = [-.03, .015, -.035, .01, -.02, .02, -.025], STOCK = ['stickerA', 'stickerB', 'stickerC'];
+    function tapeStock(k, x, y, w, h) {
+      const image = MATERIALS[STOCK[k % STOCK.length]];
+      if (!image) return false;
+      // The stock is 400 x 120: take as much of its length as the tape needs at this height, stretch if longer.
+      const srcW = Math.min(400, (w + 4) / (h + 4) * 120);
+      p.drawImage(image, 0, 0, srcW, 120, x - 2, y - 2, w + 4, h + 4);
+      return true;
+    }
+    function calTag(env, x, y) {
+      const card = MATERIALS.tagCal, w = 46, h = 19, date = '';
+      p.save(); p.translate(x, y); p.rotate(.07);
+      cast(box(0, 0, w, h, 2), .5);
+      if (card) p.drawImage(card, 0, 0, 300, 120, 0, 0, w, h); else rounded(0, 0, w, h, 2, '#e6dcc0');
+      write(date ? date + ' ok' : 'ok', w / 2 + 4, h / 2 + 1, 12, '#2a3a6a', 'marker', 'center');
+      p.restore();
+      // The string from the card's hole to a pin in the panel.
+      p.beginPath(); p.moveTo(x + 3, y + 3); p.lineTo(x - 1, y - 4); p.strokeStyle = 'rgba(30,26,20,.8)'; p.lineWidth = .8; p.stroke();
+      circle(x - 1, y - 4, 1.4, '#8a8470');
+    }
+    const inkOf = k => {
+      const h = Math.sin((k + 1) * 12.9898) * 43758.5453, f = h - Math.floor(h), g = (h * 7.13) - Math.floor(h * 7.13);
+      return {alpha: .74 + .26 * f, dy: (g - .5) * 2.2};
+    };
+    // Jumper cables (batch 4, a switch: options.radarJumpers): two patch leads someone ran across panel seams, one
+    // from under PAN to the teleprinter, one from the recorder's corner down to the teleprinter's spool.
+    function jumpers() {
+      const lead = (pts, plugs) => {
+        const path = () => { p.beginPath(); p.moveTo(pts[0], pts[1]); p.bezierCurveTo(pts[2], pts[3], pts[4], pts[5], pts[6], pts[7]); };
+        p.save(); p.lineCap = 'round';
+        p.shadowColor = 'rgba(0,0,0,.55)'; p.shadowBlur = 4 * unit; p.shadowOffsetX = 1.5 * unit; p.shadowOffsetY = 2.5 * unit;
+        path(); p.strokeStyle = '#26221d'; p.lineWidth = 4.2; p.stroke();
+        p.shadowColor = 'transparent';
+        path(); p.strokeStyle = 'rgba(160,150,128,.35)'; p.lineWidth = 1; p.stroke();
+        p.restore();
+        for (const [px, py] of plugs) { if (auditSink) auditShape('mark', auditBox(px - 5, py - 5, px + 5, py + 5), {what: 'jumper plug'}); cast(disk(px, py, 5), .5); circle(px, py, 5, '#8c8268', '#3a352a', 1); circle(px - 1.4, py - 1.6, 1.6, 'rgba(255,248,226,.5)'); }
+      };
+      lead([947, 726, 950, 750, 966, 742, 976, 760], [[947, 726], [976, 760]]);
+      lead([1401, 726, 1428, 752, 1420, 786, 1411, 806], [[1401, 726], [1411, 806]]);
+    }
+    // A rename tape: the new name in marker on tape stock; x is its left end, or its right end when `right` is 1.
+    function renameTape(name, x, y, angle, right) {
+      font('marker', 12);
+      const w = p.measureText(name).width + 10, left = right ? x - w : x;
+      p.save(); p.translate(left, y); p.rotate(angle);
+      if (auditSink) auditShape('tape', auditBox(0, 0, w, 14));
+      cast(box(0, 0, w, 14, 1), .35);
+      if (!tapeStock(name.length, 0, 0, w, 14)) rect(0, 0, w, 14, C.tape);
+      write(name, 5, 7.5, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
+      p.restore();
+    }
+    // Crayon (batch 4): a short red wax stroke on the glass, rough-edged, at angle a on a meter's scale.
+    function crayon(cx, cy, r, a) {
+      p.save(); p.lineCap = 'round';
+      [[0, 0, 2.6, .62], [.6, -.4, 1.6, .5], [-.5, .5, 1.2, .45]].forEach(([dx, dy, wd, al]) => {
+        p.beginPath();
+        p.moveTo(cx + Math.cos(a) * (r + 2) + dx, cy + Math.sin(a) * (r + 2) + dy);
+        p.lineTo(cx + Math.cos(a) * (r + 9) + dx, cy + Math.sin(a) * (r + 9) + dy);
+        p.strokeStyle = `rgba(178,38,28,${al})`; p.lineWidth = wd; p.stroke();
+      });
+      p.restore();
+    }
     // Parts of the glass sheet over the seven dial faces (each face its own finger marks).
     const GLASS_CROPS = [[0, 0], [180, 30], [40, 190], [150, 300], [10, 360], [170, 120], [90, 60]];
     function strips(data, env, now, fall, muted, out) {
@@ -874,6 +961,9 @@
       if (pass === 'base') {
         panel(18, 116, 296, 768, 'plateLeft', ['slot', 'slot', 'slot', 'brass']);
         write('CHANNEL STRIPS', 32, 146, 17, C.stamp, 'stamp', 'left', 200, 'bold', 'alphabetic');
+        // The calibration tag (batch 4): a blank card hung by the title, the date the song was analysed when the
+        // model has one (it has none so far), else only the inspector's hand-written ok.
+        calTag(env, 176, 129);
         write('MOD. LVL-7', 300, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         CATS.forEach((cat, i) => {
           const y = 163 + i * 85, {cx, cy, r, a0, a1} = dial(y);
@@ -917,13 +1007,18 @@
         CATS.forEach((cat, i) => {
           const y = 163 + i * 85, {cx, cy} = dial(y);
           p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip(); circle(cx, cy, 5, '#1b1a16'); p.restore();
+          const mark = data.usage.find(u => u.channel === i);
+          if (mark) {
+            const {r, a0, a1} = dial(y);
+            p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip(); crayon(cx, cy, r, a0 + (a1 - a0) * mark.mean); p.restore();
+            out.crayon = (out.crayon || []).concat({channel: cat.id, at: +mark.mean.toFixed(3)});
+          }
           glass(x, y, w, h, GLASS_CROPS[i][0], GLASS_CROPS[i][1]);
           // The name on tape, stuck on the face's top-left corner.
-          p.save(); p.translate(x + 4, y + 3); p.rotate(-.04);
+          p.save(); p.translate(x + 4, y + 3); p.rotate(TAPE_ANGLES[i % TAPE_ANGLES.length]);
           font('marker', 12, 'bold');
           const tw = p.measureText(cat.strip).width + 10;
-          rect(0, 0, tw, 14, C.tape);
-          p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 12, tw, 2);
+          if (!tapeStock(i, 0, 0, tw, 14)) { rect(0, 0, tw, 14, C.tape); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 12, tw, 2); }
           write(cat.strip, 5, 7.5, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
           if (auditSink) auditShape('tape', auditBox(0, 0, tw, 14));
           p.restore();
@@ -933,7 +1028,7 @@
       out.meters = {};
       CATS.forEach((cat, i) => {
         const y = 163 + i * 85, has = data.present[i], off = !has || muted(i);
-        const value = off ? 0 : needle(data.meter[i], now, fall);
+        const value = off ? 0 : needle(data.meter[i], now, fall, env.options.radarOvershoot !== false);
         out.meters[cat.id] = +value.toFixed(3);
         const {cx, cy, r, a0, a1} = dial(y);
         p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip();
@@ -944,8 +1039,8 @@
         // Lamp and lever.
         // Three lamps: lit by the channel's level against its own (off, muted or absent: dark, as the base drew them).
         const L = lampsApi();
-        if (L && data.lampCut) {
-          const g = off ? {green: 0, yellow: 0, red: 0} : L.glow(env.model.levels, data.lampCut, cat.id, now, {enabled: true});
+        if (L) {   // without level data the three stay dark; on / off reads from the lever
+          const g = off || !data.lampCut ? {green: 0, yellow: 0, red: 0} : L.glow(env.model.levels, data.lampCut, cat.id, now, {enabled: true});
           out.lamps = out.lamps || {};
           out.lamps[cat.id] = {green: +g.green.toFixed(3), yellow: +g.yellow.toFixed(3), red: +g.red.toFixed(3)};
           [['red', -1], ['yellow', 0], ['green', 1]].forEach(([c, k]) => {
@@ -1003,16 +1098,27 @@
         for (let r = 0; r <= RINGS; r++) { circle(cx, cy, inner + r * band, null, r === RINGS ? C.phosDim : C.phosFaint, 1); }
         p.restore();
         // Stamped name and the one sticker.
-        write('PPI', 968, 129, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write('1 REV', 968, 144, 14, C.stamp, 'stamp', 'right', 0, 'bold');
-        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 968, 159, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        // A dial that was taken out of this corner: its hole closed by a round cover plate on two screws; the
+        // operators' sticker went on the plate. The PPI legend is stamped under it.
+        const pcx = 932, pcy = 172, pr = 48;
+        cast(disk(pcx, pcy, pr), 1.3);
+        if (MATERIALS.coverPlate) p.drawImage(MATERIALS.coverPlate, pcx - pr * 512 / 500, pcy - pr * 512 / 500, pr * 2 * 512 / 500, pr * 2 * 512 / 500);
+        else circle(pcx, pcy, pr, '#3a3e34');
+        p.beginPath(); p.arc(pcx, pcy, pr, 0, Math.PI * 2); p.strokeStyle = '#23251f'; p.lineWidth = 1.2; p.stroke();
+        edge(disk(pcx, pcy, pr - .8), pcx - pr, pcy - pr, 2 * pr, 2 * pr, true, 1.6);
+        if (auditSink) auditShape('ring', {cx: pcx, cy: pcy, r: pr, plate: true});
+        screw(pcx, pcy - pr + 8, 'slot'); screw(pcx, pcy + pr - 8, 'slot');
+        write('PPI', 979, 229, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('1 REV', 979, 243, 14, C.stamp, 'stamp', 'right', 0, 'bold');
+        write(!bars ? FREE_TURN + ' SEC' : bars.source === 'downbeats' ? '4 BARS' : '16 BEATS', 979, 257, 14, C.stamp, 'stamp', 'right', 0, 'bold');
         font('marker', 12);
         const stickerW = Math.ceil(Math.max(p.measureText('OUTER = VOX').width, p.measureText('INNER = BASS').width)) + 12;
-        p.save(); p.translate(980 - stickerW, 172); p.rotate(-.05);
+        p.save(); p.translate(pcx, pcy); p.rotate(-.06); p.translate(-stickerW / 2, -20);
         if (auditSink) auditShape('tape', auditBox(0, 0, stickerW, 40));
-        rect(0, 0, stickerW, 40, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 38, stickerW, 2);
-        write('OUTER = VOX', 6, 11, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
-        write('INNER = BASS', 6, 28, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
+        cast(box(0, 0, stickerW, 40, 1), .4);
+        if (!tapeStock(2, 0, 0, stickerW, 40)) { rect(0, 0, stickerW, 40, '#f1ead2'); p.fillStyle = 'rgba(0,0,0,.08)'; p.fillRect(0, 38, stickerW, 2); }
+        write('OUTER = VOX', 6, 10, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
+        write('INNER = BASS', 6, 30, 12, C.tapeInk, 'marker', 'left', 0, 'bold');
         p.restore();
       } else if (pass === 'over') {
         glass(cx - screen, cy - screen, 2 * screen, 2 * screen, 0, 0, true, 512 / (2 * screen));
@@ -1030,6 +1136,7 @@
         let echoes = 0;
         const from = data.notes, startFrom = lower(from, now - Math.max(data.longest, 1) - 60, n => n.start);
         const turnLen = Math.max(.5, now - turnTime(env, bars, turn - 1));
+        const bloom = env.options.radarBloom !== false;
         for (let i = startFrom; i < from.length && from[i].start <= now; i++) {
           const n = from[i];
           if (n.cat >= RINGS) continue;
@@ -1049,10 +1156,12 @@
             if (alpha < .02) continue;
             const A0 = -Math.PI / 2 + a0 * Math.PI * 2, A1 = -Math.PI / 2 + a1 * Math.PI * 2;
             p.strokeStyle = `rgba(130,242,166,${alpha})`;
+            // Phosphor bloom (batch 4): the trace spreads a little as it fades.
+            const spread = bloom ? 1 + .6 * age : 1;
             if (u1 - u0 < .004) {
-              circle(cx + Math.cos(A0) * r, cy + Math.sin(A0) * r, 2.6, `rgba(130,242,166,${alpha})`);
+              circle(cx + Math.cos(A0) * r, cy + Math.sin(A0) * r, 2.6 * spread, `rgba(130,242,166,${alpha})`);
             } else {
-              p.beginPath(); p.arc(cx, cy, r, A0, Math.max(A1, A0 + .01)); p.lineWidth = 3; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
+              p.beginPath(); p.arc(cx, cy, r, A0, Math.max(A1, A0 + .01)); p.lineWidth = 3 * spread; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
             }
           }
           echoes++;
@@ -1143,7 +1252,10 @@
       const cx = 396, cy = 672, r = 44;
       const a0 = Math.PI * .75, a1 = Math.PI * 2.25, at = m => a0 + clamp((m - 36) / 48, 0, 1) * (a1 - a0);
       if (pass === 'base') {
-        write('REGISTER', 344, 606, 13, C.stamp, 'stamp', 'left', 0, 'bold');
+        // Salvaged from an aircraft (batch 4): its own engraving still on the plate, in its maker's narrow letters;
+        // the station's name on a piece of tape over the lower part of it (more than half of the old name shows).
+        write('ALTIMETER·FT', 344, 598, 12, C.stampDim, 'plate', 'left');
+        renameTape('REGISTER', 342, 600, .045, 0);
         cast(disk(cx, cy, r + 6), 1.2);
         circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
         edge(disk(cx, cy, r + 5), cx - r - 6, cy - r - 6, 2 * r + 12, 2 * r + 12, true, 2);
@@ -1181,7 +1293,8 @@
     function panDial(data, now, out) {
       const cx = 928, cy = 672, r = 44;
       if (pass === 'base') {
-        write('PAN L / R', 980, 606, 13, C.stamp, 'stamp', 'right', 0, 'bold');
+        write('ATTITUDE IND.', 980, 598, 12, C.stampDim, 'plate', 'right');
+        renameTape('PAN L / R', 982, 600, -.04, 1);
         cast(disk(cx, cy, r + 6), 1.2);
         circle(cx, cy, r + 6, '#1b1c17', '#4a4c42', 2);
         edge(disk(cx, cy, r + 5), cx - r - 6, cy - r - 6, 2 * r + 12, 2 * r + 12, true, 2);
@@ -1485,6 +1598,7 @@
         return;
       }
       if (pass === 'over') {
+        if (env.options.radarJumpers === true) jumpers();
         const shade = p.createLinearGradient(x + 1, 0, x + 9, 0);
         shade.addColorStop(0, 'rgba(30,26,18,.30)'); shade.addColorStop(1, 'rgba(30,26,18,0)');
         p.fillStyle = shade; p.fillRect(x + 1, y + 1, 8, h - 2);
@@ -1514,9 +1628,15 @@
         if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
         if (item.blank) { glyphs.push({ch: ' ', code: null, clear: true}); continue; }
         const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
-        if (code) write(code, cx, y + 17, 15, C.paperInk, 'mono', 'center');
+        // Uneven ink (batch 4): each character struck a little lighter or heavier and a little high or low, fixed
+        // by its place on the tape (a hash of its index), never by chance.
+        const ink = env.options.radarInk === false ? null : inkOf(k);
+        if (ink) { p.save(); p.globalAlpha = ink.alpha; }
+        const dy = ink ? ink.dy : 0;
+        if (code) write(code, cx, y + 17 + dy, 15, C.paperInk, 'mono', 'center');
         const clear = !item.han || now >= item.time + item.half;
-        if (clear) write(item.ch, cx, y + 49, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
+        if (clear) write(item.ch, cx, y + 49 + dy, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
+        if (ink) p.restore();
         glyphs.push({ch: item.ch, code: code || null, clear});
       }
       auditClip = null;
