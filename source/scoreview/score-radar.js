@@ -30,7 +30,7 @@
     Object.freeze({cells: Object.freeze(['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', '6', 'm6', 'dim', 'dim7', 'aug', 'm7b5']), w: 46, size: 19})]);
   const WHEEL_ROLL = .2;   // seconds a wheel takes to roll to its new cell
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
-  // fast then slow, fully dark at `span`. Bar lamps: span one bar; the rolling strip: its ROLL_BEATS; row lamps: .3 s.
+  // fast then slow, fully dark at `span`. Drum lamps: span one sweep of their cursor; row lamps: .3 s.
   const lampFade = (age, span) => age < 0 || !(span > 0) || age >= span ? 0 : (1 - age / span) ** 2;
   const ROW_LAMP_SPAN = .3;
   const KEY_LAMP_SPAN = .4;   // a key lamp after its note ends (radar.8 feedback), on the same curve
@@ -54,7 +54,9 @@
     glow: .3                // every lamp rises and falls over this many seconds
   });
   const FREE_TURN = 8;
-  const ROLL_BEATS = 16;    // the drum strip of a song without bar lines: this many beats back from now      // seconds a turn of the disc takes when the song has no beats
+  // The drum lamps' sweep without bar lines (radar.9 feedback): DRUM_SWEEP_BEATS beats (the disc's turn) at 2 steps a
+  // beat; without beats FREE_TURN seconds at 4 steps a second. Either way DRUM_FREE_STEPS columns.
+  const DRUM_SWEEP_BEATS = 16, DRUM_FREE_STEPS = 32;      // seconds a turn of the disc takes when the song has no beats
   const C = Object.freeze({
     void: '#0b0c0a', panel: '#33362d', panelHi: '#40433a', panelLo: '#25271f', seam: '#1a1b16', screw: '#5b5d52',
     stamp: '#dcd6bf', stampDim: '#b3ad96', stampFaint: '#928d78',
@@ -1255,9 +1257,12 @@
           const ring = n.cat, r = outer - (ring + 1) * band + band * (.18 + .64 * k);
           const dim = muted(n.cat) ? .18 : 1;
           const u0 = Math.max(turnAt(env, bars, n.start), turn - echo), u1 = turnAt(env, bars, end);
-          const pieces = Math.max(1, Math.ceil((u1 - u0) * 64));
-          for (let s = 0; s < pieces; s++) {
-            const a0 = u0 + (u1 - u0) * s / pieces, a1 = u0 + (u1 - u0) * (s + 1) / pieces;
+          // Pieces on a grid fixed to the disc (1/64 turn), not a share of the note's span: a span that grows while the
+          // note sounds, or loses its tail to the next turn, would move every piece boundary (radar.9 feedback).
+          const g0 = Math.floor(u0 * 64), g1 = Math.max(g0 + 1, Math.ceil(u1 * 64));
+          for (let g = g0; g < g1; g++) {
+            const a0 = Math.max(u0, g / 64), a1 = Math.min(u1, (g + 1) / 64);
+            if (a1 < a0) continue;
             const age = clamp((turn - a1) / echo, 0, 1), alpha = (1 - age) ** 1.6 * dim;
             if (alpha < .02) continue;
             const A0 = -Math.PI / 2 + a0 * Math.PI * 2, A1 = -Math.PI / 2 + a1 * Math.PI * 2;
@@ -1583,81 +1588,60 @@
     }
 
     function drumGrid(data, env, bars, now, out) {
-      // The step grid stands on the song's own bar lines only: downbeats (the analysis gives them only for a steady
-      // grid that 90 % of the model's bars agree on) and 2-4 beats a bar, four steps to a beat. Without them the
-      // grid would invent bars (every four beats from the first), so only the five lamps are shown.
-      const per = bars && bars.source === 'downbeats' && env.beats.length >= 2 && [2, 3, 4].includes(bars.perBar) ? bars.perBar : 0;
-      const steps = per * 4;
-      // Without bar lines but with beats: the last ROLL_BEATS beats roll right to left, beats marked, no bars.
-      const roll = !steps && env.beats.length >= 2;
+      // One lamp grid whatever the song has (radar.9 feedback). With bar lines (downbeats: the analysis gives them only
+      // for a steady grid that 90 % of the model's bars agree on; 2-8 beats a bar, at most 32 columns) one sweep is a bar at
+      // four steps a beat. With beats only, a sweep is DRUM_SWEEP_BEATS beats (the disc's turn) at two steps a beat;
+      // without beats, FREE_TURN seconds at four steps a second. Columns are grouped by beat (bars), by four beats
+      // (beats only) or by second (no beats).
+      const per = bars && bars.source === 'downbeats' && env.beats.length >= 2 && bars.perBar >= 2 && bars.perBar <= 8 ? bars.perBar : 0;
+      const mode = per ? 'bar' : env.beats.length >= 2 ? 'beats' : 'time';
+      const steps = per ? per * 4 : DRUM_FREE_STEPS, group = mode === 'beats' ? 8 : 4;
       if (pass === 'base') {
-        write(steps ? 'DRUMS · THIS BAR' : roll ? 'DRUMS · LAST ' + ROLL_BEATS + ' BEATS' : 'DRUMS', 1028 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
-        const barred = bars && bars.source === 'downbeats' && bars.perBar > 0;
-        write(steps ? steps + ' STEPS' : roll ? (barred ? bars.perBar + ' BEATS / BAR' : 'NO BAR LINES · BEATS ONLY') : 'NO BEATS · LAMPS ONLY', 1404 + wide, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
+        write(mode === 'bar' ? 'DRUMS · THIS BAR' : mode === 'beats' ? 'DRUMS · ' + DRUM_SWEEP_BEATS + ' BEATS' : 'DRUMS · ' + FREE_TURN + ' SEC', 1028 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write(mode === 'bar' ? (per === 4 ? '' : per + ' BEATS / BAR · ') + steps + ' STEPS' : mode === 'beats' ? 'NO BAR LINES · 2 STEPS A BEAT' : 'NO BEATS · 4 STEPS A SECOND', 1404 + wide, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(1028 + wide / 2, 420, 376 + wide / 2, 122, 5, '#1f201b', '#4a4c42');
         // The row names, one column right-aligned 6 px before their lamps (1094), capitals on the row's centre line.
         DRUM_ROWS.forEach((row, r) => write(row.label, 1082 + wide / 2, 432 + r * 21 + 7.5, 15, C.stamp, 'stamp', 'right', 0, '', 'cap'));
-        if (roll) DRUM_ROWS.forEach((row, r) => rounded(1112 + wide / 2, 432 + r * 21, 286 + wide / 2, 15, 1.5, '#24251f'));
         return;
       }
       if (pass !== 'live') return;
+      // Where a moment is in the cursor's sweeps: the sweep's number and how far through it (0..1); null before the
+      // first bar line of a song with bar lines. And how long a sweep lasts.
+      const sweepOf = t => {
+        if (mode === 'bar') {
+          const hb = Math.floor(barAt(env, bars, t + 1e-6));
+          return hb < 0 || hb >= bars.starts.length ? null : {k: hb, f: (env.beatAt(t) - env.beatAt(bars.starts[hb])) / per};
+        }
+        if (mode === 'beats') { const B = env.beatAt(t), k = Math.floor(B / DRUM_SWEEP_BEATS); return {k, f: B / DRUM_SWEEP_BEATS - k}; }
+        const k = Math.floor(t / FREE_TURN); return {k, f: t / FREE_TURN - k};
+      };
+      const sweepLength = k => mode === 'bar' ? (bars.starts[k + 1] ?? bars.starts[k] + bars.length) - bars.starts[k]
+        : mode === 'beats' ? env.timeAtBeat((k + 1) * DRUM_SWEEP_BEATS) - env.timeAtBeat(k * DRUM_SWEEP_BEATS) : FREE_TURN;
       let barStart = null, barEnd = null, step = -1;
       const hitAt = DRUM_ROWS.map(() => new Array(steps).fill(null));   // each lamp's last hit at or before now
-      let fadeSpan = 0;
-      if (steps) {
-        const b = Math.floor(barAt(env, bars, now));
-        if (b >= 0 && b < bars.starts.length) {
-          barStart = bars.starts[b]; barEnd = bars.starts[b + 1] ?? barStart + bars.length;
-          step = clamp(Math.floor(((env.beatAt(now) - env.beatAt(barStart)) / per) * steps), 0, steps - 1);
-        }
-        // A lamp dims to dark in about a bar (the bar now, else the grid's bar length).
-        fadeSpan = barStart != null ? barEnd - barStart : bars.length || 2;
-        // Every hit of the last span, at the step it fell on in its own bar (a hit rounding up to the next bar's first
-        // step is that step); the latest per lamp wins. Hits after now are not looked at: nothing lights ahead.
-        for (let k = lower(data.drums, now - fadeSpan - 1e-6, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
-          const d = data.drums[k], hb = Math.floor(barAt(env, bars, d.time + 1e-6));
-          if (hb < 0 || hb >= bars.starts.length) continue;
-          const at = Math.floor(((env.beatAt(d.time) - env.beatAt(bars.starts[hb])) / per) * steps + .5);
-          if (at < 0) continue;
-          const st = at % steps;
-          hitAt[d.row][st] = Math.max(hitAt[d.row][st] ?? -Infinity, d.time);
-        }
+      const cur = sweepOf(now);
+      // A lamp dims to dark in about one sweep (this one; before the first bar line, the grid's bar length).
+      let fadeSpan = mode === 'bar' ? bars.length || 2 : 2;
+      if (cur) {
+        step = clamp(Math.floor(cur.f * steps), 0, steps - 1);
+        fadeSpan = Math.max(.2, sweepLength(cur.k));
+        if (mode === 'bar') { barStart = bars.starts[cur.k]; barEnd = barStart + fadeSpan; }
+      }
+      // Every hit of the last span, at the step it fell on in its own sweep (one rounding up to the next sweep's first
+      // step is that step); the latest per lamp wins. Hits after now are not looked at: nothing lights ahead.
+      for (let k = lower(data.drums, now - fadeSpan - 1e-6, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
+        const d = data.drums[k], h = sweepOf(d.time);
+        if (!h) continue;
+        const at = Math.floor(h.f * steps + .5);
+        if (at < 0) continue;
+        const st = at % steps;
+        hitAt[d.row][st] = Math.max(hitAt[d.row][st] ?? -Infinity, d.time);
       }
       // The cells fill the row's width whatever their number (16 for four beats, 12 for three, 8 for two).
       // The cells share what is left of the row (1112 .. 1394, 10 px inside the bed) after the 2 px gaps between beats.
-      const gaps = steps ? (steps / 4 - 1) * 2 : 0, cellPitch = steps ? (282 + wide / 2 + 3 - gaps) / steps : 0, cellSize = Math.max(8, cellPitch - 3);
-      // The rolling strip: x from the beat position, the newest beat at the right edge; a faint line on every beat
-      // (none heavier: no bars), each hit a short bar, brighter the more recent.
-      const rolled = DRUM_ROWS.map(() => []);
-      const left = 1112 + wide / 2, width = 286 + wide / 2, nowBeat = roll ? env.beatAt(now) : 0, perBeat = width / ROLL_BEATS;
-      const xOf = beat => left + width - (nowBeat - beat) * perBeat;
-      if (roll) {
-        for (let k = Math.ceil(nowBeat - ROLL_BEATS); k <= Math.floor(nowBeat); k++) {
-          const x = xOf(k);
-          p.beginPath(); p.moveTo(x, 428); p.lineTo(x, 536); p.strokeStyle = '#34352d'; p.lineWidth = 1; p.stroke();
-        }
-        // "Now" is an index line on the bed, with a brass pointer above and below it (no bright screen line).
-        p.beginPath(); p.moveTo(left + width, 427); p.lineTo(left + width, 537); p.strokeStyle = '#6b6350'; p.lineWidth = 1; p.stroke();
-        brassPointer(left + width, 422, 1); brassPointer(left + width, 540, -1);
-      }
+      const gaps = (steps / group - 1) * 2, cellPitch = steps ? (282 + wide / 2 + 3 - gaps) / steps : 0, cellSize = Math.max(8, cellPitch - 3);
       function emberFill(h) {
         return h > .5 ? mixHex('#c8742f', '#ffd27a', (h - .5) / .5) : h > .2 ? mixHex('#7a3418', '#c8742f', (h - .2) / .3) : mixHex('#2c2d26', '#7a3418', h / .2);
-      }
-      function rollRow(r, y) {
-        const shown = [];
-        const from = env.timeAtBeat ? env.timeAtBeat(nowBeat - ROLL_BEATS) : now - 8;
-        for (let k = lower(data.drums, from - .01, d => d.time); k < data.drums.length && data.drums[k].time <= now + 1e-6; k++) {
-          const d = data.drums[k];
-          if (d.row !== r) continue;
-          const beat = env.beatAt(d.time), age = nowBeat - beat;
-          if (age < 0 || age > ROLL_BEATS) continue;
-          const x = xOf(beat);
-          const h = lampFade(age, ROLL_BEATS);   // the bar lamps' curve, over the strip's beats: dark at its left edge
-          if (h < .005) continue;
-          rect(x - 2, y + 1, 4, 13, emberFill(h));
-          shown.push(+beat.toFixed(2));
-        }
-        return shown;
       }
       // The current step's indicator (radar.5 feedback; options.radarStep): a row of small neon bulbs over the columns,
       // the one over the current step lit, as a counter of the period would show it; or a brass cursor on the bed's top
@@ -1665,7 +1649,7 @@
       const stepLook = ['neon', 'cursor', 'backlight'].includes(env.options.radarStep) ? env.options.radarStep : 'neon';
       if (steps) {
         for (let s = 0; s < steps; s++) {
-          const cx = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2 + cellSize / 2, lit = s === step;
+          const cx = 1112 + wide / 2 + s * cellPitch + Math.floor(s / group) * 2 + cellSize / 2, lit = s === step;
           if (stepLook === 'neon') neonBulb(cx, 425.5, lit);
           else if (stepLook === 'cursor' && lit) brassPointer(cx, 421.5, 1);
         }
@@ -1685,9 +1669,8 @@
         let v = 0;
         for (let k = j; k >= 0 && now - data.drums[k].time < ROW_LAMP_SPAN; k--) if (data.drums[k].row === r) { v = lampFade(now - data.drums[k].time, ROW_LAMP_SPAN); break; }
         lamp(1094 + wide / 2, y + 7.5, 6, v);
-        if (roll) rolled[r] = rollRow(r, y);
         for (let s = 0; s < steps; s++) {
-          const x = 1112 + wide / 2 + s * cellPitch + Math.floor(s / 4) * 2;
+          const x = 1112 + wide / 2 + s * cellPitch + Math.floor(s / group) * 2;
           // Lit by its own last hit and dimming to dark; unlit otherwise (nothing ahead is shown); with 'backlight' the
           // current column's dark lamps glow faintly from behind.
           const backlit = s === step && stepLook === 'backlight', h = heatOf(r, s);
@@ -1707,9 +1690,8 @@
           } else rounded(x, y, cellSize, 15, 1.5, fill);
         }
       });
-      out.drums = {mode: steps ? 'bar' : roll ? 'roll' : 'lamps', steps, step, bar: barStart, hits: heat.map(row => row.map(h => h >= .005 ? '2' : '0').join('')), heat,
-        right: steps ? +(1112 + wide / 2 + (steps - 1) * cellPitch + (steps / 4 - 1) * 2 + cellSize).toFixed(2) : null,
-        ...(roll ? {nowBeat: +nowBeat.toFixed(3), rolled} : {})};
+      out.drums = {mode, steps, step, bar: barStart, sweep: cur ? cur.k : null, hits: heat.map(row => row.map(h => h >= .005 ? '2' : '0').join('')), heat,
+        right: +(1112 + wide / 2 + (steps - 1) * cellPitch + (steps / group - 1) * 2 + cellSize).toFixed(2)};
     }
 
     function recorder(data, now, out) {

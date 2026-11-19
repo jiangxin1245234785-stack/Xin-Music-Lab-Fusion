@@ -220,7 +220,7 @@ test('any window shape: the panel scales whole and sits centred; wider than 16:1
   assert.equal(post(model, 1920, 1080).frame(2).motion.origin[0], 0, '1920 x 1080: no bars at the sides');
 });
 
-test('the drum grid stands on the song\'s own bar lines: three beats = twelve steps; beats without bar lines = lamps only', () => {
+test('the drum grid stands on the song\'s own bar lines: three beats = twelve steps; beats without bar lines = the 16-beat grid', () => {
   const drums = {id: 'd', kind: 'drums', group: 'drums', rows: ['kick', 'snare'], hits: [[6, 0, 100], [6.5, 1, 100]]};
   // 3/4 at 120 bpm: bars of 1.5 s from 0.
   const beats = Array.from({length: 121}, (_, i) => i / 2), downbeats = beats.filter((_, i) => i % 3 === 0);
@@ -228,23 +228,31 @@ test('the drum grid stands on the song\'s own bar lines: three beats = twelve st
   assert.equal(waltz.drums.steps, 12);
   assert.equal(waltz.drums.hits[4][0], '2', 'the kick on the bar line');
   assert.equal(waltz.drums.hits[3][4], '2', 'the snare on beat two (step 4 of 12)');
-  // Beats but no bar lines (an unsteady grid): no steps, no claim of bars on the disc either.
+  // Beats but no bar lines (an unsteady grid): the 16-beat grid at two steps a beat (radar.9 feedback), no claim of bars.
   const loose = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beats, downbeats: [], steady: false}, lanes: [drums]}).frame(7.2).motion;
-  assert.equal(loose.drums.steps, 0);
-  assert.deepEqual(loose.drums.hits, ['', '', '', '', '']);
+  assert.equal(loose.drums.mode, 'beats');
+  assert.equal(loose.drums.steps, 32);
+  assert.equal(loose.drums.hits[4][24], '2', 'the kick at beat 12 (6.0 s): step 24 of 32');
+  assert.equal(loose.drums.hits[3][26], '2', 'the snare at beat 13 (6.5 s): step 26');
   assert.equal(loose.barBeat, '---·-');
 });
 
-test('without bar lines the drum panel rolls the last sixteen beats; without beats it keeps the five lamps', () => {
+test('radar.9 feedback: without bar lines the drum lamps sweep 16 beats at two steps a beat; without beats 8 seconds at four steps a second; nothing rolls', () => {
   const drums = {id: 'd', kind: 'drums', group: 'drums', rows: ['kick', 'snare'], hits: [[6, 0, 100], [6.5, 1, 100], [1, 0, 100]]};
   const beats = Array.from({length: 121}, (_, i) => i / 2);
   const loose = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beats, downbeats: [], steady: false}, lanes: [drums]}).frame(7.2).motion;
-  assert.equal(loose.drums.mode, 'roll');
-  assert.equal(loose.drums.nowBeat, 14.4);
-  assert.deepEqual(loose.drums.rolled[4], [2, 12], 'kicks at beats 2 and 12 (1.0 s and 6.0 s), both within the last 16 beats');
-  assert.deepEqual(loose.drums.rolled[3], [13], 'the snare at beat 13 (6.5 s)');
+  assert.equal(loose.drums.mode, 'beats');
+  assert.equal(loose.drums.step, 28, 'beat 14.4 of 16: step 28 of 32');
+  assert.ok(loose.drums.heat[4][4] > 0 && loose.drums.heat[4][4] < loose.drums.heat[4][24], 'the kick at beat 2 (step 4) dimmer than the one at beat 12 (step 24)');
+  assert.ok(loose.drums.heat[3][26] > .7, 'the snare at beat 13 (6.5 s), lit');
+  // The lamps stay where they lit: a second later the same lamps, dimmer, nothing moved.
+  const later = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120, beats, downbeats: [], steady: false}, lanes: [drums]}).frame(7.7).motion.drums;
+  for (const [r, st] of [[4, 4], [4, 24], [3, 26]]) assert.ok(later.heat[r][st] > 0 && later.heat[r][st] < loose.drums.heat[r][st], `row ${r} step ${st} dims in place`);
   const bare = post({...song, track: {...song.track, duration: 60}, bars: {bpm: 120}, lanes: [drums]}).frame(7.2).motion;
-  assert.equal(bare.drums.mode, 'lamps');
+  assert.equal(bare.drums.mode, 'time');
+  assert.equal(bare.drums.steps, 32);
+  assert.equal(bare.drums.step, 28, '7.2 s of 8: step 28');
+  assert.ok(bare.drums.heat[4][24] > 0, 'the kick at 6.0 s: step 24');
 });
 
 test('without lyrics the teleprinter prints the track sheet: title and artist first, then the rest over the song; fields the tags lack are left out', () => {
@@ -401,12 +409,12 @@ test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readin
   // R03: WE GO ON is three words: the spaces take a cell each, blank.
   const tape = Radar.create().tape({lyrics: {enabled: true, offset: 0, lines: [{time: 10, text: 'WE GO ON'}]}, options: {}});
   assert.deepEqual(tape.cells.map(c => c.blank ? '_' : c.ch).join(''), 'WE_GO_ON');
-  // R05: bar lines of five beats keep the rolling strip and say so (not "no bar lines").
+  // R05: bar lines of five beats get the bar grid (20 steps) and say so (not "no bar lines").
   const five = Array.from({length: 161}, (_, i) => i / 2), fiveDown = five.filter((_, i) => i % 5 === 0);
   const fiveFrame = post({...song, track: {...song.track, duration: 80}, bars: {bpm: 120, beatsPerBar: 5, beats: five, downbeats: fiveDown, steady: true}, lanes});
   Radar.audit(true);
   try { fiveFrame.view.draw(20); } finally { var five5 = Radar.audited(); Radar.audit(false); }
-  assert.ok(five5.some(r => r.type === 'text' && r.text === '5 BEATS / BAR'));
+  assert.ok(five5.some(r => r.type === 'text' && r.text === '5 BEATS / BAR · 20 STEPS'));
   assert.ok(!five5.some(r => r.type === 'text' && /NO BAR LINES/.test(r.text)));
   // R10: 2, 3 and 4 beats a bar all end their cells 8-12 px inside the bed's right edge (1404).
   for (const per of [2, 3, 4]) {
@@ -565,10 +573,10 @@ test('radar.5 feedback: no white outline boxes; the drum step shows as neon bulb
     const strokes = stage.calls.filter(c => (c.name === 'stroke' || c.name === 'strokeRect') && pale.test(String(c.strokeStyle)) && c.lineWidth !== 4);
     assert.deepEqual(strokes, [], `${look}: no white / pale gold outline anywhere`);
   }
-  // Without bar lines the rolling strip's "now" is no white line either.
+  // Without bar lines (the 16-beat lamp grid) no white line either.
   const roll = post({...song, track: {...song.track, duration: 30}, bars: {bpm: 120, beats: Array.from({length: 61}, (_, i) => i / 2)}, lanes});
   roll.stage.reset();
-  assert.equal(roll.frame(9).motion.drums.mode, 'roll');
+  assert.equal(roll.frame(9).motion.drums.mode, 'beats');
   assert.ok(!roll.stage.calls.some(c => c.name === 'stroke' && pale.test(String(c.strokeStyle)) && c.lineWidth !== 4));
 });
 
@@ -620,11 +628,11 @@ test('radar.8 feedback: a drum lamp lights only when its step is hit, dims by it
     assert.deepEqual(post(model, 1440, 900, {...options, radarCell: look}).frame(10.3).motion.drums.heat, frame(10.3).motion.drums.heat);
   }
   assert.equal(post(model).frame(9).motion.cellLook, 'round', 'round lamps unless chosen (the user\'s pick)');
-  // The rolling strip (no bar lines) and the row lamps follow the same curve, to dark.
+  // Without bar lines (the 16-beat grid) the same curve, to dark over one sweep (16 beats = 8 s here).
   const roll = post({...song, track: {...song.track, duration: 30}, bars: {bpm: 120, beats: Array.from({length: 61}, (_, i) => i / 2)}, lanes});
-  assert.equal(roll.frame(9).motion.drums.mode, 'roll');
-  assert.ok(roll.frame(9.6).motion.drums.rolled[3].length >= 1);
-  assert.equal(roll.frame(19).motion.drums.rolled[3].length, 0, 'eight seconds (16 beats) after the last hit the strip is dark');
+  assert.equal(roll.frame(9).motion.drums.mode, 'beats');
+  assert.ok(roll.frame(9.6).motion.drums.heat[3].some(h => h > 0));
+  assert.ok(roll.frame(19).motion.drums.heat.every(row => row.every(h => h === 0)), 'eight seconds (16 beats) after the last hit every lamp is dark');
   const lamps = post(model).frame(10.79);
   assert.ok(lamps.motion.drums.heat[3][4] > .5);
 });
@@ -702,4 +710,25 @@ test('radar.8 feedback: 88 lamps over a printed keyboard; a lamp lights at its o
   const flat = post(steady([{id: 'p', kind: 'pitched', group: 'piano', notes: notes.map(n => [n[0], n[1], n[2], 80])}], 20)).frame(2.5).motion.keyLamps;
   assert.equal(flat.velocity, 'flat');
   assert.deepEqual(flat.lit.map(([, v]) => v), [1, 1]);
+});
+
+test('radar.9 feedback: an echo stays where it was drawn: the same note has the same angles a beat later, with bar lines, beats only or no beats', () => {
+  // A held guitar note 2.07 .. 6.27 s and a short bass note at 3.03 s; frames at 5.03 and 5.53 s (one beat at 120 bpm),
+  // none of them on the disc's 1/64-turn grid.
+  const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[2.07, 4.2, 60, 100]]}, {id: 'b', kind: 'pitched', group: 'bass', notes: [[3.03, .2, 40, 100]]}];
+  const beats = Array.from({length: 61}, (_, i) => i / 2);
+  const grids = {bars: steady(lanes, 30), beats: {...song, track: {...song.track, duration: 30}, bars: {bpm: 120, beats}, lanes},
+    none: {...song, track: {...song.track, duration: 30}, bars: {bpm: 120}, lanes}};
+  for (const [name, model] of Object.entries(grids)) {
+    const {frame, stage} = post(model);
+    const pieces = t => { frame(t); stage.reset(); frame(t);
+      return stage.calls.filter(c => c.name === 'arc' && /^rgba\(130,242,166/.test(String(c.strokeStyle || c.fillStyle)) && c.args[2] > 30 && c.args[2] < 260)
+        .map(c => [+c.args[2].toFixed(3), +c.args[3].toFixed(5)]); };
+    const a = pieces(5.03), b = pieces(5.53);
+    assert.ok(a.length > 3, name + ': echoes drawn');
+    // Every piece of the first frame starts at the same angle on the same ring in the second (the held note's pieces
+    // are cut on the disc's own grid, so a growing note adds pieces, it does not move them).
+    const missing = a.filter(([r, s0]) => !b.some(([r2, s2]) => r2 === r && Math.abs(s2 - s0) < 1e-4));
+    assert.deepEqual(missing, [], name + ': a piece moved between 5.03 and 5.53 s');
+  }
 });
