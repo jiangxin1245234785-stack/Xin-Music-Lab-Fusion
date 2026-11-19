@@ -23,6 +23,8 @@
   const HORIZON = 664, BASE0 = 716, STEP = 24, TOPMOST = M_TOP + 70, BASIN = 720;
   const COL = 2; // sketch px per column = one world sample of a range
   const RAMP_PX = 400; // a range eases into / out of the plain over this many px of its own layer
+  const GATE_PX = 900; // at the song's two ends: from plain to full range over this many px of the layer (low hills first)
+  const HILL = .11; // the hills' height, as a share of the range's full height
   const RAMP_R = Math.round(RAMP_PX / 2 / 6); // three box passes of this many samples
   const PLAIN_MAX = 8; // s: the plain at each end lasts until the first instrument (until the last one stops), at most this
   const RUG = 1;
@@ -392,20 +394,28 @@
       // the plain at both ends, on this layer's own clock: nothing until the first instrument (at most PLAIN_MAX s) has
       // reached this layer's right window edge, nothing once the last one (at least PLAIN_MAX s before the end) has
       // left its left edge; eased over RAMP_PX of the layer
-      const ahead = (L.right - L.nowM) / pps, behind = (L.nowM - L.left) / pps, rampT = RAMP_PX / pps;
+      const ahead = (L.right - L.nowM) / pps, behind = (L.nowM - L.left) / pps, rampT = GATE_PX / pps;
       const gA = src.plainStart + ahead, gB = src.plainEnd - behind;
-      const rel = new Float64Array(n);
+      const rel = new Float64Array(n), gates = new Float64Array(n), pres = new Float64Array(n);
       for (let j = 0; j < n;) { // one chunk at a time
         const k = k0 + j, c = Math.floor(k / CHUNK), m = Math.min(n - j, (c + 1) * CHUNK - k);
         let E = null, Rc = null;
         for (let q = 0; q < m; q++, j++) {
           const kk = k + q, tt = kk * dt;
           const gate = tt <= gA || tt >= gB ? 0 : smooth(gA, gA + rampT, tt) * (1 - smooth(gB - rampT, gB, tt));
+          gates[j] = gate;
           if (gate <= 0) continue;
           if (!E) { sampleE(src, layer, kk); E = layer.E.get(c); }
-          const e = E[kk - c * CHUNK] * gate;
+          pres[j] = E[kk - c * CHUNK];
+          const e = pres[j] * gate;
           R.env[j] = e;
-          if (e > 0) { if (!Rc) { sampleR(src, layer, kk); Rc = layer.R.get(c); } rel[j] = Rc[kk - c * CHUNK]; }
+          if (e > 0) {
+            if (!Rc) { sampleR(src, layer, kk); Rc = layer.R.get(c); }
+            rel[j] = Rc[kk - c * CHUNK];
+            // entering / leaving the window at the song's ends: low rolling hills first, the range's own shape grows in
+            // behind them (shape x gate^2 + hills x a bump that is 0 on the plain and 0 once the range is fully in)
+            if (gate < 1) rel[j] = (rel[j] * gate + HILL * 4 * (1 - gate) * (.35 + .4 * vnoise(tt * .55 / layer.f + i * 3.1, 61 + i) + .25 * vnoise(tt * 1.7 / layer.f + i * 7.7, 71 + i)));
+          }
         }
       }
       // the foot steps up once for every nearer range that is in the picture at this column (each on its own clock)
@@ -429,10 +439,14 @@
         }
       }
       // no walls: a flank may not be steeper than S px per column (both ways); the nearest range keeps its butte cliffs
-      const S = (i ? 1.5 + 1.3 * RUG : 6) * 2, hg = new Float64Array(n);
-      for (let j = 0; j < n; j++) hg[j] = R.foot[j] - R.ys[j];
-      for (let j = 1; j < n; j++) hg[j] = Math.min(hg[j], hg[j - 1] + S);
-      for (let j = n - 2; j >= 0; j--) hg[j] = Math.min(hg[j], hg[j + 1] + S);
+      // A range easing in or out (at the song's ends, or a stem starting / stopping) gets gentler flanks still
+      const S = (i ? 1.5 + 1.3 * RUG : 6) * 2, hg = new Float64Array(n), cap = new Float64Array(n);
+      for (let j = 0; j < n; j++) {
+        hg[j] = R.foot[j] - R.ys[j];
+        cap[j] = S * Math.min(.22 + .78 * gates[j] * gates[j], .4 + .6 * smooth(.3, .9, pres[j]));
+      }
+      for (let j = 1; j < n; j++) hg[j] = Math.min(hg[j], hg[j - 1] + Math.max(cap[j], cap[j - 1]));
+      for (let j = n - 2; j >= 0; j--) hg[j] = Math.min(hg[j], hg[j + 1] + Math.max(cap[j], cap[j + 1]));
       for (let j = 0; j < n; j++) R.ys[j] = R.foot[j] - hg[j];
       R.ja = Math.max(0, Math.floor((L.left - pad - x0) / COL));
       R.jb = Math.min(n - 1, Math.ceil((L.right + pad - x0) / COL));
@@ -684,14 +698,17 @@
   // the fill, the clip of its faces and the clip of the haze over it (a Path2D where the canvas has one)
   function bodyPath(ctx, R) {
     if (R.body !== undefined) { if (R.body) return R.body; }
-    const {ys, foot, x0} = R, a = R.ja, b = R.jb, bottom = BASIN + 2;
+    const {ys, foot, x0} = R, a = R.ja, b = R.jb;
     const p = typeof Path2D === 'function' ? new Path2D() : (ctx.beginPath(), ctx);
+    // below the foot the body runs on as basin down to BASIN, but only as deep as the range is tall (a range that is
+    // nearly gone leaves no flat band behind it)
+    const bottom = k => foot[k] + (BASIN + 2 - foot[k]) * smooth(0, 40, foot[k] - ys[k]);
     let run = -1;
     for (let k = a; k <= b + 1; k++) {
       const up = k <= b && foot[k] - ys[k] >= .5;
-      if (up && run < 0) { run = k; p.moveTo(x0 + k * COL, bottom); }
+      if (up && run < 0) { run = k; p.moveTo(x0 + k * COL, foot[k]); }
       if (up) p.lineTo(x0 + k * COL, Math.min(ys[k], foot[k]));
-      if (!up && run >= 0) { p.lineTo(x0 + (k - 1) * COL, bottom); p.closePath(); run = -1; }
+      if (!up && run >= 0) { for (let q = k - 1; q >= run; q--) p.lineTo(x0 + q * COL, bottom(q)); p.closePath(); run = -1; }
     }
     R.body = p === ctx ? null : p;
     return R.body;

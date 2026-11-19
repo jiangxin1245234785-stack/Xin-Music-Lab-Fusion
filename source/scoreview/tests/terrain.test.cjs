@@ -139,6 +139,32 @@ test('no levels: the notes stand in for loudness (onsets and velocity); no data 
   assert.deepEqual(md.estimated, ['guitar', 'vocals', 'violin']);
 });
 
+test('a stem name the look does not know is folded into the "other" range (levels and notes alike); drums never are', () => {
+  const s = song({levels: {hop: 1, groups: {bass: level(20, 100), keys: level(20, 100), synth: level(20, 100, -24), drums: level(20, 100, -10)}},
+    lanes: [{id: 'k', group: 'keys', kind: 'pitched', notes: notes(20, 100, .3, .2)}, {id: 'kit', group: 'drums', kind: 'drums', hits: [[30, 0, 100]]}]});
+  const d = terrain.inspect(frame(s, 60)).detail;
+  assert.deepEqual(d.ranges.map(r => r.id), ['bass', 'other']);
+  assert.deepEqual(d.estimated, []);
+  const notesOnly = song({levels: undefined, lanes: [{id: 'k', group: 'keys', kind: 'pitched', notes: notes(20, 100, .3, .2)}]});
+  assert.deepEqual(terrain.inspect(frame(notesOnly, 60)).detail.ranges.map(r => r.id), ['other']);
+});
+
+test('entering at the song\'s start: low hills first, gentle flanks, no block pushed in', () => {
+  const s = song({levels: {hop: 1, groups: {bass: level(0, 117), guitar: level(0, 117)}},
+    lanes: [{id: 'b', group: 'bass', kind: 'pitched', notes: Array.from({length: 400}, (_, i) => [i * .25, .2, 40, 110])}]});
+  const G = geometry(frame(s, 3));
+  const bass = G.ranges[0];
+  let tallest = 0, steepest = 0;
+  for (let j = bass.ja + 1; j <= bass.jb; j++) {
+    const h = bass.foot[j] - bass.ys[j];
+    tallest = Math.max(tallest, h);
+    steepest = Math.max(steepest, Math.abs(h - (bass.foot[j - 1] - bass.ys[j - 1])));
+  }
+  // 3 s after the plain ends the bass range is still low hills at the right of the window (its full shape: ~150 px)
+  assert.ok(tallest > 3 && tallest < 50, 'low hills at the window edge: ' + tallest);
+  assert.ok(steepest < 2, 'gentle flank while entering: ' + steepest);
+});
+
 test('the window frame follows the picture\'s shape without stretching the scenery; the LED rooms stay free', () => {
   for (const [w, h] of [[1123, 702], [1123, 783], [1440, 900], [1920, 1080]]) {
     const L = layout(w, h), {win} = L;
