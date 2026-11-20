@@ -41,6 +41,11 @@
   const WHEEL_DIRECT = .2;   // a chord this short (or a gap) puts the drums straight on their cells, as before
   // (1a4ce24: short chords land centred)
   const BLANK_WHEELS = Object.freeze(['', '', '']);
+  // The flat-bed X-Y recorder (SPEC-RECORDER): graphite for the last pass (an rgb triple, the alpha varies), the pencil's
+  // widths and sizes, the fresh-ink stretch behind the nib (song seconds), the bridge bar's width.
+  const RECORDER = Object.freeze({graphite: '88,87,82', pencilWidth: .9, markSize: 13, noteSize: 11, note: 'REF · PREV. PASS', fresh: 1.5, bridgeWidth: 4});
+  // A fixed noise in -1..1 of a position (never of time): pencil pressure, fuzz and the hand-drawn lines' wobble.
+  const noise = k => { const h = Math.sin(k * 12.9898 + 4.1414) * 43758.5453; return (h - Math.floor(h)) * 2 - 1; };
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
   // fast then slow, fully dark at `span`. Drum lamps: span one sweep of their cursor; row lamps: .3 s.
   const lampFade = (age, span) => age < 0 || !(span > 0) || age >= span ? 0 : (1 - age / span) ** 2;
@@ -969,6 +974,7 @@
     // two cached layers and each frame lays them down with one copy each; where no canvas can be made for them (the
     // tests), all three are drawn every frame, in the same order.
     let pass = 'live', layers = null, layerKey = null;
+    let bridgeLook = null;   // the recorder bridge's gradients, made once per drawing context (SPEC-RECORDER)
     let wide = 0;   // the layout's extra width this frame (SPEC-WEATHER B): 0 at 16:10 or narrower, WIDE_MAX at 16:9
     function every(which, s, out) {
       pass = which;
@@ -1864,7 +1870,9 @@
       };
       const stroke = (clipFrom, clipTo, color, width) => {
         p.save(); p.beginPath(); p.rect(clipFrom, y, clipTo - clipFrom, h); p.clip();
-        p.beginPath(); path().forEach(([px, py], i) => i ? p.lineTo(px, py) : p.moveTo(px, py));
+        // Only the columns inside the clip (and one either side): the ink is a stretch of the trace, not all of it.
+        const pts = path(), a = Math.max(0, Math.floor(clipFrom - (x + 4)) - 1), b = Math.min(pts.length - 1, Math.ceil(clipTo - (x + 4)) + 1);
+        p.beginPath(); for (let i = a; i <= b; i++) i > a ? p.lineTo(pts[i][0], pts[i][1]) : p.moveTo(pts[i][0], pts[i][1]);
         p.strokeStyle = color; p.lineWidth = width; p.stroke(); p.restore();
       };
       if (pass === 'base') {
@@ -1879,33 +1887,108 @@
         inset(box(x, y, w, h, 0), .7);
         for (let k = 0; k < w; k += 11) { circle(x + 5 + k, y + 4, 1.6, '#5a564a'); circle(x + 5 + k, y + h - 4, 1.6, '#5a564a'); }
         for (let db = -12; db > lo; db -= 12) { const yy = y + 6 + (hi - db) / (hi - lo) * (h - 12); p.beginPath(); p.moveTo(x, yy); p.lineTo(x + w, yy); p.strokeStyle = '#d0c8ae'; p.lineWidth = 1; p.stroke(); }
-        // Section starts: dashed marks with their short names.
-        p.setLineDash([3, 3]);
-        for (const s of data.sections) {
+        // SPEC-RECORDER: a flat-bed X-Y recorder. The sheet holds the last pass over this signal, in pencil: the
+        // operator's section marks (hand-drawn lines, Permanent Marker kept thin and faint) and the whole trace in
+        // graphite. All of it is still, so it is drawn here, once, into the base layer.
+        const pencil = a => `rgba(${RECORDER.graphite},${a})`;
+        for (const [n, s] of data.sections.entries()) {
           const sx = xAt(s.start);
-          p.beginPath(); p.moveTo(sx, y + 10); p.lineTo(sx, y + h - 8); p.strokeStyle = '#8a8370'; p.lineWidth = 1; p.stroke();
+          p.beginPath();
+          for (let yy = y + 10, k = 0; yy <= y + h - 8; yy += 6, k++) {
+            const jx = sx + noise(n * 131 + k) * .9;
+            k ? p.lineTo(jx, Math.min(yy, y + h - 8)) : p.moveTo(jx, yy);
+          }
+          p.strokeStyle = pencil(.5); p.lineWidth = .8; p.stroke();
         }
-        p.setLineDash([]);
         let lastLabel = -99;
+        const marks = [];
         for (const s of data.sections) {
-          const sx = xAt(s.start);
+          const sx = xAt(s.start), mark = SECTION_MARK[s.kind];
           if (sx - lastLabel < 30) continue;
-          font('mono', 15);
-          const lx = Math.min(sx + 3, x + w - 5 - p.measureText(SECTION_MARK[s.kind]).width);
+          font('marker', RECORDER.markSize);
+          const lx = Math.min(sx + 3, x + w - 5 - p.measureText(mark).width);
           if (lx - lastLabel < 44) continue;
-          write(SECTION_MARK[s.kind], lx, y + 18, 15, C.paperInk, 'mono'); lastLabel = lx;
+          write(mark, lx, y + 18, RECORDER.markSize, pencil(.62), 'marker'); lastLabel = lx; marks.push(mark);
         }
-        // The faint whole-song trace is on the sheet from the start.
-        if (data.energy) stroke(x, x + w, C.paperFaint, 1.2);
+        if (data.energy) {
+          const pts = path();
+          // Graphite: thinner than the ink, a little fuzz (a second, fainter line half a pixel off) and uneven
+          // pressure, both from a noise of the column, never of time.
+          for (let i = 1; i < pts.length; i++) {
+            const [ax, ay] = pts[i - 1], [bx, by] = pts[i], press = .5 + .22 * noise(i * 7.31);
+            p.beginPath(); p.moveTo(ax, ay); p.lineTo(bx, by); p.strokeStyle = pencil(press); p.lineWidth = RECORDER.pencilWidth; p.stroke();
+            p.beginPath(); p.moveTo(ax + .4, ay + .5 * noise(i * 3.7 + 9)); p.lineTo(bx + .4, by + .5 * noise(i * 3.7 + 12.7));
+            p.strokeStyle = pencil(press * .3); p.lineWidth = .6; p.stroke();
+          }
+        }
+        // The pencil note in a corner the trace leaves clear: lower right, else upper left.
+        font('marker', RECORDER.noteSize);
+        const noteW = p.measureText(RECORDER.note).width, pts = data.energy ? path() : [];
+        const clear = (x0, y0, x1, y1) => !pts.some(([px, py]) => px >= x0 - 2 && px <= x1 + 2 && py >= y0 - 3 && py <= y1 + 3);
+        // Lower edge from the right, then under the section names from the left: the first place the trace leaves
+        // clear (a pencil section line may run under it, as on any working sheet).
+        const free = (nx, ny) => clear(nx, ny - 6, nx + noteW, ny + 6);
+        let at = null;
+        for (let nx = x + w - 8 - noteW; !at && nx >= x + 8; nx -= 4) if (free(nx, y + h - 14)) at = {x: nx, y: y + h - 14, corner: 'lower edge'};
+        for (let nx = x + 8; !at && nx <= x + w - 8 - noteW; nx += 4) if (free(nx, y + 32)) at = {x: nx, y: y + 32, corner: 'upper edge'};
+        if (at) write(RECORDER.note, at.x, at.y, RECORDER.noteSize, pencil(.55), 'marker');
+        out.recorderNote = at ? {x: +at.x.toFixed(1), y: +at.y.toFixed(1), corner: at.corner} : null;
+        // The bridge's two rails, just outside the sheet's top and bottom edges: still hardware.
+        for (const ry of [y - 6, y + h + 2]) {
+          const g = p.createLinearGradient(0, ry, 0, ry + 4);
+          g.addColorStop(0, '#9c9a8e'); g.addColorStop(.5, '#6a695f'); g.addColorStop(1, '#2e2e28');
+          p.fillStyle = g; p.fillRect(x - 2, ry, w + 4, 4);
+        }
         out.recorderBox = {x, y, width: w, height: h, duration: dur};
+        out.recorderMarks = {lines: data.sections.length, names: marks};
+        out.recorderTrace = data.energy ? {points: path().length, from: +path()[0][0].toFixed(2), to: +path()[path().length - 1][0].toFixed(2)} : null;
         return;
       }
       if (pass !== 'live') return;
-      const pen = xAt(now);
-      if (data.energy) stroke(x, pen, C.paperInk, 1.6);
-      p.beginPath(); p.moveTo(pen, y + 26); p.lineTo(pen, y + h - 9); p.strokeStyle = C.pen; p.lineWidth = 2; p.stroke();
-      if (auditSink) auditShape('mark', auditBox(pen - 1, y + 26, pen + 1, y + h - 9), {what: 'recorder pen'});
-      out.recorder = {pen: +((pen - x - 4) / (w - 8)).toFixed(4), trace: Boolean(data.energy)};
+      const pen = xAt(now), floor = y + h - 6;
+      // Where the trace is at the pen (between its pixel columns), else the floor: silence or no data.
+      let tip = floor;
+      if (data.energy) {
+        const pts = path(), u = clamp(pen - (x + 4), 0, pts.length - 1), i = Math.floor(u), f = u - i, b = pts[Math.min(i + 1, pts.length - 1)];
+        tip = pts[i][1] + (b[1] - pts[i][1]) * f;
+        // Ink up to now: dry ink (the old black line), then the last RECORDER.fresh seconds wetter, darker and wider.
+        stroke(x, pen, C.paperInk, 1.6);
+        const from = xAt(Math.max(0, now - RECORDER.fresh));
+        if (pen > from + .05) {
+          const g = p.createLinearGradient(from, 0, pen, 0);
+          g.addColorStop(0, 'rgba(18,16,12,0)'); g.addColorStop(1, 'rgba(18,16,12,1)');
+          stroke(from, pen, g, 2.3);
+        }
+      }
+      // The bridge: a thin metal bar across the sheet from rail to rail, lit on its upper face, with a narrow shadow on
+      // the paper; no glow, not red.
+      const top = y - 7, bottom = y + h + 7, bw = RECORDER.bridgeWidth, cw = 9, ch = 7;
+      // The metal's gradients in the bridge's and the carriage's own coordinates, made once per context and sheet.
+      if (!bridgeLook || bridgeLook.p !== p || bridgeLook.top !== top || bridgeLook.bottom !== bottom) {
+        const bar = p.createLinearGradient(-bw / 2, 0, bw / 2, 0);
+        bar.addColorStop(0, '#d8d6cc'); bar.addColorStop(.45, '#a3a297'); bar.addColorStop(1, '#4b4a42');
+        const shade = p.createLinearGradient(0, top, 0, bottom);
+        shade.addColorStop(0, 'rgba(255,255,255,.18)'); shade.addColorStop(1, 'rgba(0,0,0,.28)');
+        const body = p.createLinearGradient(0, -ch - 1, 0, -1);
+        body.addColorStop(0, '#77766c'); body.addColorStop(1, '#2c2b26');
+        bridgeLook = {p, top, bottom, bar, shade, body};
+      }
+      p.fillStyle = 'rgba(30,24,14,.22)'; p.fillRect(pen + bw / 2, y, 2, h);
+      p.save(); p.translate(pen, 0);
+      p.fillStyle = bridgeLook.bar; p.fillRect(-bw / 2, top, bw, bottom - top);
+      p.fillStyle = bridgeLook.shade; p.fillRect(-bw / 2, top, bw, bottom - top);
+      // The carriage on the bridge, its nib at the trace's end.
+      p.translate(0, tip);
+      p.fillStyle = 'rgba(30,24,14,.25)'; p.fillRect(-cw / 2 + 1.5, -ch - 1 + 1.5, cw, ch);
+      p.fillStyle = bridgeLook.body; p.fillRect(-cw / 2, -ch - 1, cw, ch);
+      p.strokeStyle = '#1b1a16'; p.lineWidth = .8; p.strokeRect(-cw / 2 + .4, -ch - .6, cw - .8, ch - .8);
+      p.beginPath(); p.moveTo(-1.2, -1); p.lineTo(0, 0); p.lineTo(1.2, -1); p.closePath(); p.fillStyle = '#1b1a16'; p.fill();
+      p.restore();
+      // The layout audit: the carriage is the reading; the bridge is hardware that sweeps over the whole sheet, its
+      // pencil marks included, as on the machine, so it is not a mark.
+      if (auditSink) auditShape('mark', auditBox(pen - cw / 2, tip - ch - 1, pen + cw / 2, tip), {what: 'recorder carriage'});
+      out.recorder = {pen: +((pen - x - 4) / (w - 8)).toFixed(4), trace: Boolean(data.energy), bridgeX: +pen.toFixed(2), nibY: +tip.toFixed(2),
+        inkTo: +pen.toFixed(2), floor: tip === floor};
     }
 
     function keys(data, now, out) {
