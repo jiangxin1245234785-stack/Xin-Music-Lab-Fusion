@@ -80,6 +80,9 @@
     };
 
     let view = null, clock = clocks.create(audio, {offset: 0}), shownModel = null;
+    const trialSwitch = root.document.getElementById('trialLocalBars');
+    if (trialSwitch) { trialSwitch.checked = root.localStorage.getItem('xml-local-bars-trial') !== 'off';
+      trialSwitch.addEventListener('change', () => { root.localStorage.setItem('xml-local-bars-trial',trialSwitch.checked?'on':'off'); if(trackId) load(trackId); }); }
     let trackId = '', sequence = 0, frame = 0, health = null;
     const stemSelect = root.document.getElementById('fusionStemSelect');
     // loop: {start, end, index} of the section being repeated; solo: the stem the view is showing as alone.
@@ -545,6 +548,11 @@
         return false;
       }
       // The stems without notes as a low band at the foot (work/score-dynamics-20261114/SPEC-REST.md): always on here.
+      if (result.model) result.model.localBarTrial = trialSwitch?.checked === true;
+      if (!result.model.localBarTrial && result.model.bars) {
+        delete result.model.bars.localRuns;
+        delete result.model.bars.candidateMeasures;
+      }
       const options = {...reading,...appearanceOptions(appearance),fxPreset,fxDynamics,meteorMotion,scoreStyle,quietText: true,drumNotation: true,denseLaneLabels: true,showTexture: true,liveTextureRaster: true,...shapeOptions(shapes),offsetSeconds: -latency() / 1000};
       options.albumLayout = albumLayout;
       options.presentationLayout = stage.classList.contains('is-immersive');

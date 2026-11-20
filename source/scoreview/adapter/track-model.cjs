@@ -192,6 +192,8 @@ function layersInto(model, layers, health) {
     const steady = bars.steady === true && bars.downbeats.length > 0;
     model.bars = {beatsPerBar: steady && finite(bars.beatsPerBar) ? bars.beatsPerBar : null, bpm: finite(bars.bpm) ? bars.bpm : null,
                   beats: bars.beats.slice(), downbeats: steady ? bars.downbeats.slice() : [], steady};
+    if (!steady && Array.isArray(bars.localRuns)) model.bars.localRuns = bars.localRuns;
+    if (!steady && Array.isArray(bars.candidateMeasures)) model.bars.candidateMeasures = bars.candidateMeasures;
     health.bars = {ok: steady, beats: bars.beats.length, bars: model.bars.downbeats.length, bpm: model.bars.bpm,
                    why: steady ? null : `网格不稳定，不画小节线：${bars.why || '没有说明'}`};
   } else health.bars = {ok: false, why: none('bars')};

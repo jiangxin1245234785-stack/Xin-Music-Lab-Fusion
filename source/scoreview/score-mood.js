@@ -1155,8 +1155,9 @@ function spellPitch(midi,flats=true){
     // The radar look is the echo post (score-radar.js, 0.32.0): one instrument panel on the song's own data.
     let echoPost=null,echoFrame=null;
     function radarEnv(){
-      return {model,events:scoreEvents,beats,downbeats,beatsPerBar:Number(model.bars?.beatsPerBar)>0?Number(model.bars.beatsPerBar):4,
+      const base = {model,events:scoreEvents,beats,downbeats,beatsPerBar:Number(model.bars?.beatsPerBar)>0?Number(model.bars.beatsPerBar):4,
         beatAt,timeAtBeat,now,W,H,options,lyrics};
+      return globalThis.XinLocalBarTrial?.radar(base) || base;
     }
     function radar(){
       if(!root.XinScoreRadar){p.fillStyle='#0b0c0a';p.fillRect(0,0,W,H);motion={kind:'radar-echo-post',missing:true};return;}

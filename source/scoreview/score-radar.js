@@ -890,7 +890,7 @@
     function cachedLayers(ctx, s) {
       const {env, bars, scale, ox, oy} = s, t = env.model.track || {};
       const key = [env.W, env.H, prepGen, bars ? bars.source + bars.perBar : '-', env.beats.length >= 2, tapeOf(env) ? 'lyrics' : 'sheet',
-        t.title, t.artist, assetGen, depth, corner].join('|');
+        t.title, t.artist, assetGen, depth, corner, env.barLight !== undefined, !!env.wideBeat].join('|');
       if (auditSink) return null;   // the audit sees every pass drawn
       if (layers && layerKey === key) return layers;
       const base = layerCanvas(ctx, env.W, env.H, layers && layers.base), over = base && layerCanvas(ctx, env.W, env.H, layers && layers.over);
@@ -978,7 +978,7 @@
         // Wider (SPEC-WEATHER B): the section windows share the extra width, so they still reach the tubes.
         SECTION_LAMPS.forEach((name, k) => bed(516 + k * (82 + wide / 7), 40, 77 + wide / 7, 36, 2, '#1a1712', '#4a3d2c'));
         tubeBase(1101 + wide, 28, 72, 42, '888', 'TEMPO');
-        tubeBase(1183 + wide, 28, 106, 42, '888·8', 'BAR · BEAT');
+        tubeBase(1183 + wide, 28, 106, 42, env.wideBeat ? '888·88' : '888·8', 'BAR · BEAT');
         tubeBase(1299 + wide, 28, 104, 42, '88:88', 'TIME');
         return;
       }
@@ -1012,7 +1012,11 @@
         const bpm = 60 / gaps[Math.floor(gaps.length / 2)];
         if (bpm > 20 && bpm < 400) tempo = String(Math.round(bpm)).padStart(3, '0');
       }
-      let barBeat = '---·-';
+      let barBeat = env.wideBeat ? '---· -' : '---·-';
+      if (env.localPosition) {
+        const {bar, beat} = env.localPosition;
+        barBeat = String(bar).padStart(3, '0') + '·' + String(beat).padStart(env.wideBeat ? 2 : 1, ' ');
+      }
       if (bars && bars.source === 'downbeats' && env.beats.length >= 2 && inBars(bars, now)) {
         const idx = Math.floor(barAt(env, bars, now));
         const beat = clamp(Math.floor(env.beatAt(now) - env.beatAt(bars.starts[Math.min(idx, bars.starts.length - 1)]) + 1e-6) + 1, 1, bars.perBar);
@@ -1635,11 +1639,16 @@
         write(mode === 'bar' ? 'DRUMS · THIS BAR' : mode === 'beats' ? 'DRUMS · ' + DRUM_SWEEP_BEATS + ' BEATS' : 'DRUMS · ' + FREE_TURN + ' SEC', 1028 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         write(mode === 'bar' ? (per === 4 ? '' : per + ' BEATS / BAR · ') + steps + ' STEPS' : mode === 'beats' ? 'NO BAR LINES · 2 STEPS A BEAT' : 'NO BEATS · 4 STEPS A SECOND', 1404 + wide, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(1028 + wide / 2, 420, 376 + wide / 2, 122, 5, '#1f201b', '#4a4c42');
+        if (env.barLight !== undefined) write('BAR', 1173 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
         // The row names, one column right-aligned 6 px before their lamps (1094), capitals on the row's centre line.
         DRUM_ROWS.forEach((row, r) => write(row.label, 1082 + wide / 2, 432 + r * 21 + 7.5, 15, C.stamp, 'stamp', 'right', 0, '', 'cap'));
         return;
       }
       if (pass !== 'live') return;
+      if (env.barLight !== undefined) {
+        lamp(1161 + wide / 2, 407, 4, env.barLight);
+        out.barLight = env.barLight;
+      }
       // Where a moment is in the cursor's sweeps: the sweep's number and how far through it (0..1); null before the
       // first bar line of a song with bar lines. And how long a sweep lasts.
       const sweepOf = t => {

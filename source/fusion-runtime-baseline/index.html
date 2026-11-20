@@ -279,6 +279,7 @@
             <h3 data-i18n="score.options">谱面阅读</h3>
             <label class="xl-toggle-field"><span data-i18n="score.albumLayout">专辑侧栏</span><input id="scoreAlbumLayout" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.appearance">谱面样式</span><select id="scoreAppearance"><option value="original" data-i18n="score.appearanceOriginal">原版</option><option value="clear" data-i18n="score.appearanceClear" selected>清晰</option><option value="detail" data-i18n="score.appearanceDetail">细读</option></select></label>
+            <label class="xl-toggle-field"><span>分段小节（试用） / Local meter</span><input id="trialLocalBars" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span data-i18n="score.merge">合并同类乐器声部</span><input id="scoreMergeTimbres" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
             <label class="xl-toggle-field"><span><span data-i18n="score.lyrics">显示歌词</span><small data-i18n="score.lyricsHint">歌名和歌手会发到 LRCLIB 去查；歌曲文件夹里有同名 .lrc 就先用它</small></span><input id="scoreLyrics" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
@@ -632,6 +633,7 @@
     <script src="./app.js"></script>
     <script src="./shell.js"></script>
     <script src="./stem-controls.js"></script>
+    <script src="../scoreview/local-grid.js"></script>
     <script src="../scoreview/score-view.js"></script>
     <script src="../scoreview/score-mood.js"></script>
     <script src="../scoreview/score-telegraph.js"></script>

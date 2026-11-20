@@ -1200,6 +1200,7 @@ function canonicalOnsets(rows) {
       swell: swellOf(model.energy),
       stretches: stretchesOf(model.levels, sections, duration),
       localLevels: model.levels,
+      localMeter: globalThis.XinLocalBarTrial?.prepare(bars),
       // Bar lines exist only on a grid that was judged steady (plan decision D4).
       downbeats: bars && bars.steady && Array.isArray(bars.downbeats) ? bars.downbeats.filter(finite).sort((a, b) => a - b) : [],
       // What the model carries beyond the lanes; DRAWN_LAYERS says which of it is drawn.
@@ -3649,6 +3650,14 @@ function canonicalOnsets(rows) {
         }
         context.stroke();
         return;
+      }
+      if (prepared.localMeter) {
+        const marks = prepared.localMeter.marks;
+        context.strokeStyle = 'rgba(255,255,255,0.20)'; context.beginPath();
+        for (let i = lowerBound(marks,marks.length,left); i < marks.length && marks[i] < right; i++) {
+          const x = Math.round(line + (marks[i]-now)*pps)+0.5; context.moveTo(x,ruler.top); context.lineTo(x,bottom);
+        }
+        context.stroke();
       }
       const step = [1, 2, 5, 10, 15, 30, 60].find(seconds => seconds * pps >= (options.quietText ? 90 : 46)) || 60;
       context.strokeStyle = 'rgba(255,255,255,0.22)';
