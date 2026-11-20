@@ -38,6 +38,8 @@
   // Within WHEEL_FADE of a cell of a blank wheel's rest, the neighbours' glyphs fade, so a blank wheel at rest shows
   // its blank face as before.
   const WHEEL_FADE = .3;
+  const WHEEL_DIRECT = .2;   // a chord this short (or a gap) puts the drums straight on their cells, as before
+  // (1a4ce24: short chords land centred)
   const BLANK_WHEELS = Object.freeze(['', '', '']);
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
   // fast then slow, fully dark at `span`. Drum lamps: span one sweep of their cursor; row lamps: .3 s.
@@ -309,8 +311,16 @@
     return {phases, snap, end: t + WHEEL_SNAP, x: X};
   }
 
-  // A turn's state at time t (t at or after its start): position and velocity.
+  // A turn's state at time t (t at or after its start): position and velocity. A turn squeezed into half its chord
+  // (move.squeeze < 1) runs the same path faster.
   function moveAt(move, t) {
+    if (move.squeeze) {
+      const s = rawMoveAt(move, move.t0 + (Math.min(t, move.end) - move.t0) / move.squeeze);
+      return {x: s.x, v: t >= move.end ? 0 : s.v / move.squeeze};
+    }
+    return rawMoveAt(move, t);
+  }
+  function rawMoveAt(move, t) {
     if (move.snap && t >= move.snap.t) {
       const f = Math.min(1, (t - move.snap.t) / WHEEL_SNAP), d = move.snap.from - move.snap.to;
       return f >= 1 ? {x: move.x, v: 0} : {x: move.snap.to + d * (1 + Math.cos(Math.PI * f)) / 2, v: -d * Math.PI / (2 * WHEEL_SNAP) * Math.sin(Math.PI * f)};
@@ -325,12 +335,17 @@
   // Every turn of the three drums over the song, made once per model: a turn starts at a chord's onset (or at a
   // chord's end with nothing after it: back to blank) from where the drum then is. Each turn also carries the
   // glyph fade it starts from, so the fade is continuous. Pure: the same chord list gives the same plan.
+  // The cues read the same chord record as the lamps (chordTimeline: half-open spans, merged repeats, no chord clears),
+  // so a drum at rest always shows what the lamps say (1a4ce24). A turn takes at most half its chord (or gap): a short
+  // chord turns the drum faster, and every chord shows its own faces for at least its second half. A chord of
+  // WHEEL_DIRECT or less lands the drums on its cells at once, without turning.
   function planWheels(chords) {
     const cues = [];
     chords.forEach((c, i) => {
       cues.push({t: c.start, glyphs: c.parts.wheels});
       if (chords[i + 1]?.start !== c.end) cues.push({t: c.end, glyphs: BLANK_WHEELS});
     });
+    cues.forEach((cue, i) => { cue.span = (cues[i + 1]?.t ?? Infinity) - cue.t; });
     return WHEELS.map((wheel, k) => {
       const turns = [{t0: -Infinity, x0: 0, glyph: '', X: 0, fade0: 0, move: {phases: [], snap: null, end: -Infinity, x: 0}}];
       for (const cue of cues) {
@@ -338,7 +353,14 @@
         if (glyph === last.glyph) continue;
         const {x, v} = moveAt(last.move, cue.t);
         const X = nearestCell(wheel.cells, x, glyph);
-        turns.push({t0: cue.t, x0: x, glyph, X, fade0: turnFade(wheel, last, x), move: wheelMove(cue.t, x, v, X)});
+        let move;
+        if (cue.span <= WHEEL_DIRECT + 1e-9) move = {phases: [], snap: null, end: cue.t, x: X};
+        else {
+          move = wheelMove(cue.t, x, v, X);
+          const cap = cue.span / 2;
+          if (move.end - cue.t > cap) move = {...move, t0: cue.t, squeeze: cap / (move.end - cue.t), end: cue.t + cap};
+        }
+        turns.push({t0: cue.t, x0: x, glyph, X, fade0: turnFade(wheel, last, x), move});
       }
       return turns;
     });

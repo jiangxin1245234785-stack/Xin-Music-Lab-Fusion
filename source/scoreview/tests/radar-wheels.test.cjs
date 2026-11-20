@@ -89,32 +89,59 @@ test('speed: one cell per 60 ms; the farthest root turn about .24 s and quality 
   assert.equal(crossings, 1, 'crosses its cell once');
 });
 
-test('re-targeting: three chords 100 ms apart turn the drums without a jump, from wherever they are', () => {
-  const rows = [[1, 1.1, 'C'], [1.1, 1.2, 'Em'], [1.2, 3, 'Bbm7b5'], [3, 3.05, 'Gsus4'], [3.05, 3.08, 'C#dim7'], [3.08, 5, 'A']];
-  const plan = W.plan(rows);
+test('short chords (1a4ce24 kept): a turn takes at most half its chord; 200 ms or less lands at once; no other jumps', () => {
+  // 300 ms chords: six quality cells at 60 ms a cell would take .45 s; squeezed into the first 150 ms.
+  const rows = [[1, 1.3, 'C'], [1.3, 1.6, 'Cm7b5'], [1.6, 1.9, 'Eb'], [1.9, 2.05, 'F#7'], [2.05, 2.2, 'Gsus4'], [2.2, 4, 'A']];
+  const plan = W.plan(rows), parsed = rows.map(r => Radar.chordParts(r[2]).wheels);
+  rows.forEach(([start, end], i) => {
+    const half = start + (end - start) / 2;
+    for (let k = 0; k < 3; k++) {
+      // From the chord's middle to its end the drum stands still on the chord's own face.
+      for (let t = half; t < end - 1e-9; t += .005) {
+        const a = W.at(plan, k, t);
+        assert.equal(a.moving, false, `${rows[i][2]} wheel ${k} still turning at ${t}`);
+        assert.equal(glyphAt(k, a.pos), parsed[i][k]);
+        assert.equal(a.pos, Math.round(a.pos), 'on the cell, centred');
+      }
+    }
+  });
+  // 150 ms chords (F#7, Gsus4): straight on their cells at the onset, no turn.
+  assert.deepEqual([0, 1, 2].map(k => glyphAt(k, W.at(plan, k, 1.9).pos)), parsed[3]);
+  assert.deepEqual([0, 1, 2].map(k => W.at(plan, k, 1.9).moving), [false, false, false]);
+  // Longer than 200 ms: no jump; a 1 ms step stays under the squeezed speed of this song's shortest turn.
   for (let k = 0; k < 3; k++) {
-    let prev = W.at(plan, k, 0).pos, maxStep = 0;
-    for (let i = 1; i <= 600; i++) {
-      const pos = W.at(plan, k, i * STEP).pos;
-      maxStep = Math.max(maxStep, Math.abs(pos - prev));
-      assert.ok(Math.abs(pos - prev) <= LIMIT, `wheel ${k} jumps ${Math.abs(pos - prev)} at ${i * STEP}`);
+    let prev = W.at(plan, k, .9).pos;
+    for (let t = .901; t < 1.9 - 1e-9; t += .001) {
+      const pos = W.at(plan, k, t).pos;
+      assert.ok(Math.abs(pos - prev) < .1, `wheel ${k} jumps ${Math.abs(pos - prev)} at ${t}`);
       prev = pos;
     }
-    assert.ok(maxStep > 0, 'it moved');
   }
-  // The second chord starts while the first turn is under way: the drum is between cells then, and turns on from there.
-  const mid = W.at(plan, 0, 1.1);
-  assert.ok(Math.abs(mid.pos - Math.round(mid.pos)) > .05, 'between cells at the second chord: ' + mid.pos);
-  assert.equal(mid.turn.t0, 1.1);
-  assert.equal(mid.turn.x0, mid.pos);
-  // Every wheel ends on its chord's cell.
-  ['A', '', ''].forEach((glyph, k) => assert.equal(glyphAt(k, W.at(plan, k, 4.9).pos), glyph));
-  // A chord ending with nothing after it: the drums go back to blank the same way.
-  const tail = W.plan([[0, 1, 'F#m7']]);
+  // A chord ending with nothing after it: the drums go back to blank the same way, within half the gap.
+  const tail = W.plan([[0, 1, 'F#m7'], [1.3, 3, 'C']]);
   [0, 1, 2].forEach(k => {
-    assert.equal(glyphAt(k, W.at(tail, k, 2).pos), '');
-    assert.equal(W.at(tail, k, 2).fade, 0, 'a blank drum at rest shows no neighbours');
+    assert.equal(glyphAt(k, W.at(tail, k, 1.15).pos), '');
+    assert.equal(W.at(tail, k, 1.15).fade, 0, 'a blank drum at rest shows no neighbours');
   });
+  // The same record as the lamps: wherever a drum is at rest, its face is the lamps' chord (or blank without one).
+  const lampRows = [[0, .5, 'C'], [.5, .5, 'D'], [.5, .62, 'Em'], [.62, .7, 'N'], [.7, 1.4, 'Fmaj7'], [1.4, 2.4, 'Fmaj7'], [2.6, 3, 'G7']];
+  const lp = W.plan(lampRows);
+  for (let i = 0; i < 350; i++) { const t = i / 100;
+    const cue = lampRows.filter(r => r[1] > r[0] && r[0] <= t).pop();
+    const glyphs = cue && t < cue[1] && Radar.chordParts(cue[2]) ? Radar.chordParts(cue[2]).wheels : ['', '', ''];
+    for (let k = 0; k < 3; k++) {
+      const a = W.at(lp, k, t);
+      if (!a.moving) assert.equal(glyphAt(k, a.pos), glyphs[k], `at ${t.toFixed(2)} wheel ${k}`);
+    }
+  }
+});
+
+test('re-targeting stays in the planner: a turn re-planned from a moving state does not jump', () => {
+  // Chords never interrupt a turn now (each turn ends by half its chord), so the moving start is checked directly.
+  const plan = W.plan([[0, 2, 'C'], [2, 4, 'B']]);
+  const mid = W.at(plan, 0, 2.05);
+  assert.ok(mid.moving && Math.abs(mid.v) > 0);
+  assert.equal(mid.turn.x0, W.at(plan, 0, 2).pos);
 });
 
 test('determinism: the same moment gives the same position whatever was asked before, and a fresh plan agrees', () => {
