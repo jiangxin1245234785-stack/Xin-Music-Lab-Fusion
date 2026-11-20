@@ -608,9 +608,12 @@
       hz.addColorStop(0, css(LT.band.c, 0)); hz.addColorStop(.5, css(LT.band.c, LT.band.a)); hz.addColorStop(1, css(LT.band.c, 0));
       g.fillStyle = hz; g.fillRect(x0, HORIZON - 26, x1 - x0, 56);
     }
-    // clouds: one wrapped strip that drifts
-    const clouds = sketchCanvas(L, dpr, 0, CLOUD_Y0, CLOUD_P, CLOUD_Y1 - CLOUD_Y0);
-    if (clouds) {
+    // clouds: one wrapped strip that drifts (batch 7: GPT's cloud strip, its 600 px on the code's band, period 0.6 x 4096)
+    const cloudArt = pic('ground-sky/cloud-strip-a'), cloudP = cloudArt ? cloudArt.ow * (CLOUD_Y1 - CLOUD_Y0) / cloudArt.oh : CLOUD_P;
+    const clouds = sketchCanvas(L, dpr, 0, CLOUD_Y0, cloudArt ? cloudP + 40 : CLOUD_P, CLOUD_Y1 - CLOUD_Y0);
+    if (clouds) { clouds.P = cloudP; clouds.drawW = clouds.w; }
+    if (clouds && cloudArt) for (const x of [0, cloudP]) clouds.g.drawImage(cloudArt.img, x, CLOUD_Y0, cloudP, CLOUD_Y1 - CLOUD_Y0);
+    else if (clouds) {
       const g = clouds.g, seed = 9;
       g.filter = 'blur(' + (7 * s * dpr).toFixed(1) + 'px)';
       for (let i = 0; i < 46; i++) {
@@ -670,6 +673,11 @@
       }
       ground.push({tile, speed: speedAtY((y0 + y1) / 2)});
     }
+    // batch 7: the plain from GPT's picture, as bands of depth like the code's ground (each its own speed), opaque, drawn
+    // before the ranges (their feet stand on it as before); the code's horizon haze and band (cover-tinted) baked in
+    const plain = pic('ground-sky/plain-tile-a') ? plainBands(L, LT, dpr) : null;
+    // and the ground flowing past right under the window (GROUND_FLOW): ballast, then the next track's rail
+    const flow = ART && GROUND_FLOW ? {ballast: flowStrip(L, dpr, 'ground-sky/ballast-strip-a', FLOW.ballast), rail: flowStrip(L, dpr, 'ground-sky/rail-strip-a', FLOW.rail)} : null;
     // the track bed right under the window: gravel smeared by speed
     const bedY = 820, bed = sketchCanvas(L, dpr, 0, bedY - 6, GROUND_P, M_BOTTOM - bedY + 12);
     if (bed) {
@@ -730,7 +738,46 @@
         curtains(g, L, dpr);
       }
     }
-    return {back, clouds, ground, bed, overlay};
+    return {back, clouds, ground: plain ? [] : ground, plain, flow, bed, overlay};
+  }
+  // the plain picture: its rows top (far) to bottom (near) on the ground rows HORIZON .. M_BOTTOM, PLAIN_X sketch px a
+  // picture px along x (1.7 x its scale down, so its period, 1638 px, is wider than a wide window: no repeat in view)
+  const PLAIN_X = .4, PLAIN_BAND = 6;
+  function plainBands(L, LT, dpr) {
+    const a = pic('ground-sky/plain-tile-a'), P = a.ow * PLAIN_X, k = a.w / a.ow, out = [];
+    const rowAt = y => clamp((y - HORIZON) / (M_BOTTOM - HORIZON)) * a.oh;
+    for (let y0 = HORIZON; y0 < M_BOTTOM + 6; y0 += PLAIN_BAND) {
+      const y1 = y0 + PLAIN_BAND, tile = sketchCanvas(L, dpr, 0, y0 - 1, P + 24, y1 - y0 + 2);
+      if (!tile) return null;
+      const g = tile.g, r0 = rowAt(y0 - 1), r1 = Math.max(r0 + 1, rowAt(y1 + 1));
+      for (const x of [0, P]) g.drawImage(a.img, 0, r0 * k, a.w, (r1 - r0) * k, x, y0 - 1, P, y1 - y0 + 2);
+      const hz = g.createLinearGradient(0, HORIZON, 0, HORIZON + 56); // the haze as basinAt mixes it, fading out over 56 px
+      hz.addColorStop(0, css(LT.haze, .3)); hz.addColorStop(1, css(LT.haze, 0));
+      g.fillStyle = hz; g.fillRect(0, y0 - 1, P + 24, y1 - y0 + 2);
+      const band = g.createLinearGradient(0, HORIZON - 26, 0, HORIZON + 30);
+      band.addColorStop(0, css(LT.band.c, 0)); band.addColorStop(.5, css(LT.band.c, LT.band.a)); band.addColorStop(1, css(LT.band.c, 0));
+      g.fillStyle = band; g.fillRect(0, y0 - 1, P + 24, y1 - y0 + 2);
+      tile.P = P; tile.drawW = P + 24;
+      out.push({tile, speed: speedAtY((y0 + y1) / 2)});
+    }
+    return out;
+  }
+  // GROUND_FLOW (internal switch, batch 7; the user has not decided on "the ground streaming past the car" yet): on, the
+  // ballast and the next track's rail run along the window's lower edge at the nearest ground's speed, smeared by it;
+  // off, the code's track bed as before.
+  const GROUND_FLOW = true;
+  const FLOW = {ballast: {y0: 798, y1: 834}, rail: {y0: 812, y1: 834}};
+  function flowStrip(L, dpr, key, at) {
+    const a = pic(key), H = at.y1 - at.y0, f = H / a.oh, P = a.ow * f, blur = speedAtY(828) * BLUR;
+    const c = sketchCanvas(L, dpr, -blur, at.y0, P + 2 * blur + 24, H);
+    if (!c) return null;
+    const one = sketchCanvas(L, dpr, -blur, at.y0, P + 2 * blur + 24, H);
+    for (const x of [-P, 0, P]) one.g.drawImage(a.img, x, at.y0, P, H);
+    const K = Math.max(5, Math.round(blur * L.s * dpr));
+    c.g.setTransform(1, 0, 0, 1, 0, 0); c.g.globalCompositeOperation = 'lighter'; c.g.globalAlpha = 1 / K;
+    for (let q = 0; q < K; q++) c.g.drawImage(one.c, (q / (K - 1) - .5) * blur * L.s * dpr, 0);
+    c.P = P; c.x0 = -blur; c.drawW = P + 2 * blur + 24;
+    return c;
   }
 
   // ---------- the window (batch 6): a slim transom high in the sky, tied-back curtains at both sides ----------
@@ -1468,9 +1515,15 @@
     const mm = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
     const view = {matrix: mm && Number.isFinite(mm.a) ? {a: mm.a, d: mm.d, e: mm.e, f: mm.f} : null};
     if (R && R.clouds) {
-      const drift = t * 2.2, off = ((-drift % CLOUD_P) + CLOUD_P) % CLOUD_P - 380;
-      for (let x = off - CLOUD_P; x < L.right + 20; x += CLOUD_P) if (x + CLOUD_P > L.left - 20) ctx.drawImage(R.clouds.c, x, CLOUD_Y0, CLOUD_P, CLOUD_Y1 - CLOUD_Y0);
+      const P = R.clouds.P, W = R.clouds.drawW, drift = t * 2.2, off = ((-drift % P) + P) % P - 380;
+      for (let x = off - P; x < L.right + 20; x += P) if (x + W > L.left - 20) ctx.drawImage(R.clouds.c, x, CLOUD_Y0, W, CLOUD_Y1 - CLOUD_Y0);
     }
+    // a strip that repeats every P sketch px (drawn drawW wide from x0), moving at `speed`
+    const loop = (tile, speed) => {
+      const P = tile.P, W = tile.drawW, x0 = tile.x0 || 0, off = ((-t * speed) % P + P) % P;
+      for (let x = off - P; x < L.right + 10; x += P) if (x + x0 + W > L.left - 10) ctx.drawImage(tile.c, x + x0, tile.y0, W, tile.h);
+    };
+    if (R && R.plain) for (const band of R.plain) loop(band.tile, band.speed); // batch 7: the plain under the ranges
     if (!(R && paintTiled(ctx, S, LT, dpr, view))) { // no offscreen canvas (tests): every range painted in full each frame
       for (let i = ranges.length - 1; i >= 0; i--) {
         paintRange(ctx, ranges[i], LT, view);
@@ -1490,7 +1543,8 @@
     ctx.fillStyle = air; ctx.fillRect(L.left - 10, HORIZON - 150, L.Wm + 20, 190);
     // the roadside option arrives with the frame (XML's settings pass it once batch 4 wires it; default off)
     S.roadside = roadside(ctx, S.src, L, t, LT, dpr, frame.terrainRoadside || (frame.options && frame.options.terrainRoadside) || 'off', stationList);
-    if (R && R.bed) {
+    if (R && R.flow && R.flow.ballast && R.flow.rail) { loop(R.flow.ballast, speedAtY(828)); loop(R.flow.rail, speedAtY(828)); }
+    else if (R && R.bed) {
       const y = 820, g = ctx.createLinearGradient(0, y - 4, 0, M_BOTTOM);
       g.addColorStop(0, 'rgba(110,98,80,0)'); g.addColorStop(.35, 'rgba(110,98,80,.9)'); g.addColorStop(1, 'rgba(80,72,60,1)');
       ctx.fillStyle = g; ctx.fillRect(L.left - 10, y - 4, L.Wm + 20, M_BOTTOM - y + 8);
