@@ -711,20 +711,24 @@
       g.fillStyle = v; g.fillRect(win.x, win.y, win.w, 70 * u);
       const v2 = g.createLinearGradient(0, B - 50 * u, 0, B); v2.addColorStop(0, 'rgba(8,12,18,0)'); v2.addColorStop(1, 'rgba(8,12,18,.3)');
       g.fillStyle = v2; g.fillRect(win.x, B - 50 * u, win.w, 50 * u);
-      paintTransom(g, L, bar);
+      if (ART) artTransom(g, L, bar); else paintTransom(g, L, bar);
       g.restore();
       // the carriage wall around the window (the LED displays go in the room above and below)
       g.save();
       roundRect(g, win.x, win.y, win.w, win.h, win.r); g.rect(0, 0, L.w, L.h);
       const wall = g.createLinearGradient(0, 0, 0, L.h); wall.addColorStop(0, '#1c1e21'); wall.addColorStop(.5, '#141618'); wall.addColorStop(1, '#1f2124');
-      g.fillStyle = wall; g.fill('evenodd');
+      if (ART) artWall(g, L); else { g.fillStyle = wall; g.fill('evenodd'); }
       g.restore();
-      g.lineWidth = 7 * u; g.strokeStyle = '#08090a'; roundRect(g, win.x, win.y, win.w, win.h, win.r); g.stroke();
-      g.lineWidth = Math.max(.6, 1.2 * u); g.strokeStyle = 'rgba(160,168,176,.28)'; roundRect(g, win.x - 9 * u, win.y - 9 * u, win.w + 18 * u, win.h + 18 * u, win.r + 9 * u); g.stroke();
-      const sillY = B + 22 * u, sill = g.createLinearGradient(0, sillY, 0, L.h); sill.addColorStop(0, '#34373b'); sill.addColorStop(.12, '#26292c'); sill.addColorStop(1, '#17191b');
-      g.fillStyle = sill; g.fillRect(0, sillY, L.w, L.h - sillY);
-      g.fillStyle = 'rgba(210,216,222,.22)'; g.fillRect(0, sillY, L.w, Math.max(.6, 1.2 * u));
-      curtains(g, L, dpr);
+      const sillY = B + 22 * u;
+      if (ART) { artFrame(g, L); artSill(g, L, sillY); artCurtains(g, L); }
+      else {
+        g.lineWidth = 7 * u; g.strokeStyle = '#08090a'; roundRect(g, win.x, win.y, win.w, win.h, win.r); g.stroke();
+        g.lineWidth = Math.max(.6, 1.2 * u); g.strokeStyle = 'rgba(160,168,176,.28)'; roundRect(g, win.x - 9 * u, win.y - 9 * u, win.w + 18 * u, win.h + 18 * u, win.r + 9 * u); g.stroke();
+        const sill = g.createLinearGradient(0, sillY, 0, L.h); sill.addColorStop(0, '#34373b'); sill.addColorStop(.12, '#26292c'); sill.addColorStop(1, '#17191b');
+        g.fillStyle = sill; g.fillRect(0, sillY, L.w, L.h - sillY);
+        g.fillStyle = 'rgba(210,216,222,.22)'; g.fillRect(0, sillY, L.w, Math.max(.6, 1.2 * u));
+        curtains(g, L, dpr);
+      }
     }
     return {back, clouds, ground, bed, overlay};
   }
@@ -751,6 +755,100 @@
     const sun = g.createLinearGradient(win.x, 0, win.x + win.w, 0); // the afternoon sun from the left front catches its top edge
     sun.addColorStop(0, 'rgba(255,214,160,.55)'); sun.addColorStop(.5, 'rgba(255,214,160,.12)'); sun.addColorStop(1, 'rgba(255,214,160,.04)');
     g.fillStyle = sun; g.fillRect(win.x, bar.y, win.w, Math.max(.5, bar.t * .2));
+  }
+  // ---- batch 7: the carriage from GPT's pictures (once per size, in the overlay raster like the code's) ----
+  // a strip picture repeated along x from x0 to x1 at f css px per original px, its top at y
+  function tileX(g, a, x0, x1, y, f, rows) {
+    if (!a) return;
+    const [r0, r1] = rows || [0, a.oh], w = a.ow * f, k = a.w / a.ow;
+    for (let x = x0; x < x1; x += w) { const cw = Math.min(w, x1 - x); g.drawImage(a.img, 0, r0 * k, cw / f * k, (r1 - r0) * k, x, y, cw, (r1 - r0) * f); }
+  }
+  // the transom: the bar's rows (11-78 of the picture) on the code's bar, the code's shadow under it
+  function artTransom(g, L, bar) {
+    const {win} = L, a = pic('carriage/window-transom-a');
+    g.fillStyle = 'rgba(0,0,0,.26)'; g.fillRect(win.x, bar.y + bar.t, win.w, bar.shadow);
+    tileX(g, a, win.x, win.x + win.w, bar.y, bar.t / 67, [11, 78]);
+  }
+  // the wall: the panel picture as a pattern (a tile about 300 x 300 css px at 1440 x 900), a little darker at the top
+  // and the bottom as the code's gradient
+  function artWall(g, L) {
+    const a = pic('carriage/wall-panel-a'), u = L.u;
+    const p = a && typeof g.createPattern === 'function' ? g.createPattern(a.img, 'repeat') : null;
+    if (p && p.setTransform && typeof DOMMatrix === 'function') { const sc = 300 * u / a.w; p.setTransform(new DOMMatrix([sc, 0, 0, sc, 0, 0])); }
+    g.fillStyle = p || '#1c1e21'; g.fill('evenodd');
+    const sh = g.createLinearGradient(0, 0, 0, L.h); sh.addColorStop(0, 'rgba(0,0,0,.42)'); sh.addColorStop(.5, 'rgba(0,0,0,.3)'); sh.addColorStop(1, 'rgba(0,0,0,.38)');
+    g.fillStyle = sh; g.fill('evenodd');
+  }
+  // the frame: the corner picture at the four corners (flipped), its inner edge (48 px in) on the glass's edge and its
+  // inner radius (~100 px) on the window's; the straight runs stretched from the picture's last 4 px
+  const CORNER_IN = 48, CORNER_R = 100;
+  function artFrame(g, L) {
+    const a = pic('carriage/window-corner-a'), {win} = L;
+    if (!a) return;
+    const f = win.r / CORNER_R, S = a.ow * f, o = CORNER_IN * f, k = a.w / a.ow, e = 4, band = 64;
+    const run = (W, H) => { // the top-left quarter's pieces in a frame where the corner is at (0, 0)
+      g.drawImage(a.img, 0, 0, a.w, a.h, -o, -o, S, S);
+      if (W > 2 * (S - o)) g.drawImage(a.img, (a.ow - e) * k, 0, e * k, band * k, S - o, -o, W / 2 - (S - o) + .5, band * f);
+      if (H > 2 * (S - o)) g.drawImage(a.img, 0, (a.oh - e) * k, band * k, e * k, -o, S - o, band * f, H / 2 - (S - o) + .5);
+    };
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      g.save(); g.translate(sx > 0 ? win.x : win.x + win.w, sy > 0 ? win.y : win.y + win.h); g.scale(sx, sy); run(win.w, win.h); g.restore();
+    }
+  }
+  function artSill(g, L, sillY) {
+    const a = pic('carriage/sill-a');
+    if (a) tileX(g, a, 0, L.w, sillY, (L.h - sillY) / a.oh);
+  }
+  // the curtains: curtain-left-a / curtain-right-a (the brief: always a), hung by their heading point [260, 95] from the
+  // rail just over the window, the hem at the code's hem; the wall side well over the wall (CURTAIN_OUT), so the tied
+  // cloth leaves the glass about as the code's did; a narrow window squeezes them as the code's (x only). Their shadow
+  // (a blurred copy) falls on the wall and the frame only, never on the glass. Then the rail across the window's top.
+  const CURTAIN_OUT = 58, CURTAIN_X = .8;
+  function curtainPlace(L, side) {
+    const C = curtainShapes(L), {win, u} = L, a = pic(side < 0 ? 'carriage/curtain-left-a' : 'carriage/curtain-right-a');
+    if (!a) return null;
+    const railY = C.top - 2.5 * u, f = (C.bot - railY) / (a.bbox[3] - a.anchor[1]), fx = f * CURTAIN_X * Math.min(1, C.k / u);
+    const hx = side < 0 ? win.x - CURTAIN_OUT * u + (a.anchor[0] - a.bbox[0]) * fx : win.x + win.w + CURTAIN_OUT * u - (a.bbox[2] + 1 - a.anchor[0]) * fx;
+    return {a, f, fx, x: hx - a.anchor[0] * fx, y: railY - a.anchor[1] * f, w: a.ow * fx, h: a.oh * f, railY};
+  }
+  function artCurtains(g, L) {
+    const {win, u} = L, P = [curtainPlace(L, -1), curtainPlace(L, 1)].filter(Boolean);
+    g.save();
+    roundRect(g, win.x, win.y, win.w, win.h, win.r); g.rect(0, 0, L.w, L.h); g.clip('evenodd');
+    g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 9 * u; g.shadowOffsetX = 7 * u; g.shadowOffsetY = 4 * u;
+    for (const c of P) g.drawImage(c.a.img, c.x, c.y, c.w, c.h);
+    g.restore();
+    for (const c of P) g.drawImage(c.a.img, c.x, c.y, c.w, c.h);
+    const rail = pic('carriage/curtain-rail-a');
+    if (rail && P.length) {
+      const f = 7 * u / 44, x0 = Math.min(...P.map(c => c.x)) + 10 * u, x1 = Math.max(...P.map(c => c.x + c.w)) - 10 * u;
+      tileX(g, rail, x0, x1, P[0].railY - 4.5 * u - 10 * f, f);
+    }
+  }
+  // the LED housings' bezels: a picture's frame in nine pieces round the display's rect, each border as thick as the
+  // housing's own rim (1.7 dot pitches), the opening left clear for the dots; baked once per rect and dpr
+  const BEZEL = {header: {key: 'carriage/led-bezel-a', cut: [58, 53, 58, 48]}, sill: {key: 'carriage/led-bezel-b', cut: [57, 31, 57, 27]}};
+  const bezels = new Map();
+  function bezel(ctx, which, rect, ins, dpr) {
+    const B = BEZEL[which], a = pic(B.key);
+    if (!a) return;
+    const key = [which, rect.x, rect.y, rect.w, rect.h, ins, dpr].join('|');
+    let c = bezels.get(key);
+    if (!c) {
+      c = makeCanvas(rect.w * dpr, rect.h * dpr);
+      const g = c && c.getContext('2d');
+      if (!g) return;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const k = a.w / a.ow, [bx0, by0, bx1, by1] = a.bbox, sx = [bx0, bx0 + B.cut[0], bx1 + 1 - B.cut[2], bx1 + 1], sy = [by0, by0 + B.cut[1], by1 + 1 - B.cut[3], by1 + 1];
+      const dx = [0, ins, rect.w - ins, rect.w], dy = [0, ins, rect.h - ins, rect.h];
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        if (i === 1 && j === 1) continue;
+        g.drawImage(a.img, sx[i] * k, sy[j] * k, (sx[i + 1] - sx[i]) * k, (sy[j + 1] - sy[j]) * k, dx[i], dy[j], dx[i + 1] - dx[i], dy[j + 1] - dy[j]);
+      }
+      if (bezels.size > 8) bezels.delete(bezels.keys().next().value);
+      bezels.set(key, c);
+    }
+    ctx.drawImage(c, rect.x, rect.y, rect.w, rect.h);
   }
   // The curtains: deep blue-grey cloth (the carriage's trim, not the scenery's colours) hung from a short rod over each
   // side, tied back to the frame by a band, so the inner edge sweeps in an arc to the tie and flares out below it. Painted
@@ -2170,6 +2268,11 @@
     // the sill board is always there (batch 6, the user: 「下方的歌词LED背景板应该一直存在」): with no line every dot is
     // dark but the housing and the unlit dots show - at the ends, in a song without lyrics, with lyrics turned off
     Led.drawLyric(ctx, L.sill, {line, progress: line ? progress : 0}, Object.assign({}, opts, {idle: 'dim'}));
+    if (ART) { // GPT's bezels over the housings' rims (batch 7); the pitch as the LED module works it out
+      const hp = Math.min(L.header.h / ((Led.headerRows ? Led.headerRows(16, 12) : 35) + 2.6), L.header.w / 200);
+      bezel(ctx, 'header', L.header, 1.7 * hp, dpr);
+      bezel(ctx, 'sill', L.sill, 1.7 * L.sill.h / (12 + 2.6), dpr);
+    }
     Led.drawNowTick(ctx, L.nowX, L.win.y, L.win.y + L.win.h, {pitch: 3 * L.u, dpr});
     return {sections: sections.length, lyric: line};
   }
@@ -2195,7 +2298,7 @@
   const invalidate = song => { songCache.delete(song); };
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate, ready,
     // for tests and measurements only
-    _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), stations: song => stationsOf(songSource(song, song.track.duration), song), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
+    _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, curtainPlace, overlay: (w, h, dpr) => { ART = artNow(); const R = rasters(layout(w, h), BASE, dpr); return R && R.overlay; }, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), stations: song => stationsOf(songSource(song, song.track.duration), song), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);
       return {L, src, ranges: geometry(src, L, clamp(frame.time, 0, duration), margin)};
     }})});
