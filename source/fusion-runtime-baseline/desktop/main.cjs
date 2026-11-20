@@ -683,7 +683,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       let stems=await adapter.readStems(stem => xldAnalysis.readMidi(track, stem));
       let dynamicsHealth={enabled:payload?.useDynamics===true,state:'original',applied:[]};
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
-      const layersBody = await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null);
+      const layersBody = require('./fixture-meter.cjs').withLocalRuns(track.id, await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null));
       // Track facts for the radar's track sheet (model.track.facts, ordered [{name, value}], desktop/track-info.cjs): the
       // cache answers at once; a first lookup is waited for at most 2.5 s and otherwise finishes on its own for next time.
       let facts=null;
