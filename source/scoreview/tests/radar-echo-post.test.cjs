@@ -792,7 +792,7 @@ test('radar.5 feedback: the VOX beam eases between a pitch and the baseline, nev
   assert.ok(a.some((y, i) => Math.abs(y - flat[i]) > .05) && a.every((y, i) => Math.abs(y - flat[i]) <= 1.2), 'the baseline jitters by under a pixel and a bit');
 });
 
-test('SPEC-WEATHER A: the chord wheels show root, accidental and quality; a change rolls the short way in .2 s; no chord leaves them blank', () => {
+test('SPEC-WEATHER A + SPEC-WHEELS: the chord wheels show root, accidental and quality; a change turns the drums the short way; no chord leaves them blank', () => {
   const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 20, 60, 100]]}];
   // C (0 .. 4), F#m7b5 (4 .. 8), nothing (8 .. 10), Bbsus4 (10 .. 14).
   const model = steady(lanes, 20, {chords: [[0, 4, 'C'], [4, 8, 'F#m7b5'], [10, 14, 'Bbsus4']]});
@@ -804,15 +804,24 @@ test('SPEC-WEATHER A: the chord wheels show root, accidental and quality; a chan
     assert.deepEqual(at(6).wheels.map(w => w.glyph), ['F', '#', 'm7b5']);
     assert.deepEqual(at(9).wheels.map(w => w.glyph), ['', '', ''], 'no chord: every wheel on its blank cell');
     assert.deepEqual(at(12).wheels.map(w => w.glyph), ['B', 'b', 'sus4']);
-    // Halfway through a change, between the two cells; settled after .2 s; a paused frame repeats.
-    const half = at(4.1), root = half.wheels[0].pos;
+    // Root cells in fifths ('', F, C, G, D, A, E, B): C (cell 2) to F (cell 1) is one cell down. The quality, blank
+    // (cell 0) to m7b5 (cell 8 of 13), goes five cells down through the wrap. Mid-turn between cells; settled and
+    // on the cells once the slowest drum lands; a paused frame repeats.
+    const half = at(4.03), root = half.wheels[0].pos, quality = half.wheels[2].pos;
     assert.equal(half.rolling, true);
-    assert.ok(root > 1 && root < 4, 'C (cell 1) rolling toward F (cell 4): ' + root);
-    assert.equal(at(4.25).rolling, false);
-    assert.equal(at(4.25).wheels[0].pos, 4);
-    assert.deepEqual(at(4.1), half);
-    // The short way: blank (cell 0) to B (cell 7) rolls backwards through the wrap, not forward through C .. A.
-    const back = at(10.1).wheels[0].pos;
+    assert.ok(root > 1 && root < 2, 'C (cell 2) turning toward F (cell 1): ' + root);
+    assert.ok(quality < 0 && quality > -5, 'blank turning toward m7b5 (cell -5) the short way: ' + quality);
+    assert.equal(at(4.5).rolling, false);
+    assert.deepEqual(at(4.5).wheels.map(w => w.pos), [1, 1, -5]);
+    assert.deepEqual(at(4.03), half);
+    // The lamps do not wait for the drums: lit at the chord's first moment, while the drums are still at the old cells.
+    const onset = at(4);
+    assert.equal(onset.rolling, true);
+    assert.deepEqual(onset.wheels.map(w => w.pos), [2, 0, 0]);
+    assert.deepEqual(onset.quality.sort(), ['7', 'DIM', 'MIN']);
+    assert.equal(onset.fifths[6], 1, 'F# lit at once');
+    // The short way: blank (cell 0) to B (cell 7) turns backwards through the wrap, not forward through F .. E.
+    const back = at(10.03).wheels[0].pos;
     assert.ok(back < 0 && back > -1, 'blank -> B the short way: ' + back);
   }
   assert.equal(post(model).frame(2).motion.chord.scheme, 'light', 'light wheels unless chosen (the user\'s pick)');

@@ -22,13 +22,22 @@
   const SECTION_LAMPS = Object.freeze(['INTRO', 'VERSE', 'PRE', 'CHORUS', 'INST', 'BRIDGE', 'OUTRO']);
   const SECTION_MARK = Object.freeze({INTRO: 'INT', VERSE: 'VRS', PRE: 'PRE', CHORUS: 'CHO', INST: 'INS', BRIDGE: 'BRG', OUTRO: 'OUTR'});
   const QUALITY = Object.freeze(['MAJ', 'MIN', '6', '7', 'M7', 'SUS2', 'SUS4', 'DIM', 'AUG', 'INV']);
-  // The chord wheels (SPEC-WEATHER A): root, accidental and quality, each a ring of printed cells. The accidental's
-  // three cells repeat so a change rolls the short way; the quality wheel holds the library's suffixes.
+  // The chord wheels (SPEC-WEATHER A, SPEC-WHEELS): root, accidental and quality, each a ring of printed cells on a
+  // servo-driven drum. The root's cells run round the circle of fifths, as the fifths disc beside it does; the
+  // accidental's three cells repeat so any change is one cell; the quality ring puts the library's common changes
+  // next to each other (work/score-depth-20261118/wheels/quality-order.cjs: 33 songs, 5533 changes).
   const WHEELS = Object.freeze([
-    Object.freeze({cells: Object.freeze(['', 'C', 'D', 'E', 'F', 'G', 'A', 'B']), w: 22, size: 23}),
+    Object.freeze({cells: Object.freeze(['', 'F', 'C', 'G', 'D', 'A', 'E', 'B']), w: 22, size: 23}),
     Object.freeze({cells: Object.freeze(['', '#', 'b', '', '#', 'b']), w: 14, size: 19}),
-    Object.freeze({cells: Object.freeze(['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', '6', 'm6', 'dim', 'dim7', 'aug', 'm7b5']), w: 46, size: 19})]);
-  const WHEEL_ROLL = .2;   // maximum settling time; shorter chord cues go straight to their cell
+    Object.freeze({cells: Object.freeze(['', 'maj7', '7', 'sus4', '6', 'sus2', 'dim7', 'dim', 'm7b5', 'aug', 'm6', 'm', 'm7']), w: 46, size: 19})]);
+  // The drum's servo (SPEC-WHEELS): a fixed speed of one cell per WHEEL_CELL seconds, reached and shed in WHEEL_EASE;
+  // it runs WHEEL_DETENT of a cell past its cell and the detent pulls it back in WHEEL_SNAP, once. A new chord turns
+  // the drum from wherever it is, the short way (ties: toward higher cell numbers).
+  const WHEEL_CELL = .06, WHEEL_EASE = .025, WHEEL_DETENT = .05, WHEEL_SNAP = .06;
+  const WHEEL_SPEED = 1 / WHEEL_CELL, WHEEL_ACCEL = WHEEL_SPEED / WHEEL_EASE;
+  // Within WHEEL_FADE of a cell of a blank wheel's rest, the neighbours' glyphs fade, so a blank wheel at rest shows
+  // its blank face as before.
+  const WHEEL_FADE = .3;
   const BLANK_WHEELS = Object.freeze(['', '', '']);
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
   // fast then slow, fully dark at `span`. Drum lamps: span one sweep of their cursor; row lamps: .3 s.
@@ -242,12 +251,7 @@
     const i = chords[next]?.start === now ? next : next - 1;
     const cue = chords[i];
     const current = cue && now < cue.end ? cue : null;
-    const previous = chords[i - 1];
     const target = current ? current.parts.wheels : BLANK_WHEELS;
-    const before = current && previous?.end === current.start ? previous.parts.wheels : BLANK_WHEELS;
-    const span = current ? current.end - current.start : 0;
-    const settle = span > WHEEL_ROLL + 1e-9 ? Math.min(WHEEL_ROLL, span / 2) : 0;
-    const remaining = settle ? 1 - smooth(clamp((now - current.start) / settle, 0, 1)) : 0;
     const light = new Array(12).fill(0);
     for (let k = i; k >= 0 && k > i - 6; k--) {
       const chord = chords[k], age = now - chord.end;
@@ -255,20 +259,100 @@
       const index = FIFTH_PC.indexOf(chord.parts.pc);
       light[index] = Math.max(light[index], chord === current ? 1 : .7 * Math.exp(-age / 1.6));
     }
-    return {current, target, before, remaining, light};
+    return {current, target, light};
   }
 
-  function wheelPosition(cells, before, target, remaining) {
-    const start = cells.indexOf(before), n = cells.length;
-    let travel = Infinity;
+  // The nearest cell (any turn of the ring) printed with `glyph`, from position x; equally far both ways: upward.
+  function nearestCell(cells, x, glyph) {
+    const n = cells.length;
+    let best = null;
     for (let i = 0; i < n; i++) {
-      if (cells[i] !== target) continue;
-      const distance = ((i - start + n + n / 2) % n) - n / 2;
-      if (Math.abs(distance) < Math.abs(travel)) travel = distance;
+      if (cells[i] !== glyph) continue;
+      const base = i + n * Math.floor((x - i) / n);   // the copy of cell i at or below x
+      for (const k of [base, base + n]) {
+        const d = Math.abs(k - x);
+        if (best === null || d < Math.abs(best - x) - 1e-9 || (Math.abs(d - Math.abs(best - x)) <= 1e-9 && k > best)) best = k;
+      }
     }
-    // Keep the incoming character in the reading window from its first frame.
-    // It moves the last fraction of a cell in the drum's shortest direction.
-    return start + travel - (target ? Math.sign(travel) * .20 * remaining : 0);
+    return best;
+  }
+
+  // One turn of a drum: from state (x0, v0) at t0 to cell X, as phases of constant acceleration (speed never over
+  // WHEEL_SPEED), ending WHEEL_DETENT past X in the direction it arrives from, then the detent's pull back to X.
+  function wheelMove(t0, x0, v0, X) {
+    const phases = [];
+    let t = t0, x = x0, v = v0;
+    const push = (dur, a) => {
+      if (!(dur > 1e-12)) return;
+      phases.push({t, x, v, a});
+      x += v * dur + a * dur * dur / 2; v += a * dur; t += dur;
+    };
+    if (Math.abs(X - x) < 1e-9 && Math.abs(v) < 1e-9) return {phases, snap: null, end: t, x: X};
+    // The side it arrives from: the way to X, unless it is moving away or cannot stop before X.
+    let s = Math.sign(X - x) || Math.sign(v);
+    const u0 = v * s;
+    if (u0 < 0 || u0 * u0 / (2 * WHEEL_ACCEL) > (X - x) * s + 1e-12) s = -Math.sign(v) || s;
+    const G = X + s * WHEEL_DETENT;
+    for (let guard = 0; guard < 6; guard++) {
+      const dir = Math.sign(G - x) || s, D = (G - x) * dir, u = v * dir;
+      if (u < -1e-12) { push(-u / WHEEL_ACCEL, dir * WHEEL_ACCEL); v = 0; continue; }
+      if (u * u / (2 * WHEEL_ACCEL) > D + 1e-12) { push(u / WHEEL_ACCEL, -dir * WHEEL_ACCEL); v = 0; continue; }
+      const peak = Math.min(WHEEL_SPEED, Math.sqrt(WHEEL_ACCEL * D + u * u / 2));
+      const cruise = D - (peak * peak - u * u) / (2 * WHEEL_ACCEL) - peak * peak / (2 * WHEEL_ACCEL);
+      push((peak - Math.max(0, u)) / WHEEL_ACCEL, dir * WHEEL_ACCEL);
+      push(cruise / peak, 0);
+      push(peak / WHEEL_ACCEL, -dir * WHEEL_ACCEL);
+      x = G; v = 0;
+      break;
+    }
+    const snap = {t, from: G, to: X};
+    return {phases, snap, end: t + WHEEL_SNAP, x: X};
+  }
+
+  // A turn's state at time t (t at or after its start): position and velocity.
+  function moveAt(move, t) {
+    if (move.snap && t >= move.snap.t) {
+      const f = Math.min(1, (t - move.snap.t) / WHEEL_SNAP), d = move.snap.from - move.snap.to;
+      return f >= 1 ? {x: move.x, v: 0} : {x: move.snap.to + d * (1 + Math.cos(Math.PI * f)) / 2, v: -d * Math.PI / (2 * WHEEL_SNAP) * Math.sin(Math.PI * f)};
+    }
+    let ph = null;
+    for (const q of move.phases) { if (q.t <= t) ph = q; else break; }
+    if (!ph) return move.phases.length ? {x: move.phases[0].x, v: move.phases[0].v} : {x: move.x, v: 0};
+    const dt = t - ph.t;
+    return {x: ph.x + ph.v * dt + ph.a * dt * dt / 2, v: ph.v + ph.a * dt};
+  }
+
+  // Every turn of the three drums over the song, made once per model: a turn starts at a chord's onset (or at a
+  // chord's end with nothing after it: back to blank) from where the drum then is. Each turn also carries the
+  // glyph fade it starts from, so the fade is continuous. Pure: the same chord list gives the same plan.
+  function planWheels(chords) {
+    const cues = [];
+    chords.forEach((c, i) => {
+      cues.push({t: c.start, glyphs: c.parts.wheels});
+      if (chords[i + 1]?.start !== c.end) cues.push({t: c.end, glyphs: BLANK_WHEELS});
+    });
+    return WHEELS.map((wheel, k) => {
+      const turns = [{t0: -Infinity, x0: 0, glyph: '', X: 0, fade0: 0, move: {phases: [], snap: null, end: -Infinity, x: 0}}];
+      for (const cue of cues) {
+        const last = turns[turns.length - 1], glyph = cue.glyphs[k];
+        if (glyph === last.glyph) continue;
+        const {x, v} = moveAt(last.move, cue.t);
+        const X = nearestCell(wheel.cells, x, glyph);
+        turns.push({t0: cue.t, x0: x, glyph, X, fade0: turnFade(wheel, last, x), move: wheelMove(cue.t, x, v, X)});
+      }
+      return turns;
+    });
+  }
+  function turnFade(wheel, turn, x) {
+    const toBlank = !turn.glyph;
+    return Math.min(clamp(turn.fade0 + Math.abs(x - turn.x0) / WHEEL_FADE, 0, 1), toBlank ? clamp(Math.abs(x - turn.X) / WHEEL_FADE, 0, 1) : 1);
+  }
+  // A drum at song time t: position (cells, continuous), whether it is turning, the glyph fade, and its turn.
+  function wheelAt(plan, k, t) {
+    const turns = plan[k];
+    const j = lower(turns, t, q => q.t0), turn = turns[Math.max(0, turns[j]?.t0 === t ? j : j - 1)];
+    const {x, v} = moveAt(turn.move, t);
+    return {pos: x, v, moving: t < turn.move.end, fade: turnFade(WHEELS[k], turn, x), turn};
   }
 
   // A channel's level (dB) as the needle's place on its dial (0..1): zero to amber, amber to red, red to the top, each
@@ -392,6 +476,7 @@
     const sections = (model.sections || []).map(row => ({start: row[0], end: row[1], kind: sectionKind(row)})).filter(s => s.kind);
     const kinds = new Set(sections.map(s => s.kind));
     const chords = chordTimeline(model.chords);
+    const wheelPlan = planWheels(chords);
     const pan = model.levels && model.levels.pan && Array.isArray(model.levels.pan.mix) && model.levels.pan.hop > 0 ? model.levels.pan : null;
     // Crayon marks (batch 4): an operator marked "normal" on the three meters that move most, at where each sits on
     // average while its channel sounds. Real data: the meter series, not a guess.
@@ -402,7 +487,7 @@
       return n ? {channel: c, seconds: n * GRID, mean: sum / n} : null;
     }).filter(Boolean).sort((a, b) => b.seconds - a.seconds || a.channel - b.channel).slice(0, 3);
     return {duration, steps, present, sounding, meter, calibrated, lampCut: calibration, caution, register, contour, vocalRange, range, notes, drums, longest, usage,
-      sections, kinds, chords, energy, pan, firstNote, lastNote};
+      sections, kinds, chords, wheelPlan, energy, pan, firstNote, lastNote};
   }
 
   function create() {
@@ -1571,7 +1656,7 @@
         return;
       }
       if (pass !== 'live') return;
-      const {current, target, before, remaining, light} = chordSignalAt(data.chords, now);
+      const {current, target, light} = chordSignalAt(data.chords, now);
       FIFTHS.forEach((name, k) => {
         const a = -Math.PI / 2 + k / 12 * Math.PI * 2, x = cx + Math.cos(a) * (R - 22), y = cy + Math.sin(a) * (R - 22);
         const v = light[k];
@@ -1585,13 +1670,14 @@
       const wheelOut = [];
       WHEELS.forEach((wheel, k) => {
         const n = wheel.cells.length;
-        const pos = wheelPosition(wheel.cells, before[k], target[k], remaining);
+        const drum = wheelAt(data.wheelPlan, k, now), pos = drum.pos;
         const x = wx, y = cy - WIN_H / 2, w = wheel.w;
         p.save(); p.beginPath(); p.rect(x, y, w, WIN_H); p.clip();
         auditClip = {x, y, w, h: WIN_H};
         rect(x, y, w, WIN_H, scheme.face);
         // The cells round the drum: each glyph at its angle, foreshortened toward the window's edges.
-        for (let i = Math.floor(pos) - 2; target[k] && i <= Math.ceil(pos) + 2; i++) {
+        if (drum.fade < 1) p.globalAlpha = drum.fade;
+        for (let i = Math.floor(pos) - 2; drum.fade > 0 && i <= Math.ceil(pos) + 2; i++) {
           const th = (i - pos) * PITCH / WHEEL_R;
           if (Math.abs(th) >= Math.PI / 2) continue;
           const glyph = wheel.cells[((i % n) + n) % n];
@@ -1602,6 +1688,7 @@
           write(glyph, 0, 0, size, scheme.ink, 'plate', 'center', 0, 'bold', 'cap');
           p.restore();
         }
+        p.globalAlpha = 1;
         auditClip = null;
         // The drum's curve: darker toward the top and bottom of the window, and the window's own shadow on top.
         const g = p.createLinearGradient(0, y, 0, y + WIN_H);
@@ -1610,7 +1697,7 @@
         rect(x, y, w, 2, 'rgba(0,0,0,.45)');
         p.restore();
         rect(x - .5, y - .5, w + 1, WIN_H + 1, null, '#0b0b09', 1.2);
-        wheelOut.push({glyph: target[k], pos: +pos.toFixed(3), size: (() => { let sz = wheel.size; for (; sz > 11; sz -= 1) { font('plate', sz, 'bold'); if (p.measureText(target[k]).width <= w - 5) break; } return sz; })()});
+        wheelOut.push({glyph: target[k], pos: +pos.toFixed(3), cell: drum.turn.X, moving: drum.moving, fade: +drum.fade.toFixed(3), size: (() => { let sz = wheel.size; for (; sz > 11; sz -= 1) { font('plate', sz, 'bold'); if (p.measureText(target[k]).width <= w - 5) break; } return sz; })()});
         wx += w + 4;
       });
       const cardShown = target.join('');
@@ -1621,7 +1708,7 @@
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
         write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
-      const rolling = remaining > 0 && target.some((glyph, k) => glyph && glyph !== before[k]);
+      const rolling = wheelOut.some(w => w.moving);
       out.chord = {name: current ? current.label : null, shown: cardShown, size: wheelOut[2].size, wheels: wheelOut, rolling,
         scheme: env.options.radarWheel !== 'dark' ? 'light' : 'dark', quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
@@ -2100,6 +2187,9 @@
   }
   const LEADS = Object.freeze([.2, .4, .7]);
   const materials = () => Object.keys(MATERIALS).filter(key => MATERIALS[key]);
-  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, LEADS, audit, audited: () => auditSink, chordParts, sectionKind, CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
+  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, LEADS, audit, audited: () => auditSink, chordParts, sectionKind,
+    // The chord drums' plan, for tests and scans: wheels.plan(model.chords) then wheels.at(plan, k, t).
+    wheels: Object.freeze({cells: WHEELS.map(w => w.cells), speed: WHEEL_SPEED, detent: WHEEL_DETENT,
+      plan: rows => planWheels(chordTimeline(rows)), at: wheelAt}), CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
   if (typeof module === 'object' && module.exports) module.exports = root.XinScoreRadar;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
