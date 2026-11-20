@@ -201,7 +201,7 @@ test('light: a cover only turns the low sky and the haze; the zenith stays blue;
 test('the carriage: the LED header gets title, artist, the song\'s own sections and the time; the sill board is always there, lit only with a lyric; arrows at now', () => {
   const prior = globalThis.XinScoreTerrainLed, seen = [];
   globalThis.XinScoreTerrainLed = {
-    localizeSection: n => n === 'Chorus 2' ? '副歌 2' : n, warm: list => seen.push(['warm', list]),
+    localizeSection: n => n === 'Chorus 2' ? '副歌 2' : n, englishSection: require('../score-terrain-led.js').englishSection, warm: list => seen.push(['warm', list]),
     drawHeader: (ctx, rect, d) => seen.push(['header', rect, d]), drawLyric: (ctx, rect, d, o) => seen.push(['lyric', rect, d, o]),
     drawNowTick: (ctx, x, top, bottom) => seen.push(['now', x, top, bottom])
   };
@@ -211,7 +211,8 @@ test('the carriage: the LED header gets title, artist, the song\'s own sections 
     const S = draw({lyric: ''});
     const header = seen.find(x => x[0] === 'header'), now = seen.find(x => x[0] === 'now');
     assert.deepEqual([header[2].title, header[2].artist, header[2].time, header[2].duration], ['七里香', '周杰伦', 44, D]);
-    assert.deepEqual(header[2].sections.map(r => r[2]), ['引子', '主歌 1', '副歌 2']);
+    assert.deepEqual(header[2].sections.map(r => r[2]), ['INTRO', 'VERSE 1', 'CHORUS 2'], 'batch 6: the route board speaks English');
+    assert.equal(header[2].readout, 'miles', 'batch 6: the readout is the distance run');
     assert.deepEqual(header[1], S.layout.header);
     assert.deepEqual(now.slice(1), [S.detail.playheadX, S.layout.win.y, S.layout.win.y + S.layout.win.h]);
     const idle = seen.filter(x => x[0] === 'lyric');

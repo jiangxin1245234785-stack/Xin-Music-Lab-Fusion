@@ -149,6 +149,28 @@
     const zh = ZH[m[1].toLowerCase().replace(/\s+/g, '-')];
     return zh ? zh + (m[2] ? ' ' + m[2] : '') : String(name);
   }
+  // English station names for the route board (batch 6, item 5; the user: 「上方的屏幕文字都改成英文」): Chinese or English
+  // section names to upper-case English, the number kept (主歌 1 -> VERSE 1); a name it does not know stays as it is.
+  // Only for the board: the scenery, the sill and the rest of XML keep their own names.
+  const EN = {'引子': 'INTRO', '前奏': 'INTRO', '主歌': 'VERSE', '导歌': 'PRE', '導歌': 'PRE', '副歌': 'CHORUS', '间奏': 'BREAK', '間奏': 'BREAK',
+    '器乐段': 'INST', '器乐': 'INST', '器樂段': 'INST', '独奏': 'SOLO', '獨奏': 'SOLO', '桥段': 'BRIDGE', '橋段': 'BRIDGE', '尾奏': 'OUTRO', '尾声': 'OUTRO', '尾聲': 'OUTRO',
+    intro: 'INTRO', verse: 'VERSE', 'pre-chorus': 'PRE', prechorus: 'PRE', pre: 'PRE', chorus: 'CHORUS', interlude: 'BREAK', break: 'BREAK',
+    instrumental: 'INST', inst: 'INST', solo: 'SOLO', bridge: 'BRIDGE', outro: 'OUTRO'};
+  function englishSection(name) {
+    const raw = String(name == null ? '' : name).trim(), m = raw.match(/^(.+?)\s*(\d+)?$/);
+    if (!m) return raw;
+    const en = EN[m[1]] || EN[m[1].toLowerCase().replace(/\s+/g, '-')];
+    return en ? en + (m[2] ? ' ' + m[2] : '') : raw;
+  }
+  // the readout at the right of the title row: song time ("1:44 / 5:03"), or (batch 6, item 5, the user: 「对应歌曲时间改成
+  // 距离？」) the distance the train has run at a steady TRAIN_MPH ("2.3 / 6.7 MI", tenths, rounded down so it never runs
+  // ahead). The host picks it per frame (d.readout = 'miles'); 'time' is the default.
+  const TRAIN_MPH = 79;
+  const milesOf = seconds => num(seconds) * TRAIN_MPH / 3600;
+  const tenth = v => (Math.floor(v * 10 + 1e-9) / 10).toFixed(1);
+  function readout(d, time, duration) {
+    return d && d.readout === 'miles' ? {now: tenth(milesOf(time)), total: ' / ' + tenth(milesOf(duration)) + ' MI'} : {now: fmt(time), total: ' / ' + fmt(duration)};
+  }
   function normSections(list) {
     return (Array.isArray(list) ? list : []).map(s => Array.isArray(s)
       ? {name: String(s[2] == null ? '' : s[2]), start: +s[0], end: +s[1]}
@@ -162,7 +184,9 @@
   function nameCandidates(name) {
     const m = name.match(/^(\S+?)\s*(\d+)?$/);
     const base = m ? m[1] : name, n = m && m[2] ? m[2] : '', first = chars(base)[0] || '';
-    const list = [name, base + n, chars(base).slice(0, 2).join('') + n, first + n, first];
+    // an English station name too long: the word before the number to three letters first (CHORUS 2 -> CHO 2 -> CHO2)
+    const abbr = /^[A-Z]{4,}$/.test(base) ? base.slice(0, 3) : null;
+    const list = [name, ...(abbr ? [abbr + (n ? ' ' + n : ''), abbr + n] : []), base + n, chars(base).slice(0, 2).join('') + n, first + n, first];
     return list.filter((s, i) => s && list.indexOf(s) === i);
   }
   function routePlan(S, now, duration, cols) {
@@ -183,7 +207,7 @@
     const curName = text(d.section != null ? d.section : (S[cur] ? S[cur].name : ''));
     const nextName = text(d.nextSection != null ? d.nextSection : (S[cur + 1] ? S[cur + 1].name : (S.length ? '终点' : '')));
     const named = splitTitle(text(d.title), text(d.artist));
-    return {S, time, now, duration, plan, curName, nextName, title: named.title, artist: named.artist};
+    return {S, time, now, duration, plan, curName, nextName, title: named.title, artist: named.artist, readout: readout(d, time, duration)};
   }
   // no artist in the tags and a title like 周杰伦 - 七里香: the artist is the part before the dash
   // A placeholder the tagger wrote ("Unknown Artist", 未知艺术家 ...) counts as no artist: in the user's library 七里香
@@ -199,7 +223,7 @@
   // the title row's scroll: [title][one cell][artist] in the room left of the time; too long for it, it moves a whole
   // character at a time, back and forth on song time (holding at both ends), as the sill's lyric does
   function titleRow(P, cols, big) {
-    const t = fmt(P.time), tot = ' / ' + fmt(P.duration), tx = cols - 3 - width(t, big) - width(tot, big), gap = Math.round(big * .6);
+    const t = P.readout.now, tot = P.readout.total, tx = cols - 3 - width(t, big) - width(tot, big), gap = Math.round(big * .6);
     const x0 = 1, x1 = tx - gap, room = Math.max(1, x1 - x0), cell = big;
     const tw = width(P.title, big), aw = P.artist ? width(P.artist, big) : 0, total = tw + (aw ? cell + aw : 0);
     let offset = 0;
@@ -419,10 +443,10 @@
     const dpr = opts.dpr || 1, big = opts.big || 16, small = opts.small || 12, rows = headerRows(big, small), W = rect.w, H = rect.h;
     const pitch = opts.pitch || Math.min(H / (rows + ROW_PAD), W / 200);
     const ins = pitch * 1.7, cols = Math.max(20, Math.floor((W - 2 * ins) / pitch));
-    const P = headerParts(d), r = P.plan(cols), t = fmt(P.time);
+    const P = headerParts(d), r = P.plan(cols), t = P.readout.now;
     const layout = ['H', W, H, pitch, dpr, cols, big, small].join('|');
     const A = titleRow(P, cols, big), blink = Math.floor(P.time * 2) % 2;
-    const key = [layout, P.title, P.artist, A.offset, P.curName, P.nextName, t.length, fmt(P.duration), P.S.map(s => s.name).join('\u0001'), r.cur].join('|');
+    const key = [layout, P.title, P.artist, A.offset, P.curName, P.nextName, t.length, P.readout.total, P.S.map(s => s.name).join('\u0001'), r.cur].join('|');
     const grid = gridOf(W, H, pitch, cols, rows, pitch);
     let model = null;
     const full = () => model || (model = headerModel(d, cols, rows, big, small));
@@ -480,7 +504,7 @@
   function clearCaches() { glyphCache.clear(); measurers.clear(); sprites.clear(); strips.clear(); bases.clear(); overlays.clear(); regionCache.clear(); canCache = null; }
   const cacheSize = () => ({glyphs: glyphCache.size, sprites: sprites.size, strips: strips.size, bases: bases.size});
 
-  const api = Object.freeze({drawHeader, drawLyric, drawNowTick, localizeSection, setCanvasFactory, clearCaches, cacheSize, warm,
+  const api = Object.freeze({drawHeader, drawLyric, drawNowTick, localizeSection, englishSection, readout, milesOf, TRAIN_MPH, setCanvasFactory, clearCaches, cacheSize, warm,
     headerModel, headerRows, lyricPlan, fit, width, glyph, dotMap, fmt, splitTitle, defaults: Object.freeze({big: 16, small: 12, lyricSize: LYRIC_SIZE})});
   root.XinScoreTerrainLed = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

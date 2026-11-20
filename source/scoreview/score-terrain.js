@@ -1957,18 +1957,22 @@
   // (nothing lit when there is none). On the frame: the two "now" arrows. Section names come from the song's own rows
   // (Chinese in the bundles; English labels go through the module's fallback).
   const warmed = new WeakSet();
+  // The route board speaks English (batch 6, item 5): station names in upper case (Led.englishSection), and the readout
+  // at the right is the distance run at the module's TRAIN_MPH. To go back to song time, set HEADER_READOUT to 'time';
+  // to go back to Chinese names, set HEADER_NAMES to 'zh'. Internal switches only, not in XML's settings.
+  const HEADER_READOUT = 'miles', HEADER_NAMES = 'en';
   function carriage(ctx, frame, S, dpr) {
     const Led = globalThis.XinScoreTerrainLed;
     if (!Led) return null;
     const L = S.layout, song = frame.song, track = song.track || {}, opts = {dpr};
     const sections = (Array.isArray(song.sections) ? song.sections : [])
       .filter(r => Array.isArray(r) && Number.isFinite(r[0]))
-      .map(r => [r[0], r[1], Led.localizeSection(String(r[2] == null ? '' : r[2]))]);
+      .map(r => [r[0], r[1], HEADER_NAMES === 'en' && Led.englishSection ? Led.englishSection(String(r[2] == null ? '' : r[2])) : Led.localizeSection(String(r[2] == null ? '' : r[2]))]);
     if (!warmed.has(song) && Led.warm) { // the first frame of a song rasterises every name it will show, not later frames
       warmed.add(song);
-      Led.warm([String(track.title || ''), String(track.artist || ''), ...sections.map(r => r[2]), '0123456789:/ …', '本站下一站终点'], opts);
+      Led.warm([String(track.title || ''), String(track.artist || ''), ...sections.map(r => r[2]), '0123456789:/ .…MI', '本站下一站终点'], opts);
     }
-    Led.drawHeader(ctx, L.header, {title: track.title || '', artist: track.artist || '', sections, time: S.time, duration: S.duration}, opts);
+    Led.drawHeader(ctx, L.header, {title: track.title || '', artist: track.artist || '', sections, time: S.time, duration: S.duration, readout: HEADER_READOUT}, opts);
     // a lyric line too long for the sill scrolls; its progress comes with the frame when the host knows the line's timing
     // (lyricProgress), otherwise it sweeps back and forth on song time (a whole character at a time, in the module)
     const line = typeof frame.lyric === 'string' ? frame.lyric : frame.lyric && frame.lyric.text || '';
