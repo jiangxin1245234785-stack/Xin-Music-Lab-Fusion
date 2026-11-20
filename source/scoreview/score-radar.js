@@ -43,7 +43,8 @@
   const BLANK_WHEELS = Object.freeze(['', '', '']);
   // The flat-bed X-Y recorder (SPEC-RECORDER): graphite for the last pass (an rgb triple, the alpha varies), the pencil's
   // widths and sizes, the fresh-ink stretch behind the nib (song seconds), the bridge bar's width.
-  const RECORDER = Object.freeze({graphite: '88,87,82', pencilWidth: .9, markSize: 13, noteSize: 11, note: 'REF · PREV. PASS', fresh: 1.5, bridgeWidth: 4});
+  const RECORDER = Object.freeze({graphite: '88,87,82', pencilWidth: .9, markSize: 13, noteSize: 11, note: 'REF · PREV. PASS', bridgeWidth: 4,
+    fresh: 12, freshBands: 4, freshInk: '#100e0a', freshWidth: 2.4});   // fresh ink: design units behind the nib (host's correction: 1.5 s was under 2 px)
   // The teleprinter (SPEC-TELEPRINTER): a step's time (s), the fresh-ink run (cells), the ink's base strength and spread,
   // the baseline's spread (design units), one smudge in about this many cells, the paper sprite's period, the tape's
   // rise and fall, its margin in the slot, the supply reel's radius, the strike lamp's blink (s), the print point from
@@ -1957,13 +1958,13 @@
       if (data.energy) {
         const pts = path(), u = clamp(pen - (x + 4), 0, pts.length - 1), i = Math.floor(u), f = u - i, b = pts[Math.min(i + 1, pts.length - 1)];
         tip = pts[i][1] + (b[1] - pts[i][1]) * f;
-        // Ink up to now: dry ink (the old black line), then the last RECORDER.fresh seconds wetter, darker and wider.
+        // Ink up to now: dry ink (the old black line), then the last RECORDER.fresh design units behind the nib wetter:
+        // in RECORDER.freshBands steps from the dry ink's colour and width to the darkest and widest at the nib.
         stroke(x, pen, C.paperInk, 1.6);
-        const from = xAt(Math.max(0, now - RECORDER.fresh));
-        if (pen > from + .05) {
-          const g = p.createLinearGradient(from, 0, pen, 0);
-          g.addColorStop(0, 'rgba(18,16,12,0)'); g.addColorStop(1, 'rgba(18,16,12,1)');
-          stroke(from, pen, g, 2.3);
+        const from = Math.max(x + 4, pen - RECORDER.fresh), band = (pen - from) / RECORDER.freshBands;
+        if (band > .01) for (let i = 0; i < RECORDER.freshBands; i++) {
+          const k = (i + 1) / RECORDER.freshBands;
+          stroke(from + i * band, from + (i + 1) * band, mixHex(C.paperInk, RECORDER.freshInk, k), 1.6 + (RECORDER.freshWidth - 1.6) * k);
         }
       }
       // The bridge: a thin metal bar across the sheet from rail to rail, lit on its upper face, with a narrow shadow on

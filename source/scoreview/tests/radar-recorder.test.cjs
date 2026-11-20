@@ -102,3 +102,24 @@ test('the same moment draws the same frame, however it was reached', () => {
   assert.equal(JSON.stringify(stage.calls), first);
   assert.deepEqual(frame(21.37).motion.recorder, frame(21.37).motion.recorder);
 });
+
+test('fresh ink: the last 12 design units behind the nib, darker and wider toward it (host\'s correction of 1.5 s)', () => {
+  const {frame, stage} = post(model());
+  stage.reset();
+  const m = frame(30).motion, box = m.recorderBox, pen = m.recorder.bridgeX;
+  const clips = stage.calls.filter(c => c.name === 'rect' && c.args[1] === box.y && c.args[3] === box.height && c.args[0] > box.x);
+  assert.equal(clips.length, 4, 'four bands');
+  assert.ok(Math.abs(clips[0].args[0] - (pen - 12)) < .01, 'from 12 units behind the nib');
+  assert.ok(Math.abs(clips[3].args[0] + clips[3].args[2] - pen) < .01, 'to the nib');
+  // The four band strokes (rgb() from the ink mix): widths 1.8, 2.0, 2.2, 2.4, darker each time.
+  const bands = stage.calls.filter(c => c.name === 'stroke' && /^rgb\(/.test(String(c.strokeStyle)) && c.lineWidth > 1.6);
+  assert.deepEqual(bands.map(c => +c.lineWidth.toFixed(6)), [1.8, 2, 2.2, 2.4], 'widths step up to the nib');
+  const lum = s => s.match(/\d+/g).slice(0, 3).reduce((a, v) => a + +v, 0);
+  assert.ok(bands.every((c, i) => !i || lum(c.strokeStyle) < lum(bands[i - 1].strokeStyle)), 'darker toward the nib');
+  // Near the sheet's left edge the run is shorter, never left of the trace.
+  stage.reset();
+  const early = frame(.2).motion;
+  const first = stage.calls.filter(c => c.name === 'rect' && c.args[1] === box.y && c.args[3] === box.height && c.args[0] > box.x);
+  assert.ok(first.every(c => c.args[0] >= box.x + 4 - 1e-9), 'starts at the trace');
+  assert.ok(early.recorder.bridgeX - (box.x + 4) < 12);
+});
