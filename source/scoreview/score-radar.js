@@ -44,6 +44,12 @@
   // The flat-bed X-Y recorder (SPEC-RECORDER): graphite for the last pass (an rgb triple, the alpha varies), the pencil's
   // widths and sizes, the fresh-ink stretch behind the nib (song seconds), the bridge bar's width.
   const RECORDER = Object.freeze({graphite: '88,87,82', pencilWidth: .9, markSize: 13, noteSize: 11, note: 'REF · PREV. PASS', fresh: 1.5, bridgeWidth: 4});
+  // The teleprinter (SPEC-TELEPRINTER): a step's time (s), the fresh-ink run (cells), the ink's base strength and spread,
+  // the baseline's spread (design units), one smudge in about this many cells, the paper sprite's period, the tape's
+  // rise and fall, its margin in the slot, the supply reel's radius, the strike lamp's blink (s), the print point from
+  // the window's right edge, the slit's width, the tear bar's width, the title's smallest size.
+  const TELE = Object.freeze({step: .04, freshCells: 4, freshInk: '#0d0c09', inkBase: .88, inkSpread: .12, baseSpread: .6, smudgeEvery: 30,
+    period: 256, wave: .9, margin: 5, reelR: 22, flash: .06, headFromRight: 64, slit: 40, tearWidth: 12, titleMin: 11, overlap: 2});
   // A fixed noise in -1..1 of a position (never of time): pencil pressure, fuzz and the hand-drawn lines' wobble.
   const noise = k => { const h = Math.sin(k * 12.9898 + 4.1414) * 43758.5453; return (h - Math.floor(h)) * 2 - 1; };
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
@@ -2066,87 +2072,234 @@
       out.keyLamps = {velocity: kv.flat ? 'flat' : 'velocity', lo: kv.lo, hi: kv.hi, lit: Array.from(lit).map((v, m) => v >= .005 ? [m, +v.toFixed(3)] : null).filter(Boolean)};
     }
 
-    // The lyric tape: one line moving left past a fixed print head. Han characters print their code first.
-    // The teleprinter's title row: the song being taken down, in its own language, cut to fit; the key under the paper.
+    // The teleprinter (SPEC-TELEPRINTER): a paper tape stepped past a fixed print point. Each cell (a character with its
+    // code above it, a field value with its name, a space, a line's dot) is struck at the print point at its time; then
+    // the tape steps left by that cell's width in TELE.step seconds (eased out) and stands until the next strike. The
+    // tape's place is the cells struck before the newest, plus the newest's step so far: a function of song time.
+    // The title row: the song being taken down, in its own language; too wide, it gets smaller down to TELE.titleMin,
+    // then only the title, then the title cut by characters, never an ellipsis.
     function teleTitle(env, key, out) {
-      const t = env.model.track || {}, song = [t.title, clean(t.artist)].filter(Boolean).join(' · ');
+      const t = env.model.track || {}, title = String(t.title || ''), song = [title, clean(t.artist)].filter(Boolean).join(' · ');
       write('TELEPRINTER', 970 + wide / 2, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
       font('stamp', 15);
-      const left = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 12;
-      const han = /\p{Script=Han}/u.test(song);
-      out.teleTitle = write(song || '— NO SIGNAL —', left, 782, 15, C.stamp, han ? 'hanzi' : 'mono', 'left', 1290 + wide - left, 'bold', 'alphabetic');
+      const left = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 12, room = 1290 + wide - left;
+      const han = /\p{Script=Han}/u.test(song), kind = han ? 'hanzi' : 'mono';
+      const fits = (text, size) => { font(kind, size, 'bold'); return p.measureText(text).width <= room; };
+      let text = song || '— NO SIGNAL —', size = 15;
+      while (size > TELE.titleMin && !fits(text, size)) size--;
+      if (!fits(text, size) && title) text = title;
+      if (!fits(text, size)) { const chars = Array.from(text); while (chars.length > 1 && !fits(chars.join(''), size)) chars.pop(); text = chars.join(''); }
+      out.teleTitle = write(text, left, 782, size, C.stamp, kind, 'left', 0, 'bold', 'alphabetic');
+      out.teleTitleSize = size;
       write(key[0], 1404 + wide, 770, 12, C.stampFaint, 'stamp', 'right');
       write(key[1], 1404 + wide, 785, 12, C.stampFaint, 'stamp', 'right');
     }
+    // The tape's gentle rise and fall along its length (design units, |wave| <= TELE.wave), a function of the place on
+    // the tape: it travels with the paper. Periodic over TELE.period so the paper sprite tiles.
+    const tapeWave = u => TELE.wave * (.62 * Math.sin(2 * Math.PI * u / TELE.period) + .38 * Math.sin(6 * Math.PI * u / TELE.period + 1.3));
+    // The paper tape as a sprite one period long: the strip (narrower than its slot, its edges riding the wave), the
+    // paper material mirrored at the half so the tiles meet without a seam, the edges and the narrow shadow on the slot
+    // floor. Made once per height and asset generation.
+    const tapeSprites = {};
+    function tapeSprite(h) {
+      const key = h + '|' + assetGen;
+      if (key in tapeSprites) return tapeSprites[key];
+      const doc = p.canvas && p.canvas.ownerDocument;
+      if (!doc || typeof doc.createElement !== 'function') return (tapeSprites[key] = null);
+      const P = TELE.period, made = doc.createElement('canvas');
+      made.width = (P + TELE.overlap) * 2; made.height = h * 2;
+      const keep = p;
+      p = made.getContext('2d');
+      try {
+        p.setTransform(2, 0, 0, 2, 0, 0);
+        const edgeAt = (s, top) => (top ? TELE.margin : h - TELE.margin) + tapeWave(s);
+        const shape = (dy = 0) => {
+          p.beginPath(); p.moveTo(0, edgeAt(0, true) + dy);
+          for (let s = 2; s <= P; s += 2) p.lineTo(s, edgeAt(s, true) + dy);
+          for (let s = P; s >= 0; s -= 2) p.lineTo(s, edgeAt(s, false) + dy);
+          p.closePath();
+        };
+        shape(2.2); p.fillStyle = 'rgba(0,0,0,.34)'; p.fill();   // the shadow on the slot floor, below the strip
+        shape(); p.fillStyle = C.paper; p.fill();
+        p.save(); shape(); p.clip();
+        recordPaper('tape', -1, -1, P / 2 + 2, h);
+        p.translate(P, 0); p.scale(-1, 1); recordPaper('tape', -1, -1, P / 2 + 2, h);
+        p.restore();
+        for (const top of [true, false]) {
+          p.beginPath();
+          for (let s = 0; s <= P; s += 2) s ? p.lineTo(s, edgeAt(s, top)) : p.moveTo(s, edgeAt(s, top));
+          p.strokeStyle = top ? 'rgba(255,250,235,.55)' : 'rgba(110,98,74,.55)'; p.lineWidth = .8; p.stroke();
+        }
+        // TELE.overlap more units: the period's first columns again, so tiles laid at fractional places overlap and no
+        // hairline shows where they meet.
+        p.setTransform(1, 0, 0, 1, 0, 0);
+        p.drawImage(made, 0, 0, TELE.overlap * 2, h * 2, P * 2, 0, TELE.overlap * 2, h * 2);
+      } finally { p = keep; }
+      return (tapeSprites[key] = made);
+    }
+    // The supply reel: a pressed-metal spool, six spoke holes round a hub, centre-symmetric. Made once, turned by the
+    // paper fed.
+    let reelSprite = null, reelKey = null;
+    function reel(cx, cy, r, angle) {
+      const drawReel = () => {
+        const g = p.createRadialGradient(-r * .3, -r * .35, r * .1, 0, 0, r);
+        g.addColorStop(0, '#a9a79b'); g.addColorStop(.7, '#6d6c63'); g.addColorStop(1, '#3c3c35');
+        p.beginPath(); p.arc(0, 0, r, 0, Math.PI * 2); p.fillStyle = g; p.fill();
+        p.beginPath(); p.arc(0, 0, r - 1, 0, Math.PI * 2); p.strokeStyle = 'rgba(20,20,16,.8)'; p.lineWidth = 1.4; p.stroke();
+        p.beginPath(); p.arc(0, 0, r - 3.5, 0, Math.PI * 2); p.strokeStyle = 'rgba(255,255,240,.18)'; p.lineWidth = .8; p.stroke();
+        for (let k = 0; k < 6; k++) {
+          const a = k * Math.PI / 3, hx = Math.cos(a) * r * .58, hy = Math.sin(a) * r * .58;
+          p.beginPath(); p.arc(hx, hy, r * .2, 0, Math.PI * 2); p.fillStyle = '#15160f'; p.fill();
+          p.beginPath(); p.arc(hx, hy, r * .2, Math.PI * .9, Math.PI * 1.9); p.strokeStyle = 'rgba(0,0,0,.6)'; p.lineWidth = 1; p.stroke();
+          p.beginPath(); p.arc(hx, hy, r * .2 + .6, Math.PI * -.1, Math.PI * .9); p.strokeStyle = 'rgba(255,255,240,.22)'; p.lineWidth = .7; p.stroke();
+        }
+        p.beginPath(); p.arc(0, 0, r * .24, 0, Math.PI * 2); p.fillStyle = '#4a4a42'; p.fill();
+        p.beginPath(); p.arc(0, 0, r * .24, 0, Math.PI * 2); p.strokeStyle = 'rgba(15,15,12,.8)'; p.lineWidth = 1; p.stroke();
+        p.beginPath(); p.arc(0, 0, r * .08, 0, Math.PI * 2); p.fillStyle = '#16160f'; p.fill();
+      };
+      const key = r;   // the sprite is an image: any context can lay it
+      if (reelKey !== key) {
+        reelKey = key; reelSprite = null;
+        const doc = p.canvas && p.canvas.ownerDocument;
+        if (doc && typeof doc.createElement === 'function') {
+          const made = doc.createElement('canvas'), S = 3, keep = p;
+          made.width = made.height = Math.ceil((2 * r + 2) * S);
+          p = made.getContext('2d');
+          try { p.setTransform(S, 0, 0, S, (r + 1) * S, (r + 1) * S); drawReel(); } finally { p = keep; }
+          reelSprite = made;
+        }
+      }
+      p.save(); p.translate(cx, cy); p.rotate(angle);
+      if (reelSprite) p.drawImage(reelSprite, -r - 1, -r - 1, 2 * r + 2, 2 * r + 2); else drawReel();
+      p.restore();
+    }
+    // Where the tape is at `now` for a list of cells ({time, width, u, stepDur}, by time): how many are struck, the
+    // tape fed (design units), the newest strike's age and whether the tape is stepping.
+    function tapeState(cells, now) {
+      let n = lower(cells, now, c => c.time);
+      while (n < cells.length && cells[n].time <= now) n++;
+      if (!n) return {printed: 0, fed: 0, age: Infinity, stepping: false};
+      const c = cells[n - 1], f = c.stepDur > 0 && now - c.time < c.stepDur - 1e-9 ? clamp((now - c.time) / c.stepDur, 0, 1) : 1;
+      return {printed: n, fed: c.u + (1 - (1 - f) ** 3) * c.width, age: now - c.time, stepping: f < 1};
+    }
+    // Each cell's place on the tape and its step time: the step takes TELE.step, or 80 % of the gap to the next strike
+    // when that is shorter, so two steps never overlap.
+    function laidCells(cells) {
+      let u = 0;
+      cells.forEach((c, i) => {
+        c.u = u; u += c.width;
+        const gap = cells[i + 1] ? cells[i + 1].time - c.time : Infinity;
+        c.stepDur = Math.min(TELE.step, .8 * gap);
+      });
+      return cells;
+    }
+    // A struck character's small faults, fixed by its place in the song's run of cells (k), never by chance: ink within
+    // ±TELE.inkSpread, baseline within ±TELE.baseSpread, about one in TELE.smudgeEvery smudged in its closed parts.
+    const faultOf = k => ({ink: 1 + TELE.inkSpread * noise(k * 1.618 + 3), dy: TELE.baseSpread * noise(k * 2.414 + 7), smudge: (noise(k * 0.731 + 11) + 1) / 2 < 1 / TELE.smudgeEvery});
+    // Draw one struck row of text: fresh ink for the newest few, the faults, a smudge as a second faint strike.
+    function strike(text, cx, cy, size, kind, weight, age, fault) {
+      const fresh = clamp(1 - age / TELE.freshCells, 0, 1);
+      const color = fresh > 0 ? mixHex(C.paperInk, TELE.freshInk, fresh) : C.paperInk;
+      // The alpha is set and put back by hand (no save / restore: the tape draws a score of these a frame).
+      const alpha = fault ? clamp(TELE.inkBase * fault.ink + (1 - TELE.inkBase * fault.ink) * fresh, 0, 1) : 1;
+      if (alpha !== 1) p.globalAlpha = alpha;
+      write(text, cx, cy + (fault ? fault.dy : 0), size, color, kind, 'center', 0, weight);
+      if (fault && fault.smudge) { p.globalAlpha = alpha * .32; write(text, cx + .45, cy + fault.dy + .35, size, color, kind, 'center', 0, weight); }
+      if (p.globalAlpha !== 1) p.globalAlpha = 1;
+    }
     function teleprinter(env, now, out) {
-      const x = 970 + wide / 2, y = 796, w = 316 + wide / 2, h = 74, head = x + w - 6;
+      const x = 970 + wide / 2, y = 796, w = 316 + wide / 2, h = 74, head = x + w - TELE.headFromRight;
+      const knob = 1378 + wide, knobY = 832;
       const tape = tapeOf(env);
       if (pass === 'base') {
         panel(950 + wide / 2, 754, 472 + wide / 2, 130, 'plateTele', ['slot', 'slot', 'slot', 'slot']);
         // The key under the paper says what the tape holds: lyrics, or the track sheet when there are none.
         teleTitle(env, tape ? ['UPPER = CODE', 'LOWER = CLEAR'] : ['UPPER = FIELD', 'LOWER = VALUE'], out);
         raisedPlate(x - 3, y - 3, w + 3, h + 6, 4, '#1c1d18', '#3d3e36', .6);
-        rect(x, y, w, h, C.paper);
-        recordPaper('tape', x, y, w, h);
+        // The slot the tape runs in: its dark floor (the strip itself moves, in the live pass).
+        rect(x, y, w, h, '#26251f');
         if (auditSink) auditShape('frame', auditBox(x, y, x + w, y + h));
-        p.strokeStyle = '#8d8670'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
+        p.strokeStyle = '#4a4a40'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
         inset(box(x, y, w, h, 0), .7);
         raisedPlate(x + w, y - 2, 30, h + 4, 2, '#1f201b', '#4a4c42', .7);
-        const knob = 1378 + wide;
-        cast(disk(knob, 832, 23), 1.2);
-        circle(knob, 832, 22, '#1b1c17', '#8d8a7c', 3); circle(knob, 832, 10, null, '#8d8a7c', 3);
-        edge(disk(knob, 832, 23), knob - 23, 809, 46, 46, true, 1.5);
+        cast(disk(knob, knobY, 23), 1.2);
+        circle(knob, knobY, 24, '#1b1c17');   // the reel's well
         return;
       }
       if (pass === 'over') {
         if (env.options.radarJumpers === true) jumpers();
-        const shade = p.createLinearGradient(x + 1, 0, x + 9, 0);
-        shade.addColorStop(0, 'rgba(30,26,18,.30)'); shade.addColorStop(1, 'rgba(30,26,18,0)');
-        p.fillStyle = shade; p.fillRect(x + 1, y + 1, 8, h - 2);
+        // The tear-off bar at the left end: the tape leaves under its toothed edge.
+        const bar = TELE.tearWidth;
+        const g = p.createLinearGradient(x, 0, x + bar, 0);
+        g.addColorStop(0, '#2e2e28'); g.addColorStop(.5, '#77766b'); g.addColorStop(1, '#4a4a42');
+        p.beginPath(); p.moveTo(x, y); p.lineTo(x + bar - 3, y);
+        for (let ty = y, k = 0; ty < y + h; ty += 4, k++) { p.lineTo(x + bar + (k % 2 ? -3 : 0), ty + 2); p.lineTo(x + bar - 3, ty + 4); }
+        p.lineTo(x, y + h); p.closePath(); p.fillStyle = g; p.fill();
+        p.strokeStyle = 'rgba(15,15,12,.7)'; p.lineWidth = .7; p.stroke();
+        const shade = p.createLinearGradient(x + bar, 0, x + bar + 7, 0);
+        shade.addColorStop(0, 'rgba(30,26,18,.28)'); shade.addColorStop(1, 'rgba(30,26,18,0)');
+        p.fillStyle = shade; p.fillRect(x + bar, y + 1, 7, h - 2);
+        // The ribbon guard at the print point: a thin metal plate over the tape with the slit the type strikes through.
+        const gx0 = head - 3, gx1 = head + TELE.slit + 8, sy0 = y + 9, sy1 = y + h - 9;
+        p.save();
+        p.beginPath(); p.rect(gx0, y + 1, gx1 - gx0, h - 2); p.rect(head + TELE.slit + 1, sy0, -(TELE.slit + 2), sy1 - sy0); p.clip('evenodd');
+        const plate = p.createLinearGradient(0, y, 0, y + h);
+        plate.addColorStop(0, 'rgba(92,91,82,.96)'); plate.addColorStop(.5, 'rgba(58,58,51,.96)'); plate.addColorStop(1, 'rgba(34,34,30,.96)');
+        p.fillStyle = plate; p.fillRect(gx0, y + 1, gx1 - gx0, h - 2);
+        p.restore();
+        p.strokeStyle = 'rgba(12,12,10,.75)'; p.lineWidth = .8;
+        p.strokeRect(head - 1 + .4, sy0 + .4, TELE.slit + 2 - .8, sy1 - sy0 - .8);
+        p.fillStyle = 'rgba(0,0,0,.22)'; p.fillRect(gx1, y + 1, 2, h - 2);
         return;
       }
       if (pass !== 'live') return;
-      if (!tape) { trackSheet(env, now, out, {x, y, w, h, head}); return; }
-      const telegraph = root.XinScoreTelegraph;
-      const glyphs = [];
-      let printed = 0;
-      for (const item of tape.cells) {
-        if (item.time > now) break;
-        printed++;
-      }
-      const newest = tape.cells[printed - 1], upcoming = tape.cells[printed];
-      const printing = Boolean(newest && now < newest.lineEnd);
-      let right = head;
-      if (newest) {
-        // Feed ahead to make room for the next strike. At that strike the old right edge is already in place.
-        const nextTime = upcoming ? upcoming.time : newest.next;
-        const glide = nextTime > newest.time ? clamp((now - newest.time) / Math.min(.12, nextTime - newest.time), 0, 1) : 0;
-        right -= glide * (upcoming || newest).width;
-      }
+      const sheet = tape ? null : sheetOf(env);
+      const cells = tape ? tape.cells : sheet.cells;
+      const st = tapeState(cells, now);
+      // The strip: sprite tiles laid so that tape place u is at head + u - fed.
       p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
+      const sprite = tapeSprite(h), P = TELE.period;
+      if (sprite) {
+        const first = Math.floor((x - head + st.fed) / P) - 1;
+        for (let k = first; head + k * P - st.fed < x + w; k++) p.drawImage(sprite, head + k * P - st.fed, y, P + TELE.overlap, h);
+      } else rect(x, y + TELE.margin, w, h - 2 * TELE.margin, C.paper);
       auditClip = {x: x + 1, y: y + 1, w: w - 2, h: h - 2};
-      for (let k = printed - 1; k >= 0 && right > x; k--) {
-        const item = tape.cells[k], cx = right - item.width / 2;
-        right -= item.width;
-        if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
-        if (item.blank) { glyphs.push({ch: item.ch, code: null, clear: true}); continue; }
-        const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
-        // Uneven ink (batch 4): each character struck a little lighter or heavier and a little high or low, fixed
-        // by its place on the tape (a hash of its index), never by chance.
-        const ink = env.options.radarInk === false ? null : inkOf(k);
-        if (ink) { p.save(); p.globalAlpha = ink.alpha; }
-        const dy = ink ? ink.dy : 0;
-        if (code) write(code, cx, y + 17 + dy, 15, C.paperInk, 'mono', 'center');
-        const clear = !item.han || now >= item.time + item.half;
-        if (clear) write(item.ch, cx, y + 49 + dy, item.wide ? 28 : TAPE_MONO_SIZE, C.paperInk, item.wide ? 'hanzi' : 'mono', 'center', 0, 'bold');
-        if (ink) p.restore();
-        glyphs.push({ch: item.ch, code: code || null, clear});
+      const glyphs = [];
+      const faults = env.options.radarInk !== false;
+      for (let k = st.printed - 1; k >= 0; k--) {
+        const c = cells[k], left = head + c.u - st.fed;
+        if (left + c.width < x) break;
+        const cx = left + c.width / 2, dy = tapeWave(c.u + c.width / 2), age = st.printed - 1 - k, fault = faults ? faultOf(k) : null;
+        if (c.dot) { circle(cx, y + h / 2 + 8 + dy, 2.5, C.paperInk); continue; }
+        if (tape) {
+          if (c.blank) { glyphs.push({ch: c.ch, code: null, clear: true}); continue; }
+          const code = c.han ? (root.XinScoreTelegraph && root.XinScoreTelegraph.code(c.ch)) || '----' : '';
+          if (code) strike(code, cx, y + 17 + dy, 15, 'mono', '', age, fault);
+          strike(c.ch, cx, y + 49 + dy, c.wide ? 28 : TAPE_MONO_SIZE, c.wide ? 'hanzi' : 'mono', 'bold', age, fault);
+          glyphs.push({ch: c.ch, code: code || null, clear: true});
+        } else {
+          if (c.name) strike(c.name, cx, y + 17 + dy, 13, 'mono', '', age, fault);
+          if (c.ch && c.ch !== ' ') strike(c.ch, cx, y + 49 + dy, c.han ? 24 : 20, c.han ? 'hanzi' : 'mono', 'bold', age, fault);
+        }
       }
       auditClip = null;
-      paperFade('tape', x, y, h);
       p.restore();
-      lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
-      out.teleprinter = {mode: 'lyrics', printing, newest: glyphs.slice(0, 6), lines: tape.lines, lead: tape.lead};
+      reel(knob, knobY, TELE.reelR, st.fed / TELE.reelR);
+      // The lamp beside the reel: a blink at each strike, dark again within TELE.flash.
+      lamp(x + w + 15, y + 12, 5, st.age < TELE.flash ? 1 - st.age / TELE.flash : 0);
+      const common = {printed: st.printed, fed: +st.fed.toFixed(3), stepping: st.stepping, strikeAge: Number.isFinite(st.age) ? +st.age.toFixed(3) : null,
+        reel: +(st.fed / TELE.reelR).toFixed(4), head: +head.toFixed(2)};
+      if (tape) {
+        const newest = cells[st.printed - 1];
+        out.teleprinter = {mode: 'lyrics', printing: Boolean(newest && now < newest.lineEnd), newest: glyphs.slice(0, 6), lines: tape.lines, lead: tape.lead, ...common};
+      } else {
+        const shown = sheet.items.filter(item => item.start <= now).map(item => {
+          const count = clamp(cells.filter(c => c.field === item && !c.dot && c.time <= now && c.valueIndex >= 0).length, 0, item.chars.length);
+          return {field: item.name, value: item.chars.slice(0, count).join(''), done: count === item.chars.length};
+        });
+        out.teleprinter = {mode: 'sheet', printing: sheet.items.some(item => now >= item.start && now < item.end), fields: sheet.items.map(item => [item.name, item.value]),
+          shown, lines: 0, ...common};
+      }
     }
     // The track sheet: the fields of model.track that are there, in this order. Values as the tags give them.
     const SHEET = Object.freeze([
@@ -2156,6 +2309,7 @@
       ['COMPOSER', t => t.composer], ['LYRICS BY', t => t.lyricist], ['ARRANGER', t => t.arranger], ['LABEL', t => t.label],
       ['LENGTH', t => Number(t.duration) > 0 ? Math.floor(t.duration / 60) + ':' + String(Math.floor(t.duration % 60)).padStart(2, '0') : '']]);
     const SHEET_CHAR = .08;   // seconds a character takes to print
+    const SHEET_NAME_W = 13 * 1228 / 2048, SHEET_VALUE_W = 20 * 1228 / 2048, SHEET_HAN_W = 26;
     let sheetCache = null, sheetKey = null;
     function sheetOf(env) {
       const t = env.model.track || {}, key = JSON.stringify(t);
@@ -2165,53 +2319,33 @@
       const given = Array.isArray(t.facts) ? t.facts.filter(f => f && typeof f.name === 'string' && f.name.trim() && f.value != null && String(f.value).trim()) : [];
       const fields = given.length ? given.map(f => [f.name.trim().toUpperCase(), String(f.value).trim()])
         : SHEET.map(([name, get]) => [name, String(get(t) ?? '').trim()]).filter(([, value]) => value);
-      // Title and artist print at once; the others start evenly over the song after them.
-      const duration = Math.max(1, Number(t.duration) || 1), items = [];
+      // Title and artist print at once; the others start evenly over the song after them. Each field is a run of cells,
+      // the name's letters over the value's (two rows, one strike, as code over clear), then a dot.
+      const duration = Math.max(1, Number(t.duration) || 1), items = [], cells = [];
       let at = .5;
       fields.forEach(([name, value], i) => {
-        const chars = Array.from(value);
+        const chars = Array.from(value), names = Array.from(name);
         if (i >= 2) at = Math.max(at, 2 + (duration - 8) * (i - 1) / Math.max(1, fields.length - 1));
-        items.push({name, value, chars, start: at, end: at + chars.length * SHEET_CHAR, han: chars.some(isHan)});
-        at += chars.length * SHEET_CHAR + .4;
+        // A value character's cell carries as many of the name's letters as fit over it (at least one); letters left
+        // when the value is done get cells of their own.
+        const runs = [];
+        let ni = 0;
+        chars.forEach((ch, k) => {
+          const han = isHan(ch), width = han ? SHEET_HAN_W : SHEET_VALUE_W;
+          let take = ni < names.length ? 1 : 0;
+          while (ni + take < names.length && (take + 1) * SHEET_NAME_W <= width) take++;
+          runs.push({name: names.slice(ni, ni + take).join(''), ch, han, valueIndex: k, width});
+          ni += take;
+        });
+        for (; ni < names.length; ni++) runs.push({name: names[ni], ch: '', han: false, valueIndex: -1, width: SHEET_NAME_W});
+        const item = {name, value, chars, start: at, end: at + runs.length * SHEET_CHAR, han: chars.some(isHan)};
+        items.push(item);
+        runs.forEach((run, k) => cells.push({field: item, ...run, time: at + k * SHEET_CHAR}));
+        cells.push({field: item, dot: true, time: item.end + .2, width: 18, valueIndex: -1});
+        at = item.end + .4;
       });
-      sheetCache = items; sheetKey = key;
-      return items;
-    }
-    function trackSheet(env, now, out, {x, y, w, h, head}) {
-      // The title row (the song) and the key under the paper are hardware, in teleprinter()'s base pass.
-      const items = sheetOf(env), shown = [];
-      // What has printed by now, as pieces laid right to left from the head: each a field, then a dot.
-      const pieces = [];
-      for (const item of items) {
-        if (item.start > now) break;
-        const count = clamp(Math.floor((now - item.start) / SHEET_CHAR) + 1, 0, item.chars.length);
-        const value = item.chars.slice(0, count).join('');
-        font(item.han ? 'hanzi' : 'mono', item.han ? 24 : 20, 'bold');
-        const valueW = p.measureText(value).width;
-        font('mono', 13);
-        const nameW = p.measureText(item.name).width;
-        pieces.push({item, value, width: Math.max(valueW, count === item.chars.length ? nameW : 0) + 4});
-        if (count === item.chars.length && now >= item.end + .2) pieces.push({dot: true, width: 18});
-        shown.push({field: item.name, value, done: count === item.chars.length});
-      }
-      p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
-      auditClip = {x: x + 1, y: y + 1, w: w - 2, h: h - 2};
-      let right = head - 4;
-      for (let k = pieces.length - 1; k >= 0 && right > x - 400; k--) {
-        const piece = pieces[k], left = right - piece.width;
-        if (piece.dot) circle(left + piece.width / 2, y + h / 2 + 8, 2.5, C.paperInk);
-        else {
-          write(piece.item.name, left, y + 17, 13, '#5f5a4b', 'mono', 'left');
-          write(piece.value, left, y + 49, piece.item.han ? 24 : 20, C.paperInk, piece.item.han ? 'hanzi' : 'mono', 'left', 0, 'bold');
-        }
-        right = left - 6;
-      }
-      auditClip = null;
-      paperFade('tape', x, y, h);
-      p.restore();
-      const printing = items.some(item => now >= item.start && now < item.end);
-      lamp(x + w + 15, y + 12, 5, printing ? 1 : 0);
-      out.teleprinter = {mode: 'sheet', printing, fields: items.map(item => [item.name, item.value]), shown, lines: 0};
+      sheetCache = {items, cells: laidCells(cells)}; sheetKey = key;
+      return sheetCache;
     }
     // The lyric lines as print cells, a dot between lines. A character is sung at its even share of its line's time
     // (as before); the tape prints ahead of the singing (SPEC-WEATHER, the user: printing is slow, so align it early):
@@ -2258,7 +2392,7 @@
           lastDot = until;
         }
       });
-      tapeCache = {cells, lines: rows.length, lead}; tapeKey = key;
+      tapeCache = {cells: laidCells(cells), lines: rows.length, lead}; tapeKey = key;
       return tapeCache;
     }
 
@@ -2288,7 +2422,7 @@
       return null;
     }
     ready();
-    return {paint, hit, tape: env => tapeOf(env)};
+    return {paint, hit, tape: env => tapeOf(env), sheet: env => sheetOf(env)};
   }
   const LEADS = Object.freeze([.2, .4, .7]);
   const materials = () => Object.keys(MATERIALS).filter(key => MATERIALS[key]);

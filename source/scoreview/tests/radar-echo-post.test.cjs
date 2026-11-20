@@ -178,7 +178,7 @@ test('PAN reads the whole song\'s left minus right; without it the horizon stays
   assert.equal(post(steady(lanes, 64, {levels})).frame(3).motion.pan, 6);
 });
 
-test('the teleprinter prints codes first and characters a short beat later; the codes are Unihan\'s', () => {
+test('the teleprinter strikes a code and its character together, one cell (SPEC-TELEPRINTER 8); the codes are Unihan\'s', () => {
   assert.equal(Telegraph.code('七'), '0003');
   assert.equal(Telegraph.code('里'), '6849');
   assert.equal(Telegraph.code('香'), '7449');
@@ -189,9 +189,9 @@ test('the teleprinter prints codes first and characters a short beat later; the 
   view.setLyrics({trackId: song.track.id, enabled: true, offset: 0, lines: [{time: 10, text: '七里香'}, {time: 20, text: 'la'}]});
   assert.equal(frame(9).motion.teleprinter.newest.length, 0, 'nothing before the line');
   // The line is sung 10 .. 11.5 (three characters, at least 1.2 s): 七 at 10, 里 at 10.5, 香 at 11. The tape prints it
-  // .4 s early and by 70 % of it (9.6 .. 11.05): 七 at 9.6, 里 at 10.08, 香 at 10.57, each clear .1 s after its code.
+  // .4 s early and by 70 % of it (9.6 .. 11.05): 七 at 9.6, 里 at 10.08, 香 at 10.57, code and character in one strike.
   const half = frame(10.6).motion.teleprinter;
-  assert.deepEqual(half.newest.map(g => [g.ch, g.code, g.clear]), [['香', '7449', false], ['里', '6849', true], ['七', '0003', true]]);
+  assert.deepEqual(half.newest.map(g => [g.ch, g.code, g.clear]), [['香', '7449', true], ['里', '6849', true], ['七', '0003', true]]);
   assert.equal(half.lead, .4);
   assert.equal(half.printing, true);
   const done = frame(15).motion.teleprinter;
@@ -237,8 +237,10 @@ function tapeFrames(lines) {
   view.setLyrics(lyrics);
   const drawTape = at => {
     stage.reset(); frame(at);
-    const text = new Map(stage.texts().filter(s => s.style === '#38362e' && s.y >= 813 && s.y <= 845).map(s => [s.text, s]));
-    const dot = stage.calls.find(c => c.name === 'arc' && c.args[0] > 970 && c.args[1] === 841 && c.args[2] === 2.5);
+    // The rows ride the tape's rise and fall (under a unit) and the newest few are in fresh ink: any ink colour, y within 1.
+    const ink = s => s.style === '#38362e' || /^rgb\(/.test(s.style);
+    const text = new Map(stage.texts().filter(s => ink(s) && s.y >= 812 && s.y <= 846).map(s => [s.text, s]));
+    const dot = stage.calls.find(c => c.name === 'arc' && c.args[0] > 970 && Math.abs(c.args[1] - 841) <= 1 && c.args[2] === 2.5);
     return {text, dot: dot?.args[0]};
   };
   return {cells, drawTape};
@@ -564,9 +566,10 @@ test('Codex QA (qa-gpt/REPORT.md): the chord card prints whole names, bar readin
   const xml = require('../../fusion-runtime-baseline/desktop/track-info.cjs');
   assert.equal(xml.FACT_NAMES.date.toUpperCase(), 'RELEASED');
   assert.equal(xml.FACT_NAMES.lyricist.toUpperCase(), 'LYRICS BY');
-  // R22: a long title of characters outside the BMP is shortened by whole characters.
+  // R22: a long title of characters outside the BMP is shortened by whole characters (SPEC-TELEPRINTER 7: smaller first,
+  // then the title alone, then cut by characters, never an ellipsis).
   const title = post(steady(lanes, 64, {track: {...song.track, title: 'iiiii秋' + '\u{20BB7}'.repeat(48), artist: '', duration: 64}})).frame(5).motion.teleTitle;
-  assert.ok(title.endsWith('…') && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title), 'no half character before the ellipsis');
+  assert.ok(!title.includes('…') && title.length > 6 && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(title), 'whole characters, no ellipsis: ' + title);
 });
 
 test('channel lamps (score-radar-lamps.js, rule A at P65 / P80): a channel climbs green, amber, red with its own level; muted or absent stays dark', () => {
