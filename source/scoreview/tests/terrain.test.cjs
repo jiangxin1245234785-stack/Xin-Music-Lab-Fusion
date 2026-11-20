@@ -328,7 +328,8 @@ test('tiled ranges: the same moment draws the same calls whatever came before (c
       Object.assign(ctx, {arcTo() {}, createPattern: () => ({}), getTransform: () => ({a: 1, b: 0, c: 0, d: 1, e: 0, f: 0})});
       for (const c of made) c.reset();
       T.draw(ctx, frame(song(), t));
-      const comp = made.find(c => c.width === 1123 && c.height === 783 && c.calls.some(x => x.name === 'drawImage'));
+      // the composite is made after the rasters (the overlay is the same size and now draws its curtains with drawImage)
+      const comp = made.filter(c => c.width === 1123 && c.height === 783 && c.calls.some(x => x.name === 'drawImage')).at(-1);
       const name = v => v && typeof v === 'object' && 'width' in v && 'getContext' in v ? 'canvas ' + v.width + 'x' + v.height : v;
       // the drawing state counts on the calls that paint with it (a style left over from the previous frame and replaced
       // before any paint is not part of the picture)

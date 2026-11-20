@@ -659,16 +659,29 @@
       g.save();
       const fx = m => win.x + (m - M_LEFT) / M_W * win.w, B = win.y + win.h;
       roundRect(g, win.x, win.y, win.w, win.h, win.r); g.clip();
-      const GL = LT.glass;
+      const GL = LT.glass, bar = transomOf(L);
+      // two panes (batch 6): the big view pane below the transom keeps the old streaks; the small pane above it has a
+      // faint cool tint and its own, steeper streaks, so the two read as two pieces of glass
+      g.save(); g.beginPath(); g.rect(win.x, bar.y + bar.t, win.w, B - bar.y - bar.t); g.clip();
       g.fillStyle = css(GL.streak, GL.streakA);
       g.beginPath(); g.moveTo(fx(980), win.y); g.lineTo(fx(1100), win.y); g.lineTo(fx(840), B); g.lineTo(fx(720), B); g.closePath(); g.fill();
       g.beginPath(); g.moveTo(fx(1130), win.y); g.lineTo(fx(1160), win.y); g.lineTo(fx(900), B); g.lineTo(fx(870), B); g.closePath(); g.fill();
+      g.restore();
+      g.save(); g.beginPath(); g.rect(win.x, win.y, win.w, bar.y - win.y); g.clip();
+      g.fillStyle = 'rgba(40,58,76,.12)'; g.fillRect(win.x, win.y, win.w, bar.y - win.y);
+      g.fillStyle = css(GL.streak, GL.streakA * 1.6);
+      for (const [m0, mw] of [[1150, 64], [1236, 16], [470, 36]]) { // steeper than the view pane's streaks
+        const sl = .6 * (bar.y - win.y);
+        g.beginPath(); g.moveTo(fx(m0), win.y); g.lineTo(fx(m0 + mw), win.y); g.lineTo(fx(m0 + mw) - sl, bar.y); g.lineTo(fx(m0) - sl, bar.y); g.closePath(); g.fill();
+      }
       g.filter = 'blur(' + (10 * u * dpr).toFixed(1) + 'px)'; g.fillStyle = css(GL.smear, GL.smearA); g.fillRect(fx(214), win.y + 16 * u, 520 / M_W * win.w, 7 * u);
       g.filter = 'none';
+      g.restore();
       const v = g.createLinearGradient(0, win.y, 0, win.y + 70 * u); v.addColorStop(0, 'rgba(8,12,18,.34)'); v.addColorStop(1, 'rgba(8,12,18,0)');
       g.fillStyle = v; g.fillRect(win.x, win.y, win.w, 70 * u);
       const v2 = g.createLinearGradient(0, B - 50 * u, 0, B); v2.addColorStop(0, 'rgba(8,12,18,0)'); v2.addColorStop(1, 'rgba(8,12,18,.3)');
       g.fillStyle = v2; g.fillRect(win.x, B - 50 * u, win.w, 50 * u);
+      paintTransom(g, L, bar);
       g.restore();
       // the carriage wall around the window (the LED displays go in the room above and below)
       g.save();
@@ -681,8 +694,128 @@
       const sillY = B + 22 * u, sill = g.createLinearGradient(0, sillY, 0, L.h); sill.addColorStop(0, '#34373b'); sill.addColorStop(.12, '#26292c'); sill.addColorStop(1, '#17191b');
       g.fillStyle = sill; g.fillRect(0, sillY, L.w, L.h - sillY);
       g.fillStyle = 'rgba(210,216,222,.22)'; g.fillRect(0, sillY, L.w, Math.max(.6, 1.2 * u));
+      curtains(g, L, dpr);
     }
     return {back, clouds, ground, bed, overlay};
+  }
+
+  // ---------- the window (batch 6): a slim transom high in the sky, tied-back curtains at both sides ----------
+  // The user chose 「C 框配 B 帘」 from the round-7 sketch (mock7): C's single slim bar across the glass, B's cloth drapes
+  // tied back to the frame. Both are part of the overlay raster (made once per size), so a frame costs nothing more.
+  // The transom: the brief asked for ~11 % of the window's height and never over a mountain. The library's highest ridge
+  // (batch6/census6.json, 32 songs with levels, three window sizes) reaches y = 212.2 sketch units (himitsu, vocals),
+  // past 11 % (212.6); and every range behind the nearest is held below TOPMOST (206) by geometry()'s soft clamp, while the
+  // nearest (bass) cannot rise above ~520. So the bar sits with its shadow ending above 206: top 196, 5 units thick
+  // (centre at 9.0 % of the window's height) - no song can reach it.
+  const TRANSOM_Y = 196, TRANSOM_T = 5, TRANSOM_SHADOW = 3;
+  function transomOf(L) {
+    const s = L.s, y = L.win.y + (TRANSOM_Y - M_TOP) * s;
+    return {y, t: TRANSOM_T * s, shadow: TRANSOM_SHADOW * s};
+  }
+  function paintTransom(g, L, bar) {
+    const {win} = L;
+    g.fillStyle = 'rgba(0,0,0,.26)'; g.fillRect(win.x, bar.y + bar.t, win.w, bar.shadow); // its shadow on the glass below
+    const gr = g.createLinearGradient(0, bar.y, 0, bar.y + bar.t);
+    gr.addColorStop(0, '#8d8b86'); gr.addColorStop(.2, '#5a5a5a'); gr.addColorStop(.75, '#3a3b3d'); gr.addColorStop(1, '#1e1f21');
+    g.fillStyle = gr; g.fillRect(win.x, bar.y, win.w, bar.t);
+    const sun = g.createLinearGradient(win.x, 0, win.x + win.w, 0); // the afternoon sun from the left front catches its top edge
+    sun.addColorStop(0, 'rgba(255,214,160,.55)'); sun.addColorStop(.5, 'rgba(255,214,160,.12)'); sun.addColorStop(1, 'rgba(255,214,160,.04)');
+    g.fillStyle = sun; g.fillRect(win.x, bar.y, win.w, Math.max(.5, bar.t * .2));
+  }
+  // The curtains: deep blue-grey cloth (the carriage's trim, not the scenery's colours) hung from a short rod over each
+  // side, tied back to the frame by a band, so the inner edge sweeps in an arc to the tie and flares out below it. Painted
+  // per pixel once per size: the folds are uneven (each its own width and depth), tight under the rod and looser toward
+  // the hem, fanning out across the cloth; lit on the slopes that face the light from the left front, the edge that faces
+  // the window warm-rimmed (the right curtain, facing the light, more). Its shadow falls on the wall and the frame only:
+  // the sun is outside, so nothing of the cloth darkens the glass.
+  const FABRIC = {lit: [104, 116, 134], mid: [58, 70, 88], dark: [24, 30, 40]}, SUNLIT = [255, 200, 140];
+  function curtainShapes(L) {
+    const {win, u} = L;
+    // as the sketch's B at 1440 x 900 (u = 1); a window narrower than its height asks keeps the cloth under 9 % of its width
+    const k = u * Math.min(1, win.w * .09 / (106 * u));
+    const top = win.y - 10 * u, bot = win.y + win.h + 10 * u, tie = win.y + win.h * .59;
+    const side = (outer, s, wTop, wTie, wBot, rim, seed) => {
+      const w = y => y < tie ? lerp(wTop, wTie, Math.pow(clamp((y - top) / (tie - top)), 1.6)) : lerp(wTie, wBot, Math.pow(clamp((y - tie) / (bot - tie)), .7));
+      return {s, rim, seed, xo: () => outer, xi: y => outer + s * k * w(y), w: y => k * w(y), maxW: k * Math.max(wTop, wTie, wBot)};
+    };
+    return {top, bot, tie, k, sides: [side(win.x - 16 * u, 1, 102, 46, 76, .55, 21), side(win.x + win.w + 16 * u, -1, 106, 48, 80, 1, 33)]};
+  }
+  function curtains(g, L, dpr) {
+    const C = curtainShapes(L), {top, bot, tie} = C, u = L.u, {win} = L;
+    // shadows: on the wall and frame, never on the glass
+    g.save();
+    roundRect(g, win.x, win.y, win.w, win.h, win.r); g.rect(0, 0, L.w, L.h); g.clip('evenodd');
+    g.filter = 'blur(' + (7 * u * dpr).toFixed(1) + 'px)'; g.fillStyle = 'rgba(0,0,0,.42)';
+    for (const S of C.sides) {
+      const dx = (S.s > 0 ? 6 : 10) * u;
+      g.beginPath();
+      for (let y = top; y <= bot; y += 6 * u) g.lineTo(S.xi(y) + dx, y + 4 * u);
+      for (let y = bot; y >= top; y -= 6 * u) g.lineTo(S.xo(y) + dx, y + 4 * u);
+      g.closePath(); g.fill();
+    }
+    g.filter = 'none';
+    g.restore();
+    for (const S of C.sides) cloth(g, L, C, S, dpr);
+    for (const S of C.sides) { // the tie band round the gathered waist, its hook on the wall; the rod over the drape
+      const s = S.s, xo = S.xo(tie), xi = S.xi(tie), x0 = Math.min(xo, xi) - 3 * u, x1 = Math.max(xo, xi) + 3 * u;
+      // the band pulls the cloth in a little above and below it: a soft shade, then the band
+      g.fillStyle = 'rgba(0,0,0,.35)'; roundRect(g, x0, tie - 8 * u, x1 - x0, 18 * u, 6 * u); g.fill();
+      const band = g.createLinearGradient(0, tie - 9 * u, 0, tie + 9 * u);
+      band.addColorStop(0, '#8a8f97'); band.addColorStop(.35, '#4a5160'); band.addColorStop(1, '#232833');
+      g.fillStyle = band; roundRect(g, x0, tie - 9 * u, x1 - x0, 16 * u, 6 * u); g.fill();
+      g.fillStyle = css(SUNLIT, s > 0 ? .3 : .55); g.fillRect(x0 + 3 * u, tie - 8.5 * u, (x1 - x0) * .5, Math.max(.6, 1.3 * u));
+      g.fillStyle = '#6b6862'; g.beginPath(); g.arc(xo - s * 6 * u, tie, 4 * u, 0, Math.PI * 2); g.fill();
+      const ra = Math.min(S.xo(top), S.xi(top)) - 10 * u, rb = Math.max(S.xo(top), S.xi(top)) + 10 * u;
+      const rod = g.createLinearGradient(0, top - 6 * u, 0, top + 2 * u); rod.addColorStop(0, '#a29d94'); rod.addColorStop(1, '#3a3937');
+      g.fillStyle = rod; roundRect(g, ra, top - 6 * u, rb - ra, 7 * u, 3.5 * u); g.fill();
+      g.fillStyle = '#585652'; g.beginPath(); g.arc(s > 0 ? ra : rb, top - 2.5 * u, 5 * u, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // one drape, per device pixel. p runs across the cloth (0 at the wall, 1 at the edge facing the window). The folds are
+  // a phase F(y) * warp(p): F falls from 8 under the rod to 4.5 at the hem (tight above, loose below - the fold lines fan
+  // out), the warp makes each fold its own width, and each fold has its own depth. The fold's cross-section is skewed:
+  // a short steep side that faces the light and a long one in shade, not a sine (a sine read as a pleated skirt).
+  function cloth(g, L, C, S, dpr) {
+    const {top, bot, tie} = C, u = L.u, seed = S.seed;
+    const bx0 = Math.floor((S.s > 0 ? S.xo(0) : S.xo(0) - S.maxW) * dpr) - 2, bx1 = Math.ceil((S.s > 0 ? S.xo(0) + S.maxW : S.xo(0)) * dpr) + 2;
+    const by0 = Math.floor(top * dpr) - 1, by1 = Math.ceil((bot + 4 * u) * dpr) + 1;
+    const W = bx1 - bx0, H = by1 - by0, cv = makeCanvas(W, H), cg = cv && cv.getContext('2d');
+    if (!cg || typeof cg.createImageData !== 'function') return;
+    const img = cg.createImageData(W, H), d = img.data;
+    const warp = p => p + .04 * Math.sin(2 * Math.PI * 1.7 * p + seed) + .018 * Math.sin(2 * Math.PI * 4.3 * p + 2 * seed);
+    for (let r = 0; r < H; r++) {
+      const y = (by0 + r + .5) / dpr;
+      const v = clamp((y - top) / (bot - top)), F = lerp(8, 4.5, v * v * (3 - 2 * v));
+      const drift = (vnoise(y / (220 * u), seed) - .5) * .35;
+      const xo = S.xo(y), w = S.w(y);
+      const bunch = .32 * Math.exp(-Math.pow((y - tie) / (26 * u), 2)), shade = (1 - bunch) * (.8 + .2 * (1 - v));
+      for (let c = 0; c < W; c++) {
+        const x = (bx0 + c + .5) / dpr, p = S.s > 0 ? (x - xo) / w : (xo - x) / w;
+        const ein = Math.min(p * w, (1 - p) * w) * dpr + .5; // device px inside the cloth's side edges
+        if (ein <= 0) continue;
+        const ph = F * warp(p) + drift, n = Math.floor(ph), f = ph - n;
+        const depth = .55 + .45 * hash(n, seed + 3);
+        // the hem follows the folds: a fold's crest hangs a little lower than its valleys
+        const crest = Math.sin(Math.PI * f);
+        const yb = bot + (1.5 + 2.5 * crest * depth) * u;
+        const ebot = (yb - y) * dpr + .5, etop = (y - top) * dpr + .5;
+        const a = clamp(Math.min(ein, ebot, etop));
+        if (a <= 0) continue;
+        // skewed profile: rises over the first 30 % of the fold (faces the light: bright), falls over the rest
+        const fold = f < .38 ? Math.sin(Math.PI * f / .38) : -Math.sin(Math.PI * (f - .38) / .62) * .55;
+        // and a broad swell across two or three folds, so the cloth billows instead of standing in even pleats
+        const lit = .68 * fold + .32 * Math.sin(2 * Math.PI * (.36 * F * warp(p) + .5 * drift) + seed);
+        let b = clamp((.42 + .45 * lit * depth) * shade * (.7 + .3 * smooth(0, .14, p)));
+        b *= 1 - .25 * clamp(1 - ebot / (3 * dpr)) ; // the hem's lower edge turns under
+        let col = b > .5 ? mix(FABRIC.mid, FABRIC.lit, (b - .5) * 2) : mix(FABRIC.dark, FABRIC.mid, b * 2);
+        const warm = clamp((b - .55) / .3) * S.rim * (.25 + .75 * p * p) + S.rim * clamp(1 - (1 - p) * w * dpr / (2.2 * dpr)) * .9;
+        col = mix(col, SUNLIT, clamp(warm) * .55);
+        const i = (r * W + c) * 4;
+        d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255 * a;
+      }
+    }
+    cg.putImageData(img, 0, 0);
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(cv, bx0, by0); g.restore();
   }
   // film grain on the glass: a fixed tile (the sketch added fresh noise to every pixel, too slow for 60 frames a second)
   let grainTile = null;
@@ -1590,7 +1723,7 @@
   const invalidate = song => { songCache.delete(song); };
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate,
     // for tests and measurements only
-    _internal: Object.freeze({layout, analysePixels, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
+    _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);
       return {L, src, ranges: geometry(src, L, clamp(frame.time, 0, duration), margin)};
     }})});
