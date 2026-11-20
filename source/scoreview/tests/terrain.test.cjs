@@ -252,7 +252,7 @@ test('draw paints the window through the presentation\'s frame and hands back th
   const made = [];
   globalThis.OffscreenCanvas = function (w, h) {
     const m = mockCanvas(w, h), ctx = m.canvas.getContext('2d');
-    Object.assign(ctx, {arcTo() {}, createImageData: (W, H) => ({data: new Uint8ClampedArray(W * H * 4)}), putImageData() {}, getTransform: () => ({a: 1, d: 1, e: 0, f: 0})});
+    Object.assign(ctx, {arcTo() {}, clearRect() {}, createImageData: (W, H) => ({data: new Uint8ClampedArray(W * H * 4)}), putImageData() {}, getTransform: () => ({a: 1, d: 1, e: 0, f: 0})});
     made.push(m);
     return {width: w, height: h, getContext: () => ctx};
   };
@@ -263,11 +263,58 @@ test('draw paints the window through the presentation\'s frame and hands back th
     assert.ok(S && S.detail.ranges.length === 4);
     assert.ok(made.length > 3, 'sky, clouds, ground, glass rasters made: ' + made.length);
     assert.ok(m.calls.filter(c => c.name === 'drawImage').length >= 3);
-    assert.ok(m.calls.filter(c => c.name === 'fill').length >= 4);
+    // batch 5: the ranges are filled on the composite (one fill per range body) and laid over with their tiles; the
+    // composite goes onto the window in one drawImage
+    const fills = made.reduce((n, x) => n + x.calls.filter(c => c.name === 'fill').length, 0);
+    assert.ok(fills >= 4, 'range bodies and tile details filled offscreen: ' + fills);
+    assert.equal(m.calls.filter(c => c.name === 'clip').length, 1, 'one clip a frame (the window), none per range');
     assert.equal(m.texts().length, 0, 'no text on the scenery: titles, sections and lyrics belong to the carriage');
     const again = mockCanvas(1123, 783), c2 = again.canvas.getContext('2d');
     Object.assign(c2, {arcTo() {}, createPattern: () => ({}), getTransform: () => ({a: 1, b: 0, c: 0, d: 1, e: 0, f: 0})});
     terrain.draw(c2, frame(song(), 60));
     assert.equal(again.calls.length, m.calls.length);
   } finally { globalThis.OffscreenCanvas = prior; }
+});
+
+test('tiled ranges: the same moment draws the same calls whatever came before (cold tiles, warm tiles, other moments first)', () => {
+  const prior = globalThis.OffscreenCanvas;
+  const made = [];
+  const install = () => {
+    globalThis.OffscreenCanvas = function (w, h) {
+      const m = mockCanvas(w, h), ctx = m.canvas.getContext('2d');
+      Object.assign(ctx, {arcTo() {}, clearRect() {}, createImageData: (W, H) => ({data: new Uint8ClampedArray(W * H * 4)}), putImageData() {}, getTransform: () => ({a: 1, d: 1, e: 0, f: 0})});
+      const c = {width: Math.ceil(w), height: Math.ceil(h), getContext: () => ctx, calls: m.calls, reset: m.reset};
+      made.push(c);
+      return c;
+    };
+  };
+  // what reaches the window and the composite, with every canvas named by its size (identity differs across modules)
+  const record = (T, times) => {
+    made.length = 0;
+    let out = null;
+    for (const t of times) {
+      const m = mockCanvas(1123, 783), ctx = m.canvas.getContext('2d');
+      Object.assign(ctx, {arcTo() {}, createPattern: () => ({}), getTransform: () => ({a: 1, b: 0, c: 0, d: 1, e: 0, f: 0})});
+      for (const c of made) c.reset();
+      T.draw(ctx, frame(song(), t));
+      const comp = made.find(c => c.width === 1123 && c.height === 783 && c.calls.some(x => x.name === 'drawImage'));
+      const name = v => v && typeof v === 'object' && 'width' in v && 'getContext' in v ? 'canvas ' + v.width + 'x' + v.height : v;
+      // the drawing state counts on the calls that paint with it (a style left over from the previous frame and replaced
+      // before any paint is not part of the picture)
+      const paints = new Set(['fill', 'stroke', 'fillRect', 'strokeRect', 'drawImage', 'fillText', 'clip']);
+      const flat = calls => JSON.stringify(calls.map(c => [c.name, c.args.map(name), paints.has(c.name) ? c.state : null]));
+      out = {main: flat(m.calls), comp: comp ? flat(comp.calls) : null};
+    }
+    return out;
+  };
+  const fresh = () => { delete require.cache[require.resolve('../score-terrain.js')]; return require('../score-terrain.js'); };
+  try {
+    install();
+    const cold = record(fresh(), [61.5]);
+    assert.ok(cold.comp && JSON.parse(cold.comp).some(c => c[0] === 'drawImage'), 'tiles laid on the composite');
+    const warm = record(fresh(), [30, 90, 61.4, 61.5]);
+    assert.equal(warm.main, cold.main, 'the window gets the same calls');
+    const A = JSON.parse(warm.comp), B = JSON.parse(cold.comp), at = A.findIndex((c, i) => JSON.stringify(c) !== JSON.stringify(B[i]));
+    assert.equal(at, -1, 'the composite gets the same calls (tiles made before or now); first difference ' + at + ' of ' + A.length + '/' + B.length + ': ' + String(JSON.stringify(A[at])).slice(0, 300) + ' vs ' + String(JSON.stringify(B[at])).slice(0, 300));
+  } finally { globalThis.OffscreenCanvas = prior; fresh(); }
 });

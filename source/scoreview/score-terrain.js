@@ -865,6 +865,327 @@
     ctx.restore();
   }
 
+  // ---------- the ranges from cached tiles (batch 5, 2026-11-19) ----------
+  // Measured in XML's real window (1440 x 778 CSS at DPR 2): the script part of a frame took 4-7 ms but frames came every
+  // 50-60 ms; the cost was the GPU painting each range's clip, faces, bedding, crest, foot haze and the haze bands every
+  // frame. And the shaded faces were chosen anew every frame from the ridge as it stood in the window (peaks found in the
+  // sliding window, the valley after each peak up to the window's edge), so they kept changing: the flicker.
+  // Now: a range's details (shaded and lit faces, bedding, crest, foot haze; and the haze band it lays on the range
+  // behind it) are painted once per tile of TILE world samples from the range's own world shape - the ridge as its stem
+  // alone makes it, standing on BASE0 - and kept. Each frame the body is still filled from the frame's exact ridge, and
+  // the tiles are laid over it in vertical strips, each strip moved up or down by how far the frame's ridge stands from
+  // the world ridge there (the steps and lifts behind nearer ranges, which change with the music), strips split wherever
+  // that offset changes by more than STRIP_TOL device px. The haze goes on with 'source-atop' in a composite of the ranges
+  // only, instead of a clip per range. Every pixel is still a function of song time: tiles are pure functions of their
+  // index, and the cache only saves time.
+  const TILE = 256, TILE_REACH = 400, PEAK_REACH = 300, FEATURE_REACH = 200, VALLEY_MAX = 160;
+  const STRIP_TOL = .3, TILE_BUDGET = 64e6; // device px; total tile pixels kept
+  const srcIds = new WeakMap(); let srcSerial = 0;
+  const tileCache = new Map(); let tilePixels = 0, frameNo = 0;
+  function gatesOf(src, L, layer) {
+    const ahead = (L.right - L.nowM) / layer.pps, behind = (L.nowM - L.left) / layer.pps;
+    return {gA: src.plainStart + ahead, gB: src.plainEnd - behind, rampT: GATE_PX / layer.pps};
+  }
+  // the range's world shape over samples [k0, k1]: what geometry() makes of this stem before any nearer range steps its
+  // foot up or lifts it (the same gates, presence, relief, hills and flank caps)
+  function worldShape(src, L, layer, k0, k1) {
+    const {i, dt, amp} = layer, n = k1 - k0 + 1, G = gatesOf(src, L, layer);
+    const hg = new Float64Array(n), env = new Float64Array(n), cap = new Float64Array(n);
+    const S = (i ? 1.5 + 1.3 * RUG : 6) * 2;
+    for (let j = 0; j < n; j++) {
+      const kk = k0 + j, tt = kk * dt;
+      const gate = tt <= G.gA || tt >= G.gB ? 0 : smooth(G.gA, G.gA + G.rampT, tt) * (1 - smooth(G.gB - G.rampT, G.gB, tt));
+      let pres = 0;
+      if (gate > 0) {
+        pres = sampleE(src, layer, kk);
+        const e = pres * gate;
+        env[j] = e;
+        if (e > 0) {
+          let rel = sampleR(src, layer, kk);
+          if (gate < 1) rel = rel * gate + HILL * 4 * (1 - gate) * (.35 + .4 * vnoise(tt * .55 / layer.f + i * 3.1, 61 + i) + .25 * vnoise(tt * 1.7 / layer.f + i * 7.7, 71 + i));
+          hg[j] = amp * e * rel;
+        }
+      }
+      cap[j] = S * Math.min(.22 + .78 * gate * gate, .4 + .6 * smooth(.3, .9, pres));
+    }
+    for (let j = 1; j < n; j++) hg[j] = Math.min(hg[j], hg[j - 1] + Math.max(cap[j], cap[j - 1]));
+    for (let j = n - 2; j >= 0; j--) hg[j] = Math.min(hg[j], hg[j + 1] + Math.max(cap[j], cap[j + 1]));
+    return {k0, n, hg, env};
+  }
+  // one tile: the details of `layer` over world samples [c*TILE, (c+1)*TILE), and the haze band it lays on the range behind
+  function makeTile(src, L, LT, dpr, layer, c) {
+    const kS = c * TILE, W = worldShape(src, L, layer, kS - TILE_REACH, kS + TILE + TILE_REACH);
+    const at = k => k - W.k0, ys = new Float64Array(W.n);
+    for (let j = 0; j < W.n; j++) ys[j] = BASE0 - W.hg[j];
+    const hgT = Float32Array.from(W.hg.subarray(at(kS), at(kS + TILE)));
+    const tile = {kS, hg: hgT, detail: null, mist: null, pixels: 0};
+    const scale = L.s * dpr, x0 = -COL / 2 - 2, w = TILE * COL + 4;
+    const X = k => (k - kS) * COL;
+    let top = Infinity;
+    for (let k = kS - FEATURE_REACH; k < kS + TILE + FEATURE_REACH; k++) if (W.hg[at(k)] >= .5) top = Math.min(top, ys[at(k)]);
+    if (top < Infinity) {
+      const y0 = top - 8, h = BASE0 + 10 - y0;
+      const cv = makeCanvas(w * scale, h * scale);
+      if (cv) {
+        const g = cv.getContext('2d'), base = [scale, 0, 0, scale, -x0 * scale, -y0 * scale];
+        g.setTransform(...base);
+        paintDetails(g, base, src, layer, LT, W, ys, kS, X);
+        tile.detail = {c: cv, x0, y0, h};
+        tile.pixels += cv.width * cv.height;
+      }
+    }
+    const far = src.layers[layer.i + 1];
+    if (far) { // the haze band over the range behind, along this range's (softened) ridge
+      const a = lerp(.5, .62, far.d) * LT.mistK;
+      const line = boxBlur(ys, 4, 1), xs = [], ln = [];
+      const first = kS - 6 - (((kS - 6) % 3) + 3) % 3;
+      for (let k = first; k <= kS + TILE + 6; k += 3) { xs.push(X(k)); ln.push(line[at(k)] + 4); }
+      let lo = Infinity, hi = -Infinity;
+      for (const v of ln) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      const H = 44, y0 = lo - H - 2, h = hi + 12 - y0;
+      const cv = makeCanvas(w * scale, h * scale);
+      if (cv && a > 0) {
+        const g = cv.getContext('2d');
+        g.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
+        const ramp = .8 * (H + 10), steps = 5, col = basinAt(LT, 600);
+        const band = (from, to, alpha) => {
+          g.fillStyle = css(col, alpha); g.beginPath();
+          for (let k = 0; k < xs.length; k++) g.lineTo(xs[k], ln[k] + from);
+          for (let k = xs.length - 1; k >= 0; k--) g.lineTo(xs[k], ln[k] + to);
+          g.closePath(); g.fill();
+        };
+        for (let q = 0; q < steps; q++) band(-H + ramp * q / steps, -H + ramp * (q + 1) / steps, a * (q + .5) / steps);
+        band(-H + ramp, 10, a);
+        tile.mist = {c: cv, x0, y0, h};
+        tile.pixels += cv.width * cv.height;
+      }
+    }
+    return tile;
+  }
+  // faces, bedding, crest and foot haze of the world shape, as paintRange draws them, in tile coordinates
+  function paintDetails(g, base, src, layer, LT, W, ys, kS, X) {
+    const at = k => k - W.k0, detail = 1 - layer.d, seed = layer.seed;
+    const wash = lerp(.06, .62, Math.pow(layer.d, .85));
+    const color = rgb(STEM_COLOR[layer.id]);
+    const c = mix(color, LT.haze, clamp(wash * LT.washK));
+    const a0 = kS - FEATURE_REACH, b0 = kS + TILE + FEATURE_REACH; // samples whose features can reach into the tile
+    // the body of the world shape, for clipping the faces and the bedding (as paintRange clips them to the body)
+    const body = typeof Path2D === 'function' ? new Path2D() : null;
+    const P = body || g;
+    if (!body) g.beginPath();
+    let run = -1;
+    const bottom = k => BASE0 + (BASIN + 2 - BASE0) * smooth(0, 40, BASE0 - ys[at(k)]);
+    for (let k = a0; k <= b0 + 1; k++) {
+      const up = k <= b0 && W.hg[at(k)] >= .5;
+      if (up && run < 0) { run = k; P.moveTo(X(k), BASE0); }
+      if (up) P.lineTo(X(k), Math.min(ys[at(k)], BASE0));
+      if (!up && run >= 0) { for (let q = k - 1; q >= run; q--) P.lineTo(X(q), bottom(q)); P.closePath(); run = -1; }
+    }
+    g.save();
+    if (body) g.clip(body); else g.clip();
+    const sep = Math.round(lerp(34, 20, detail)), prom = lerp(9, 4, detail);
+    const peaks = peaksOf(ys, at(kS - PEAK_REACH), at(kS + TILE + PEAK_REACH), sep, prom).map(j => j + W.k0);
+    for (let p = 0; p < peaks.length; p++) {
+      const k = peaks[p];
+      if (k < a0 || k > b0) continue;
+      const prev = Math.max(p ? peaks[p - 1] : -Infinity, k - VALLEY_MAX), next = Math.min(p < peaks.length - 1 ? peaks[p + 1] : Infinity, k + VALLEY_MAX);
+      let kv = k, kl = k;
+      for (let j = k; j <= next; j++) if (ys[at(j)] > ys[at(kv)]) kv = j;
+      for (let j = k; j >= prev; j--) if (ys[at(j)] > ys[at(kl)]) kl = j;
+      const run = X(kv) - X(k), drop = ys[at(kv)] - ys[at(k)];
+      if (run < 8 || drop < 4) continue;
+      const yk = ys[at(k)], ykv = ys[at(kv)];
+      const tx = X(k) + run * (.42 + .2 * hash(k, seed + 5)), ty = Math.min(BASE0 - 2, ykv + (run * .22 + drop * .35 + 8) * LT.faceLen);
+      const spur = [];
+      for (let m = 1; m < 5; m++) spur.push([lerp(X(k), tx, m / 5) + (hash(k * 7 + m, seed + 6) - .5) * run * .22, lerp(yk, ty, m / 5)]);
+      g.beginPath(); g.moveTo(X(k), yk);
+      for (let j = k; j <= kv; j++) g.lineTo(X(j), ys[at(j)] - 1);
+      g.lineTo(lerp(X(kv), tx, .5) + (hash(k, seed + 8) - .5) * 12, lerp(ykv, ty, .55));
+      g.lineTo(tx, ty);
+      for (let m = spur.length - 1; m >= 0; m--) g.lineTo(spur[m][0], spur[m][1]);
+      g.closePath();
+      const sa = lerp(.12, .5, detail) * (1 - wash * .6) * LT.shadeK;
+      const sg = g.createLinearGradient(0, yk, 0, ty);
+      sg.addColorStop(0, css(mix(c, LT.shade, .75), sa)); sg.addColorStop(.6, css(mix(c, LT.shade, .7), sa * .6)); sg.addColorStop(1, css(mix(c, LT.shade, .7), 0));
+      g.fillStyle = sg; g.fill();
+      const runL = X(k) - X(kl);
+      if (runL > 8) {
+        g.beginPath(); g.moveTo(X(kl), ys[at(kl)]);
+        for (let j = kl; j <= k; j++) g.lineTo(X(j), ys[at(j)]);
+        for (const q of spur) g.lineTo(q[0], q[1]);
+        g.lineTo(tx, ty); g.lineTo(lerp(X(kl), tx, .4), lerp(ys[at(kl)], ty, .7)); g.closePath();
+        const la = lerp(.08, .34, detail) * (1 - wash * .5) * LT.litK;
+        const lg = g.createLinearGradient(0, yk, 0, ty);
+        lg.addColorStop(0, css(LT.light, la)); lg.addColorStop(1, css(LT.light, 0));
+        g.fillStyle = lg; g.fill();
+      }
+    }
+    if (detail > .45) { // faint horizontal bedding on even world samples
+      g.lineWidth = 1;
+      for (let m = 0; m < 5; m++) {
+        g.strokeStyle = m % 2 ? css(mix(c, LT.shade, .7), (detail - .45) * .2) : css(mix(c, LT.light, .6), (detail - .45) * .16);
+        g.beginPath();
+        for (let k = kS - 4 - (((kS - 4) % 2) + 2) % 2; k <= kS + TILE + 4; k += 2) {
+          const hgt = W.hg[at(k)], y = BASE0 - hgt * (.25 + m * .13) + (vnoise(k * .05 + m * 7, seed + 40 + m) - .5) * 3;
+          if (hgt < 30) g.moveTo(X(k), y); else g.lineTo(X(k), y);
+        }
+        g.stroke();
+      }
+    }
+    g.restore();
+    // the crest: sunlit where it rises toward the sun, a thin shade line where it falls
+    const buckets = [[], [], [], []], shade = [];
+    for (let k = kS - 3; k <= kS + TILE + 3; k++) {
+      if (W.hg[at(k)] < 4) continue;
+      const rise = ys[at(k - 1)] - ys[at(k)];
+      if (rise > 0) buckets[Math.min(3, Math.floor((clamp(rise / 2 + .25) - .25) / .75 * 4))].push(k); else shade.push(k);
+    }
+    g.lineWidth = lerp(.8, 1.5, detail);
+    const strokeSet = (list, style) => {
+      if (!list.length) return;
+      g.strokeStyle = style; g.beginPath();
+      for (const k of list) { g.moveTo(X(k - 1), ys[at(k - 1)]); g.lineTo(X(k), ys[at(k)]); }
+      g.stroke();
+    };
+    for (let q = 0; q < 4; q++) strokeSet(buckets[q], css(mix(c, LT.light, .7), lerp(.25, .75, detail) * (.25 + .75 * (q + .5) / 4) * LT.litK));
+    strokeSet(shade, css(mix(c, LT.shade, .5), lerp(.08, .3, detail)));
+    // a low haze over the foot where the range eases in or out
+    const hz = g.createLinearGradient(0, 0, 0, 1), hc = basinAt(LT, BASE0);
+    hz.addColorStop(0, css(hc, 0)); hz.addColorStop(1, css(hc, 1));
+    g.save(); g.fillStyle = hz;
+    for (let k = kS - 4 - (((kS - 4) % 2) + 2) % 2; k <= kS + TILE + 4; k += 2) {
+      const e = W.env[at(k)], al = 4 * e * (1 - e) * .75;
+      if (al < .02) continue;
+      const hgt = W.hg[at(k)], hh = Math.max(24, hgt * .9), y1 = BASE0 + 4;
+      g.globalAlpha = al;
+      g.setTransform(base[0] * 2 * COL, 0, 0, base[3] * hh, base[0] * (X(k) - COL) + base[4], base[3] * (y1 - hh) + base[5]);
+      g.fillRect(0, 0, 1, 1);
+    }
+    g.restore();
+  }
+  function tileOf(src, L, LT, dpr, layer, c) {
+    if (!srcIds.has(src)) srcIds.set(src, ++srcSerial);
+    if (!lightIds.has(LT)) lightIds.set(LT, ++lightSerial);
+    const key = srcIds.get(src) + '|' + layer.id + '|' + c + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + lightIds.get(LT);
+    let t = tileCache.get(key);
+    if (t) { tileCache.delete(key); tileCache.set(key, t); t.used = frameNo; return t; }
+    t = makeTile(src, L, LT, dpr, layer, c);
+    t.used = frameNo;
+    tileCache.set(key, t); tilePixels += t.pixels;
+    for (const [k, old] of tileCache) { // least recently used first; never a tile this frame needs
+      if (tilePixels <= TILE_BUDGET) break;
+      if (old.used === frameNo) continue;
+      tileCache.delete(k); tilePixels -= old.pixels;
+    }
+    return t;
+  }
+  // a range's tiles laid over its frame. The offset (frame ridge - world ridge) per column is followed piecewise
+  // linearly: knots where a straight line between them strays more than STRIP_TOL device px from any column's offset;
+  // between two knots the tile is drawn sheared (y moves linearly with x), so neighbouring pieces meet exactly at a knot.
+  function offsetKnots(R, tiles, j0, j1, tol) {
+    const off = new Float64Array(j1 - j0 + 1);
+    for (let j = j0; j <= j1; j++) { const k = R.k0 + j, t = tiles(k); off[j - j0] = R.ys[j] - (BASE0 - t.hg[k - t.kS]); }
+    const knots = [j0];
+    let i = 0;
+    const n = off.length;
+    while (i < n - 1) {
+      let e = i + 1;
+      const lim = Math.min(n - 1, i + 160);
+      while (e < lim) {
+        const E = e + 1, slope = (off[E] - off[i]) / (E - i);
+        let ok = true;
+        for (let q = i + 1; q < E; q++) if (Math.abs(off[i] + slope * (q - i) - off[q]) > tol) { ok = false; break; }
+        if (!ok) break;
+        e = E;
+      }
+      knots.push(j0 + e);
+      i = e;
+    }
+    return {knots, off: j => off[j - j0]};
+  }
+  function layStrips(g, R, which, src, L, LT, dpr, m) {
+    const layer = R.layer, scale = L.s * dpr;
+    let j = Math.max(0, R.ja - 1);
+    const jEnd = Math.min(R.n - 1, R.jb + 1);
+    while (j <= jEnd) {
+      const k = R.k0 + j, c = Math.floor(k / TILE), tile = tileOf(src, L, LT, dpr, layer, c), img = tile[which];
+      const tileEnd = R.k0 + jEnd < (c + 1) * TILE - 1 ? jEnd : (c + 1) * TILE - 1 - R.k0;
+      if (!img) { j = tileEnd + 1; continue; }
+      const {knots, off} = offsetKnots(R, () => tile, j, tileEnd, STRIP_TOL / scale);
+      for (let q = 0; q < knots.length - 1 || q === 0; q++) {
+        const jA = knots[q], jB = knots.length > 1 ? knots[q + 1] : jA;
+        // the piece covers from knot to knot (the tile's first and last pieces reach the half column beyond). Its two
+        // edges sit on whole device pixels, so neighbouring pieces meet with no gap and no overlap (an overlap painted
+        // the faces' translucent shade twice: thin dark lines)
+        const snap = x => (Math.round(m.a * x + m.e) - m.e) / m.a;
+        const xa = snap(R.x0 + jA * COL - (jA === j ? COL / 2 : 0)), xb = snap(R.x0 + jB * COL + (jB === tileEnd ? COL / 2 : 0));
+        const oA = off(jA), slope = jB > jA ? (off(jB) - oA) / ((jB - jA) * COL) : 0, xA = R.x0 + jA * COL;
+        const sx = (xa - (R.x0 + (tile.kS - R.k0) * COL) - img.x0) * scale, sw = Math.min((xb - xa) * scale, img.c.width - sx);
+        if (sw <= 0) continue;
+        g.setTransform(m.a, m.d * slope, 0, m.d, m.e, m.f + m.d * (oA - slope * xA));
+        g.drawImage(img.c, sx, 0, sw, img.c.height, xa, img.y0, sw / scale, img.c.height / scale);
+      }
+      j = tileEnd + 1;
+    }
+    g.setTransform(m.a, 0, 0, m.d, m.e, m.f);
+  }
+  const composites = new Map();
+  // returns false when there is no offscreen canvas or no transform to work with (then draw() paints the old way)
+  function paintTiled(ctx, S, LT, dpr, view) {
+    const m = view.matrix, L = S.layout;
+    if (!m || typeof ctx.getTransform !== 'function') return false;
+    const cw = ctx.canvas && ctx.canvas.width > 0 ? ctx.canvas.width : Math.ceil(L.w * dpr), ch = ctx.canvas && ctx.canvas.height > 0 ? ctx.canvas.height : Math.ceil(L.h * dpr);
+    const key = cw + 'x' + ch;
+    let comp = composites.get(key);
+    if (!comp) {
+      const c = makeCanvas(cw, ch);
+      if (!c) return false;
+      if (composites.size >= 2) composites.delete(composites.keys().next().value);
+      comp = {c, g: c.getContext('2d')};
+      composites.set(key, comp);
+    }
+    frameNo++;
+    const g = comp.g, {ranges, src} = S;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    g.clearRect(0, 0, comp.c.width, comp.c.height);
+    g.setTransform(m.a, 0, 0, m.d, m.e, m.f);
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const R = ranges[i];
+      if (fillBody(g, R, LT)) layStrips(g, R, 'detail', src, S.layout, LT, dpr, m);
+      if (i > 0) { g.globalCompositeOperation = 'source-atop'; layStrips(g, ranges[i - 1], 'mist', src, S.layout, LT, dpr, m); g.globalCompositeOperation = 'source-over'; }
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(comp.c, 0, 0); ctx.restore();
+    // one tile ahead of the right edge for the nearest range that lacks it (cost spread over frames, pixels unchanged)
+    for (const R of ranges) {
+      const c = Math.floor((R.k0 + R.jb) / TILE) + 1;
+      if (!tileCache.has(srcIds.get(src) + '|' + R.layer.id + '|' + c + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + lightIds.get(LT))) { tileOf(src, L, LT, dpr, R.layer, c); break; }
+    }
+    return true;
+  }
+  // the body from the frame's own ridge: lit at the ridge, into the haze toward the foot, the basin down to the plain.
+  // The gradient's top is the range's full height over its mean foot (it used to be the highest ridge in the window,
+  // which jumped whenever a tall peak came in or went out)
+  function fillBody(g, R, LT) {
+    const {ys, foot} = R, a = R.ja, b = R.jb;
+    let tall = 0, fsum = 0, fn = 0;
+    for (let k = a; k <= b; k++) { const hgt = foot[k] - ys[k]; if (hgt > tall) tall = hgt; if (hgt >= .5) { fsum += foot[k]; fn++; } }
+    if (tall < 3) return false;
+    const wash = lerp(.06, .62, Math.pow(R.d, .85));
+    const color = rgb(STEM_COLOR[R.id]);
+    const c = mix(color, LT.haze, clamp(wash * LT.washK)), lit = mix(c, LT.light, .10 * (1 - wash) * LT.litK);
+    const fm = fn ? fsum / fn : BASE0, top = fm - R.layer.amp;
+    const kf = clamp((fm - top) / (BASIN - top));
+    const gr = g.createLinearGradient(0, top, 0, BASIN);
+    gr.addColorStop(0, css(lit)); gr.addColorStop(kf * .55, css(mix(c, LT.haze, .12)));
+    gr.addColorStop(kf * .775, css(mix(c, LT.haze, .3)));
+    gr.addColorStop(Math.min(1, kf + .001), css(mix(mix(c, LT.haze, .55), basinAt(LT, fm), .5)));
+    gr.addColorStop(Math.min(1, kf + .002 + (1 - kf) * .4), css(basinAt(LT, lerp(fm, BASIN, .4))));
+    gr.addColorStop(1, css(basinAt(LT, BASIN)));
+    g.fillStyle = gr;
+    R.body = undefined; fillPath(g, R);
+    return true;
+  }
+
   // ---------- drawing ----------
   function draw(ctx, frame) {
     const S = scene(frame);
@@ -887,9 +1208,11 @@
       const drift = t * 2.2, off = ((-drift % CLOUD_P) + CLOUD_P) % CLOUD_P - 380;
       for (let x = off - CLOUD_P; x < L.right + 20; x += CLOUD_P) if (x + CLOUD_P > L.left - 20) ctx.drawImage(R.clouds.c, x, CLOUD_Y0, CLOUD_P, CLOUD_Y1 - CLOUD_Y0);
     }
-    for (let i = ranges.length - 1; i >= 0; i--) {
-      paintRange(ctx, ranges[i], LT, view);
-      if (i > 0) mist(ctx, ranges[i], ranges[i - 1], lerp(.5, .62, ranges[i].d) * LT.mistK, LT);
+    if (!(R && paintTiled(ctx, S, LT, dpr, view))) { // no offscreen canvas (tests): every range painted in full each frame
+      for (let i = ranges.length - 1; i >= 0; i--) {
+        paintRange(ctx, ranges[i], LT, view);
+        if (i > 0) mist(ctx, ranges[i], ranges[i - 1], lerp(.5, .62, ranges[i].d) * LT.mistK, LT);
+      }
     }
     const strip = (tile, speed) => {
       const off = ((-t * speed) % GROUND_P + GROUND_P) % GROUND_P;
@@ -1235,7 +1558,7 @@
   const invalidate = song => { songCache.delete(song); };
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate,
     // for tests and measurements only
-    _internal: Object.freeze({layout, analysePixels, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
+    _internal: Object.freeze({layout, analysePixels, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);
       return {L, src, ranges: geometry(src, L, clamp(frame.time, 0, duration), margin)};
     }})});
