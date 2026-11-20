@@ -76,5 +76,18 @@ test('windpumps and flocks inside a town make way; elsewhere they stay', () => {
   const S = terrain.draw(ctx, {song: s, w: 1440, h: 778, time: 60, terrainRoadside: 'all'});
   assert.equal(S.roadside.yielded, 1);
   assert.ok(S.roadside.crash >= 1, 'the windpumps of 52 and 68 s still stand');
-  assert.ok(town.tall >= 24 && town.tall <= 110 && town.tall <= Math.max(24, .5 * town.behind + 1e-9), 'no taller than half the range behind: ' + town.tall + ' / ' + town.behind);
+  assert.ok(town.tall >= 60 && town.tall <= 150 && town.tall <= Math.max(60, .8 * town.behind + 1e-9), 'no taller than 0.8 x the range behind (60-150): ' + town.tall + ' / ' + town.behind);
+});
+
+test('batch 7: inside a town\'s stretch the rock piles, sage and mile posts make way too; the poles do not', () => {
+  const s = song([[5, 20, 'a', 'x', 'intro'], [20, 60, 'b', 'x', 'verse'], [60, 120, 'c', 'x', 'chorus'], [120, 190, 'd', 'x', 'verse']]);
+  // a tom, a snare and a kick right at the town (60 s), and the same again far from any station (100 s)
+  s.lanes[0].hits = [[60, 4, 110], [60.02, 1, 110], [60.04, 0, 110], [100, 4, 110], [100.02, 1, 110], [100.04, 0, 110]];
+  const m = mockCanvas(1440, 778), ctx = Object.assign(m.canvas.getContext('2d'), {arcTo() {}});
+  const at = t => terrain.draw(ctx, {song: s, w: 1440, h: 778, time: t, terrainRoadside: 'all'}).roadside;
+  const town = at(60), open = at(100);
+  assert.equal(town.yielded, 2, 'the tom and the snare at the town make way');
+  assert.equal(town.kick, 1, 'the pole stays');
+  assert.equal(open.yielded || 0, 0, 'nothing makes way away from a station');
+  assert.equal(open.tom, 1); assert.equal(open.snare, 1);
 });

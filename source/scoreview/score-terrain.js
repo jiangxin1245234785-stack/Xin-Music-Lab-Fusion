@@ -1765,6 +1765,7 @@
       const y0 = LINE.tom, list = road.tom, v = visible(list, y0, 4 * mAtY(y0), 300);
       for (let i = v.a; i < v.b; i++) {
         const o = list[i], key = Math.round(o.t * 50), y = y0 + (hash(key, 81) - .5) * 14;
+        if (yields('tom', o.t)) { count('yielded', 1); continue; } // inside a town's stretch (batch 7)
         const tv = Math.floor(hash(key, 71) * 8); // sage (0-3) or a rock pile (4-7); with pictures the picture by its place in the line
         stamp(ctx, sprite(L, LT, dpr, 'tom', y0, o.v, ART ? (tv < 4 ? 0 : 4) + Math.floor(hash(i, 205) * 4) : tv), L.nowM + (o.t - t) * speedAtY(y), y, mAtY(y) / mAtY(y0));
       }
@@ -1835,14 +1836,19 @@
     if (KNOWN_KIND.test(kind)) return MAJOR_KIND.test(kind);
     return MAJOR_NAME.test(String(row[2] == null ? '' : row[2]).trim());
   }
-  const TOWN_H = 110; // the tallest thing of a town at full size, sketch px over its ground row
-  // the four towns: [min x, max x] in sketch px around the tallest thing (at x = 0), before scaling
-  const TOWN_SPAN = [[-140, 125], [-35, 190], [-120, 135], [-225, 225]];
+  // Batch 7 (the brief: batch 6 made them too small and pale - grey dots in the real window - and kind 3 hid behind the
+  // roadside): the water tower / the silo is 0.8 x the height of the nearest range standing behind it at the change,
+  // at most 150 sketch px, at least 60 (4 px steps); the town's layout widens with it (k = tall / 110, .75 .. 1.36); the
+  // haze takes only 30 %; on the town's stretch of line the rock piles, sage and mile posts make way too (not the poles).
+  const TOWN_H = 110, TOWN_MIN = 60, TOWN_MAX = 150, TOWN_OF_BEHIND = .8; // sketch px over its ground row
+  // the four towns: [min x, max x] in sketch px around the tallest thing (at x = 0), at k = 1
+  const TOWN_SPAN = [[-150, 130], [-50, 245], [-130, 150], [-240, 280]];
+  const townK = tall => clamp(tall / TOWN_H, .75, 1.36);
   function stationsOf(src, song) {
     if (src.stations) return src.stations;
     const rows = (Array.isArray(song && song.sections) ? song.sections : []).filter(r => Array.isArray(r) && Number.isFinite(r[0])).slice().sort((a, b) => a[0] - b[0]);
     const list = [], table = [];
-    let last = null, majors = 0;
+    let last = null, majors = 0, signs = 0;
     const L0 = layout(1440, 900); // the scale of a town is decided once per song, on the sketch's own frame
     for (let i = 1; i < rows.length; i++) {
       const T = rows[i][0], major = isMajor(rows[i]), ord = major ? majors++ : -1;
@@ -1855,6 +1861,7 @@
       if (kind === 'town' && gap < STATION.sign) { kind = 'sign'; row.why = 'close'; }
       if (kind === 'town' && (T - src.plainStart < STATION.townLead || src.plainEnd - T < STATION.townLead)) { kind = 'sign'; row.why = 'plain'; }
       const st = {t: T, kind, i};
+      if (kind === 'sign') { st.sv = Math.floor(hash(signs, 301) * 3); st.lv = Math.floor(hash(signs, 302) * 2); signs++; } // which pictures (batch 7)
       if (kind === 'town') {
         st.variant = ord % 4;
         // no taller than half the nearest range standing behind it at the change (its own height at "now")
@@ -1863,12 +1870,14 @@
           for (const R of geometry(src, L0, T, 200)) { const j = Math.round((L0.nowM - R.x0) / COL), hgt = R.foot[j] - R.ys[j]; if (hgt >= 20) { behind = hgt; break; } }
         } catch { behind = 0; }
         st.behind = behind;
-        // the silo and the water tower are scaled to that (in steps of 4 px, one sprite per step); houses and trees keep
-        // their size (they are lower than half a range anyway), so a small town still reads as a town
-        st.tall = Math.max(24, Math.min(TOWN_H, Math.floor(.5 * (behind || 60) / 4) * 4));
+        // the silo and the water tower are scaled to that (in steps of 4 px, one sprite per step); houses and trees grow
+        // less (see the painters), so a small town still reads as a town
+        st.tall = Math.max(TOWN_MIN, Math.min(TOWN_MAX, Math.floor(TOWN_OF_BEHIND * (behind || 75) / 4) * 4));
+        st.k = townK(st.tall);
         const sp = TOWN_SPAN[st.variant], mt = mAtY(STATION.townY);
-        st.span = [sp[0] / mt, sp[1] / mt]; // metres along the line around the town's tallest thing
-        if (st.variant === 2) st.xing = V_MS * STATION.xingAfter; // the level crossing, metres past the town
+        st.span = [sp[0] * st.k / mt, sp[1] * st.k / mt]; // metres along the line around the town's tallest thing
+        st.tv = Math.floor(hash(ord, 311) * 3); st.ev = Math.floor(hash(ord, 312) * 3); // which tower / elevator picture
+        if (st.variant === 2) { st.xing = V_MS * STATION.xingAfter; st.xv = Math.floor(hash(ord, 313) * 2); } // the level crossing, metres past the town
       }
       row.kind = kind;
       list.push(st); last = st;
@@ -1885,7 +1894,7 @@
     while (lo < hi) { const m = (lo + hi) >> 1; if (stations[m].t < T - 12) lo = m + 1; else hi = m; }
     for (let k = lo; k < stations.length && stations[k].t <= T + 12; k++) {
       const st = stations[k], X = V_MS * (T - st.t);
-      if (line === 'crash' && st.kind === 'town' && X >= st.span[0] - 4 && X <= st.span[1] + 4) return true;
+      if ((line === 'crash' || line === 'tom' || line === 'post') && st.kind === 'town' && X >= st.span[0] - 4 && X <= st.span[1] + 4) return true;
       if (line === 'post' && st.xing !== undefined && Math.abs(X - st.xing) <= 4) return true;
     }
     return false;
@@ -1910,7 +1919,7 @@
       }
       out = {c, x0, y0, w, h};
     }
-    if (stationSprites.size > 24) stationSprites.delete(stationSprites.keys().next().value);
+    if (stationSprites.size > 48) stationSprites.delete(stationSprites.keys().next().value);
     stationSprites.set(key, out);
     return out;
   }
@@ -1924,7 +1933,7 @@
     g.fillStyle = css(CAST, a * LT.castA); g.beginPath(); g.moveTo(x0, 0); g.lineTo(x1, 0); g.lineTo(x1 + len, len * .05); g.lineTo(x0 + len * .55, len * .05 + .3); g.closePath(); g.fill();
   }
   // a town's things fold into the haze: mixed half-way into it and a touch darker, so nothing is brighter than the hills
-  const TOWN_HAZE = .5;
+  const TOWN_HAZE = .3;
   function silo(g, LT, x, r, h, col) {
     const gr = g.createLinearGradient(x - r, 0, x + r, 0);
     gr.addColorStop(0, css(mix(col, LT.light, .18))); gr.addColorStop(.4, css(col)); gr.addColorStop(1, css(mix(col, LT.shade, .3)));
@@ -1975,19 +1984,51 @@
     g.fillStyle = css(mix(tint(LT, '#b9a77f', .3), LT.light, .05), .35); g.beginPath(); g.ellipse((x0 + x1) / 2, 2, (x1 - x0) / 2 + 20, 6, 0, 0, Math.PI * 2); g.fill();
   }
   // tall = the silo's / water tower's height; houses 22 px to the eaves (35 to the ridge), trees 40-60 px
+  // (batch 7: the places widen with the town, k = townK(H))
   const TOWNS = [
-    (g, LT, H) => { ground(g, LT, -140, 125); house(g, LT, -105, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -52, 40, 1); waterTower(g, LT, 0, H); house(g, LT, 92, 54, 21, '#7d665a', '#47423c'); },
-    (g, LT, H) => { ground(g, LT, -35, 190); elevator(g, LT, 0, H); house(g, LT, 112, 58, 22, '#868d82', '#45413b'); tree(g, LT, 165, 44, 2); },
-    (g, LT, H) => { ground(g, LT, -120, 135); house(g, LT, -86, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -36, 50, 4); tree(g, LT, 0, Math.min(62, Math.max(46, H)), 3); house(g, LT, 62, 54, 21, '#7d665a', '#47423c'); tree(g, LT, 108, 46, 5); },
-    (g, LT, H) => { ground(g, LT, -225, 225); house(g, LT, -192, 56, 22, '#868d82', '#45413b'); tree(g, LT, -148, 44, 6); waterTower(g, LT, -98, H * .92); elevator(g, LT, 0, H); house(g, LT, 98, 56, 22, '#8f8574', '#4a453f'); house(g, LT, 158, 50, 20, '#7d665a', '#47423c'); tree(g, LT, 202, 48, 7); }
+    (g, LT, H, k) => { ground(g, LT, -140 * k, 125 * k); house(g, LT, -105 * k, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -52 * k, 40, 1); waterTower(g, LT, 0, H); house(g, LT, 92 * k, 54, 21, '#7d665a', '#47423c'); },
+    (g, LT, H, k) => { ground(g, LT, -35 * k, 190 * k); elevator(g, LT, 0, H); house(g, LT, 112 * k, 58, 22, '#868d82', '#45413b'); tree(g, LT, 165 * k, 44, 2); },
+    (g, LT, H, k) => { ground(g, LT, -120 * k, 135 * k); house(g, LT, -86 * k, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -36 * k, 50, 4); tree(g, LT, 0, Math.min(62, Math.max(46, H)), 3); house(g, LT, 62 * k, 54, 21, '#7d665a', '#47423c'); tree(g, LT, 108 * k, 46, 5); },
+    (g, LT, H, k) => { ground(g, LT, -225 * k, 225 * k); house(g, LT, -192 * k, 56, 22, '#868d82', '#45413b'); tree(g, LT, -148 * k, 44, 6); waterTower(g, LT, -98 * k, H * .92); elevator(g, LT, 0, H); house(g, LT, 98 * k, 56, 22, '#8f8574', '#4a453f'); house(g, LT, 158 * k, 50, 20, '#7d665a', '#47423c'); tree(g, LT, 202 * k, 48, 7); }
   ];
-  function townSprite(L, LT, dpr, v, H) {
-    const sp = TOWN_SPAN[v];
-    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'town' + v + '@' + H), [sp[0] - 20, -Math.max(H, 64) - 14, sp[1] + 90, 12], speedAtY(STATION.townY) * BLUR, g => TOWNS[v](g, LT, H));
+  // The towns from GPT's pictures (batch 7): the same four kinds, things at the same places (x k), the tower / silo at
+  // H, houses 0.3 H (28-44 px), trees 0.42 H (36-60), a depot where the code had a house beside a silo. Each thing gets
+  // the program's cast shadow; then the whole town takes TOWN_HAZE of the haze colour (cover-tinted).
+  const ART_TOWNS = [
+    [['house-a', -105, 'h'], ['tree-a', -55, 't'], ['T', 0, 'H'], ['house-b', 92, 'h']],
+    [['E', 0, 'H'], ['depot-a', 125, 'd'], ['tree-b', 200, 't']],
+    [['house-c', -86, 'h'], ['tree-c', -36, 't'], ['tree-d', 0, 'c'], ['house-d', 62, 'h'], ['tree-b', 108, 't']],
+    [['house-e', -192, 'h'], ['tree-a', -148, 't'], ['T', -98, 'H92'], ['E', 0, 'H'], ['house-f', 98, 'h'], ['depot-b', 175, 'd'], ['tree-d', 245, 't']]];
+  function artTown(g, LT, st) {
+    const H = st.tall, k = st.k, hh = clamp(.3 * H, 28, 44), th = clamp(.42 * H, 36, 60);
+    const size = {H, H92: H * .92, h: hh, d: hh * .95, t: th, c: clamp(.55 * H, 46, 80)};
+    const sp = TOWN_SPAN[st.variant];
+    ground(g, LT, sp[0] * k + 10, sp[1] * k - 10);
+    for (const [name, x0, sz] of ART_TOWNS[st.variant]) {
+      const key = 'station/' + (name === 'T' ? 'town-water-tower-' + ABC[st.tv] : name === 'E' ? 'town-grain-elevator-' + ABC[st.ev] : 'town-' + name);
+      const a = pic(key);
+      if (!a) continue;
+      const x = x0 * k, hgt = size[sz], f = hgt / tallOf(a), b = boxOf(a, f);
+      castShadow(g, LT, x + b[0] * .8, x + b[2] * .8, hgt * (name === 'T' || name === 'E' ? .85 : 1.2), .2);
+      put(g, a, x, 0, f);
+    }
+    g.save(); g.globalCompositeOperation = 'source-atop'; g.fillStyle = css(LT.haze, TOWN_HAZE); g.fillRect(-1e4, -1e4, 2e4, 2e4); g.restore();
   }
-  function signSprite(L, LT, dpr) {
-    const y = STATION.signY, M = mAtY(y);
-    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'sign'), [-6.2 * M, -5.6 * M, 3.4 * M, 0], speedAtY(y) * BLUR * STATION.signBlur, g => {
+  function townSprite(L, LT, dpr, st) {
+    const v = st.variant, H = st.tall, k = st.k, sp = TOWN_SPAN[v];
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'town' + v + '@' + H + (ART ? '/' + st.tv + st.ev : '')), [sp[0] * k - 20, -Math.max(H, 80) - 20, sp[1] * k + 90, 12], speedAtY(STATION.townY) * BLUR,
+      g => ART ? artTown(g, LT, st) : TOWNS[v](g, LT, H, k));
+  }
+  // batch 7: the sign as GPT's board (3.6 m to its top, ~6.9 m across) and lamp (5 m, its glow on), pictures chosen per sign of the song
+  function signSprite(L, LT, dpr, st) {
+    const y = STATION.signY, M = mAtY(y), sv = ART && st ? st.sv : 0, lv = ART && st ? st.lv : 0;
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'sign' + (ART ? sv + '/' + lv : '')), [-6.2 * M, -5.6 * M, (ART ? 3.8 : 3.4) * M, 0], speedAtY(y) * BLUR * STATION.signBlur, g => {
+      if (ART) {
+        const lamp = pic('station/station-lamp-' + ABC[lv]), glow = pic('station/station-lamp-glow-' + ABC[lv]), board = pic('station/station-sign-' + ABC[sv]);
+        if (lamp) { const f = 5 * M / tallOf(lamp); put(g, lamp, -5.2 * M, 0, f); put(g, glow, -5.2 * M, 0, f); }
+        if (board) put(g, board, 0, 0, 3.6 * M / tallOf(board)); // its top where the code's board was (only the top clears the window's lower edge)
+        return;
+      }
       g.scale(M, M); // metres from here on
       const iron = mix(rgb('#2f3336'), LT.haze, .05);
       const post = (X, h, w, col) => { box(g, X - w / 2, X + w / 2, 0, h, css(col)); box(g, X - w / 2, X - w / 2 + w * .3, 0, h, css(mix(col, LT.light, .4), .85)); box(g, X + w * .2, X + w / 2, 0, h, css(mix(col, LT.shade, .35), .7)); };
@@ -2009,9 +2050,19 @@
       box(g, -2.7, 2.7, 3.52, 3.55, css(mix(fr, LT.light, .6), .9));
     });
   }
-  function crossingSprite(L, LT, dpr) {
-    const y = STATION.xingY, M = mAtY(y);
-    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'xing'), [-2.6 * M, -4.6 * M, 9.5 * M, .2 * M], speedAtY(y) * BLUR, g => {
+  // batch 7: the crossing as GPT's signal (4.4 m) and gate (its pivot .35 m right of the post, 1.05 m up, 7.7 m long);
+  // lit = 'l' / 'r': only that lamp's glow layer, drawn over the unlit signal
+  function crossingSprite(L, LT, dpr, st, lit) {
+    const y = STATION.xingY, M = mAtY(y), xv = ART && st ? st.xv : 0;
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'xing' + (ART ? xv + (lit || '') : '')), [-2.6 * M, -4.6 * M, 9.5 * M, .2 * M], speedAtY(y) * BLUR, g => {
+      if (ART) {
+        const sig = pic('station/crossing-signal-' + (lit ? 'lit-' + lit + '-' : '') + ABC[xv]), base = pic('station/crossing-signal-' + ABC[xv]), gate = pic('station/crossing-gate-a');
+        if (!sig || !base) return;
+        const f = 4.4 * M / tallOf(base);
+        if (!lit && gate) put(g, gate, .35 * M, -1.05 * M, 7.7 * M / (gate.bbox[2] + 1 - gate.anchor[0]));
+        put(g, sig, 0, 0, f);
+        return;
+      }
       g.scale(M, M);
       const white = mix(rgb('#d4d0c4'), LT.haze, .08), iron = mix(rgb('#3a3d3e'), LT.haze, .05), pc = mix(rgb('#c2bfb6'), LT.haze, .06);
       box(g, -.08, .08, 0, 4.4, css(pc)); box(g, -.08, -.03, 0, 4.4, css(mix(pc, LT.light, .4), .85));
@@ -2042,7 +2093,11 @@
     const key = spriteKey(L, LT, dpr, 'all');
     if (stations.warm === key) return;
     stations.warm = key;
-    for (const st of stations) { if (st.kind === 'sign') signSprite(L, LT, dpr); else { townSprite(L, LT, dpr, st.variant, st.tall); if (st.xing !== undefined) crossingSprite(L, LT, dpr); } }
+    for (const st of stations) {
+      if (st.kind === 'sign') { signSprite(L, LT, dpr, st); continue; }
+      townSprite(L, LT, dpr, st);
+      if (st.xing !== undefined) { crossingSprite(L, LT, dpr, st); if (ART) { crossingSprite(L, LT, dpr, st, 'l'); crossingSprite(L, LT, dpr, st, 'r'); } }
+    }
   }
   function passTowns(ctx, stations, L, t, LT, dpr) {
     const out = [];
@@ -2051,7 +2106,7 @@
     const y = STATION.townY, sp = speedAtY(y);
     for (const st of stations) {
       if (st.kind !== 'town' || Math.abs(st.t - t) > 30) continue;
-      const s = townSprite(L, LT, dpr, st.variant, st.tall), x = L.nowM + (st.t - t) * sp;
+      const s = townSprite(L, LT, dpr, st), x = L.nowM + (st.t - t) * sp;
       if (!inView(L, x, s)) continue;
       ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
       out.push({kind: 'town', variant: st.variant, t: st.t, x, tall: st.tall});
@@ -2063,12 +2118,12 @@
     for (const st of stations) {
       if (Math.abs(st.t - t) > 30) continue;
       if (st.kind === 'sign') {
-        const y = STATION.signY, s = signSprite(L, LT, dpr), x = L.nowM + (st.t - t) * speedAtY(y);
+        const y = STATION.signY, s = signSprite(L, LT, dpr, st), x = L.nowM + (st.t - t) * speedAtY(y);
         if (!inView(L, x, s)) continue;
         ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
         out.push({kind: 'sign', t: st.t, x});
       } else if (st.xing !== undefined) {
-        const y = STATION.xingY, s = crossingSprite(L, LT, dpr), T = st.t + (st.xing - ROAD_HALF - .9) / V_MS, x = L.nowM + (T - t) * speedAtY(y);
+        const y = STATION.xingY, s = crossingSprite(L, LT, dpr, st), T = st.t + (st.xing - ROAD_HALF - .9) / V_MS, x = L.nowM + (T - t) * speedAtY(y);
         // the road's planks over the track bed under the window (rows 814 down), each row at its own speed
         const r0 = st.xing - ROAD_HALF, r1 = st.xing + ROAD_HALF, at = (X, yy) => L.nowM + (X / V_MS + st.t - t) * speedAtY(yy);
         if (at(r1, 814) > L.left - 40 && at(r0, M_BOTTOM + 2) < L.right + 40) {
@@ -2077,7 +2132,8 @@
         }
         if (!inView(L, x, s)) continue;
         ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
-        crossingLamps(ctx, x, y, t);
+        if (ART) { const l = crossingSprite(L, LT, dpr, st, Math.floor(t * 2) % 2 ? 'r' : 'l'); if (l) ctx.drawImage(l.c, x + l.x0, y + l.y0, l.w, l.h); } // one lamp lit, swapping twice a song second
+        else crossingLamps(ctx, x, y, t);
         out.push({kind: 'crossing', t: T, x});
       }
     }
