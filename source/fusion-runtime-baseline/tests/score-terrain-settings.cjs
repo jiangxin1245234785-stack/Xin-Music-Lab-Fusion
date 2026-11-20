@@ -47,10 +47,10 @@ function page(style, kept) {
 (async () => {
   const p = page('terrain');
   assert.equal(p.box.hidden, false, 'shown with 车窗地貌');
-  assert.equal(p.input.value, 'off', 'off by default');
+  assert.equal(p.input.value, 'all', 'all by default (batch 5)');
   assert.ok(p.stage.classes.has('score-led-words'));
   await p.scene.load('a');
-  assert.equal(p.options.terrainRoadside, 'off', 'the core gets it on opening a song');
+  assert.equal(p.options.terrainRoadside, 'all', 'the core gets it on opening a song');
   p.tick(); p.tick();
   assert.equal(p.texts.some(t => /点一条轨/.test(t)), false, 'no help line about lanes on the scenery');
   p.input.change('kick-snare');
@@ -59,16 +59,16 @@ function page(style, kept) {
   p.style('glass');
   assert.equal(p.box.hidden, true, 'hidden with another look');
   assert.equal(p.stage.classes.has('score-led-words'), false);
-  // Another viewer's kept choice comes back; a bad value falls back to off.
-  const q = page('terrain', JSON.stringify({terrainRoadside: 'all'}));
-  assert.equal(q.input.value, 'all');
+  // A kept choice comes back (off included: someone who chose it keeps it); a bad value falls back to the default.
+  const q = page('terrain', JSON.stringify({terrainRoadside: 'off'}));
+  assert.equal(q.input.value, 'off');
   await q.scene.load('a');
-  assert.equal(q.options.terrainRoadside, 'all');
+  assert.equal(q.options.terrainRoadside, 'off');
   const r = page('starry', '{"terrainRoadside":"poles"}');
-  assert.equal(r.input.value, 'off');
+  assert.equal(r.input.value, 'all');
   assert.equal(r.box.hidden, true);
   await r.scene.load('a');
   r.tick(); r.tick();
   assert.equal(r.texts.some(t => /点一条轨/.test(t)), true, 'other looks keep the help line');
-  console.log('score terrain settings: PASS (shown only with 车窗地貌, off by default, kept per viewer, reaches the core; words off the scenery)');
+  console.log('score terrain settings: PASS (shown only with 车窗地貌, all by default, kept per viewer, reaches the core; words off the scenery)');
 })().catch(error => { console.error(error); process.exit(1); });

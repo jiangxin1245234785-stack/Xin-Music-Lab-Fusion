@@ -34,7 +34,7 @@ function withLook(run) {
 }
 
 test('the roadside option: a core default (off), checked by the whitelist, carried to the look\'s frame', () => {
-  assert.equal(Core.DEFAULTS.terrainRoadside, 'off');
+  assert.equal(Core.DEFAULTS.terrainRoadside, 'all', 'all since batch 5 (the user expected the drums by the line)');
   withLook(frames => {
     const {canvas} = canvasAt(1123, 783);
     const view = P.create(canvas, fullModel(), () => 30, {scoreStyle: 'terrain', terrainRoadside: 'kick-snare'});

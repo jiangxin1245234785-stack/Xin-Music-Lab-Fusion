@@ -221,7 +221,7 @@
       artFrame = {w, h, song:model, key:model.track.id, time, duration:model.track.duration, playing:!locating,
         section, lyric, cover, presentationLayout:options.presentationLayout, albumLayout:options.albumLayout,
         ...(flag ? {lang:options.lang, hidden:options.hidden, focusGroup:options.focusGroup} : {}),
-        ...(terrain ? {terrainRoadside:options.terrainRoadside || 'off', ...(sill.line ? {lyricProgress:sill.progress} : {})} : {})};
+        ...(terrain ? {terrainRoadside:options.terrainRoadside || 'all', ...(sill.line ? {lyricProgress:sill.progress} : {})} : {})};
       ctx.save();
       try {
         ctx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);

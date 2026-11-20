@@ -134,7 +134,7 @@
     radarStep: 'neon',  // the drum grid's current step (radar.5 feedback): 'neon' bulbs, a brass 'cursor', or a 'backlight' column
     radarWheel: 'light',  // the chord wheels (SPEC-WEATHER A): 'light' wheels with dark figures (the user's pick) or 'dark' with light
     radarCell: 'round',  // the drum grid's cells (radar.5 feedback): 'round' lamps behind holes (the user's pick) or 'square' backlit tiles
-    terrainRoadside: 'off',  // 车窗地貌: the drums as things passing by the line - 'off' (default until the user has looked), 'all', 'kick-snare'
+    terrainRoadside: 'all',  // 车窗地貌: the drums as things passing by the line - 'all' (default since batch 5: the user expected them), 'kick-snare', 'off'
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.

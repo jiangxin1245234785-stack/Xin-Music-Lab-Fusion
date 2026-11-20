@@ -171,12 +171,12 @@
       radarFallInput.addEventListener('change', changed); radarEchoInput.addEventListener('change', changed);
       radarLeadInput?.addEventListener('change', changed);
     }
-    // 车窗地貌's own setting (batch 4, 2026-11-19): the drums as things passing by the line - off / all / kick and snare only,
+    // 车窗地貌's own setting (batch 4, 2026-11-19): the drums as things passing by the line - all (default) / kick and snare only / off,
     // kept per viewer. With this look the title, sections and lyrics are on its carriage displays, so the stage carries
     // score-led-words and the compact lyric line (sidebar collapsed or H) does not lay words over the scenery.
     const TERRAIN_KEY = 'xin-score-terrain-v1', terrainBox = root.document.getElementById('scoreTerrainOptions');
     const roadsideInput = root.document.getElementById('scoreTerrainRoadside');
-    const terrain = {terrainRoadside: 'off'};
+    const terrain = {terrainRoadside: 'all'}; // 'all' by default since batch 5; a kept choice stays
     try { const kept = JSON.parse(root.localStorage.getItem(TERRAIN_KEY)); if (['off', 'all', 'kick-snare'].includes(kept?.terrainRoadside)) terrain.terrainRoadside = kept.terrainRoadside; } catch (_) {}
     const showTerrain = () => {
       if (terrainBox) terrainBox.hidden = scoreStyle !== 'terrain';
