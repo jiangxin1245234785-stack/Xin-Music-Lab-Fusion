@@ -77,6 +77,7 @@
   // soft layers (white / black, alpha |2 s - 1|) at TEX_K: about what soft light does to a mid colour (NOTES.md: multiply
   // would halve the brightness). They are painted into the range tiles, so they move with each range's world.
   const TEX_TEXEL = .75, TEX_K = .45, STRATA_K = .5, GRAIN_TEXEL = .5, HAZE_H = 150, DUST_K = 1, STREAK_K = 1;
+  const HAZE_ROWS = [.24, .74]; // both haze strips are empty outside these rows (measured): only these are laid
   // the coarsest brush (a) only on the nearest one or two ranges, then b, c, d with distance
   const textureOf = d => d < .15 ? 'a' : d < .45 ? 'b' : d < .75 ? 'c' : 'd';
   function patternOf(g, canvas, sc, ex, ey, rep) {
@@ -807,11 +808,12 @@
   const GROUND_FLOW = true;
   const FLOW = {ballast: {y0: 798, y1: 834}, rail: {y0: 812, y1: 834}};
   function flowStrip(L, dpr, key, at) {
-    const a = pic(key), H = at.y1 - at.y0, f = H / a.oh, P = a.ow * f, blur = speedAtY(828) * BLUR;
+    const a = pic(key), H = at.y1 - at.y0, f = H / a.oh, P0 = a.ow * f, P = P0 * Math.ceil(1800 / P0), blur = speedAtY(828) * BLUR;
+    // several of the picture's periods in one canvas (wider than any window), so a frame lays it once or twice
     const c = sketchCanvas(L, dpr, -blur, at.y0, P + 2 * blur + 24, H);
     if (!c) return null;
     const one = sketchCanvas(L, dpr, -blur, at.y0, P + 2 * blur + 24, H);
-    for (const x of [-P, 0, P]) one.g.drawImage(a.img, x, at.y0, P, H);
+    for (let x = -P0; x < P + P0; x += P0) one.g.drawImage(a.img, x, at.y0, P0, H);
     const K = Math.max(5, Math.round(blur * L.s * dpr));
     c.g.setTransform(1, 0, 0, 1, 0, 0); c.g.globalCompositeOperation = 'lighter'; c.g.globalAlpha = 1 / K;
     for (let q = 0; q < K; q++) c.g.drawImage(one.c, (q / (K - 1) - .5) * blur * L.s * dpr, 0);
@@ -1290,16 +1292,17 @@
       let lo = Infinity, hi = -Infinity;
       for (const v of ln) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
       const col0 = basinAt(LT, 600), hz = ART && hazeOf(LT, layer.i % 2 ? 'b' : 'a', col0);
-      if (hz) { lo += -14 - HAZE_H / 2 + 42; hi += -14 + HAZE_H / 2 - 8; } // room for the strip (it reaches further)
+      if (hz) { lo += -14 - HAZE_H / 2 + HAZE_ROWS[0] * HAZE_H + 44; hi += -14 - HAZE_H / 2 + HAZE_ROWS[1] * HAZE_H - 10; } // room for the strip's rows that hold haze
       const H = 44, y0 = lo - H - 2, h = hi + 12 - y0;
       const cv = makeCanvas(w * scale, h * scale);
       if (cv && a > 0 && hz) { // batch 7: GPT's haze strip, one slice a world sample along this range's softened ridge
         const g = cv.getContext('2d'), half = hz.width / 2;
         g.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
         g.globalAlpha = a;
-        for (let k = kS - 2; k <= kS + TILE + 2; k++) {
-          const sx = ((k * COL + layer.i * 701) % half + half) % half, yc = line[at(k)] + 4 - 14;
-          g.drawImage(hz, sx, 0, COL, hz.height, X(k) - COL / 2, yc - HAZE_H / 2, COL, HAZE_H);
+        // one slice every third world sample (as the code's band took every third column), on samples divisible by 3
+        for (let k = kS - 3 - (((kS - 3) % 3) + 3) % 3; k <= kS + TILE + 3; k += 3) {
+          const sx = ((k * COL + layer.i * 701) % half + half) % half, yc = line[at(k + 1)] + 4 - 14;
+          g.drawImage(hz, sx, HAZE_ROWS[0] * hz.height, 3 * COL, (HAZE_ROWS[1] - HAZE_ROWS[0]) * hz.height, X(k) - COL / 2, yc - HAZE_H / 2 + HAZE_ROWS[0] * HAZE_H, 3 * COL, (HAZE_ROWS[1] - HAZE_ROWS[0]) * HAZE_H);
         }
         tile.mist = {c: cv, x0, y0, h};
         tile.pixels += cv.width * cv.height;
