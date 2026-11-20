@@ -456,7 +456,7 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
 test('the materials are the files the build ships: every MATERIAL_FILES entry is in assets/radar and in build-local\'s list', () => {
   const {existsSync} = require('node:fs');
   const build = readFileSync(join(__dirname, '../../release-tools/build-local.cjs'), 'utf8');
-  assert.equal(Object.keys(Radar.MATERIAL_FILES).length, 17, 'twelve from batch 1, five from batch 4');
+  assert.equal(Object.keys(Radar.MATERIAL_FILES).length, 43, 'twelve from batch 1, five from batch 4, 26 parts from batch 5 (SPEC-PARTS)');
   for (const file of Object.values(Radar.MATERIAL_FILES)) {
     assert.ok(existsSync(join(__dirname, '../assets/radar', file)), file);
     assert.ok(build.includes("'" + file.replace(/\.png$/, '') + "'") && build.includes("'assets/radar/'"), file + ' is shipped');

@@ -163,7 +163,21 @@
     plateKeys: 'plate-keys.png', plateTele: 'plate-teleprinter.png', paperDial: 'paper-dial.png', paperTape: 'paper-tape.png',
     screwSlot: 'screw-slot.png', screwCross: 'screw-cross.png', screwBrass: 'screw-brass.png', glass: 'glass-smudge.png',
     // Batch 4: tape stock for the hand-written names, the calibration tag, the cover plate over a removed dial.
-    stickerA: 'sticker-a.png', stickerB: 'sticker-b.png', stickerC: 'sticker-c.png', tagCal: 'tag-cal.png', coverPlate: 'cover-plate.png'});
+    stickerA: 'sticker-a.png', stickerB: 'sticker-b.png', stickerC: 'sticker-c.png', tagCal: 'tag-cal.png', coverPlate: 'cover-plate.png',
+    // Batch 5 (SPEC-PARTS, assets-gpt-2/HANDOFF.md): the parts worn by hands in use. A meter frame and a toggle pair
+    // for each of the seven channels (the channel keeps its own wear: GUITAR most, DRUMS least), one meter glass shared
+    // by all seven, the PPI bezel and its glass, a nixie shell and glass laid over each tube digit.
+    ...Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f', 'g'].flatMap((v, i) => {
+      const k = v.toUpperCase(), suffix = i ? '-' + v : '';   // VOX's toggle files have no '-a'
+      return [['meterFrame' + k, `meter-frame-${v}.png`], ['toggleUp' + k, `toggle-up${suffix}.png`], ['toggleDown' + k, `toggle-down${suffix}.png`]];
+    })),
+    meterGlass: 'meter-glass.png', ppiBezel: 'ppi-bezel.png', ppiGlass: 'ppi-glass.png', nixieShell: 'nixie-shell.png', nixieGlass: 'nixie-glass.png'});
+  // The physical channel each frame and toggle pair belongs to (A to G, by channel id): they follow the channel through
+  // song changes, volume and mute.
+  const CHANNEL_PARTS = Object.freeze(Object.fromEntries(CATS.map((cat, i) => {
+    const k = 'ABCDEFG'[i];
+    return [cat.id, Object.freeze({frame: 'meterFrame' + k, up: 'toggleUp' + k, down: 'toggleDown' + k})];
+  })));
   const MATERIALS = {};
   // The layout audit's record (null when off) and the frame's placement, see write().
   let auditSink = null, auditView = null, auditClip = null;
@@ -872,6 +886,19 @@
       p.drawImage(smudge, sx, sy, cw, ch, x, y, cw / k, ch / k);
       p.restore();
     }
+    // The shadow a worn meter frame's lip throws on the paper (under the printing and the needle), from the same
+    // upper-left light: 4.3 deep at the top, 3.2 left, 2.1 bottom, 2 right.
+    function paperLip(x, y, w, h) {
+      p.save(); p.beginPath(); p.roundRect(x, y, w, h, 2); p.clip();
+      for (const [x0, y0, x1, y1, rx, ry, rw, rh, density] of [
+        [x, y, x, y + 4.3, x, y, w, 4.3, .62], [x, y, x + 3.2, y, x, y, 3.2, h, .46],
+        [x, y + h, x, y + h - 2.1, x, y + h - 2.1, w, 2.1, .33], [x + w, y, x + w - 2, y, x + w - 2, y, 2, h, .28]]) {
+        const g = p.createLinearGradient(x0, y0, x1, y1);
+        g.addColorStop(0, `rgba(29,23,17,${density})`); g.addColorStop(.42, `rgba(30,23,17,${density * .48})`); g.addColorStop(1, 'rgba(29,23,17,0)');
+        p.fillStyle = g; p.fillRect(rx, ry, rw, rh);
+      }
+      p.restore();
+    }
     function lamp(x, y, r, light, hot = C.amberHot, warm = C.amber) {
       if (auditSink) { const [cx, cy] = toDesign(x, y); auditShape('lamp', {cx, cy, r}); }
       // The housing throws a small shadow, its rim catches the light; the lens is dark glass when off.
@@ -902,9 +929,23 @@
     function tubeBase(x, y, w, h, pattern, label) {
       bed(x, y, w, h, 4, C.tubeGlass, '#4b3a2c', 1.2);
       tubeDigits(x + w / 2, y + h / 2, pattern, 'off');
+      tubeParts(x + w / 2, y + h / 2, pattern, 'nixieShell');
       write(label, x + w / 2, y + h + 12, 12, C.stampDim, 'stamp', 'center');
     }
-    function tube(x, y, w, h, value) { tubeDigits(x + w / 2, y + h / 2, value, 'on'); }
+    function tube(x, y, w, h, value) { tubeDigits(x + w / 2, y + h / 2, value, 'on'); tubeParts(x + w / 2, y + h / 2, value, 'nixieGlass'); }
+    // A tube's shell (over the unlit stacks, in the base) or glass (over the lit digit, live), one per digit cell
+    // (19.6 x 42), the separators only advancing; laid out as tubeDigits lays out the same string.
+    function tubeParts(cx, cy, value, part) {
+      const image = MATERIALS[part];
+      if (!image) return;
+      const k = TUBE_PX / 30, cell = 21 * k, dotCell = 6 * k, chars = Array.from(value);
+      let left = cx - chars.reduce((n, ch) => n + (ch === '·' || ch === ':' ? dotCell : cell), 0) / 2;
+      for (const ch of chars) {
+        if (ch === '·' || ch === ':') { left += dotCell; continue; }
+        p.drawImage(image, left, cy - 21, cell, 42);
+        left += cell;
+      }
+    }
     // The digits of a reading centred at (cx, cy). 'off': every digit position shows its whole stack of unlit
     // cathodes (0-9), separators their dots; 'on': the lit cathode, a thin bright core with a narrow glow around it.
     function tubeDigits(cx, cy, value, state) {
@@ -1247,13 +1288,17 @@
         write('MOD. LVL-7', 300, 146, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         CATS.forEach((cat, i) => {
           const y = 163 + i * 85, {cx, cy, r, a0, a1} = dial(y);
-          // The meter: a paper face filling its box, a red zone at the top of the scale.
-          cast(box(x - 2, y - 2, w + 4, h + 4, 4), .9);
+          const framed = Boolean(MATERIALS[CHANNEL_PARTS[cat.id].frame]);
+          // The meter: a paper face filling its box, a red zone at the top of the scale. With its worn frame (laid in
+          // 'over') the frame's shadow is wider and softer, and the paper gets a contact shadow under the frame's lip.
+          if (framed) cast(box(x - 3.5, y - 3.5, w + 7, h + 7, 4), .65);
+          else cast(box(x - 2, y - 2, w + 4, h + 4, 4), .9);
           rounded(x - 2, y - 2, w + 4, h + 4, 4, '#1c1d18');
           edge(box(x - 1.4, y - 1.4, w + 2.8, h + 2.8, 4), x - 2, y - 2, w + 4, h + 4, true, 1.2);
           p.save(); p.beginPath(); p.roundRect(x, y, w, h, 2); p.clip(); dialFace(i, x, y, w, h); p.restore();
           rounded(x + .5, y + .5, w - 1, h - 1, 2, null, C.dialEdge, 1);
           inset(box(x, y, w, h, 2), 1);
+          if (framed) paperLip(x, y, w, h);
           p.save(); p.beginPath(); p.rect(x, y, w, h); p.clip();
           p.beginPath(); p.arc(cx, cy, r, a0, a1); p.strokeStyle = C.dialInk; p.lineWidth = 1.2; p.stroke();
           p.beginPath(); p.arc(cx, cy, r, a0 + (a1 - a0) * METER_AMBER, a0 + (a1 - a0) * METER_RED); p.strokeStyle = C.amberInk; p.lineWidth = 4; p.stroke();
@@ -1298,6 +1343,13 @@
             out.crayon = (out.crayon || []).concat({channel: cat.id, at: +mark.mean.toFixed(3)});
           }
           glass(x, y, w, h, GLASS_CROPS[i][0], GLASS_CROPS[i][1]);
+          // The channel's own frame (3.5 out on every side: neighbouring frames keep 4 of panel between them), then
+          // the shared meter glass over the face, both before the name tape.
+          const frame = MATERIALS[CHANNEL_PARTS[cat.id].frame];
+          if (frame) {
+            p.drawImage(frame, x - 3.5, y - 3.5, w + 7, h + 7);
+            if (MATERIALS.meterGlass) p.drawImage(MATERIALS.meterGlass, x, y, w, h);
+          }
           // The name on tape, stuck on the face's top-left corner.
           p.save(); p.translate(x + 4, y + 3); p.rotate(TAPE_ANGLES[i % TAPE_ANGLES.length]);
           font('marker', 12, 'bold');
@@ -1332,12 +1384,23 @@
           });
         } else lamp(224, y + 27, 9, off ? 0 : 1);
         const lx = 246, ly = y + 12, lw = 24, lh = 50, up = !off;
-        const knob = up ? ly + 13 : ly + lh - 13;
-        p.beginPath(); p.moveTo(lx + lw / 2, ly + lh / 2); p.lineTo(lx + lw / 2, knob);
-        p.strokeStyle = '#9a9a8e'; p.lineWidth = 5; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
-        if (depth > 0) circle(lx + lw / 2 + 1.3 * depth, knob + 2 * depth, 8.2, `rgba(0,0,0,${Math.min(.6, .35 * depth)})`);
-        circle(lx + lw / 2, knob, 8, '#d6d4c8', '#3a3a33', 1);
-        if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${.55 * Math.min(1, depth)})`);
+        // The channel's own toggle, up (IN) or down (OUT): one picture each way, both on the same pivot; ball centres
+        // at (258, y + 25) and (258, y + 49). Without both pictures, the drawn lever.
+        const parts = CHANNEL_PARTS[cat.id], upImage = MATERIALS[parts.up], downImage = MATERIALS[parts.down];
+        if (upImage && downImage) {
+          p.save();
+          p.shadowColor = 'rgba(0,0,0,.25)'; p.shadowOffsetX = unit; p.shadowOffsetY = 1.4 * unit; p.shadowBlur = unit;
+          p.drawImage(up ? upImage : downImage, lx, ly, lw, lh);
+          p.restore();
+          (out.toggles = out.toggles || {})[cat.id] = up ? parts.up : parts.down;
+        } else {
+          const knob = up ? ly + 13 : ly + lh - 13;
+          p.beginPath(); p.moveTo(lx + lw / 2, ly + lh / 2); p.lineTo(lx + lw / 2, knob);
+          p.strokeStyle = '#9a9a8e'; p.lineWidth = 5; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
+          if (depth > 0) circle(lx + lw / 2 + 1.3 * depth, knob + 2 * depth, 8.2, `rgba(0,0,0,${Math.min(.6, .35 * depth)})`);
+          circle(lx + lw / 2, knob, 8, '#d6d4c8', '#3a3a33', 1);
+          if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${.55 * Math.min(1, depth)})`);
+        }
 
         out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other'});
       });
@@ -1359,15 +1422,24 @@
         panel(334, 116, 656 + wide / 2, 618, 'plateRadar', ['cross', 'cross', 'brass', 'cross']);
         // Bezel with a tick per beat (sixteen to a turn of four 4/4 bars) and finer ones between.
         cast(disk(cx, cy, bezel), 2.4);
-        circle(cx, cy, bezel, '#1d1e19', '#4a4c42', 2);
-        edge(disk(cx, cy, bezel - 1.5), cx - bezel, cy - bezel, 2 * bezel, 2 * bezel, true, 3, 1.1);
+        if (MATERIALS.ppiBezel) {
+          // The worn bezel (matte on top, rubbed bright along the lower edge where hands rest): only the dark fill
+          // under it, no drawn rim and no bevel highlight (either would show through the picture's soft edge); the
+          // ticks go on over the paint.
+          circle(cx, cy, bezel, '#1d1e19');
+          p.drawImage(MATERIALS.ppiBezel, cx - bezel, cy - bezel, 2 * bezel, 2 * bezel);
+        } else {
+          circle(cx, cy, bezel, '#1d1e19', '#4a4c42', 2);
+          edge(disk(cx, cy, bezel - 1.5), cx - bezel, cy - bezel, 2 * bezel, 2 * bezel, true, 3, 1.1);
+        }
         const perTurn = bars ? bars.perBar * 4 : 16;
-        // Four ticks to a beat: long on the beat, medium on the eighth, short on the sixteenth.
+        // Four ticks to a beat: long on the beat, medium on the eighth, short on the sixteenth. Nothing that does not glow
+        // is brighter than the dial paper (#e7dfc4, SPEC-PARTS): the first tick was #f0ead2.
         for (let k = 0; k < perTurn * 4; k++) {
           const a = -Math.PI / 2 + k / (perTurn * 4) * Math.PI * 2, long = k % 4 === 0, mid = k % 2 === 0, first = k === 0;
           const r0 = bezel - 4, r1 = bezel - (first ? 30 : long ? 24 : mid ? 17 : 11);
           p.beginPath(); p.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); p.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-          p.strokeStyle = first ? '#f0ead2' : long ? '#d8d2bb' : mid ? '#bdb7a0' : '#9a957f'; p.lineWidth = first ? 4 : long ? 3 : mid ? 2.2 : 1.6; p.stroke();
+          p.strokeStyle = first ? '#e4dfc8' : long ? '#d8d2bb' : mid ? '#bdb7a0' : '#9a957f'; p.lineWidth = first ? 4 : long ? 3 : mid ? 2.2 : 1.6; p.stroke();
         }
         const g = p.createRadialGradient(cx, cy, 0, cx, cy, screen);
         g.addColorStop(0, C.screenHi); g.addColorStop(1, C.screen);
@@ -1421,6 +1493,8 @@
         p.restore();
       } else if (pass === 'over') {
         glass(cx - screen, cy - screen, 2 * screen, 2 * screen, 0, 0, true, 512 / (2 * screen));
+        // The tube face's own reflection, clear over the middle (radius 180), before the mouth's inner shadow.
+        if (MATERIALS.ppiGlass) p.drawImage(MATERIALS.ppiGlass, cx - screen, cy - screen, 2 * screen, 2 * screen);
         inset(disk(cx, cy, screen - 1.5), 2.6);
       } else {
         p.save(); circle(cx, cy, screen - 1, null); p.clip();
@@ -1664,7 +1738,7 @@
       p.translate(cx, cy); p.rotate(tilt);
       rect(-r - 10, -r - 10, 2 * r + 20, r + 10, '#3d4c5a');
       rect(-r - 10, 0, 2 * r + 20, r + 10, '#4a3f31');
-      p.beginPath(); p.moveTo(-r - 10, 0); p.lineTo(r + 10, 0); p.strokeStyle = '#e8e2cc'; p.lineWidth = 1.5; p.stroke();
+      p.beginPath(); p.moveTo(-r - 10, 0); p.lineTo(r + 10, 0); p.strokeStyle = '#e5dfc9'; p.lineWidth = 1.5; p.stroke();
       p.restore();
       p.beginPath(); p.moveTo(cx - 26, cy); p.lineTo(cx - 8, cy); p.moveTo(cx + 8, cy); p.lineTo(cx + 26, cy);
       p.strokeStyle = C.amber; p.lineWidth = 3; p.stroke(); circle(cx, cy, 3, C.amber);
@@ -1697,7 +1771,7 @@
         const v = light[k];
         // The rim carries the brightest amber; the face stays dark enough for the ivory paint.
         circle(x, y, 14, mixHex('#2b2620', '#835023', v), mixHex('#14120d', C.amber, v), 1.5);
-        write(name, x, y, 15, '#ece5cc', 'plate', 'center', 0, '', 'cap');
+        write(name, x, y, 15, '#e5dfc6', 'plate', 'center', 0, '', 'cap');
       });
       const scheme = env.options.radarWheel !== 'dark' ? {face: '#d8d0b6', ink: '#1d1b15', shade: 'rgba(40,30,15,'} : {face: '#16150f', ink: '#ece5cc', shade: 'rgba(0,0,0,'};
       const WIN_H = 34, WHEEL_R = 21, PITCH = 23;
@@ -2427,7 +2501,7 @@
   }
   const LEADS = Object.freeze([.2, .4, .7]);
   const materials = () => Object.keys(MATERIALS).filter(key => MATERIALS[key]);
-  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, LEADS, audit, audited: () => auditSink, chordParts, sectionKind,
+  root.XinScoreRadar = Object.freeze({create, ready, materials, MATERIAL_FILES, CHANNEL_PARTS, LEADS, audit, audited: () => auditSink, chordParts, sectionKind,
     // The chord drums' plan, for tests and scans: wheels.plan(model.chords) then wheels.at(plan, k, t).
     wheels: Object.freeze({cells: WHEELS.map(w => w.cells), speed: WHEEL_SPEED, detent: WHEEL_DETENT,
       plan: rows => planWheels(chordTimeline(rows)), at: wheelAt}), CATS, QUALITY, SECTION_LAMPS, CAUTION, RULES, DESIGN, FONTS});
