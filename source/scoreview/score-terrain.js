@@ -1572,18 +1572,89 @@
   };
   // sprite bounds in metres around the base point: [left, top, right, bottom]; the shadow runs right
   const BOUNDS = {pole: [-2, -11, 20, 1], stub: [-1, -3.2, 6, 1], fence: [-1, -2.4, 5, 1], tom: [-2.4, -2.4, 6, 1], post: [-1, -3, 6, 1], crash: [-2.5, -12.5, 18, 1.2]};
+  // ---- batch 7: the roadside from GPT's pictures. Same lines, same heights as the code's things, the shadow on the ground
+  // and the motion blur still the program's; which picture of a kind = a hash of "the how-many-th of its line in this
+  // song" (artVariant). Painters work in sketch px around the base point; box() is the sprite's extent (shadow included).
+  // The telegraph wires hang from each pole picture's insulator tops (measured on the originals, px, left to right).
+  const POLE_TIPS = [[[100, 98], [178, 98], [256, 98]], [[50, 128], [105, 128], [232, 128], [285, 128]], [[128, 128], [291, 153]], [[94, 84], [147, 84], [266, 84], [319, 84]]];
+  // the windpump towers' hubs and wheel sizes (NOTES.md, tower px); the 18-blade wheel repeats every 20 degrees, spun
+  // from WHEEL_FRAMES sprites over one blade at WHEEL_DPS degrees a song second
+  const PUMP = [{hub: [191, 192], wheel: 392}, {hub: [203, 94], wheel: 413}, {hub: [205, 290], wheel: 348}], PUMP_TALL = 938;
+  const WHEEL_FRAMES = 6, WHEEL_DPS = 60, BIRD_FLAPS = 3.2;
+  const unionBox = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+  const shadowBox = (len, w) => [-w, -1, len * 1.85 + w, Math.max(2, w * .6)];
+  const poleH = (M, vel) => 9.5 * M * (.95 + .1 * vel / 127);
+  const stubH = (M, vel) => (3.2 + .5 * vel / 127) * M; // a half pole with a crossarm (the code's 2-2.5 m post would make it a toy)
+  const fenceH = (M, vel, open) => (open ? 1.85 : 1.3) * M * (.95 + .1 * vel / 127);
+  const tomS = vel => (.8 + .4 * vel / 127) * 1.8;
+  const postS = vel => (.92 + .16 * vel / 127) * 1.45;
+  const pumpF = (M, vel) => 9 * M * (.9 + .2 * vel / 127) / PUMP_TALL;
+  const artKey = {
+    pole: v => 'roadside/pole-' + ABC[v], stub: v => 'roadside/pole-stub-' + ABC[v],
+    fence: v => v < 4 ? 'roadside/fence-post-' + ABC[v] : 'roadside/fence-post-braced-' + ABC[v - 4],
+    tom: v => v < 4 ? 'roadside/sagebrush-' + ABC[v] : 'roadside/rock-pile-' + ABC[v - 4],
+    post: v => v < 3 ? 'roadside/mile-post-' + ABC[v] : 'roadside/whistle-post-' + ABC[v - 3],
+    crash: v => 'roadside/windpump-' + ABC[v]};
+  // [picture, f (sketch px per original px), shadow length, shadow width, shadow alpha]
+  function artPlan(type, M, vel, variant) {
+    const a = pic(artKey[type](variant));
+    if (!a) return null;
+    if (type === 'pole') { const H = poleH(M, vel); return [a, H / tallOf(a), H, .36 * M, .26]; }
+    if (type === 'stub') { const h = stubH(M, vel); return [a, h / tallOf(a), h * 1.1, .2 * M, .3]; }
+    if (type === 'fence') { const h = fenceH(M, vel, variant >= 4); return [a, h / tallOf(a), h * 1.1, (variant >= 4 ? .2 : .13) * M, .3]; }
+    if (type === 'tom') { const s = tomS(vel), sage = variant < 4; return [a, 2.0 * M * s / wideOf(a), (sage ? 1.4 : 1.2) * M * s, (sage ? 1.2 : 1.3) * M * s, sage ? .28 : .3]; }
+    if (type === 'post') { const s = postS(vel), h = (variant < 3 ? 1.25 : 1.6) * M * s; return [a, h / tallOf(a), h * 1.1, .23 * M, .3]; }
+    if (type === 'crash') { const f = pumpF(M, vel); return [a, f, 9 * M * .9, 2.2 * M, .14]; }
+    return null;
+  }
+  const ART_PAINT = {
+    box(type, M, vel, variant) {
+      if (type === 'wheel') { const v = Math.floor(variant / WHEEL_FRAMES), r = PUMP[v].wheel * pumpF(M, vel) / 2; return [-r, -r, r, r]; }
+      const P = artPlan(type, M, vel, variant);
+      return P ? unionBox(boxOf(P[0], P[1]), shadowBox(P[2], P[3])) : null;
+    },
+    paint(g, LT, type, M, vel, variant) {
+      if (type === 'wheel') { // one frame of the wheel's turn, centred on the hub
+        const v = Math.floor(variant / WHEEL_FRAMES), fr = variant % WHEEL_FRAMES, a = pic('roadside/windpump-wheel-a'), d = PUMP[v].wheel * pumpF(M, vel);
+        if (!a) return;
+        g.rotate(fr / WHEEL_FRAMES * Math.PI / 9);
+        g.drawImage(a.img, -d / 2, -d / 2, d, d);
+        return;
+      }
+      const P = artPlan(type, M, vel, variant);
+      if (!P) return;
+      shadow(g, LT, 0, 0, P[2], P[3], P[4]);
+      put(g, P[0], 0, 0, P[1]);
+    }
+  };
+  const artVariant = (type, i, open) => type === 'pole' ? Math.floor(hash(i, 201) * 4) : type === 'stub' ? Math.floor(hash(i, 202) * 2)
+    : type === 'fence' ? (open ? 4 + Math.floor(hash(i, 204) * 2) : Math.floor(hash(i, 203) * 4))
+    : type === 'crash' ? Math.floor(hash(i, 208) * 3) : 0;
+  // the four wire points of a pole picture (the insulators, an end one taken twice where a pole has fewer than four)
+  function poleTips(M, vel, variant) {
+    const a = pic(artKey.pole(variant)), tips = POLE_TIPS[variant], f = poleH(M, vel) / tallOf(a);
+    return [0, 1, 2, 3].map(j => { const p = tips[Math.round(j * (tips.length - 1) / 3)]; return [(p[0] - a.anchor[0]) * f, (p[1] + 6 - a.anchor[1]) * f]; });
+  }
+  function stubTop(M, vel, variant) { const a = pic(artKey.stub(variant)); return stubH(M, vel) * (a.anchor[1] - a.bbox[1] - 4) / tallOf(a); }
+  function wheelPlace(M, vel, v, t, i) {
+    const a = pic(artKey.crash(v)), f = pumpF(M, vel), hub = PUMP[v].hub;
+    const turn = ((t * WHEEL_DPS + 360 * hash(i, 209)) / 20) % 1, fr = Math.floor((turn < 0 ? turn + 1 : turn) * WHEEL_FRAMES) % WHEEL_FRAMES;
+    return {dx: (hub[0] - a.anchor[0]) * f, dy: (hub[1] - a.anchor[1]) * f, variant: v * WHEEL_FRAMES + fr};
+  }
   const spriteCache = new Map();
   function sprite(L, LT, dpr, type, y, vel, variant, blurK = 1) {
-    const rv = repVel(type, vel), key = [lightIds.get(LT), L.s, dpr, type, y, rv, variant, blurK, MODE()].join('|');
+    const rv = repVel(type === 'wheel' ? 'crash' : type, vel), key = [lightIds.get(LT), L.s, dpr, type, y, rv, variant, blurK, MODE()].join('|');
     if (spriteCache.has(key)) return spriteCache.get(key);
-    const M = mAtY(y), blur = speedAtY(y) * BLUR * blurK, B = BOUNDS[type];
-    const x0 = B[0] * M - blur, y0 = B[1] * M, w = (B[2] - B[0]) * M + 2 * blur, h = (B[3] - B[1]) * M, k = L.s * dpr;
+    const M = mAtY(y), blur = speedAtY(y) * BLUR * blurK;
+    const B = ART ? ART_PAINT.box(type, M, rv, variant) : BOUNDS[type].map(v => v * M);
+    const e = ART ? 1 : 0; // a pixel of room round a picture's box (the code's boxes keep their old size)
+    const x0 = B[0] - blur - e, y0 = B[1] - e, w = B[2] - B[0] + 2 * blur + 2 * e, h = B[3] - B[1] + 2 * e, k = L.s * dpr;
     const a = makeCanvas(w * k, h * k);
     let out = null;
     if (a) {
       const g = a.getContext('2d');
       g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
-      PAINT[type](g, LT, M, rv, variant);
+      if (ART) ART_PAINT.paint(g, LT, type, M, rv, variant); else PAINT[type](g, LT, M, rv, variant);
       let c = a;
       if (blur * k >= 1.5) { // horizontal motion blur: the average of shifted copies
         const b = makeCanvas(a.width, a.height), bg = b.getContext('2d'), K = Math.max(5, Math.round(blur * k));
@@ -1593,13 +1664,22 @@
       }
       out = {c, x0, y0, w, h};
     }
-    if (spriteCache.size > 160) spriteCache.delete(spriteCache.keys().next().value);
+    if (spriteCache.size > 240) spriteCache.delete(spriteCache.keys().next().value);
     spriteCache.set(key, out);
     return out;
   }
   const stamp = (ctx, sp, x, y, scale = 1) => { if (sp) ctx.drawImage(sp.c, x + sp.x0 * scale, y + sp.y0 * scale, sp.w * scale, sp.h * scale); };
   function birds(ctx, x, y, M, dt, key, n) {
     if (dt < 0) return; // not drawn before the hit (birds sitting on the ground read as debris)
+    if (ART) { // batch 7: GPT's six wing positions, a -> f in turn, BIRD_FLAPS beats a song second; same flight as below
+      for (let j = 0; j < n; j++) {
+        const sz = (.3 + .1 * hash(key + j, 62)) * M, vx = (hash(key + j, 63) - .45) * 160, vy = 160 + 120 * hash(key + j, 64);
+        const bx = x + (hash(key + j, 61) - .5) * 3.2 * M + vx * dt, by = y - .4 * M - vy * dt - 30 * dt * dt;
+        const beat = dt * BIRD_FLAPS + hash(key + j, 66), a = pic('roadside/bird-' + ABC[Math.floor((beat - Math.floor(beat)) * 6) % 6]);
+        if (a) put(ctx, a, bx, by, 3 * sz / wideOf(a), vx < 0); // the picture faces right; a bird flying left is mirrored
+      }
+      return;
+    }
     ctx.strokeStyle = css(DARKWOOD, .9); ctx.lineCap = 'round'; ctx.beginPath();
     for (let j = 0; j < n; j++) {
       const sz = (.3 + .1 * hash(key + j, 62)) * M, vx = (hash(key + j, 63) - .45) * 160, vy = 160 + 120 * hash(key + j, 64);
@@ -1616,6 +1696,16 @@
     src.roadWarm = key;
     const has = list => ({lo: list.some(o => o.v < 64), hi: list.some(o => o.v >= 64)});
     const vels = list => { const h = has(list); return [h.lo ? 32 : null, h.hi ? 96 : null].filter(v => v !== null); };
+    if (ART) { // every picture variant the lines can ask for
+      for (const b of [0, 1, 2, 3]) if (road.pole.some(o => o.tall && vBucket(o.v) === b)) for (let k = 0; k < 4; k++) sprite(L, LT, dpr, 'pole', LINE.pole, vOf(b), k);
+      for (const v of vels(road.pole.filter(o => !o.tall))) for (let k = 0; k < 2; k++) sprite(L, LT, dpr, 'stub', LINE.pole, v, k);
+      for (const v of vels(road.post)) for (let k = 0; k < 5; k++) sprite(L, LT, dpr, 'post', LINE.post, v, k, .45);
+      if (mode !== 'all') return;
+      for (const v of vels(road.fence)) for (let k = 0; k < 6; k++) sprite(L, LT, dpr, 'fence', LINE.fence, v, k);
+      for (const v of vels(road.tom)) for (let k = 0; k < 8; k++) sprite(L, LT, dpr, 'tom', LINE.tom, v, k);
+      for (const v of vels(road.crash)) for (let k = 0; k < 3; k++) { sprite(L, LT, dpr, 'crash', LINE.crash, v, k); for (let f = 0; f < WHEEL_FRAMES; f++) sprite(L, LT, dpr, 'wheel', LINE.crash, v, k * WHEEL_FRAMES + f); }
+      return;
+    }
     for (const b of [0, 1, 2, 3]) if (road.pole.some(o => o.tall && vBucket(o.v) === b)) sprite(L, LT, dpr, 'pole', LINE.pole, vOf(b), 0);
     for (const v of vels(road.pole.filter(o => !o.tall))) sprite(L, LT, dpr, 'stub', LINE.pole, v, 0);
     for (const v of vels(road.post)) for (const k of [0, 1]) sprite(L, LT, dpr, 'post', LINE.post, v, k, .45);
@@ -1642,7 +1732,10 @@
     if (all) { // windpumps and flocks on the far line
       const y = LINE.crash, M = mAtY(y);
       let v = visible(road.crash, y, 20 * M, 3 * M);
-      for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; if (yields('crash', o.t)) { count('yielded', 1); continue; } stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), X(o.t, v.sp), y); }
+      for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; if (yields('crash', o.t)) { count('yielded', 1); continue; } const x = X(o.t, v.sp);
+        if (!ART) { stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), x, y); continue; }
+        const pv = artVariant('crash', i), wp = wheelPlace(M, repVel('crash', o.v), pv, t, i); // the tower, then its wheel turning on song time
+        stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, pv), x, y); stamp(ctx, sprite(L, LT, dpr, 'wheel', y, o.v, wp.variant), x + wp.dx, y + wp.dy); }
       count('crash', v.b - v.a);
       v = visible(road.flock, y, 300, 300);
       for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); if (yields('crash', o.t)) { count('yielded', 1); continue; } if (o.n) birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, o.n); }
@@ -1661,7 +1754,7 @@
       ctx.stroke();
       for (let i = v.a; i < v.b; i++) {
         const o = list[i], key = Math.round(o.t * 50), open = o.row === 3;
-        stamp(ctx, sprite(L, LT, dpr, 'fence', y, o.v, open ? 6 + Math.floor(hash(key, 52) * 3) : Math.floor(hash(key, 51) * 6)), X(o.t, v.sp), y);
+        stamp(ctx, sprite(L, LT, dpr, 'fence', y, o.v, ART ? artVariant('fence', i, open) : open ? 6 + Math.floor(hash(key, 52) * 3) : Math.floor(hash(key, 51) * 6)), X(o.t, v.sp), y);
       }
       count('fence', v.b - v.a);
       const r = visible(road.ride, y, 300, 300);
@@ -1672,22 +1765,27 @@
       const y0 = LINE.tom, list = road.tom, v = visible(list, y0, 4 * mAtY(y0), 300);
       for (let i = v.a; i < v.b; i++) {
         const o = list[i], key = Math.round(o.t * 50), y = y0 + (hash(key, 81) - .5) * 14;
-        stamp(ctx, sprite(L, LT, dpr, 'tom', y0, o.v, Math.floor(hash(key, 71) * 8)), L.nowM + (o.t - t) * speedAtY(y), y, mAtY(y) / mAtY(y0));
+        const tv = Math.floor(hash(key, 71) * 8); // sage (0-3) or a rock pile (4-7); with pictures the picture by its place in the line
+        stamp(ctx, sprite(L, LT, dpr, 'tom', y0, o.v, ART ? (tv < 4 ? 0 : 4) + Math.floor(hash(i, 205) * 4) : tv), L.nowM + (o.t - t) * speedAtY(y), y, mAtY(y) / mAtY(y0));
       }
       count('tom', v.b - v.a);
     }
     { // telegraph poles (kick): a kick right after a tall pole is a stub with a guy wire up to that pole
       const y = LINE.pole, M = mAtY(y), list = road.pole, v = visible(list, y, 20 * M, 400);
-      const tops = o => { const H = 9.5 * M * (.95 + .1 * repVel('pole', o.v) / 127), ay = y - (H - .55 * M) - .24 * M, x = X(o.t, v.sp); return [-1.1, -.45, .45, 1.1].map(dx => [x + dx * M, ay]); };
+      const tops = (o, i) => {
+        const x = X(o.t, v.sp);
+        if (ART) return poleTips(M, repVel('pole', o.v), artVariant('pole', i)).map(p => [x + p[0], y + p[1]]);
+        const H = 9.5 * M * (.95 + .1 * repVel('pole', o.v) / 127), ay = y - (H - .55 * M) - .24 * M; return [-1.1, -.45, .45, 1.1].map(dx => [x + dx * M, ay]);
+      };
       ctx.strokeStyle = 'rgba(34,32,30,.6)'; ctx.lineWidth = 1.1; ctx.beginPath();
-      let prev = null;
+      let prev = null, prevI = -1;
       for (let i = Math.max(0, v.a - 1); i <= Math.min(list.length - 1, v.b); i++) {
         const o = list[i]; if (!o.tall) continue;
         if (prev && o.t - prev.t <= 3 && prev.t >= src.plainStart && o.t <= src.plainEnd && (i >= v.a || prev === null)) {
-          const a = tops(prev), b = tops(o), sag = Math.min(1.1 * M, Math.abs(b[0][0] - a[0][0]) * .045);
+          const a = tops(prev, prevI), b = tops(o, i), sag = Math.min(1.1 * M, Math.abs(b[0][0] - a[0][0]) * .045);
           for (let j = 0; j < 4; j++) { ctx.moveTo(a[j][0], a[j][1]); ctx.quadraticCurveTo((a[j][0] + b[j][0]) / 2, (a[j][1] + b[j][1]) / 2 + sag * 2, b[j][0], b[j][1]); }
         }
-        prev = o;
+        prev = o; prevI = i;
       }
       ctx.stroke();
       let tall = null;
@@ -1696,16 +1794,18 @@
       for (let i = v.a; i < v.b; i++) {
         const o = list[i], x = X(o.t, v.sp);
         poles.push({t: o.t, x, tall: o.tall});
-        if (o.tall) { stamp(ctx, sprite(L, LT, dpr, 'pole', y, o.v, 0), x, y); tall = o; count('kick', 1); continue; }
-        stamp(ctx, sprite(L, LT, dpr, 'stub', y, o.v, 0), x, y); count('kickstub', 1);
+        if (o.tall) { stamp(ctx, sprite(L, LT, dpr, 'pole', y, o.v, ART ? artVariant('pole', i) : 0), x, y); tall = o; count('kick', 1); continue; }
+        const sv = ART ? artVariant('stub', i) : 0;
+        stamp(ctx, sprite(L, LT, dpr, 'stub', y, o.v, sv), x, y); count('kickstub', 1);
         const first = i === 0 || list[i - 1].tall;
-        if (tall && first) { const h = (2.0 + .5 * repVel('stub', o.v) / 127) * M; ctx.moveTo(x, y - h); ctx.lineTo(X(tall.t, v.sp), y - 5.5 * M); }
+        if (tall && first) { const h = ART ? stubTop(M, repVel('stub', o.v), sv) : (2.0 + .5 * repVel('stub', o.v) / 127) * M; ctx.moveTo(x, y - h); ctx.lineTo(X(tall.t, v.sp), y - 5.5 * M); }
       }
       ctx.stroke();
     }
     { // mile posts and whistle posts (snare), half the blur so they read
       const y = LINE.post, M = mAtY(y), list = road.post, v = visible(list, y, 2 * M, 300);
-      for (let i = v.a; i < v.b; i++) { const o = list[i]; if (yields('post', o.t)) { count('yielded', 1); continue; } stamp(ctx, sprite(L, LT, dpr, 'post', y, o.v, hash(Math.round(o.t * 50), 91) < .68 ? 0 : 1, .45), X(o.t, v.sp), y); }
+      for (let i = v.a; i < v.b; i++) { const o = list[i]; if (yields('post', o.t)) { count('yielded', 1); continue; } const mile = hash(Math.round(o.t * 50), 91) < .68; // a mile post or a whistle post; with pictures the picture by its place in the line
+        stamp(ctx, sprite(L, LT, dpr, 'post', y, o.v, ART ? (mile ? Math.floor(hash(i, 206) * 3) : 3 + Math.floor(hash(i, 207) * 2)) : mile ? 0 : 1, .45), X(o.t, v.sp), y); }
       count('snare', v.b - v.a);
     }
     return Object.assign(counts, {poles});
