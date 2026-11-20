@@ -1852,9 +1852,16 @@
     : type === 'fence' ? (open ? 4 + Math.floor(hash(i, 204) * 2) : Math.floor(hash(i, 203) * 4))
     : type === 'crash' ? Math.floor(hash(i, 208) * 3) : 0;
   // the four wire points of a pole picture (the insulators, an end one taken twice where a pole has fewer than four)
+  const tipMemo = new Map(); // (line scale, velocity step, picture) -> the four points; nothing allocated a frame
   function poleTips(M, vel, variant) {
+    const key = M + '|' + vel + '|' + variant;
+    let out = tipMemo.get(key);
+    if (out) return out;
     const a = pic(artKey.pole(variant)), tips = POLE_TIPS[variant], f = poleH(M, vel) / tallOf(a);
-    return [0, 1, 2, 3].map(j => { const p = tips[Math.round(j * (tips.length - 1) / 3)]; return [(p[0] - a.anchor[0]) * f, (p[1] + 6 - a.anchor[1]) * f]; });
+    out = [0, 1, 2, 3].map(j => { const p = tips[Math.round(j * (tips.length - 1) / 3)]; return [(p[0] - a.anchor[0]) * f, (p[1] + 6 - a.anchor[1]) * f]; });
+    if (tipMemo.size > 64) tipMemo.clear();
+    tipMemo.set(key, out);
+    return out;
   }
   function stubTop(M, vel, variant) { const a = pic(artKey.stub(variant)); return stubH(M, vel) * (a.anchor[1] - a.bbox[1] - 4) / tallOf(a); }
   function wheelPlace(M, vel, v, t, i) {

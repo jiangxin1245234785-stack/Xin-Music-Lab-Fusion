@@ -116,9 +116,8 @@
   // END TABLE
 
   const base = (() => { try { return new URL('./assets/terrain/', root.document.currentScript.src).href; } catch (_) { return null; } })();
-  const byKey = new Map(TABLE.map(t => [t.key, t]));
   let state = 'idle', promise = null;
-  const images = new Map(), derivedMap = new Map();
+  const images = new Map(), derivedMap = new Map(), rows = new Map();
   function canvasOf(w, h) {
     w = Math.max(1, Math.ceil(w)); h = Math.max(1, Math.ceil(h));
     let c = null;
@@ -171,14 +170,15 @@
       return Promise.resolve(img.decode ? img.decode() : null).then(() => { images.set(t.key, img); });
     })).then(() => {
       for (const [name, key, make] of DERIVED) derivedMap.set(name, make(images.get(key)));
+      for (const t of TABLE) rows.set(t.key, Object.freeze(Object.assign({img: images.get(t.key)}, t)));
       state = 'ready';
       return true;
-    }).catch(() => { state = 'failed'; images.clear(); derivedMap.clear(); return false; });
+    }).catch(() => { state = 'failed'; images.clear(); derivedMap.clear(); rows.clear(); return false; });
     return promise;
   }
   const api = Object.freeze({
     TABLE, ready: load, isReady: () => state === 'ready', state: () => state,
-    get: key => { const t = byKey.get(key), img = state === 'ready' ? images.get(key) : null; return t && img ? Object.assign({img}, t) : null; },
+    get: key => state === 'ready' && rows.get(key) || null, // one object per picture (no allocation a frame)
     derived: name => state === 'ready' ? derivedMap.get(name) || null : null,
     files: () => TABLE.map(t => ({file: t.file, bytes: t.bytes, sha256: t.sha256}))
   });
