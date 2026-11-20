@@ -28,7 +28,8 @@
     Object.freeze({cells: Object.freeze(['', 'C', 'D', 'E', 'F', 'G', 'A', 'B']), w: 22, size: 23}),
     Object.freeze({cells: Object.freeze(['', '#', 'b', '', '#', 'b']), w: 14, size: 19}),
     Object.freeze({cells: Object.freeze(['', 'm', '7', 'maj7', 'm7', 'sus2', 'sus4', '6', 'm6', 'dim', 'dim7', 'aug', 'm7b5']), w: 46, size: 19})]);
-  const WHEEL_ROLL = .2;   // seconds a wheel takes to roll to its new cell
+  const WHEEL_ROLL = .2;   // maximum settling time; shorter chord cues go straight to their cell
+  const BLANK_WHEELS = Object.freeze(['', '', '']);
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
   // fast then slow, fully dark at `span`. Drum lamps: span one sweep of their cursor; row lamps: .3 s.
   const lampFade = (age, span) => age < 0 || !(span > 0) || age >= span ? 0 : (1 - age / span) ** 2;
@@ -219,6 +220,57 @@
     return {pc: ((pc % 12) + 12) % 12, lamps, label: m[0], wheels: [m[1], acc, wheel]};
   }
 
+  function chordTimeline(rows) {
+    const ordered = (rows || []).filter(row => Array.isArray(row) &&
+      Number.isFinite(row[0]) && Number.isFinite(row[1]) && row[1] > row[0]).sort((a, b) => a[0] - b[0]);
+    const chords = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const [start, rawEnd, label] = ordered[i];
+      // A newer cue (including an explicit N) supersedes the previous one at its onset.
+      const end = Math.min(rawEnd, ordered[i + 1]?.[0] ?? rawEnd);
+      if (end <= start) continue;
+      const previous = chords[chords.length - 1];
+      if (previous && previous.end === start && previous.label === label) { previous.end = end; continue; }
+      const parts = chordParts(label);
+      if (parts) chords.push({start, end, label, parts});
+    }
+    return chords;
+  }
+
+  function chordSignalAt(chords, now) {
+    const next = lower(chords, now, c => c.start);
+    const i = chords[next]?.start === now ? next : next - 1;
+    const cue = chords[i];
+    const current = cue && now < cue.end ? cue : null;
+    const previous = chords[i - 1];
+    const target = current ? current.parts.wheels : BLANK_WHEELS;
+    const before = current && previous?.end === current.start ? previous.parts.wheels : BLANK_WHEELS;
+    const span = current ? current.end - current.start : 0;
+    const settle = span > WHEEL_ROLL + 1e-9 ? Math.min(WHEEL_ROLL, span / 2) : 0;
+    const remaining = settle ? 1 - smooth(clamp((now - current.start) / settle, 0, 1)) : 0;
+    const light = new Array(12).fill(0);
+    for (let k = i; k >= 0 && k > i - 6; k--) {
+      const chord = chords[k], age = now - chord.end;
+      if (age > 6) break;
+      const index = FIFTH_PC.indexOf(chord.parts.pc);
+      light[index] = Math.max(light[index], chord === current ? 1 : .7 * Math.exp(-age / 1.6));
+    }
+    return {current, target, before, remaining, light};
+  }
+
+  function wheelPosition(cells, before, target, remaining) {
+    const start = cells.indexOf(before), n = cells.length;
+    let travel = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (cells[i] !== target) continue;
+      const distance = ((i - start + n + n / 2) % n) - n / 2;
+      if (Math.abs(distance) < Math.abs(travel)) travel = distance;
+    }
+    // Keep the incoming character in the reading window from its first frame.
+    // It moves the last fraction of a cell in the drum's shortest direction.
+    return start + travel - (target ? Math.sign(travel) * .20 * remaining : 0);
+  }
+
   // A channel's level (dB) as the needle's place on its dial (0..1): zero to amber, amber to red, red to the top, each
   // stretch straight; without a calibration the plain scale.
   function meterScale(db, cal) {
@@ -339,8 +391,7 @@
     } else if (present[0] && range[0][0] <= range[0][1]) vocalRange = [range[0][0] - 2, range[0][1] + 2];
     const sections = (model.sections || []).map(row => ({start: row[0], end: row[1], kind: sectionKind(row)})).filter(s => s.kind);
     const kinds = new Set(sections.map(s => s.kind));
-    const chords = (model.chords || []).map(row => ({start: row[0], end: row[1], label: row[2], parts: chordParts(row[2])}))
-      .sort((a, b) => a.start - b.start);
+    const chords = chordTimeline(model.chords);
     const pan = model.levels && model.levels.pan && Array.isArray(model.levels.pan.mix) && model.levels.pan.hop > 0 ? model.levels.pan : null;
     // Crayon marks (batch 4): an operator marked "normal" on the three meters that move most, at where each sits on
     // average while its channel sounds. Real data: the meter series, not a guess.
@@ -1516,20 +1567,7 @@
         return;
       }
       if (pass !== 'live') return;
-      // The current chord and the ones just before it: lit by how long ago they ended.
-      const chords = data.chords, i = lower(chords, now + 1e-6, c => c.start) - 1;
-      const light = new Array(12).fill(0);
-      let current = null;
-      for (let k = i, seen = 0; k >= 0 && seen < 6; k--) {
-        const c = chords[k];
-        if (!c.parts) continue;
-        if (c.end > now && c.start <= now) { current = c; light[FIFTH_PC.indexOf(c.parts.pc)] = 1; seen++; continue; }
-        const age = now - c.end;
-        if (age > 6) break;
-        const at = FIFTH_PC.indexOf(c.parts.pc);
-        light[at] = Math.max(light[at], .7 * Math.exp(-age / 1.6));
-        seen++;
-      }
+      const {current, target, before, remaining, light} = chordSignalAt(data.chords, now);
       FIFTHS.forEach((name, k) => {
         const a = -Math.PI / 2 + k / 12 * Math.PI * 2, x = cx + Math.cos(a) * (R - 22), y = cy + Math.sin(a) * (R - 22);
         const v = light[k];
@@ -1537,34 +1575,19 @@
         circle(x, y, 14, mixHex('#2b2620', '#835023', v), mixHex('#14120d', C.amber, v), 1.5);
         write(name, x, y, 15, '#ece5cc', 'plate', 'center', 0, '', 'cap');
       });
-      // The chord wheels (SPEC-WEATHER A). What the wheels show at a moment: the sounding chord's cells, or blanks.
-      const cellsAt = t => {
-        const j = lower(chords, t + 1e-6, c => c.start) - 1, c = chords[j];
-        return c && c.parts && c.start <= t && c.end > t ? c.parts.wheels : ['', '', ''];
-      };
-      // The last change at or before now: a chord's start, or the end of one with nothing after it.
-      let changed = null;
-      if (current) changed = current.start;
-      else { const j = lower(chords, now + 1e-6, c => c.start) - 1; if (j >= 0 && chords[j].end <= now) changed = chords[j].end; }
-      const target = cellsAt(now), before = changed === null ? target : cellsAt(changed - 1e-6);
-      const roll = changed === null ? 1 : clamp((now - changed) / WHEEL_ROLL, 0, 1), eased = roll * roll * (3 - 2 * roll);
       const scheme = env.options.radarWheel !== 'dark' ? {face: '#d8d0b6', ink: '#1d1b15', shade: 'rgba(40,30,15,'} : {face: '#16150f', ink: '#ece5cc', shade: 'rgba(0,0,0,'};
       const WIN_H = 34, WHEEL_R = 21, PITCH = 23;
       let wx = cx - 46;
       const wheelOut = [];
       WHEELS.forEach((wheel, k) => {
         const n = wheel.cells.length;
-        // From the cell shown before the change to the nearest cell holding the new glyph, the short way round.
-        const a = Math.max(0, wheel.cells.indexOf(before[k]));
-        let b = a, best = Infinity;
-        wheel.cells.forEach((g, i) => { if (g !== target[k]) return; const d = ((i - a) % n + n + n / 2) % n - n / 2; if (Math.abs(d) < Math.abs(best)) { best = d; b = i; } });
-        const pos = a + (best === Infinity ? 0 : best) * eased;
+        const pos = wheelPosition(wheel.cells, before[k], target[k], remaining);
         const x = wx, y = cy - WIN_H / 2, w = wheel.w;
         p.save(); p.beginPath(); p.rect(x, y, w, WIN_H); p.clip();
         auditClip = {x, y, w, h: WIN_H};
         rect(x, y, w, WIN_H, scheme.face);
         // The cells round the drum: each glyph at its angle, foreshortened toward the window's edges.
-        for (let i = Math.floor(pos) - 2; i <= Math.ceil(pos) + 2; i++) {
+        for (let i = Math.floor(pos) - 2; target[k] && i <= Math.ceil(pos) + 2; i++) {
           const th = (i - pos) * PITCH / WHEEL_R;
           if (Math.abs(th) >= Math.PI / 2) continue;
           const glyph = wheel.cells[((i % n) + n) % n];
@@ -1594,7 +1617,8 @@
         lamp(x, y, 6, lit.has(q) ? 1 : 0);
         write(q, x + 14, y, 15, C.stampDim, 'stamp', 'left', 0, '', 'cap');   // engraved: the lamp beside it lights, not the name
       });
-      out.chord = {name: current ? current.label : null, shown: cardShown, size: wheelOut[2].size, wheels: wheelOut, rolling: roll < 1,
+      const rolling = remaining > 0 && target.some((glyph, k) => glyph && glyph !== before[k]);
+      out.chord = {name: current ? current.label : null, shown: cardShown, size: wheelOut[2].size, wheels: wheelOut, rolling,
         scheme: env.options.radarWheel !== 'dark' ? 'light' : 'dark', quality: [...lit], fifths: light.map(v => +v.toFixed(3))};
     }
 
