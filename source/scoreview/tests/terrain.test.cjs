@@ -198,11 +198,11 @@ test('light: a cover only turns the low sky and the haze; the zenith stays blue;
   assert.equal(terrain.inspect(frame(song(), 60)).light, 'afternoon');
 });
 
-test('the carriage: the LED header gets title, artist, the song\'s own sections and the time; the sill lights only with a lyric; arrows at now', () => {
+test('the carriage: the LED header gets title, artist, the song\'s own sections and the time; the sill board is always there, lit only with a lyric; arrows at now', () => {
   const prior = globalThis.XinScoreTerrainLed, seen = [];
   globalThis.XinScoreTerrainLed = {
     localizeSection: n => n === 'Chorus 2' ? '副歌 2' : n, warm: list => seen.push(['warm', list]),
-    drawHeader: (ctx, rect, d) => seen.push(['header', rect, d]), drawLyric: (ctx, rect, d) => seen.push(['lyric', rect, d]),
+    drawHeader: (ctx, rect, d) => seen.push(['header', rect, d]), drawLyric: (ctx, rect, d, o) => seen.push(['lyric', rect, d, o]),
     drawNowTick: (ctx, x, top, bottom) => seen.push(['now', x, top, bottom])
   };
   try {
@@ -214,7 +214,11 @@ test('the carriage: the LED header gets title, artist, the song\'s own sections 
     assert.deepEqual(header[2].sections.map(r => r[2]), ['引子', '主歌 1', '副歌 2']);
     assert.deepEqual(header[1], S.layout.header);
     assert.deepEqual(now.slice(1), [S.detail.playheadX, S.layout.win.y, S.layout.win.y + S.layout.win.h]);
-    assert.equal(seen.some(x => x[0] === 'lyric'), false, 'no lyric: the sill stays dark');
+    const idle = seen.filter(x => x[0] === 'lyric');
+    assert.equal(idle.length, 1, 'no lyric: the sill board is still drawn');
+    assert.equal(idle[0][2].line, '', 'no lyric: nothing lit');
+    assert.equal(idle[0][3].idle, 'dim', 'no lyric: housing and unlit dots only');
+    assert.deepEqual(idle[0][1], S.layout.sill);
     assert.equal(seen.filter(x => x[0] === 'warm').length, 1);
     seen.length = 0;
     draw({lyric: '窗外的远山一重又一重'});

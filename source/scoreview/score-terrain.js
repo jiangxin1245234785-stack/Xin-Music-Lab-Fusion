@@ -1532,7 +1532,9 @@
     const line = typeof frame.lyric === 'string' ? frame.lyric : frame.lyric && frame.lyric.text || '';
     let progress = Number.isFinite(frame.lyricProgress) ? frame.lyricProgress : null;
     if (progress === null) { const period = Math.max(6, Array.from(line).length * .45), u = (S.time / period) % 2; progress = 1 - Math.abs(u - 1); }
-    if (line) Led.drawLyric(ctx, L.sill, {line, progress}, opts);
+    // the sill board is always there (batch 6, the user: 「下方的歌词LED背景板应该一直存在」): with no line every dot is
+    // dark but the housing and the unlit dots show - at the ends, in a song without lyrics, with lyrics turned off
+    Led.drawLyric(ctx, L.sill, {line, progress: line ? progress : 0}, Object.assign({}, opts, {idle: 'dim'}));
     Led.drawNowTick(ctx, L.nowX, L.win.y, L.win.y + L.win.h, {pitch: 3 * L.u, dpr});
     return {sections: sections.length, lyric: line};
   }
