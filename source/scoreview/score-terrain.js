@@ -73,6 +73,30 @@
   // the visible box of a picture placed as put() places it, in the caller's units: [left, top, right, bottom]
   const boxOf = (a, f, flip) => { const l = (a.bbox[0] - a.anchor[0]) * f, r = (a.bbox[2] + 1 - a.anchor[0]) * f; return [flip ? -r : l, (a.bbox[1] - a.anchor[1]) * f, flip ? -l : r, (a.bbox[3] + 1 - a.anchor[1]) * f]; };
   const ABC = 'abcdef';
+  // E (batch 7): the hand-painted skin over what the program shapes. The grey textures go on as XinScoreTerrainAssets'
+  // soft layers (white / black, alpha |2 s - 1|) at TEX_K: about what soft light does to a mid colour (NOTES.md: multiply
+  // would halve the brightness). They are painted into the range tiles, so they move with each range's world.
+  const TEX_TEXEL = .75, TEX_K = .45, STRATA_K = .5, GRAIN_TEXEL = .5, HAZE_H = 150, DUST_K = 1, STREAK_K = 1;
+  // the coarsest brush (a) only on the nearest one or two ranges, then b, c, d with distance
+  const textureOf = d => d < .15 ? 'a' : d < .45 ? 'b' : d < .75 ? 'c' : 'd';
+  function patternOf(g, canvas, sc, ex, ey, rep) {
+    if (!canvas || typeof g.createPattern !== 'function') return null;
+    const p = g.createPattern(canvas, rep || 'repeat');
+    if (p && p.setTransform && typeof DOMMatrix === 'function') p.setTransform(new DOMMatrix([sc, 0, 0, sc, ex, ey]));
+    return p;
+  }
+  const tintedHaze = new Map();
+  function hazeOf(LT, v, col) { // a haze strip in the haze colour, twice along x (so a slice never runs off its end)
+    const key = (lightIds.get(LT) || 0) + '|' + v + '|' + col.join(',');
+    if (tintedHaze.has(key)) return tintedHaze.get(key);
+    const src = ART.derived('haze:' + v), c = src && makeCanvas(src.width * 2, src.height), g = c && c.getContext('2d');
+    if (!g) return null;
+    g.drawImage(src, 0, 0); g.drawImage(src, src.width, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = css(col); g.fillRect(0, 0, c.width, c.height);
+    if (tintedHaze.size > 8) tintedHaze.delete(tintedHaze.keys().next().value);
+    tintedHaze.set(key, c);
+    return c;
+  }
 
   // ---------- light: fixed late-afternoon sun (sketch F2), a cover tints only the low sky and the haze ----------
   const toLin = v => { v /= 255; return v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
@@ -592,6 +616,11 @@
       const G = LT.glow, glow = g.createRadialGradient(G.x, G.y, 10, G.x, G.y, G.r);
       glow.addColorStop(0, css(G.c, G.a)); glow.addColorStop(.5, css(G.c, G.a * .3)); glow.addColorStop(1, css(G.c, 0));
       g.fillStyle = glow; g.fillRect(x0, M_TOP - 10, x1 - x0, HORIZON + 2 - M_TOP + 10);
+      const grainArt = pic('overlay/sky-grain-a');
+      if (grainArt) { // batch 7: the paper grain on the sky, true soft light (the sky is opaque here)
+        const pg = patternOf(g, grainArt.img, GRAIN_TEXEL * grainArt.ow / grainArt.w, 0, 0);
+        if (pg) { g.save(); g.globalCompositeOperation = 'soft-light'; g.fillStyle = pg; g.fillRect(x0, M_TOP - 10, x1 - x0, HORIZON + 2 - M_TOP + 10); g.restore(); }
+      }
       const vx = 1040, vy = 410, V = LT.virga; // a distant rain shaft; fixed (the sketch slid it on a 54 s saw-tooth)
       g.save();
       g.filter = 'blur(' + (20 * s * dpr).toFixed(1) + 'px)'; g.fillStyle = css(V.dark, .22 * V.a); g.beginPath(); g.ellipse(vx, vy, 230, 16, 0, 0, Math.PI * 2); g.fill();
@@ -700,6 +729,15 @@
       const GL = LT.glass, bar = transomOf(L);
       // two panes (batch 6): the big view pane below the transom keeps the old streaks; the small pane above it has a
       // faint cool tint and its own, steeper streaks, so the two read as two pieces of glass
+      const streakA = pic('overlay/sun-streak-a'), streakB = pic('overlay/sun-streak-b'), dust = pic('overlay/glass-dust-b');
+      if (streakA && streakB && dust) { // batch 7: GPT's sun streaks on each pane and the dust over the glass, their own alpha
+        g.save(); g.globalAlpha = STREAK_K;
+        g.drawImage(streakA.img, win.x, bar.y + bar.t, win.w, B - bar.y - bar.t);
+        g.fillStyle = 'rgba(40,58,76,.12)'; g.fillRect(win.x, win.y, win.w, bar.y - win.y);
+        g.drawImage(streakB.img, win.x, win.y, win.w, bar.y - win.y);
+        g.globalAlpha = DUST_K; g.drawImage(dust.img, win.x, win.y, win.w, win.h);
+        g.restore();
+      } else {
       g.save(); g.beginPath(); g.rect(win.x, bar.y + bar.t, win.w, B - bar.y - bar.t); g.clip();
       g.fillStyle = css(GL.streak, GL.streakA);
       g.beginPath(); g.moveTo(fx(980), win.y); g.lineTo(fx(1100), win.y); g.lineTo(fx(840), B); g.lineTo(fx(720), B); g.closePath(); g.fill();
@@ -715,6 +753,7 @@
       g.filter = 'blur(' + (10 * u * dpr).toFixed(1) + 'px)'; g.fillStyle = css(GL.smear, GL.smearA); g.fillRect(fx(214), win.y + 16 * u, 520 / M_W * win.w, 7 * u);
       g.filter = 'none';
       g.restore();
+      }
       const v = g.createLinearGradient(0, win.y, 0, win.y + 70 * u); v.addColorStop(0, 'rgba(8,12,18,.34)'); v.addColorStop(1, 'rgba(8,12,18,0)');
       g.fillStyle = v; g.fillRect(win.x, win.y, win.w, 70 * u);
       const v2 = g.createLinearGradient(0, B - 50 * u, 0, B); v2.addColorStop(0, 'rgba(8,12,18,0)'); v2.addColorStop(1, 'rgba(8,12,18,.3)');
@@ -1250,9 +1289,21 @@
       for (let k = first; k <= kS + TILE + 6; k += 3) { xs.push(X(k)); ln.push(line[at(k)] + 4); }
       let lo = Infinity, hi = -Infinity;
       for (const v of ln) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      const col0 = basinAt(LT, 600), hz = ART && hazeOf(LT, layer.i % 2 ? 'b' : 'a', col0);
+      if (hz) { lo += -14 - HAZE_H / 2 + 42; hi += -14 + HAZE_H / 2 - 8; } // room for the strip (it reaches further)
       const H = 44, y0 = lo - H - 2, h = hi + 12 - y0;
       const cv = makeCanvas(w * scale, h * scale);
-      if (cv && a > 0) {
+      if (cv && a > 0 && hz) { // batch 7: GPT's haze strip, one slice a world sample along this range's softened ridge
+        const g = cv.getContext('2d'), half = hz.width / 2;
+        g.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
+        g.globalAlpha = a;
+        for (let k = kS - 2; k <= kS + TILE + 2; k++) {
+          const sx = ((k * COL + layer.i * 701) % half + half) % half, yc = line[at(k)] + 4 - 14;
+          g.drawImage(hz, sx, 0, COL, hz.height, X(k) - COL / 2, yc - HAZE_H / 2, COL, HAZE_H);
+        }
+        tile.mist = {c: cv, x0, y0, h};
+        tile.pixels += cv.width * cv.height;
+      } else if (cv && a > 0) {
         const g = cv.getContext('2d');
         g.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
         const ramp = .8 * (H + 10), steps = 5, col = basinAt(LT, 600);
@@ -1328,7 +1379,18 @@
         g.fillStyle = lg; g.fill();
       }
     }
-    if (detail > .45) { // faint horizontal bedding on even world samples
+    const tex = ART && ART.derived('soft:range-' + textureOf(layer.d)), strata = ART && ART.derived('soft:strata-' + (layer.i % 2 ? 'b' : 'a'));
+    if (tex) { // batch 7: the brush texture over the whole body, anchored to the range's world x (+ a phase per range)
+      const sc = TEX_TEXEL, P = tex.width * sc, ph = ((kS * COL + layer.i * 311) % P + P) % P;
+      const pt = patternOf(g, tex, sc, -ph, layer.i * 97 % (tex.height * sc));
+      if (pt) { g.globalAlpha = TEX_K; g.fillStyle = pt; g.fillRect(X(kS - 4), BASE0 - layer.amp * 1.6, (TILE + 8) * COL, layer.amp * 1.6 + 20); g.globalAlpha = 1; }
+    }
+    if (strata && detail > .45) { // and instead of the code's five bedding lines, the strata (level, as sandstone lies)
+      const band = layer.amp * .9, sc = band / strata.height, P = strata.width * sc, ph = ((kS * COL + layer.i * 523) % P + P) % P;
+      const pt = patternOf(g, strata, sc, -ph, BASE0 - band, 'repeat-x');
+      if (pt) { g.globalAlpha = STRATA_K * (detail - .45) / .55; g.fillStyle = pt; g.fillRect(X(kS - 4), BASE0 - band, (TILE + 8) * COL, band); g.globalAlpha = 1; }
+    }
+    if (detail > .45 && !strata) { // faint horizontal bedding on even world samples
       g.lineWidth = 1;
       for (let m = 0; m < 5; m++) {
         g.strokeStyle = m % 2 ? css(mix(c, LT.shade, .7), (detail - .45) * .2) : css(mix(c, LT.light, .6), (detail - .45) * .16);
