@@ -1251,6 +1251,7 @@
   // lifting off the fence. Each line moves at its ground depth's speed; motion blur is baked into per-variant sprites.
   const LINE = {crash: 712, fence: 742, tom: 760, pole: 790, post: 812};
   const PX_PER_M = .316, BLUR = .6 / 60, STUB_GAP = .38;
+  const RIDE_RUN = 2, BIRD_MAX = 8; // batch 6: a ride run within 2 s = one bird; at most 8 birds in the window at once
   const mAtY = y => (y - HORIZON) * PX_PER_M;
   const WOOD = rgb('#3a3129'), DARKWOOD = rgb('#2a241f'), IRON = rgb('#2b2e30'), CONCRETE = rgb('#cfc8b6'), CAST = [46, 38, 30];
   const vBucket = v => Math.min(3, Math.floor(clamp(v / 127) * 4)), vOf = b => (b + .5) / 4 * 127;
@@ -1263,10 +1264,39 @@
     const pole = collapse(by([0]), .09);
     let lastTall = -9;
     for (const p of pole) { p.tall = p.t - lastTall >= STUB_GAP; if (p.tall) lastTall = p.t; }
-    src.road = {crash: collapse(by([5]), .6), flock: collapse(by([7]), .6), fence: collapse(by([2, 3]), .04), ride: collapse(by([6]), .25),
+    // ride: a run of hits each within RIDE_RUN s of the one before counts once, at its first hit (batch 6)
+    const ride = [];
+    let lastRide = -99;
+    for (const [t, row, v] of by([6])) { if (t - lastRide >= RIDE_RUN) ride.push({t, row, v}); lastRide = t; }
+    src.road = {crash: collapse(by([5]), .6), flock: collapse(by([7]), .6), fence: collapse(by([2, 3]), .04), ride,
       tom: collapse(by([4]), .08), pole, post: collapse(by([1]), .06)};
     for (const k of Object.keys(src.road)) src.road[k].times = src.road[k].map(o => o.t);
+    // fewer birds (batch 6, the user: 「鸟作为镲片应该数量上少一些」): a crash's flock is 2-3 birds, a ride 1; and at most
+    // BIRD_MAX in the air at once. Decided per song, in hit order, from each group's own flight time (until its last bird
+    // has risen past the window's top - sketch units, so the same at every window size): a group that would push the
+    // count past BIRD_MAX keeps only what is left, so no bird ever appears mid-flight when an earlier one leaves.
+    const groups = [];
+    for (const o of src.road.flock) { const key = Math.round(o.t * 50); groups.push({o, key, y: LINE.crash, M: mAtY(LINE.crash) * 1.6, want: 2 + Math.floor(hash(key, 60) * 2)}); }
+    for (const o of src.road.ride) { const key = Math.round(o.t * 50); groups.push({o, key, y: LINE.fence, M: mAtY(LINE.fence), want: 1}); }
+    groups.sort((a, b) => a.o.t - b.o.t || a.y - b.y);
+    const alive = [];
+    for (const G of groups) {
+      G.life = G.o.life = birdLife(G.y, G.M, G.key, G.want);
+      const inAir = alive.filter(A => A.o.t + A.life > G.o.t).reduce((s, A) => s + A.o.n, 0);
+      G.o.n = Math.max(0, Math.min(G.want, BIRD_MAX - inAir));
+      if (G.o.n) alive.push(G);
+    }
     return src.road;
+  }
+  // seconds until the last of a group's birds (as birds() flies them) is above the window's top edge
+  function birdLife(y, M, key, n) {
+    let life = 0;
+    for (let j = 0; j < n; j++) {
+      const sz = (.3 + .1 * hash(key + j, 62)) * M, vy = 160 + 120 * hash(key + j, 64), wing = sz * 1.5;
+      const rise = y - .4 * M + wing - (M_TOP - 4); // the lowest point of the bird has to clear the top
+      life = Math.max(life, (-vy + Math.sqrt(vy * vy + 120 * rise)) / 60);
+    }
+    return life;
   }
   function shadow(c, LT, x, y, len, w, a) {
     len *= LT.castLen; a *= LT.castA;
@@ -1444,7 +1474,7 @@
       for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), X(o.t, v.sp), y); }
       count('crash', v.b - v.a);
       v = visible(road.flock, y, 300, 300);
-      for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, 5 + Math.floor(hash(key, 60) * 4)); }
+      for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); if (o.n) birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, o.n); }
       count('flock', v.b - v.a);
     }
     if (all) { // the fence: wires first, then the posts; birds lifting off it on a ride
@@ -1464,7 +1494,7 @@
       }
       count('fence', v.b - v.a);
       const r = visible(road.ride, y, 300, 300);
-      for (let i = r.a; i < r.b; i++) { const o = road.ride[i], key = Math.round(o.t * 50); birds(ctx, X(o.t, r.sp), y, M, t - o.t, key, 3 + Math.floor(hash(key, 60) * 5)); }
+      for (let i = r.a; i < r.b; i++) { const o = road.ride[i], key = Math.round(o.t * 50); if (o.n) birds(ctx, X(o.t, r.sp), y, M, t - o.t, key, o.n); }
       count('ride', r.b - r.a);
     }
     if (all) { // rock piles and sage, each at its own depth

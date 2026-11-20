@@ -251,6 +251,33 @@ test('the roadside: off by default; kick-snare keeps only poles and posts; an ob
   for (const t of [0, 1, D - 1, D]) { const r = draw(t, 'all').roadside; assert.equal(r.poles.length + (r.snare || 0) + (r.fence || 0), 0, 'bare plain at ' + t); }
 });
 
+test('fewer birds (batch 6): a flock is 2-3 birds, a ride run within 2 s is one bird at its first hit, at most 8 in the air', () => {
+  const rows = ['kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride'];
+  // crashes every 2.5 s after a windpump (each one a flock while a pump stands within 7 s): flocks at 22.5, 25.5 ...
+  const hits = [];
+  for (let t = 20; t < 60; t += 3.2) hits.push([t, 5, 120]);
+  // ride: a run 30, 30.5 ... 33.5 (each within 2 s of the last) = one; then a lone hit at 36; a dense ride from 40 to 60
+  for (let t = 30; t <= 33.5; t += .5) hits.push([t, 6, 100]);
+  hits.push([36, 6, 100]);
+  for (let t = 40; t < 60; t += 2.1) hits.push([t, 6, 100]);
+  const s = song({lanes: [...song().lanes.filter(l => l.kind !== 'drums'), {id: 'kit', group: 'drums', kind: 'drums', rows, hits}]});
+  const road = terrain._internal.roadLines(s);
+  assert.deepEqual(road.ride.slice(0, 2).map(o => o.t), [30, 36], 'a run counts once, at its first hit');
+  for (const o of road.flock) assert.ok(o.n >= 0 && o.n <= 3);
+  assert.ok(road.flock.some(o => o.n >= 2), 'flocks of 2-3');
+  for (const o of road.ride) assert.ok(o.n <= 1);
+  // never more than 8 birds in the air at once: a group flies until its last bird clears the window top
+  const groups = [...road.flock, ...road.ride];
+  let most = 0;
+  for (let t = 15; t < 65; t += .01) {
+    const n = groups.filter(o => o.t <= t && t < o.t + o.life).reduce((a, o) => a + o.n, 0);
+    most = Math.max(most, n);
+  }
+  assert.ok(most <= 8, 'most birds at once: ' + most);
+  assert.ok(most >= 3, 'flocks and ride birds overlap in this dense stretch: ' + most);
+  for (const o of groups) assert.ok(o.life > 1 && o.life < 4, 'flight ' + o.life);
+});
+
 test('draw paints the window through the presentation\'s frame and hands back the scene (rasters on, with a fake offscreen canvas)', () => {
   const prior = globalThis.OffscreenCanvas;
   const made = [];
