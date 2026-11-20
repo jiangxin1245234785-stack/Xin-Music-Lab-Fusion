@@ -186,8 +186,14 @@
     return {S, time, now, duration, plan, curName, nextName, title: named.title, artist: named.artist};
   }
   // no artist in the tags and a title like 周杰伦 - 七里香: the artist is the part before the dash
+  // A placeholder the tagger wrote ("Unknown Artist", 未知艺术家 ...) counts as no artist: in the user's library 七里香
+  // carries "Unknown Artist" and the title 周杰伦 - 七里香 (seen in terrain.2's real window).
+  const NO_ARTIST = /^\s*(<?unknown( artist)?>?|various artists?|未知(艺术家|歌手|藝術家|艺人)?|不明なアーティスト)?\s*$/i;
   function splitTitle(title, artist) {
-    if (!artist.trim()) { const m = title.match(/^\s*(.+?)\s+[-–—]\s+(.+?)\s*$/); if (m) return {title: m[2], artist: m[1]}; }
+    if (NO_ARTIST.test(artist)) {
+      const m = title.match(/^\s*(.+?)\s+[-–—]\s+(.+?)\s*$/);
+      return m ? {title: m[2], artist: m[1]} : {title, artist: ''};
+    }
     return {title, artist};
   }
   // the title row's scroll: [title][one cell][artist] in the room left of the time; too long for it, it moves a whole

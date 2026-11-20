@@ -120,6 +120,10 @@ test('no artist in the tags and a title "artist - title": split, title first; a 
   assert.deepEqual(Led.splitTitle('周杰伦 - 七里香', '周杰伦'), {title: '周杰伦 - 七里香', artist: '周杰伦'});
   assert.deepEqual(Led.splitTitle('Hey - Jude', 'The Beatles'), {title: 'Hey - Jude', artist: 'The Beatles'});
   assert.deepEqual(Led.splitTitle('七里香', ''), {title: '七里香', artist: ''});
+  // a tagger's placeholder is no artist (七里香 in the user's library: "Unknown Artist")
+  assert.deepEqual(Led.splitTitle('周杰伦 - 七里香', 'Unknown Artist'), {title: '七里香', artist: '周杰伦'});
+  assert.deepEqual(Led.splitTitle('周杰伦 - 七里香', '未知艺术家'), {title: '七里香', artist: '周杰伦'});
+  assert.deepEqual(Led.splitTitle('Untitled', 'Unknown Artist'), {title: 'Untitled', artist: ''}, 'the placeholder itself is not shown');
   const r = Led.headerModel(data(104, {title: '周杰伦 - 七里香', artist: ''}), 520, Led.headerRows(16, 12), 16, 12);
   assert.equal(r.title, '七里香');
 });
