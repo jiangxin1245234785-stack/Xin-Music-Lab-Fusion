@@ -35,7 +35,7 @@ function page(style) {
       const options = {};
       return {setOptions: o => Object.assign(options, o), setModel() {}, setCover() {}, options: () => ({...options}), lanes: () => [], layers: () => ({}), lastFrame: () => ({}),
         resize() {}, setLyrics() {}, draw: () => { draws++; return {time: 0}; },
-        ready: () => options.scoreStyle === 'glass' ? new Promise(r => { release = r; }) : Promise.resolve()};
+        ready: () => ['glass', 'terrain'].includes(options.scoreStyle) ? new Promise(r => { release = r; }) : Promise.resolve()};
     }}};
   vm.runInNewContext(source, host);
   const scene = host.XinScoreScene.create({stage, canvas: get('canvas'), audio: get('audio'), bridge: {scoreModel: async () => ({ok: true, model: {track: {duration: 50}, lanes: [], audio: {}}})}});
@@ -72,5 +72,13 @@ function page(style) {
   s.release(); await new Promise(r => setImmediate(r));
   s.tick();
   assert.ok(s.draws() > before, 'and draws once the radar is ready');
-  console.log('score radar wait: PASS (holds the last frame until the radar is ready, two seconds at most; other looks at once)');
+  // 车窗地貌 waits for its pictures the same way (batch 7).
+  const w = page('terrain');
+  await w.scene.load('a');
+  for (let k = 0; k < 5; k++) w.tick();
+  assert.equal(w.draws(), 0, 'no frame while the terrain pictures are not ready');
+  w.release(); await new Promise(r => setImmediate(r));
+  w.tick();
+  assert.ok(w.draws() > 0, 'drawn once the terrain pictures are ready');
+  console.log('score radar wait: PASS (holds the last frame until the radar / the terrain pictures are ready, two seconds at most; other looks at once)');
 })().catch(error => { console.error(error); process.exit(1); });

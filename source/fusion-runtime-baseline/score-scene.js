@@ -194,10 +194,11 @@
     // opening a song with it, waits for them (view.ready()) before drawing, at most RADAR_WAIT ms: meanwhile the
     // canvas keeps what it showed and the sound goes on; past the limit it draws with its fallbacks and the
     // materials replace them as they arrive.
-    const RADAR_WAIT = 2000;
+    // 车窗地貌 does the same since batch 7 (its hand-painted pictures, about 4 MB; until they are in it draws with code).
+    const RADAR_WAIT = 2000, WAIT_LOOKS = ['glass', 'terrain'];
     let lookWait = null;
     const awaitLook = () => {
-      if (scoreStyle !== 'glass' || !view || typeof view.ready !== 'function') return;
+      if (!WAIT_LOOKS.includes(scoreStyle) || !view || typeof view.ready !== 'function') return;
       const wait = lookWait = {until: root.performance.now() + RADAR_WAIT};
       Promise.resolve().then(() => view.ready()).catch(() => {}).then(() => { if (lookWait === wait) lookWait = null; });
     };

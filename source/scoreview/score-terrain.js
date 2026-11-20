@@ -44,6 +44,36 @@
   const smooth = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * (3 - 2 * u); };
   function firstAt(arr, t) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < t) lo = m + 1; else hi = m; } return lo; }
 
+  // ---------- the hand-painted materials (batch 7): GPT's pictures, or this file's own drawing ----------
+  // score-terrain-assets.js (global XinScoreTerrainAssets) loads and decodes the whole set; until every picture is in,
+  // and wherever the module is missing or failed (tests under Node), this look draws everything with its own code as
+  // before. ART is decided once at the start of each draw() - all pictures or none, never a mix - and every cache that
+  // holds a drawn picture (rasters, sprites, tiles, station sprites) has the mode in its key, so the frame after the
+  // switch is the same as one drawn with the pictures there from the start. The switch itself may change the picture once.
+  let ART = null;
+  const artModule = () => globalThis.XinScoreTerrainAssets || null;
+  function artNow() {
+    const A = artModule();
+    if (!A || typeof A.isReady !== 'function') return null;
+    if (A.state && A.state() === 'idle' && typeof A.ready === 'function') A.ready();
+    return A.isReady() ? A : null;
+  }
+  const MODE = () => ART ? 'art' : 'code';
+  const ready = () => { const A = artModule(); return A && typeof A.ready === 'function' ? Promise.resolve(A.ready()).then(Boolean, () => false) : Promise.resolve(false); };
+  // one picture by its table key, with its anchor at (x, y), f units per original pixel (the table keeps the original
+  // canvas size, anchor and visible box; the shipped file may be smaller, drawImage scales it back)
+  const pic = key => ART && ART.get(key);
+  function put(g, a, x, y, f, flip) {
+    if (!a) return;
+    if (flip) { g.save(); g.translate(x, y); g.scale(-1, 1); g.drawImage(a.img, -a.anchor[0] * f, -a.anchor[1] * f, a.ow * f, a.oh * f); g.restore(); return; }
+    g.drawImage(a.img, x - a.anchor[0] * f, y - a.anchor[1] * f, a.ow * f, a.oh * f);
+  }
+  const tallOf = a => a.anchor[1] - a.bbox[1]; // visible height above the anchor, original px
+  const wideOf = a => a.bbox[2] + 1 - a.bbox[0];
+  // the visible box of a picture placed as put() places it, in the caller's units: [left, top, right, bottom]
+  const boxOf = (a, f, flip) => { const l = (a.bbox[0] - a.anchor[0]) * f, r = (a.bbox[2] + 1 - a.anchor[0]) * f; return [flip ? -r : l, (a.bbox[1] - a.anchor[1]) * f, flip ? -l : r, (a.bbox[3] + 1 - a.anchor[1]) * f]; };
+  const ABC = 'abcdef';
+
   // ---------- light: fixed late-afternoon sun (sketch F2), a cover tints only the low sky and the haze ----------
   const toLin = v => { v /= 255; return v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
   const toSrgb = v => 255 * (v <= .0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(v, 0), 1 / 2.4) - .055);
@@ -528,7 +558,7 @@
   const rasterCache = new Map();
   function rasters(L, LT, dpr) {
     if (!lightIds.has(LT)) lightIds.set(LT, ++lightSerial);
-    const key = lightIds.get(LT) + '|' + L.w + 'x' + L.h + '@' + dpr;
+    const key = lightIds.get(LT) + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + MODE();
     if (rasterCache.has(key)) return rasterCache.get(key);
     const R = makeRasters(L, LT, dpr);
     if (!R) return null; // no canvas to paint on here (tests without one): nothing cached
@@ -1196,10 +1226,11 @@
     }
     g.restore();
   }
+  const tileKey = (src, L, LT, dpr, layer, c) => srcIds.get(src) + '|' + layer.id + '|' + c + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + lightIds.get(LT) + '|' + MODE();
   function tileOf(src, L, LT, dpr, layer, c) {
     if (!srcIds.has(src)) srcIds.set(src, ++srcSerial);
     if (!lightIds.has(LT)) lightIds.set(LT, ++lightSerial);
-    const key = srcIds.get(src) + '|' + layer.id + '|' + c + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + lightIds.get(LT);
+    const key = tileKey(src, L, LT, dpr, layer, c);
     let t = tileCache.get(key);
     if (t) { tileCache.delete(key); tileCache.set(key, t); t.used = frameNo; return t; }
     t = makeTile(src, L, LT, dpr, layer, c);
@@ -1291,7 +1322,7 @@
     // one tile ahead of the right edge for the nearest range that lacks it (cost spread over frames, pixels unchanged)
     for (const R of ranges) {
       const c = Math.floor((R.k0 + R.jb) / TILE) + 1;
-      if (!tileCache.has(srcIds.get(src) + '|' + R.layer.id + '|' + c + '|' + L.w + 'x' + L.h + '@' + dpr + '|' + lightIds.get(LT))) { tileOf(src, L, LT, dpr, R.layer, c); break; }
+      if (!tileCache.has(tileKey(src, L, LT, dpr, R.layer, c))) { tileOf(src, L, LT, dpr, R.layer, c); break; }
     }
     return true;
   }
@@ -1323,6 +1354,7 @@
   function draw(ctx, frame) {
     const S = scene(frame);
     if (!S) return null;
+    ART = artNow();
     const {layout: L, ranges} = S, {win, s} = L;
     const LT = lightFor(frame.cover);
     const base = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
@@ -1378,6 +1410,7 @@
     S.carriage = carriage(ctx, frame, S, dpr);
     ctx.restore();
     S.light = LT.name;
+    S.art = MODE();
     return S;
   }
 
@@ -1541,7 +1574,7 @@
   const BOUNDS = {pole: [-2, -11, 20, 1], stub: [-1, -3.2, 6, 1], fence: [-1, -2.4, 5, 1], tom: [-2.4, -2.4, 6, 1], post: [-1, -3, 6, 1], crash: [-2.5, -12.5, 18, 1.2]};
   const spriteCache = new Map();
   function sprite(L, LT, dpr, type, y, vel, variant, blurK = 1) {
-    const rv = repVel(type, vel), key = [lightIds.get(LT), L.s, dpr, type, y, rv, variant].join('|');
+    const rv = repVel(type, vel), key = [lightIds.get(LT), L.s, dpr, type, y, rv, variant, blurK, MODE()].join('|');
     if (spriteCache.has(key)) return spriteCache.get(key);
     const M = mAtY(y), blur = speedAtY(y) * BLUR * blurK, B = BOUNDS[type];
     const x0 = B[0] * M - blur, y0 = B[1] * M, w = (B[2] - B[0]) * M + 2 * blur, h = (B[3] - B[1]) * M, k = L.s * dpr;
@@ -1578,7 +1611,7 @@
   }
   // every sprite this song will need, made on its first roadside frame (not when an object first shows mid-song)
   function warmRoad(src, road, L, LT, dpr, mode) {
-    const key = [lightIds.get(LT), L.s, dpr, mode].join('|');
+    const key = [lightIds.get(LT), L.s, dpr, mode, MODE()].join('|');
     if (src.roadWarm === key) return;
     src.roadWarm = key;
     const has = list => ({lo: list.some(o => o.v < 64), hi: list.some(o => o.v >= 64)});
@@ -1781,7 +1814,7 @@
     stationSprites.set(key, out);
     return out;
   }
-  const spriteKey = (L, LT, dpr, what) => [lightIds.get(LT), L.s, dpr, what].join('|');
+  const spriteKey = (L, LT, dpr, what) => [lightIds.get(LT), L.s, dpr, what, MODE()].join('|');
   // ---- painters, sketch px around the base point; the sun is to the left and ahead: lit left faces, shadows to the right
   const tint = (LT, hex, k) => mix(mix(rgb(hex), LT.haze, k), LT.shade, .22); // into the haze, then a little down: never paler than the hills
   function box(g, x0, x1, h0, h1, fill) { g.fillStyle = fill; g.fillRect(x0, -h1, x1 - x0, h1 - h0); }
@@ -2004,7 +2037,7 @@
   const noteAt = () => null; // notes are texture only in this look; nothing to pick
 
   const invalidate = song => { songCache.delete(song); };
-  const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate,
+  const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate, ready,
     // for tests and measurements only
     _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), stations: song => stationsOf(songSource(song, song.track.duration), song), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);

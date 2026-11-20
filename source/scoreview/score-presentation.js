@@ -295,7 +295,7 @@
       return active().xOf(time,at)*(options.presentationLayout?metrics.scale:1);
     }
     function stop(){if(raf!==null)root.cancelAnimationFrame?.(raf);raf=null;normal.stop();movie?.stop();}
-    const api={...normal,draw,resize,ready:()=>mistStyle()?ensureMist().ready():surfaceStyle()?ensureSurface().ready():moodStyle()?ensureMood().ready():Promise.resolve(),
+    const api={...normal,draw,resize,ready:()=>mistStyle()?ensureMist().ready():surfaceStyle()?ensureSurface().ready():moodStyle()?ensureMood().ready():options.scoreStyle==='terrain'&&typeof root.XinArt?.terrain?.ready==='function'?root.XinArt.terrain.ready():Promise.resolve(),
       setOptions,setModel,setCover,variationController,options:presentationOptions,
       setLyrics:value=>{lyrics=value?.trackId===model.track.id&&!value?.hidden?value:null},lastFrame:()=>last?{...last}:normal.lastFrame(),
       timeAt,xOf,
