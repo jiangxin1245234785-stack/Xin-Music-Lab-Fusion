@@ -1352,17 +1352,21 @@
       for (let x = off - GROUND_P; x < L.right + 10; x += GROUND_P) if (x + GROUND_P > L.left - 10) ctx.drawImage(tile.c, x, tile.y0, GROUND_P, tile.h);
     };
     if (R) for (const band of R.ground) strip(band.tile, band.speed);
+    // a town passing in the middle ground (batch 6): before the air, so the haze over the plain lies on it as on the hills
+    const stationList = stationsOf(S.src, frame.song);
+    S.stations = R ? passTowns(ctx, stationList, L, t, LT, dpr) : [];
     const air = ctx.createLinearGradient(0, HORIZON - 150, 0, HORIZON + 40);
     air.addColorStop(0, css(LT.air.c, 0)); air.addColorStop(.8, css(LT.air.c, LT.air.a)); air.addColorStop(1, css(LT.air.c, 0));
     ctx.fillStyle = air; ctx.fillRect(L.left - 10, HORIZON - 150, L.Wm + 20, 190);
     // the roadside option arrives with the frame (XML's settings pass it once batch 4 wires it; default off)
-    S.roadside = roadside(ctx, S.src, L, t, LT, dpr, frame.terrainRoadside || (frame.options && frame.options.terrainRoadside) || 'off');
+    S.roadside = roadside(ctx, S.src, L, t, LT, dpr, frame.terrainRoadside || (frame.options && frame.options.terrainRoadside) || 'off', stationList);
     if (R && R.bed) {
       const y = 820, g = ctx.createLinearGradient(0, y - 4, 0, M_BOTTOM);
       g.addColorStop(0, 'rgba(110,98,80,0)'); g.addColorStop(.35, 'rgba(110,98,80,.9)'); g.addColorStop(1, 'rgba(80,72,60,1)');
       ctx.fillStyle = g; ctx.fillRect(L.left - 10, y - 4, L.Wm + 20, M_BOTTOM - y + 8);
       strip(R.bed, speedAtY(828));
     }
+    if (R) S.stations.push(...passNear(ctx, stationList, L, t, LT, dpr)); // the sign and the crossing: nearer than all else
     ctx.restore();
     if (R) ctx.drawImage(R.overlay, 0, 0, L.w, L.h);
     const tile = grain();
@@ -1587,7 +1591,8 @@
     for (const v of vels(road.tom)) for (let k = 0; k < 8; k++) sprite(L, LT, dpr, 'tom', LINE.tom, v, k);
     for (const v of vels(road.crash)) for (let k = 0; k < 3; k++) sprite(L, LT, dpr, 'crash', LINE.crash, v, k);
   }
-  function roadside(ctx, src, L, t, LT, dpr, mode) {
+  function roadside(ctx, src, L, t, LT, dpr, mode, stations) {
+    const yields = (line, T) => yieldsTo(stations, line, T);
     if (mode !== 'all' && mode !== 'kick-snare') return null;
     const road = roadLines(src), counts = {}, poles = [];
     warmRoad(src, road, L, LT, dpr, mode);
@@ -1604,10 +1609,10 @@
     if (all) { // windpumps and flocks on the far line
       const y = LINE.crash, M = mAtY(y);
       let v = visible(road.crash, y, 20 * M, 3 * M);
-      for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), X(o.t, v.sp), y); }
+      for (let i = v.a; i < v.b; i++) { const o = road.crash[i]; if (yields('crash', o.t)) { count('yielded', 1); continue; } stamp(ctx, sprite(L, LT, dpr, 'crash', y, o.v, Math.floor(hash(Math.round(o.t * 50), 3) * 3)), X(o.t, v.sp), y); }
       count('crash', v.b - v.a);
       v = visible(road.flock, y, 300, 300);
-      for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); if (o.n) birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, o.n); }
+      for (let i = v.a; i < v.b; i++) { const o = road.flock[i], key = Math.round(o.t * 50); if (yields('crash', o.t)) { count('yielded', 1); continue; } if (o.n) birds(ctx, X(o.t, v.sp), y, M * 1.6, t - o.t, key, o.n); }
       count('flock', v.b - v.a);
     }
     if (all) { // the fence: wires first, then the posts; birds lifting off it on a ride
@@ -1667,11 +1672,285 @@
     }
     { // mile posts and whistle posts (snare), half the blur so they read
       const y = LINE.post, M = mAtY(y), list = road.post, v = visible(list, y, 2 * M, 300);
-      for (let i = v.a; i < v.b; i++) { const o = list[i]; stamp(ctx, sprite(L, LT, dpr, 'post', y, o.v, hash(Math.round(o.t * 50), 91) < .68 ? 0 : 1, .45), X(o.t, v.sp), y); }
+      for (let i = v.a; i < v.b; i++) { const o = list[i]; if (yields('post', o.t)) { count('yielded', 1); continue; } stamp(ctx, sprite(L, LT, dpr, 'post', y, o.v, hash(Math.round(o.t * 50), 91) < .68 ? 0 : 1, .45), X(o.t, v.sp), y); }
       count('snare', v.b - v.a);
     }
     return Object.assign(counts, {poles});
   }
+
+  // ---------- passing stations (batch 6): the route board's stations, out of the window ----------
+  // The LED route board calls every section a station and moves its lamp at the moment a section starts. Out of the
+  // window something now passes the "now" line at exactly that moment (the train does not stop):
+  //   a town for a big section (into a chorus, an interlude / instrumental / solo: by the section's kind, its name when it
+  //   has no kind - the same words the sill's lyric line uses for sections nobody sings), a station sign for every other
+  //   change. None on the plains at either end, none at the first section's start or the last one's end, none in a song
+  //   without sections. Two changes less than 8 s apart: the later is a sign; less than 3 s: the later has none (counted
+  //   from the last station drawn). Stations belong to the line, not to the roadside: they show with the roadside off too.
+  // Ground model as the roadside's: a ground row y has M = .316 (y - 664) sketch px a metre and moves 5 (y - 664) sketch px
+  // a second, so the train runs at V = 5 / .316 m/s and a thing that passes "now" at T0 sits at x = nowM + (T0 - t) x speed.
+  // Each kind is a sprite painted once per light, size and dpr (motion blur baked in) and only moved each frame.
+  // Drawn after the round-8 sketch (mock8: A for the sign, C for the town), with the brief's changes for the town: about
+  // 5-6 s in the window, no road reaching into the near ground, no taller than half the nearest range standing behind it
+  // and no brighter than the hills (folded into the haze), four kinds chosen in turn by which big section of the song it is.
+  const STATION = {signY: 980, townY: 736, xingY: 852, signBlur: 1.5, sign: 8, none: 3, townLead: 3, xingAfter: 1};
+  const V_MS = 5 / PX_PER_M; // the train, metres a second
+  const KNOWN_KIND = /^(intro|verse|pre-?chorus|chorus|bridge|inst|interlude|instrumental|solo|break|outro)$/i;
+  const MAJOR_KIND = /^(chorus|inst|interlude|instrumental|solo)$/i;
+  const MAJOR_NAME = /^(副歌|chorus|间奏|器乐段?|独奏|interlude|instrumental|inst|solo)(\s|\d|$)/i;
+  function isMajor(row) {
+    const kind = String(row[4] == null ? '' : row[4]).trim();
+    if (KNOWN_KIND.test(kind)) return MAJOR_KIND.test(kind);
+    return MAJOR_NAME.test(String(row[2] == null ? '' : row[2]).trim());
+  }
+  const TOWN_H = 110; // the tallest thing of a town at full size, sketch px over its ground row
+  // the four towns: [min x, max x] in sketch px around the tallest thing (at x = 0), before scaling
+  const TOWN_SPAN = [[-140, 125], [-35, 190], [-120, 135], [-225, 225]];
+  function stationsOf(src, song) {
+    if (src.stations) return src.stations;
+    const rows = (Array.isArray(song && song.sections) ? song.sections : []).filter(r => Array.isArray(r) && Number.isFinite(r[0])).slice().sort((a, b) => a[0] - b[0]);
+    const list = [], table = [];
+    let last = null, majors = 0;
+    const L0 = layout(1440, 900); // the scale of a town is decided once per song, on the sketch's own frame
+    for (let i = 1; i < rows.length; i++) {
+      const T = rows[i][0], major = isMajor(rows[i]), ord = major ? majors++ : -1;
+      const row = {t: T, from: String(rows[i - 1][2] == null ? '' : rows[i - 1][2]), to: String(rows[i][2] == null ? '' : rows[i][2]), major, kind: null, why: ''};
+      table.push(row);
+      if (!(T > src.plainStart && T < src.plainEnd)) { row.why = 'plain'; continue; }
+      const gap = last ? T - last.t : Infinity;
+      if (gap < STATION.none) { row.why = 'close'; continue; }
+      let kind = major ? 'town' : 'sign';
+      if (kind === 'town' && gap < STATION.sign) { kind = 'sign'; row.why = 'close'; }
+      if (kind === 'town' && (T - src.plainStart < STATION.townLead || src.plainEnd - T < STATION.townLead)) { kind = 'sign'; row.why = 'plain'; }
+      const st = {t: T, kind, i};
+      if (kind === 'town') {
+        st.variant = ord % 4;
+        // no taller than half the nearest range standing behind it at the change (its own height at "now")
+        let behind = 0;
+        try {
+          for (const R of geometry(src, L0, T, 200)) { const j = Math.round((L0.nowM - R.x0) / COL), hgt = R.foot[j] - R.ys[j]; if (hgt >= 20) { behind = hgt; break; } }
+        } catch { behind = 0; }
+        st.behind = behind;
+        // the silo and the water tower are scaled to that (in steps of 4 px, one sprite per step); houses and trees keep
+        // their size (they are lower than half a range anyway), so a small town still reads as a town
+        st.tall = Math.max(24, Math.min(TOWN_H, Math.floor(.5 * (behind || 60) / 4) * 4));
+        const sp = TOWN_SPAN[st.variant], mt = mAtY(STATION.townY);
+        st.span = [sp[0] / mt, sp[1] / mt]; // metres along the line around the town's tallest thing
+        if (st.variant === 2) st.xing = V_MS * STATION.xingAfter; // the level crossing, metres past the town
+      }
+      row.kind = kind;
+      list.push(st); last = st;
+    }
+    list.table = table;
+    src.stations = list;
+    return list;
+  }
+  // roadside things standing where a station stands make way: the far line (windpumps, flocks) inside a town, the post
+  // line at a crossing. By the thing's place along the line (V x (T - T0) metres), so they leave with the station.
+  function yieldsTo(stations, line, T) {
+    if (!stations || !stations.length) return false;
+    let lo = 0, hi = stations.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (stations[m].t < T - 12) lo = m + 1; else hi = m; }
+    for (let k = lo; k < stations.length && stations[k].t <= T + 12; k++) {
+      const st = stations[k], X = V_MS * (T - st.t);
+      if (line === 'crash' && st.kind === 'town' && X >= st.span[0] - 4 && X <= st.span[1] + 4) return true;
+      if (line === 'post' && st.xing !== undefined && Math.abs(X - st.xing) <= 4) return true;
+    }
+    return false;
+  }
+  const stationSprites = new Map();
+  // a sprite in sketch units around a base point; paint(g) draws in those units; blurred along x by `blur` sketch px
+  function bakeSprite(L, dpr, key, box, blur, paint) {
+    if (stationSprites.has(key)) return stationSprites.get(key);
+    const k = L.s * dpr, x0 = box[0] - blur, y0 = box[1], w = box[2] - box[0] + 2 * blur, h = box[3] - box[1];
+    const a = makeCanvas(w * k, h * k);
+    let out = null;
+    if (a) {
+      const g = a.getContext('2d');
+      g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+      paint(g);
+      let c = a;
+      if (blur * k >= 1.5) {
+        const b = makeCanvas(a.width, a.height), bg = b.getContext('2d'), K = Math.max(5, Math.round(blur * k));
+        bg.globalCompositeOperation = 'lighter'; bg.globalAlpha = 1 / K;
+        for (let q = 0; q < K; q++) bg.drawImage(a, (q / (K - 1) - .5) * blur * k, 0);
+        c = b;
+      }
+      out = {c, x0, y0, w, h};
+    }
+    if (stationSprites.size > 24) stationSprites.delete(stationSprites.keys().next().value);
+    stationSprites.set(key, out);
+    return out;
+  }
+  const spriteKey = (L, LT, dpr, what) => [lightIds.get(LT), L.s, dpr, what].join('|');
+  // ---- painters, sketch px around the base point; the sun is to the left and ahead: lit left faces, shadows to the right
+  const tint = (LT, hex, k) => mix(mix(rgb(hex), LT.haze, k), LT.shade, .22); // into the haze, then a little down: never paler than the hills
+  function box(g, x0, x1, h0, h1, fill) { g.fillStyle = fill; g.fillRect(x0, -h1, x1 - x0, h1 - h0); }
+  function poly(g, pts, fill) { g.fillStyle = fill; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], -p[1]) : g.moveTo(p[0], -p[1])); g.closePath(); g.fill(); }
+  function castShadow(g, LT, x0, x1, h, a) { // on the ground, to the right and a little toward us
+    const len = 1.1 * h * (LT.castLen / 1.8);
+    g.fillStyle = css(CAST, a * LT.castA); g.beginPath(); g.moveTo(x0, 0); g.lineTo(x1, 0); g.lineTo(x1 + len, len * .05); g.lineTo(x0 + len * .55, len * .05 + .3); g.closePath(); g.fill();
+  }
+  // a town's things fold into the haze: mixed half-way into it and a touch darker, so nothing is brighter than the hills
+  const TOWN_HAZE = .5;
+  function silo(g, LT, x, r, h, col) {
+    const gr = g.createLinearGradient(x - r, 0, x + r, 0);
+    gr.addColorStop(0, css(mix(col, LT.light, .18))); gr.addColorStop(.4, css(col)); gr.addColorStop(1, css(mix(col, LT.shade, .3)));
+    g.fillStyle = gr; g.beginPath(); g.moveTo(x - r, 0); g.lineTo(x - r, -h); g.ellipse(x, -h, r, r * .18, 0, Math.PI, 0); g.lineTo(x + r, 0); g.closePath(); g.fill();
+  }
+  function elevator(g, LT, x, H) { // three silos, a head house on top, a low annex to the right
+    const conc = mix(tint(LT, '#8d8679', TOWN_HAZE), LT.shade, .06), dark = tint(LT, '#4c463f', TOWN_HAZE * .8);
+    castShadow(g, LT, x - 30, x + 30, H * .8, .2);
+    box(g, x - 7, x + 7, H * .78, H, css(mix(conc, LT.shade, .08)));
+    box(g, x - 7, x - 4.5, H * .78, H, css(mix(conc, LT.light, .18)));
+    poly(g, [[x - 8.5, H], [x + 8.5, H], [x + 5, H + 4], [x - 5, H + 4]], css(dark));
+    for (const dx of [-17, 0, 17]) silo(g, LT, x + dx, 8.4, H * .76, conc);
+    box(g, x + 26, x + 50, 0, H * .26, css(tint(LT, '#7d7365', TOWN_HAZE)));
+    poly(g, [[x + 25, H * .26], [x + 51, H * .26], [x + 51, H * .31], [x + 25, H * .38]], css(dark));
+    g.strokeStyle = css(dark); g.lineWidth = 1.2; g.beginPath(); g.moveTo(x + 7, -H * .86); g.lineTo(x + 38, -H * .3); g.stroke();
+  }
+  function waterTower(g, LT, x, H) {
+    const tank = tint(LT, '#888d86', TOWN_HAZE), leg = tint(LT, '#4d5352', TOWN_HAZE * .8), legTop = H * .66, w = H * .16;
+    castShadow(g, LT, x - w, x + w, H * .85, .17);
+    g.strokeStyle = css(leg); g.lineWidth = 1.4; g.beginPath();
+    for (const [b, tp] of [[-1, -.62], [1, .62], [-.45, -.3], [.45, .3]]) { g.moveTo(x + b * w, 0); g.lineTo(x + tp * w, -legTop); }
+    for (const f of [.34, .66]) { const ww = w * (1 - .38 * f); g.moveTo(x - ww, -legTop * f); g.lineTo(x + ww, -legTop * f); }
+    g.stroke();
+    const xa = x - w * .95, xb = x + w * .95, y0 = -legTop, y1 = -H * .88, yr = -H;
+    const gr = g.createLinearGradient(xa, 0, xb, 0);
+    gr.addColorStop(0, css(mix(tank, LT.light, .2))); gr.addColorStop(.45, css(tank)); gr.addColorStop(1, css(mix(tank, LT.shade, .32)));
+    g.fillStyle = gr; g.beginPath(); g.moveTo(xa, y0); g.lineTo(xa, y1); g.lineTo(x, yr); g.lineTo(xb, y1); g.lineTo(xb, y0); g.quadraticCurveTo(x, y0 + 5, xa, y0); g.closePath(); g.fill();
+  }
+  function house(g, LT, x, w, h, wall, roof) {
+    const col = mix(tint(LT, wall, TOWN_HAZE), LT.shade, .05), rc = tint(LT, roof, TOWN_HAZE * .8), hr = h * 1.6;
+    castShadow(g, LT, x - w / 2, x + w / 2, hr, .22);
+    box(g, x - w / 2, x + w / 2, 0, h, css(col));
+    box(g, x - w / 2, x - w / 2 + 2, 0, h, css(mix(col, LT.light, .25)));
+    poly(g, [[x - w / 2 - 2, h], [x + w / 2 + 2, h], [x + w / 2 - w * .2, hr], [x - w / 2 + w * .2, hr]], css(rc));
+    poly(g, [[x - w / 2 - 2, h], [x - w / 2 + w * .2, hr], [x - w / 2 + w * .2 + 2, hr], [x - w / 2, h]], css(mix(rc, LT.light, .25)));
+    for (const k of [.25, .62]) box(g, x - w / 2 + w * k, x - w / 2 + w * k + w * .14, h * .32, h * .7, css(mix(col, LT.shade, .45)));
+  }
+  function tree(g, LT, x, H, seed) {
+    const col = tint(LT, '#47503a', TOWN_HAZE * .9);
+    castShadow(g, LT, x - H * .2, x + H * .2, H * .7, .16);
+    box(g, x - 1.5, x + 1.5, 0, H * .45, css(tint(LT, '#3f352b', TOWN_HAZE)));
+    for (let j = 0; j < 6; j++) {
+      const r = hash(seed * 13 + j, 87), cx = x + (r - .5) * H * .45, cy = -H * (.55 + .3 * ((j * .37 + r) % 1));
+      g.fillStyle = css(j < 2 ? mix(col, LT.light, .14) : col); g.beginPath(); g.ellipse(cx, cy, H * .22, H * .17, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  function ground(g, LT, x0, x1) { // the dusty lot the town stands on, and a haze band over its feet
+    g.fillStyle = css(mix(tint(LT, '#b9a77f', .3), LT.light, .05), .35); g.beginPath(); g.ellipse((x0 + x1) / 2, 2, (x1 - x0) / 2 + 20, 6, 0, 0, Math.PI * 2); g.fill();
+  }
+  // tall = the silo's / water tower's height; houses 22 px to the eaves (35 to the ridge), trees 40-60 px
+  const TOWNS = [
+    (g, LT, H) => { ground(g, LT, -140, 125); house(g, LT, -105, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -52, 40, 1); waterTower(g, LT, 0, H); house(g, LT, 92, 54, 21, '#7d665a', '#47423c'); },
+    (g, LT, H) => { ground(g, LT, -35, 190); elevator(g, LT, 0, H); house(g, LT, 112, 58, 22, '#868d82', '#45413b'); tree(g, LT, 165, 44, 2); },
+    (g, LT, H) => { ground(g, LT, -120, 135); house(g, LT, -86, 58, 22, '#8f8574', '#4a453f'); tree(g, LT, -36, 50, 4); tree(g, LT, 0, Math.min(62, Math.max(46, H)), 3); house(g, LT, 62, 54, 21, '#7d665a', '#47423c'); tree(g, LT, 108, 46, 5); },
+    (g, LT, H) => { ground(g, LT, -225, 225); house(g, LT, -192, 56, 22, '#868d82', '#45413b'); tree(g, LT, -148, 44, 6); waterTower(g, LT, -98, H * .92); elevator(g, LT, 0, H); house(g, LT, 98, 56, 22, '#8f8574', '#4a453f'); house(g, LT, 158, 50, 20, '#7d665a', '#47423c'); tree(g, LT, 202, 48, 7); }
+  ];
+  function townSprite(L, LT, dpr, v, H) {
+    const sp = TOWN_SPAN[v];
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'town' + v + '@' + H), [sp[0] - 20, -Math.max(H, 64) - 14, sp[1] + 90, 12], speedAtY(STATION.townY) * BLUR, g => TOWNS[v](g, LT, H));
+  }
+  function signSprite(L, LT, dpr) {
+    const y = STATION.signY, M = mAtY(y);
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'sign'), [-6.2 * M, -5.6 * M, 3.4 * M, 0], speedAtY(y) * BLUR * STATION.signBlur, g => {
+      g.scale(M, M); // metres from here on
+      const iron = mix(rgb('#2f3336'), LT.haze, .05);
+      const post = (X, h, w, col) => { box(g, X - w / 2, X + w / 2, 0, h, css(col)); box(g, X - w / 2, X - w / 2 + w * .3, 0, h, css(mix(col, LT.light, .4), .85)); box(g, X + w * .2, X + w / 2, 0, h, css(mix(col, LT.shade, .35), .7)); };
+      // the lamp: a post, a gooseneck arm toward the track, a hood and its glow
+      const lc = mix(rgb('#2d3133'), LT.haze, .06);
+      post(-5.2, 5.0, .14, lc);
+      g.strokeStyle = css(lc); g.lineWidth = .09; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(-5.2, -5.0); g.quadraticCurveTo(-4.65, -5.25, -4.45, -4.95); g.stroke();
+      poly(g, [[-4.65, 4.98], [-4.25, 4.98], [-4.35, 4.78], [-4.55, 4.78]], css(lc));
+      const gl = g.createRadialGradient(-4.45, -4.74, 0, -4.45, -4.74, .55);
+      gl.addColorStop(0, 'rgba(255,236,196,.85)'); gl.addColorStop(.25, 'rgba(255,214,150,.35)'); gl.addColorStop(1, 'rgba(255,214,150,0)');
+      g.fillStyle = gl; g.beginPath(); g.arc(-4.45, -4.74, .55, 0, Math.PI * 2); g.fill();
+      post(-2.1, 3.6, .14, iron); post(2.1, 3.6, .14, iron);
+      // the board: a frame, a blue-grey face and one pale band where a name would be - a smear, never letters
+      const fr = mix(rgb('#262a2c'), LT.haze, .05), face = mix(rgb('#3a5257'), LT.haze, .12);
+      box(g, -2.7, 2.7, 2.35, 3.55, css(fr));
+      box(g, -2.63, 2.63, 2.42, 3.48, css(face));
+      box(g, -2.1, 2.1, 2.77, 3.13, css(mix(rgb('#dcd4c0'), LT.haze, .1), .8));
+      box(g, -2.7, 2.7, 3.52, 3.55, css(mix(fr, LT.light, .6), .9));
+    });
+  }
+  function crossingSprite(L, LT, dpr) {
+    const y = STATION.xingY, M = mAtY(y);
+    return bakeSprite(L, dpr, spriteKey(L, LT, dpr, 'xing'), [-2.6 * M, -4.6 * M, 9.5 * M, .2 * M], speedAtY(y) * BLUR, g => {
+      g.scale(M, M);
+      const white = mix(rgb('#d4d0c4'), LT.haze, .08), iron = mix(rgb('#3a3d3e'), LT.haze, .05), pc = mix(rgb('#c2bfb6'), LT.haze, .06);
+      box(g, -.08, .08, 0, 4.4, css(pc)); box(g, -.08, -.03, 0, 4.4, css(mix(pc, LT.light, .4), .85));
+      for (const sgn of [1, -1]) { // a crossbuck: two blank boards in an X
+        g.save(); g.translate(0, -3.95); g.rotate(sgn * .72);
+        g.fillStyle = css(iron); g.fillRect(-1.25, -.15, 2.5, .3); g.fillStyle = css(white); g.fillRect(-1.2, -.11, 2.4, .22); g.restore();
+      }
+      box(g, -.9, .9, 2.85, 3.25, css(iron));
+      for (const dx of [-.55, .55]) { g.fillStyle = css(rgb('#141414')); g.beginPath(); g.arc(dx, -3.05, .32, 0, Math.PI * 2); g.fill(); }
+      // the gate arm, down across the road, red and white
+      const a0 = .2, a1 = 2 * ROAD_HALF + 1.5, ah = 1.05; // from the signal (.9 m before the road) to .6 m past it
+      box(g, a0, a1, ah - .12, ah + .12, css(white));
+      for (let x = a0 + .6; x < a1; x += 1.2) box(g, x, Math.min(a1, x + .6), ah - .12, ah + .12, css(mix(rgb('#b8463a'), LT.haze, .08)));
+      box(g, -.35, .35, .6, 1.5, css(iron));
+    });
+  }
+  // the crossing's lamps: one of the pair lit, swapping twice a song second (drawn live, they are two dots)
+  function crossingLamps(ctx, x, y, t) {
+    const M = mAtY(y), on = Math.floor(t * 2) % 2;
+    for (const [k, dx] of [[0, -.55], [1, .55]]) {
+      const lx = x + dx * M, ly = y - 3.05 * M, r = .26 * M;
+      ctx.fillStyle = k === on ? 'rgba(232,74,52,1)' : 'rgba(92,40,34,1)'; ctx.beginPath(); ctx.arc(lx, ly, r, 0, Math.PI * 2); ctx.fill();
+      if (k === on) { const gr = ctx.createRadialGradient(lx, ly, 0, lx, ly, r * 3.2); gr.addColorStop(0, 'rgba(255,120,90,.45)'); gr.addColorStop(1, 'rgba(255,120,90,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(lx, ly, r * 3.2, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  const inView = (L, x, sp) => sp && x + sp.x0 + sp.w > L.left - 4 && x + sp.x0 < L.right + 4;
+  function warmStations(stations, L, LT, dpr) {
+    const key = spriteKey(L, LT, dpr, 'all');
+    if (stations.warm === key) return;
+    stations.warm = key;
+    for (const st of stations) { if (st.kind === 'sign') signSprite(L, LT, dpr); else { townSprite(L, LT, dpr, st.variant, st.tall); if (st.xing !== undefined) crossingSprite(L, LT, dpr); } }
+  }
+  function passTowns(ctx, stations, L, t, LT, dpr) {
+    const out = [];
+    if (!stations.length) return out;
+    warmStations(stations, L, LT, dpr);
+    const y = STATION.townY, sp = speedAtY(y);
+    for (const st of stations) {
+      if (st.kind !== 'town' || Math.abs(st.t - t) > 30) continue;
+      const s = townSprite(L, LT, dpr, st.variant, st.tall), x = L.nowM + (st.t - t) * sp;
+      if (!inView(L, x, s)) continue;
+      ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
+      out.push({kind: 'town', variant: st.variant, t: st.t, x, tall: st.tall});
+    }
+    return out;
+  }
+  function passNear(ctx, stations, L, t, LT, dpr) {
+    const out = [];
+    for (const st of stations) {
+      if (Math.abs(st.t - t) > 30) continue;
+      if (st.kind === 'sign') {
+        const y = STATION.signY, s = signSprite(L, LT, dpr), x = L.nowM + (st.t - t) * speedAtY(y);
+        if (!inView(L, x, s)) continue;
+        ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
+        out.push({kind: 'sign', t: st.t, x});
+      } else if (st.xing !== undefined) {
+        const y = STATION.xingY, s = crossingSprite(L, LT, dpr), T = st.t + (st.xing - ROAD_HALF - .9) / V_MS, x = L.nowM + (T - t) * speedAtY(y);
+        // the road's planks over the track bed under the window (rows 814 down), each row at its own speed
+        const r0 = st.xing - ROAD_HALF, r1 = st.xing + ROAD_HALF, at = (X, yy) => L.nowM + (X / V_MS + st.t - t) * speedAtY(yy);
+        if (at(r1, 814) > L.left - 40 && at(r0, M_BOTTOM + 2) < L.right + 40) {
+          ctx.fillStyle = css(mix(rgb('#6f665a'), LT.haze, .1), .92); ctx.beginPath();
+          ctx.moveTo(at(r0, 814), 814); ctx.lineTo(at(r1, 814), 814); ctx.lineTo(at(r1, M_BOTTOM + 2), M_BOTTOM + 2); ctx.lineTo(at(r0, M_BOTTOM + 2), M_BOTTOM + 2); ctx.closePath(); ctx.fill();
+        }
+        if (!inView(L, x, s)) continue;
+        ctx.drawImage(s.c, x + s.x0, y + s.y0, s.w, s.h);
+        crossingLamps(ctx, x, y, t);
+        out.push({kind: 'crossing', t: T, x});
+      }
+    }
+    return out;
+  }
+  const ROAD_HALF = 3.2; // metres each side of the crossing road's middle
 
   // ---------- the carriage: the LED displays (score-terrain-led.js, global XinScoreTerrainLed) ----------
   // Above the window: title, artist, this station / next, time, the route of all sections. On the sill: the lyric line
@@ -1723,7 +2002,7 @@
   const invalidate = song => { songCache.delete(song); };
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate,
     // for tests and measurements only
-    _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
+    _internal: Object.freeze({layout, analysePixels, curtainShapes, transomOf, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), stations: song => stationsOf(songSource(song, song.track.duration), song), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);
       return {L, src, ranges: geometry(src, L, clamp(frame.time, 0, duration), margin)};
     }})});
