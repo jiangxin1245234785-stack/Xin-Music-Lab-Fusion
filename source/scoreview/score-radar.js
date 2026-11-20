@@ -467,7 +467,7 @@
     }
     // The rule for colour (radar.5 feedback): what is engraved, printed or stuck on the panel keeps one brightness and
     // colour whatever the data does. Only these change with the song: lamps and the legends lit from behind by them
-    // (section lamps, caution cells, the fifths lamps' letters), needles, what the screens draw (the echoes, the
+    // (section lamps and caution cells), needles, what the screens draw (the echoes, the
     // scope's beam, the bar numbers), the tube digits, the tape as it prints, and the positions of levers.
     // `baseline` 'middle' (y is the text's middle), 'alphabetic' (y is its baseline: rows of two sizes) or 'cap' (y
     // is the middle of its capitals: labels beside a lamp, a row of cells or a grid line sit on its centre line; 'middle'
@@ -1200,10 +1200,26 @@
         circle(cx, cy, screen, null, C.screenRim, 3);
         edge(disk(cx, cy, screen + 2), cx - screen, cy - screen, 2 * screen, 2 * screen, false, 2.5, 1);
         p.save(); circle(cx, cy, screen - 1, null); p.clip();
-        // Grid: crosshair and the six rings, each a band from its inner to its outer edge.
+        // Grid: crosshair and six bands, with each name engraved at its outer boundary.
         p.strokeStyle = C.phosFaint; p.lineWidth = 1;
         p.beginPath(); p.moveTo(cx - screen, cy); p.lineTo(cx + screen, cy); p.moveTo(cx, cy - screen); p.lineTo(cx, cy + screen); p.stroke();
-        for (let r = 0; r <= RINGS; r++) { circle(cx, cy, inner + r * band, null, r === RINGS ? C.phosDim : C.phosFaint, 1); }
+        circle(cx, cy, inner, null, C.phosFaint, 1);
+        const labelOffset = -25, labelSize = 15;
+        font('plate', labelSize);
+        CATS.slice(0, RINGS).forEach((cat, k) => {
+          const r = outer - k * band;
+          const halfWidth = p.measureText(cat.ring).width / 2, gap = halfWidth + 2;
+          const left = -Math.PI / 2 + Math.asin((labelOffset - gap) / r);
+          const right = -Math.PI / 2 + Math.asin((labelOffset + gap) / r);
+          p.beginPath(); p.arc(cx, cy, r, right, left + 2 * Math.PI);
+          p.strokeStyle = k === 0 ? C.phosDim : C.phosFaint; p.lineWidth = 1; p.stroke();
+
+          const tickX = labelOffset - halfWidth - 8, tickY = -Math.sqrt(r * r - tickX * tickX);
+          const tickEnd = (r - 7.5) / r;
+          p.beginPath(); p.moveTo(cx + tickX, cy + tickY); p.lineTo(cx + tickX * tickEnd, cy + tickY * tickEnd);
+          p.strokeStyle = '#78a28c'; p.lineWidth = 1.15; p.stroke();
+          write(cat.ring, cx + labelOffset, cy - Math.sqrt(r * r - labelOffset * labelOffset), labelSize, '#9bceb0', 'plate', 'center', 0, '', 'cap');
+        });
         p.restore();
         // Stamped name and the one sticker.
         // A dial that was taken out of this corner: its hole closed by a round cover plate on two screws; the
@@ -1281,12 +1297,6 @@
         p.beginPath(); p.moveTo(cx, cy); p.lineTo(cx + Math.cos(sweep) * screen, cy + Math.sin(sweep) * screen);
         p.strokeStyle = 'rgba(170,255,200,.85)'; p.lineWidth = 2; p.stroke();
         circle(cx, cy, 4, '#c8ffd8');
-        // Ring names at 12 o'clock.
-        CATS.slice(0, RINGS).forEach((cat, k) => {
-          const r = outer - k * band - band / 2;
-          rect(cx - 40, cy - r - 8, 30, 16, 'rgba(6,18,12,.85)');
-          write(cat.ring, cx - 12, cy - r, 15, '#79d79c', 'plate', 'right');   // printed on the graticule overlay: one colour
-        });
         p.restore();
         // Bar numbers of the turn at the quarters: only on the song's own bar lines.
         if (bars && bars.source === 'downbeats') {
@@ -1523,8 +1533,9 @@
       FIFTHS.forEach((name, k) => {
         const a = -Math.PI / 2 + k / 12 * Math.PI * 2, x = cx + Math.cos(a) * (R - 22), y = cy + Math.sin(a) * (R - 22);
         const v = light[k];
-        circle(x, y, 14, mixHex('#2b2620', '#ffb24c', v), '#14120d', 1.5);
-        write(name, x, y, 15, v > .45 ? '#2a1a08' : '#cbc4ae', 'plate', 'center', 0, '', 'cap');
+        // The rim carries the brightest amber; the face stays dark enough for the ivory paint.
+        circle(x, y, 14, mixHex('#2b2620', '#835023', v), mixHex('#14120d', C.amber, v), 1.5);
+        write(name, x, y, 15, '#ece5cc', 'plate', 'center', 0, '', 'cap');
       });
       // The chord wheels (SPEC-WEATHER A). What the wheels show at a moment: the sounding chord's cells, or blanks.
       const cellsAt = t => {
@@ -1830,8 +1841,7 @@
       out.keyLamps = {velocity: kv.flat ? 'flat' : 'velocity', lo: kv.lo, hi: kv.hi, lit: Array.from(lit).map((v, m) => v >= .005 ? [m, +v.toFixed(3)] : null).filter(Boolean)};
     }
 
-    // The lyric tape: one line moving left past a fixed print head; each character prints its telegraph code first
-    // and its character half a step later. Its position is a function of song time.
+    // The lyric tape: one line moving left past a fixed print head. Han characters print their code first.
     // The teleprinter's title row: the song being taken down, in its own language, cut to fit; the key under the paper.
     function teleTitle(env, key, out) {
       const t = env.model.track || {}, song = [t.title, clean(t.artist)].filter(Boolean).join(' · ');
@@ -1873,26 +1883,28 @@
       if (pass !== 'live') return;
       if (!tape) { trackSheet(env, now, out, {x, y, w, h, head}); return; }
       const telegraph = root.XinScoreTelegraph;
-      let printing = false;
       const glyphs = [];
-      // Characters printed by now, the newest at the head.
-      const cell = 40;
-      let printed = 0, newest = null;
+      let printed = 0;
       for (const item of tape.cells) {
         if (item.time > now) break;
-        printed++; newest = item;
+        printed++;
       }
-      // The tape moves one cell per character, gliding over the character's own time.
-      let glide = 0;
-      if (newest && newest.next > newest.time) glide = clamp((now - newest.time) / Math.min(.12, newest.next - newest.time), 0, 1);
-      printing = Boolean(newest && now < newest.lineEnd);
+      const newest = tape.cells[printed - 1], upcoming = tape.cells[printed];
+      const printing = Boolean(newest && now < newest.lineEnd);
+      let right = head;
+      if (newest) {
+        // Feed ahead to make room for the next strike. At that strike the old right edge is already in place.
+        const nextTime = upcoming ? upcoming.time : newest.next;
+        const glide = nextTime > newest.time ? clamp((now - newest.time) / Math.min(.12, nextTime - newest.time), 0, 1) : 0;
+        right -= glide * (upcoming || newest).width;
+      }
       p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
       auditClip = {x: x + 1, y: y + 1, w: w - 2, h: h - 2};
-      for (let k = printed - 1, slot = 0; k >= 0; k--, slot++) {
-        const item = tape.cells[k], cx = head - cell / 2 - (slot - 1 + glide) * cell - cell;
-        if (cx < x - cell) break;
+      for (let k = printed - 1; k >= 0 && right > x; k--) {
+        const item = tape.cells[k], cx = right - item.width / 2;
+        right -= item.width;
         if (item.dot) { circle(cx, y + h / 2 + 8, 2.5, C.paperInk); continue; }
-        if (item.blank) { glyphs.push({ch: ' ', code: null, clear: true}); continue; }
+        if (item.blank) { glyphs.push({ch: item.ch, code: null, clear: true}); continue; }
         const code = item.han ? (telegraph && telegraph.code(item.ch)) || '----' : '';
         // Uneven ink (batch 4): each character struck a little lighter or heavier and a little high or low, fixed
         // by its place on the tape (a hash of its index), never by chance.
@@ -1901,7 +1913,7 @@
         const dy = ink ? ink.dy : 0;
         if (code) write(code, cx, y + 17 + dy, 15, C.paperInk, 'mono', 'center');
         const clear = !item.han || now >= item.time + item.half;
-        if (clear) write(item.ch, cx, y + 49 + dy, item.han ? 28 : 24, C.paperInk, item.han ? 'hanzi' : 'mono', 'center', 0, 'bold');
+        if (clear) write(item.ch, cx, y + 49 + dy, item.wide ? 28 : TAPE_MONO_SIZE, C.paperInk, item.wide ? 'hanzi' : 'mono', 'center', 0, 'bold');
         if (ink) p.restore();
         glyphs.push({ch: item.ch, code: code || null, clear});
       }
@@ -1982,6 +1994,10 @@
     // sung time, so every character is on the tape before it is sung; the clear character follows its code after a
     // short beat (a quarter of its print step, at most .1 s), not half a step. The lyrics' own timing is not changed.
     const LEAD = .4, PRINT_BY = .7;   // the three settings are LEADS: .2 / .4 / .7 s
+    const TAPE_MONO_SIZE = 24, TAPE_MONO_WIDTH = TAPE_MONO_SIZE * 1228 / 2048;   // Courier Prime's advance, in font units
+    const TAPE_WIDE_WIDTH = 40, TAPE_DOT_WIDTH = 18;
+    const wideTapeChar = ch => /[\u3000-\u303f\uff01-\uff60\uffe0-\uffe6]|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/u.test(ch)
+      && !/[\uff61-\uffdc]/u.test(ch);
     let tapeCache = null, tapeKey = null;
     function tapeOf(env) {
       const lyrics = env.lyrics;
@@ -1989,21 +2005,33 @@
       const lead = Number.isFinite(env.options && env.options.radarLead) ? clamp(env.options.radarLead, 0, 1.5) : LEAD;
       const key = [lyrics.lines.length, lyrics.offset, lyrics.enabled, lyrics.alignment, lyrics.lines[0].time, lyrics.lines[lyrics.lines.length - 1].text, lead].join('|');
       if (tapeKey === key) return tapeCache;
-      const offset = lyrics.offset || 0, rows = lyrics.lines.filter(l => typeof l.text === 'string' && l.text.trim());
+      const offset = lyrics.offset || 0;
+      const rows = lyrics.lines.filter(l => typeof l.text === 'string' && l.text.trim()).map(row => {
+        const chars = Array.from(row.text.replace(/[^\S\u3000]+/g, ' ').replace(/^ | $/g, ''), ch => {
+          const han = isHan(ch);
+          return {ch, blank: ch === ' ' || ch === '\u3000', han, wide: han || wideTapeChar(ch)};
+        });
+        return {time: row.time, chars, wide: chars.every(item => item.blank || item.wide)};
+      });
       const cells = [];
       let lastDot = -Infinity;
       rows.forEach((row, i) => {
-        const chars = Array.from(row.text.replace(/\s+/g, ' ').trim());
-        const start = row.time + offset, next = rows[i + 1] ? rows[i + 1].time + offset : start + chars.length * .5 + 1;
+        const {chars} = row, nextRow = rows[i + 1];
+        const start = row.time + offset, next = nextRow ? nextRow.time + offset : start + chars.length * .5 + 1;
         const end = Math.min(next - .05, start + Math.max(1.2, chars.length * .5));
         const n = Math.max(1, chars.length), sungStep = (end - start) / n;
         const from = Math.min(start, Math.max(start - lead, lastDot + .05)), until = start + PRINT_BY * (end - start);
         const step = (until - from) / n, half = Math.min(.1, step / 4);
-        chars.forEach((ch, k) => {
-          if (ch === ' ') { cells.push({ch, blank: true, han: false, time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step}); return; }
-          cells.push({ch, han: isHan(ch), time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step});
+        chars.forEach((item, k) => {
+          const wideGap = item.blank && chars[k - 1]?.wide && chars[k + 1]?.wide;
+          cells.push({...item, width: item.wide || wideGap ? TAPE_WIDE_WIDTH : TAPE_MONO_WIDTH,
+            time: from + k * step, sung: start + k * sungStep, half, lineEnd: until, next: from + (k + 1) * step});
         });
-        if (rows[i + 1]) { cells.push({dot: true, time: until, half: 0, lineEnd: until, next: next}); lastDot = until; }
+        if (nextRow) {
+          cells.push({dot: true, width: row.wide && nextRow.wide ? TAPE_WIDE_WIDTH : TAPE_DOT_WIDTH,
+            time: until, half: 0, lineEnd: until, next});
+          lastDot = until;
+        }
       });
       tapeCache = {cells, lines: rows.length, lead}; tapeKey = key;
       return tapeCache;

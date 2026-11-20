@@ -119,6 +119,44 @@ test('chord quality lamps cover every suffix the library holds; sections light t
   assert.ok(turning.CHORUS > 0 && turning.CHORUS < 1 && turning.VERSE > 0 && turning.VERSE < 1, 'old lamp dims while the new one rises');
 });
 
+test('the fifths buttons keep their painted note names as the faces and rims light and fade', () => {
+  const model = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}], 64,
+    {chords: [[2, 5, 'Am'], [5, 10, 'Bb']]});
+  const {frame, stage} = post(model);
+  const names = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Db', 'Ab', 'Eb', 'Bb', 'F'];
+  const drawButtons = at => {
+    stage.reset();
+    const {fifths} = frame(at).motion.chord;
+    const buttons = stage.calls.flatMap((call, i) => {
+      if (call.name !== 'arc') return [];
+      const [x, y, r] = call.args;
+      if (r !== 14 || Math.abs(Math.hypot(x - 1130, y - 285) - 81) > 1e-6) return [];
+      const [face, rim, label] = stage.calls.slice(i + 1, i + 4);
+      assert.deepEqual([face.name, rim.name, label.name], ['fill', 'stroke', 'fillText']);
+      assert.deepEqual(label.args.slice(1), [x, y + 15 * .72 / 2]);
+      assert.equal(label.alpha, 1);
+      return [{name: label.args[0], paint: label.fillStyle, face: face.fillStyle, rim: rim.strokeStyle}];
+    });
+    assert.deepEqual(buttons.map(b => b.name), names);
+    return {buttons, fifths};
+  };
+  const off = drawButtons(1), lit = drawButtons(4), turning = drawButtons(5.1), faded = drawButtons(5.9);
+  const a = names.indexOf('A'), bb = names.indexOf('Bb');
+  assert.equal(off.fifths[a], 0);
+  assert.equal(lit.fifths[a], 1);
+  assert.ok(turning.fifths[a] > .45 && turning.fifths[a] < 1);
+  assert.ok(faded.fifths[a] > 0 && faded.fifths[a] < .45);
+  assert.equal(turning.fifths[bb], 1);
+  const paint = off.buttons[a].paint;
+  for (const {buttons} of [off, lit, turning, faded]) {
+    assert.ok(buttons.every(button => button.paint === paint), 'every name is painted in the same color');
+  }
+  for (const part of ['face', 'rim']) {
+    assert.equal(new Set([off, lit, turning, faded].map(state => state.buttons[a][part])).size, 4);
+    assert.equal(turning.buttons[bb][part], lit.buttons[a][part]);
+  }
+});
+
 test('caution lamps: HOLD on a long note, SILENCE in a gap, TUTTI when every channel sounds; all dark at 0 s', () => {
   const model = steady([
     {id: 'g', kind: 'pitched', group: 'guitar', notes: [[2, 6, 60, 100], [14, 4, 60, 100]]},
@@ -189,6 +227,72 @@ test('the tape prints ahead of the singing: every character is on the tape (clea
     view.setLyrics({trackId: song.track.id, enabled: true, offset: 0, lines});
     assert.ok(frame(third.sung).motion.teleprinter.newest.some(g => g.ch === '法' && g.clear), 'sung now, already printed and clear');
   }
+});
+
+function tapeFrames(lines) {
+  const model = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]}]);
+  const lyrics = {trackId: song.track.id, enabled: true, offset: 0, lines};
+  const {cells} = Radar.create().tape({lyrics, options});
+  const {frame, stage, view} = post(model, 1600, 900, {...options, radarInk: false});
+  view.setLyrics(lyrics);
+  const drawTape = at => {
+    stage.reset(); frame(at);
+    const text = new Map(stage.texts().filter(s => s.style === '#38362e' && s.y >= 813 && s.y <= 845).map(s => [s.text, s]));
+    const dot = stage.calls.find(c => c.name === 'arc' && c.args[0] > 970 && c.args[1] === 841 && c.args[2] === 2.5);
+    return {text, dot: dot?.args[0]};
+  };
+  return {cells, drawTape};
+}
+
+const nearTape = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} vs ${expected}`);
+
+test('the teleprinter draws words at Courier Prime pitch and feeds mixed-width cells without moving old ink at a strike', () => {
+  const {cells, drawTape} = tapeFrames([{time: 10, text: 'WE G2!七里\u3000、あ'}, {time: 20, text: 'A'}]);
+  const {text, dot} = drawTape(21), x = ch => text.get(ch).x;
+  const pitch = 14.390625;
+  for (const [left, right, distance] of [['W', 'E', pitch], ['E', 'G', 2 * pitch], ['G', '2', pitch], ['2', '!', pitch],
+    ['!', '七', 20 + pitch / 2], ['七', '里', 40], ['里', '、', 80], ['、', 'あ', 40]]) nearTape(x(right) - x(left), distance);
+  nearTape(x('0003'), x('七'));
+  nearTape(x('6849'), x('里'));
+  nearTape(dot - x('あ'), 29);
+  nearTape(x('A') - dot, 9 + pitch / 2);
+  assert.match(text.get('W').font, /^24px "Courier Prime"/);
+  assert.match(text.get('あ').font, /FangSong/);
+  assert.equal(text.has(' '), false);
+  assert.equal(text.has('\u3000'), false);
+
+  for (const [strike, old] of [[cells.find(c => c.ch === '七'), '!'], [cells.find(c => c.dot), 'あ'], [cells.at(-1), 'あ']]) {
+    const before = drawTape(strike.time - 1e-9);
+    const after = drawTape(strike.time);
+    nearTape(before.text.get(old).x, after.text.get(old).x);
+  }
+  const repeated = drawTape(21);
+  assert.deepEqual(repeated, {text, dot}, 'seeking back and forth yields the same coordinates');
+});
+
+test('spaces between wide characters and separators between wide lines keep the original paper feed', () => {
+  const {cells, drawTape} = tapeFrames([{time: 10, text: '麻雀 在電線'}, {time: 20, text: '桿上'}]);
+  const blank = cells.find(c => c.blank), sparrow = cells.find(c => c.ch === '雀');
+  const code = Telegraph.code('雀');
+  const atStrike = drawTape(sparrow.time).text.get(code).x;
+  const beforeBlank = drawTape(blank.time - 1e-9).text.get(code).x;
+  const afterBlank = drawTape(blank.time).text.get(code).x;
+  nearTape(atStrike - beforeBlank, 40);
+  nearTape(beforeBlank, afterBlank);
+  const {text} = drawTape(cells.find(c => c.ch === '在').time + .11);
+  nearTape(text.get('在').x - text.get('雀').x, 80);
+
+  const separator = cells.find(c => c.dot);
+  const next = cells.find(c => c.ch === '桿');
+  const beforeLine = drawTape(next.time - 1e-9), afterLine = drawTape(next.time);
+  nearTape(beforeLine.text.get('線').x, afterLine.text.get('線').x);
+  nearTape(beforeLine.dot, afterLine.dot);
+  nearTape(afterLine.dot - afterLine.text.get('線').x, 40);
+  nearTape(afterLine.text.get(Telegraph.code('桿')).x - afterLine.dot, 40);
+  nearTape(drawTape(separator.time).dot - beforeLine.dot, 40);
+
+  const mixed = tapeFrames([{time: 10, text: '甲 A文 あ'}, {time: 20, text: '字'}]).cells;
+  assert.deepEqual(mixed.filter(c => c.blank || c.dot).map(c => c.width), [14.390625, 40, 18]);
 });
 
 test('a song without vocals or lyrics: the scope is a flat line, the tape empty, every other instrument reads', () => {
@@ -299,6 +403,31 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   const [base, over] = made, baseCalls = base.calls.length, overCalls = over.calls.length;
   assert.ok(base.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'stamped names are in the base layer');
   assert.ok(over.calls.some(c => c.name === 'fillText' && c.args[0] === 'GUITAR'), 'the tape labels are in the over layer');
+  const cx = 661, cy = 425, inner = 42, outer = 256;
+  const engraved = c => c.name === 'fillText' && c.fillStyle === '#9bceb0';
+  const labels = base.calls.filter(engraved);
+  assert.deepEqual(labels.map(c => c.args[0]), ['VOX', 'GTR', 'PNO', 'STR', 'WND', 'BAS'], 'the graticule includes even silent channels');
+  const grid = base.calls.filter(c => c.name === 'arc' && c.args[0] === cx && c.args[1] === cy && c.args[2] >= inner && c.args[2] <= outer);
+  assert.equal(grid.length, 7);
+  assert.deepEqual(grid[0].args, [cx, cy, inner, 0, 2 * Math.PI], 'the innermost grid line is a full circle');
+  const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `expected ${expected}, received ${actual}`);
+  const ticks = base.strokes().filter(s => s.style === '#78a28c');
+  assert.equal(ticks.length, 6);
+  labels.forEach((label, k) => {
+    const [, x, baseline] = label.args, [, , r, start, end] = grid[k + 1].args;
+    assert.equal(x, cx - 25);
+    assert.match(label.font, /^15px "Barlow Condensed"/);
+    assert.equal(label.state.textAlign, 'center');
+    assert.equal(label.state.textBaseline, 'alphabetic');
+    near(r, outer - k * (outer - inner) / 6);
+    near(baseline - 15 * .72 / 2, cy - Math.sqrt(r * r - 25 * 25));
+    near(cx + r * Math.cos(start), x + 11);  // the mock measures each abbreviation at 18 units wide
+    near(cx + r * Math.cos(end), x - 11);
+    const [tip, tail] = ticks[k].points;
+    near(tip.x, x - 17);
+    near(Math.hypot(tip.x - cx, tip.y - cy), r);
+    near(Math.hypot(tail.x - cx, tail.y - cy), r - 7.5);
+  });
   stage.reset();
   const b = frame(10).motion;
   assert.equal(base.calls.length, baseCalls, 'not drawn again');
@@ -309,6 +438,10 @@ test('the hardware is drawn once into two cached layers; each frame lays them do
   assert.equal(copies.filter(c => c === over.canvas).length, 1, 'the over layer laid once a frame');
   assert.ok(copies.every(c => made.some(m => m.canvas === c)), 'every other copy is a made sprite (fade, lit digits)');
   assert.ok(!stage.calls.some(c => c.name === 'fillText' && c.args[0] === 'CHANNEL STRIPS'), 'no hardware in the moving part');
+  assert.ok(!stage.calls.some(engraved), 'the moving part never redraws the engraving');
+  const beforeEcho = stage.calls.findIndex(c => c.name === 'drawImage' && c.args[0] === base.canvas);
+  const echo = stage.calls.findIndex(c => c.name === 'stroke' && /^rgba\(130,242,166,/.test(String(c.strokeStyle)));
+  assert.ok(beforeEcho >= 0 && echo > beforeEcho, 'echoes are drawn over the graticule');
   assert.equal(b.plate.line1, 'RESISTANCE 5592–9515 OHMS', 'what the hardware reports is kept with the layer');
   assert.ok(b.recorderBox && b.teleTitle !== undefined);
   // The same moment draws the same frame, cached or not.
