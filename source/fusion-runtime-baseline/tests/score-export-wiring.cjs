@@ -120,6 +120,26 @@ async function channel() {
   assert.equal(asked.at(-1).look.scoreStyle, 'flag');
   assert.equal(asked.at(-1).look.lang, 'zh-CN');
   assert.equal(asked.at(-1).look.presentationLayout, true);
+  // 分段小节（试用）: the exported model carries the candidate measures only while the scene's switch is on, like score-scene.js.
+  const trial = createScoreExport({
+    app: {getPath: () => scratch}, dialog: {showSaveDialog: async () => ({canceled: false, filePath: path.join(scratch, 'out.mp4')})},
+    shell: {showItemInFolder: () => {}}, BrowserWindow: {fromWebContents: () => null}, exporter: fakeEngine,
+    scoreModelFor: async () => ({ok: true, model: {track: {title: 't', artist: 'a', duration: 10}, lanes: [{}],
+      bars: {steady: false, localRuns: [{perBar: 4, beats: [0, 1, 2, 3, 4]}], candidateMeasures: [[0, 1, 2, 3]]}}}),
+    analysisRoots: () => roots, locale: () => 'zh-CN'
+  });
+  assert.ok((await trial.start({sender}, {trackId: 'x', localBarTrial: true})).ok);
+  assert.equal(asked.at(-1).model.localBarTrial, true, '开关开着时导出的模型要带 localBarTrial');
+  assert.deepEqual(asked.at(-1).model.bars.candidateMeasures, [[0, 1, 2, 3]], '开关开着时候选小节要留着');
+  assert.equal(asked.at(-1).model.bars.localRuns.length, 1);
+  for (const off of [false, undefined, 'on']) {
+    assert.ok((await trial.start({sender}, {trackId: 'x', localBarTrial: off})).ok);
+    assert.equal(asked.at(-1).model.localBarTrial, false, `开关值 ${off} 时导出不该用候选小节`);
+    assert.equal(Object.hasOwn(asked.at(-1).model.bars, 'localRuns'), false);
+    assert.equal(Object.hasOwn(asked.at(-1).model.bars, 'candidateMeasures'), false);
+    assert.equal(asked.at(-1).model.bars.steady, false);
+  }
+  done.push('分段小节（试用）开关随导出请求走：开着带候选小节，关着与窗口一样删掉');
 }
 
 // --- 2. the kept effects setting ----------------------------------------------------------------------
@@ -225,6 +245,7 @@ async function keptScoreStyle() {
   assert.deepEqual(options, ['starry','plain','overprint','glass','paper','ember','water','mist','terrain','flag']);
   assert.deepEqual(styles.styles, options);
   for (const page of [html, exportPage]) assert.match(page, /score-flag\.js[\s\S]*score-presentation\.js/);
+  for (const page of [html, exportPage]) assert.match(page, /local-grid\.js[\s\S]*score-view\.js/, '导出页和窗口一样要在 score-view.js 之前加载 local-grid.js');
   const storage = new Map([['xin-score-style-v1', 'terrain']]);
   const mount = () => {
     const p = page({lang:'en-US'});
@@ -293,6 +314,7 @@ function exportPanel(storage) {
   for (const id of ['scoreExportOpen', 'scoreExportChoices', 'scoreExportStatus', 'scoreExportProgress', 'scoreExportCancel', 'scoreExportReveal',
                     'scoreExportBitrate','scoreExportCustomBitrate','scoreExportCustomRow','scoreExportBitrateError','scoreExport1080Size','scoreExport720Size','fusionAudio'])
     p.byId.set(id, p.element());
+  p.byId.set('trialLocalBars', Object.assign(p.element('input'), {checked: true}));
   const mode = get('scoreExportBitrate'), custom = get('scoreExportCustomBitrate');
   mode.value = 'auto'; custom.value = '2';
   custom.setAttribute = (key, value) => { custom[key] = value; };
@@ -360,6 +382,8 @@ async function exportSettingsAtStart() {
       const request = calls.at(-1);
       assert.equal(request.tier, button.dataset.tier);
       assert.equal(request.meteorMotion, selected);
+      assert.equal(request.localBarTrial, get('trialLocalBars').checked);
+      get('trialLocalBars').checked = !get('trialLocalBars').checked;
       if (selected) assert.equal(request.videoBitrate, 4000000);
       else assert.equal(Object.hasOwn(request, 'videoBitrate'), false);
       assert.equal(p.win.XinScoreExportControls.status().working, true);

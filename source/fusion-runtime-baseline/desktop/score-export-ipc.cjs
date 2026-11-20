@@ -28,6 +28,12 @@ function createScoreExport(deps) {
     const tier = payload?.tier === '720p' ? '720p' : '1080p';
     const built = await scoreModelFor({trackId: payload?.trackId, useDynamics: payload?.useDynamics === true, lang: payload?.lang});
     if (!built?.ok) return refuse('no-model');
+    // 分段小节（试用）: the video follows the scene's switch (score-scene.js), candidate measures only while it is on.
+    built.model.localBarTrial = payload?.localBarTrial === true;
+    if (!built.model.localBarTrial && built.model.bars) {
+      delete built.model.bars.localRuns;
+      delete built.model.bars.candidateMeasures;
+    }
     const owner = BrowserWindow.fromWebContents(event.sender);
     const folder = exporter.defaultFolder(app) || app.getPath('home');
     const picked = await dialog.showSaveDialog(owner, {

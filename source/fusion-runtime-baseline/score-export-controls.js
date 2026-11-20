@@ -114,7 +114,8 @@
           shapes: s.shapes === true, meteorMotion: s.meteorMotion === true,
           ...(s.meteorMotion && s.transientTiming ? {transientTiming:s.transientTiming} : {}),
           mergeTimbres: s.reading?.mergeTimbres, simplify: s.reading?.simplify,
-          useDynamics: root.XinScoreDynamicsControls?.enabled?.() === true, lang: doc.documentElement.lang || undefined
+          useDynamics: root.XinScoreDynamicsControls?.enabled?.() === true,
+          localBarTrial: doc.getElementById('trialLocalBars')?.checked === true, lang: doc.documentElement.lang || undefined
         });
       } catch (error) {
         result = {ok: false, message: say('export.failed', '导出失败，没有留下文件。')};
