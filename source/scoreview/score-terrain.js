@@ -608,6 +608,10 @@
     {
       const g = back.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // batch 7: opaque everywhere first. The glass's anti-aliased edge row is half transparent, so the frame before
+      // showed through it (1-2 levels, different after playing than after a jump); the code's frame stroke covered that
+      // row, the frame picture starts just outside it.
+      if (ART) { g.fillStyle = '#141618'; g.fillRect(0, 0, L.w, L.h); }
       roundRect(g, win.x, win.y, win.w, win.h, win.r); g.clip();
       toSketch(g);
       const x0 = L.left - 10, x1 = L.right + 10;
