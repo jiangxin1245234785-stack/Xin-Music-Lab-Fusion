@@ -375,6 +375,20 @@
       const ratio = canvas.width / (canvas.clientWidth || 1);
       const context = canvas.getContext('2d');
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      // 车窗地貌 (batch 5): the top of the canvas is the carriage's LED header, so the line goes small and dim on the
+      // carriage wall at the bottom left, beside the sill's lyric strip (the look's layout: unit u = min(w / 1440,
+      // h / 900), the sill strip starts at w / 2 - 524 u and is 44 u from the bottom).
+      if (scoreStyle === 'terrain') {
+        const W = canvas.clientWidth, H = canvas.clientHeight, u = Math.min(W / 1440, H / 900);
+        const left = 14 * u, room = Math.max(40, W / 2 - 524 * u - 28 * u), y = H - 22 * u;
+        context.font = '500 11px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
+        const wide = Math.min(room, context.measureText(text).width);
+        context.fillStyle = retry ? 'rgba(242,190,96,.8)' : 'rgba(205,210,218,.42)';
+        context.textAlign = 'left';
+        context.textBaseline = 'middle';
+        context.fillText(text, left, y, room);
+        return retry ? {left: left - 4, top: y - 10, right: left + wide + 4, bottom: y + 10} : null;
+      }
       context.font = '500 12px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
       // Below the band where the app's own toast appears (the scene name on switching), so neither covers the other.
       const wide = context.measureText(text).width + 24, left = (canvas.clientWidth - wide) / 2;

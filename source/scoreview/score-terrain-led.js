@@ -8,8 +8,11 @@
 //   drawHeader(ctx, rect, {title, artist, section, nextSection, time, duration, sections, now}, opts)
 //       rect = the panel housing {x, y, w, h}. sections = [{name, start, end}] (or [start, end, name] rows as in the
 //       bundles; names must already be Chinese - see localizeSection). now defaults to time. section / nextSection
-//       default to the sections around `now`. Top row: title + artist | 本站 x 下一站 y | m:ss / m:ss.
-//       Bottom row: route strip, one station per section, equally spaced.
+//       default to the sections around `now`. Top row (batch 5): title, artist one cell after it, m:ss / m:ss at the
+//       right; a title + artist too long for the row scrolls a whole character at a time on song time (no "…"); with no
+//       artist and a title "artist - title", it is split. Bottom row: the route, one station per section, equally spaced:
+//       stations passed dim, this one brightest and boxed, the next one's name medium and its lamp blinking once a
+//       second of song time, the later ones dimmest; the line lit as far as the song has come.
 //   drawLyric(ctx, rect, {line, progress}, opts)
 //       rect = the sill strip housing. progress 0..1 = how far into the line's sung time. Empty line: draws nothing
 //       (opts.idle === 'dim' draws the housing with its unlit dots only).
@@ -27,10 +30,10 @@
   const finite = Number.isFinite;
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const FONT = 'SimSun, "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans CJK JP", "PingFang SC", "Yu Gothic", sans-serif';
-  const LEVEL = [null, [118, 58, 16], [214, 120, 34], [255, 176, 64]];
+  const LEVEL = [null, [104, 50, 14], [160, 86, 24], [214, 120, 34], [255, 176, 64]];
   const OFF = [44, 22, 8];
   const GLOW = [255, 150, 50];
-  const GLOW_ALPHA = [0, .1, .2, .3];
+  const GLOW_ALPHA = [0, .08, .13, .2, .3];
   const css = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   const ROW_PAD = 2.6; // housing height = (rows + ROW_PAD) pitches
   const CACHE_LIMIT = 10;
@@ -179,62 +182,68 @@
     const cur = S.length ? plan(100).cur : 0;
     const curName = text(d.section != null ? d.section : (S[cur] ? S[cur].name : ''));
     const nextName = text(d.nextSection != null ? d.nextSection : (S[cur + 1] ? S[cur + 1].name : (S.length ? '终点' : '')));
-    return {S, time, now, duration, plan, curName, nextName, title: text(d.title), artist: text(d.artist)};
+    const named = splitTitle(text(d.title), text(d.artist));
+    return {S, time, now, duration, plan, curName, nextName, title: named.title, artist: named.artist};
+  }
+  // no artist in the tags and a title like 周杰伦 - 七里香: the artist is the part before the dash
+  function splitTitle(title, artist) {
+    if (!artist.trim()) { const m = title.match(/^\s*(.+?)\s+[-–—]\s+(.+?)\s*$/); if (m) return {title: m[2], artist: m[1]}; }
+    return {title, artist};
+  }
+  // the title row's scroll: [title][one cell][artist] in the room left of the time; too long for it, it moves a whole
+  // character at a time, back and forth on song time (holding at both ends), as the sill's lyric does
+  function titleRow(P, cols, big) {
+    const t = fmt(P.time), tot = ' / ' + fmt(P.duration), tx = cols - 3 - width(t, big) - width(tot, big), gap = Math.round(big * .6);
+    const x0 = 1, x1 = tx - gap, room = Math.max(1, x1 - x0), cell = big;
+    const tw = width(P.title, big), aw = P.artist ? width(P.artist, big) : 0, total = tw + (aw ? cell + aw : 0);
+    let offset = 0;
+    if (total > room) {
+      const edges = [0];
+      for (const ch of chars(P.title)) edges.push(edges[edges.length - 1] + glyph(ch, big).w);
+      if (aw) { edges.push(tw + cell); for (const ch of chars(P.artist)) edges.push(edges[edges.length - 1] + glyph(ch, big).w); }
+      const over = total - room, period = Math.max(8, edges.length * .6), u = (P.time / period) % 2, k = clamp(((1 - Math.abs(u - 1)) - .1) / .8, 0, 1);
+      offset = k >= 1 ? edges.find(e => e >= over) : edges.reduce((b, e) => Math.abs(e - k * over) < Math.abs(b - k * over) ? e : b, 0);
+    }
+    return {t, tot, tx, x0, x1, tw, aw, cell, total, offset, scroll: total > room};
   }
   function headerModel(d, cols, rows, big, small) {
-    const P = headerParts(d), M = dotMap(cols, rows), gap = Math.round(big * .6), yA = 1;
-    // ---- row A
-    const t = fmt(P.time), tot = ' / ' + fmt(P.duration), tw = width(t, big), tw2 = width(tot, big);
-    const tx = cols - 3 - tw - tw2;
-    M.text(t, big, tx, yA, 3); M.text(tot, big, tx + tw, yA, 1);
-    const mx1 = Math.round(tx - gap * 1.5), half = Math.round(gap * .5), wide = Math.round(gap * 1.4);
-    const variants = [];
-    if (P.curName) {
-      variants.push([['本站', 1, half], [P.curName, 3, wide], ['下一站', 1, half], [P.nextName || '终点', 2, 0]]);
-      variants.push([['本站', 1, half], [P.curName, 3, 0]]);
-    }
-    variants.push([]);
-    const titleW = width(P.title, big), minTitle = Math.min(titleW, big * 5);
-    const wOf = v => v.reduce((s, p) => s + width(p[0], big) + p[2], 0);
-    let mid = variants[variants.length - 1];
-    for (const v of variants) if (mx1 - wOf(v) - gap - 1 >= minTitle) { mid = v; break; }
-    const mx0 = mid.length ? mx1 - wOf(mid) : mx1;
-    let x = 1;
-    const room = mx0 - gap - 1;
-    const title = fit(P.title, big, room);
-    x += M.text(title, big, x, yA, 3) + gap;
-    if (P.artist && title === P.title && x + width(P.artist, big) <= mx0 - gap) M.text(P.artist, big, x, yA, 2);
-    let mx = mx0;
-    for (const [s, l, after] of mid) mx += M.text(s, big, mx, yA, l) + after;
+    const P = headerParts(d), M = dotMap(cols, rows), yA = 1;
+    // ---- row A: title and artist at the left, the time at the right (no station call: the route shows it)
+    const A = titleRow(P, cols, big), tw = width(A.t, big), tx = A.tx;
+    M.text(A.t, big, tx, yA, 4); M.text(A.tot, big, tx + tw, yA, 1);
+    M.text(P.title, big, A.x0 - A.offset, yA, 4, A.x0, A.x1, A.scroll);
+    if (A.aw) M.text(P.artist, big, A.x0 - A.offset + A.tw + A.cell, yA, 3, A.x0, A.x1, A.scroll);
+    const title = P.title, mid = [];
     // ---- row B: the route (a song without sections has none: title and time only)
     const S = P.S, r = P.plan(cols), yL = yA + big + 2, step = r.step, sx = k => Math.round(r.x0 + step * k);
     // the parts that change by themselves while nothing else does: the running time, and the lit route ahead of the
     // current station (each redrawn on its own, over a strip that has them blank)
     const regions = {time: {x0: tx, x1: tx + tw, y0: yA, y1: yA + big}, route: null};
+    const blinkOn = Math.floor(P.time * 2) % 2 === 0; // the next station's lamp: on the first half of every song second
     if (!S.length) return {map: M, mid: mid.map(p => p[0]).join('|'), title, plan: r, labels: null, regions};
     const endX = Math.round(r.x0 + step * Math.max(1, S.length)) - 2;
     for (let xx = sx(0); xx <= endX; xx++) {
       const pos = (xx - r.x0) / step;
-      M.set(xx, yL, xx <= r.litX ? (pos >= r.cur ? 3 : 2) : 1);
+      M.set(xx, yL, xx <= r.litX ? (pos >= r.cur ? 4 : 2) : 1);
     }
     for (let k = 0; k < S.length; k++) {
-      const l = k < r.cur ? 2 : k === r.cur ? 3 : 1, x0 = sx(k);
+      const l = k < r.cur ? 2 : k === r.cur ? 4 : k === r.cur + 1 ? (blinkOn ? 4 : 1) : 1, x0 = sx(k);
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) M.set(x0 + dx, yL + dy, (k === r.cur || dx === 0 || dy === 0) ? l : 0);
-      if (k === r.cur) for (let dx = -2; dx <= 2; dx++) { M.set(x0 + dx, yL - 2, 3); M.set(x0 + dx, yL + 2, 3); }
+      if (k === r.cur) for (let dx = -2; dx <= 2; dx++) { M.set(x0 + dx, yL - 2, 4); M.set(x0 + dx, yL + 2, 4); }
     }
     for (let dy = -1; dy <= 1; dy++) M.set(endX, yL + dy, 1);
     // station names: abbreviate per station; if some cannot show even one character, only the current one is named
     const labels = S.map(s => nameCandidates(s.name).find(c => width(c, small) <= step - 3));
     const some = labels.every(Boolean);
     for (let k = 0; k < S.length; k++) {
-      const l = k < r.cur ? 2 : k === r.cur ? 3 : 1, x0 = sx(k);
+      const l = k < r.cur ? 2 : k === r.cur ? 4 : k === r.cur + 1 ? 3 : 1, x0 = sx(k);
       if (some) M.text(labels[k], small, x0 - 1, yL + 3, l, x0 - 1, x0 - 1 + Math.round(step) - 1);
       else if (k === r.cur) {
         const c = nameCandidates(S[k].name).find(s => width(s, small) <= step * 4) || chars(S[k].name)[0] || '';
         M.text(c, small, x0 - 1, yL + 3, l, 0, cols);
       }
     }
-    regions.route = {x0: sx(r.cur) + 2, x1: endX + 1, y0: yL, y1: yL + 1};
+    regions.route = {x0: sx(r.cur) + 2, x1: endX + 1, y0: yL - 1, y1: yL + 2};
     return {map: M, mid: mid.map(p => p[0]).join('|'), title, plan: r, labels: some ? labels : null, regions};
   }
   // a copy of the map with only (keep = true) or without (keep = false) the given regions
@@ -406,7 +415,8 @@
     const ins = pitch * 1.7, cols = Math.max(20, Math.floor((W - 2 * ins) / pitch));
     const P = headerParts(d), r = P.plan(cols), t = fmt(P.time);
     const layout = ['H', W, H, pitch, dpr, cols, big, small].join('|');
-    const key = [layout, P.title, P.artist, P.curName, P.nextName, t.length, fmt(P.duration), P.S.map(s => s.name).join('\u0001'), r.cur].join('|');
+    const A = titleRow(P, cols, big), blink = Math.floor(P.time * 2) % 2;
+    const key = [layout, P.title, P.artist, A.offset, P.curName, P.nextName, t.length, fmt(P.duration), P.S.map(s => s.name).join('\u0001'), r.cur].join('|');
     const grid = gridOf(W, H, pitch, cols, rows, pitch);
     let model = null;
     const full = () => model || (model = headerModel(d, cols, rows, big, small));
@@ -415,11 +425,11 @@
     if (!regs) { regs = full().regions; remember(regionCache, key, regs); }
     if (canCache === null) canCache = Boolean(context(newCanvas(1, 1)));
     if (!canCache) { // no canvas to cache into: paint the whole header straight onto the target
-      return blit(ctx, rect, key + '|' + t + '|' + r.litX, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => full().map);
+      return blit(ctx, rect, key + '|' + t + '|' + r.litX + '|' + blink, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => full().map);
     }
     const s = blit(ctx, rect, key, ['B', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => masked(full().map, [regs.time, regs.route], false));
     const a = overlay(ctx, rect, key + '|T|' + t, regs.time, pitch, grid, dpr, () => full().map);
-    const b = overlay(ctx, rect, key + '|R|' + r.litX, regs.route, pitch, grid, dpr, () => full().map);
+    const b = overlay(ctx, rect, key + '|R|' + r.litX + '|' + blink, regs.route, pitch, grid, dpr, () => full().map);
     return s === 'cold' ? 'cold' : a === 'partial' || b === 'partial' ? 'partial' : 'hit';
   }
   const regionCache = new Map();
@@ -441,7 +451,7 @@
     const key = ['L', W, H, pitch, dpr, cols, plan.x, line].join('|');
     return blit(ctx, rect, key, ['LB', W, H, pitch, dpr, cols, rows].join('|'), pitch, grid, dpr, () => {
       const M = dotMap(cols, rows);
-      if (line) M.text(line, LYRIC_SIZE, plan.x, 0, 3, plan.scroll ? 2 : 0, plan.scroll ? cols - 2 : cols, plan.scroll);
+      if (line) M.text(line, LYRIC_SIZE, plan.x, 0, 4, plan.scroll ? 2 : 0, plan.scroll ? cols - 2 : cols, plan.scroll);
       return M;
     });
   }
@@ -456,7 +466,7 @@
     rr(ctx, x - 3.5 * p, topTip - 3.5 * p, 7 * p, 4.5 * p, p); ctx.fill();
     rr(ctx, x - 4.5 * p, botTip - 1 * p, 9 * p, 5.5 * p, p); ctx.fill();
     ctx.globalCompositeOperation = 'lighter';
-    for (const [dx, dy] of dots) putDot(ctx, dx, dy, 3, p, dpr);
+    for (const [dx, dy] of dots) putDot(ctx, dx, dy, 4, p, dpr);
     ctx.restore();
   }
 
@@ -465,7 +475,7 @@
   const cacheSize = () => ({glyphs: glyphCache.size, sprites: sprites.size, strips: strips.size, bases: bases.size});
 
   const api = Object.freeze({drawHeader, drawLyric, drawNowTick, localizeSection, setCanvasFactory, clearCaches, cacheSize, warm,
-    headerModel, headerRows, lyricPlan, fit, width, glyph, dotMap, fmt, defaults: Object.freeze({big: 16, small: 12, lyricSize: LYRIC_SIZE})});
+    headerModel, headerRows, lyricPlan, fit, width, glyph, dotMap, fmt, splitTitle, defaults: Object.freeze({big: 16, small: 12, lyricSize: LYRIC_SIZE})});
   root.XinScoreTerrainLed = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

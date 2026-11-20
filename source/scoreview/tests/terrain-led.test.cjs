@@ -98,27 +98,57 @@ test('a scrolling lyric moves a whole character at a time and never shows half o
   }
 });
 
-test('the header: time text, station call and the title all land on the dot map', () => {
-  const cols = 520, rows = Led.headerRows(16, 12), M = Led.headerModel(data(104), cols, rows, 16, 12).map;
+// levels: 1 dimmest (stations ahead), 2 dim (passed), 3 medium (artist, next station), 4 brightest (title, now)
+const at = (M, x, y) => M.a[y * M.cols + x];
+const maxIn = (M, x0, x1, y0, y1) => { let m = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) m = Math.max(m, at(M, x, y)); return m; };
+
+test('the header row (batch 5): title brightest at the left, the artist one cell after it, the time at the right; no station call', () => {
+  const cols = 520, rows = Led.headerRows(16, 12), r = Led.headerModel(data(104), cols, rows, 16, 12), M = r.map;
   assert.equal(M.rows, rows);
-  assert.ok(lit(M) > 300);
-  const r = Led.headerModel(data(104), cols, rows, 16, 12);
   assert.equal(r.title, '七里香');
-  assert.match(r.mid, /本站\|副歌 1\|下一站\|间奏/); // 104 s is in 副歌 1; the next station is 间奏
-  assert.equal(Led.headerModel(data(300), cols, rows, 16, 12).mid, '本站|尾奏|下一站|终点');
+  assert.equal(r.mid, '', 'no 本站 / 下一站 words: the route shows the stations');
+  const tw = Led.width('七里香', 16);
+  assert.equal(maxIn(M, 1, 1 + tw, 1, 17), 4, 'title brightest');
+  assert.equal(maxIn(M, 1 + tw + 16, 1 + tw + 16 + Led.width('周杰伦', 16), 1, 17), 3, 'artist medium, one cell after');
+  assert.equal(maxIn(M, 1 + tw, 1 + tw + 16, 1, 17), 0, 'the cell between them is dark');
+  const t = Led.width('1:44', 16), tot = Led.width(' / 5:03', 16);
+  assert.equal(maxIn(M, cols - 3 - t - tot, cols - 3 - tot, 1, 17), 4, 'the time');
 });
 
-test('a title that does not fit is cut with an ellipsis and the artist is dropped; a short one keeps both', () => {
+test('no artist in the tags and a title "artist - title": split, title first; a real artist tag is kept as is', () => {
+  assert.deepEqual(Led.splitTitle('周杰伦 - 七里香', ''), {title: '七里香', artist: '周杰伦'});
+  assert.deepEqual(Led.splitTitle('周杰伦 - 七里香', '周杰伦'), {title: '周杰伦 - 七里香', artist: '周杰伦'});
+  assert.deepEqual(Led.splitTitle('Hey - Jude', 'The Beatles'), {title: 'Hey - Jude', artist: 'The Beatles'});
+  assert.deepEqual(Led.splitTitle('七里香', ''), {title: '七里香', artist: ''});
+  const r = Led.headerModel(data(104, {title: '周杰伦 - 七里香', artist: ''}), 520, Led.headerRows(16, 12), 16, 12);
+  assert.equal(r.title, '七里香');
+});
+
+test('a title row too long for its room scrolls a whole character at a time on song time; a short one stays put; never an ellipsis', () => {
   const long = '这是一首名字特别特别长的歌 The Quick Brown Fox Jumps Over The Lazy Dog (Live)';
-  assert.ok(Led.width(long, 16) > 330);
-  const cut = Led.fit(long, 16, 120);
-  assert.ok(cut.endsWith('…') && Led.width(cut, 16) <= 120);
-  assert.equal(Led.fit('短', 16, 120), '短');
-  assert.equal(Led.fit('长长长长长长长长长', 16, 6), '');
-  const rows = Led.headerRows(16, 12), withArtist = lit(Led.headerModel(data(104, {sections: []}), 400, rows, 16, 12).map);
-  const longTitle = lit(Led.headerModel(data(104, {sections: [], title: long}), 400, rows, 16, 12).map);
-  assert.ok(Led.headerModel(data(104, {title: long}), 330, rows, 16, 12).title.endsWith('…'));
-  assert.ok(withArtist > 0 && longTitle > 0);
+  const rows = Led.headerRows(16, 12), cols = 330;
+  const titleArea = t => Array.from(Led.headerModel(data(t, {title: long}), cols, rows, 16, 12).map.a.slice(0, 18 * cols)).join('');
+  const seen = new Set([0, 3, 5, 6, 7, 9, 12].map(titleArea));
+  assert.ok(seen.size >= 3, 'the long title moves with song time: ' + seen.size + ' positions');
+  assert.equal(titleArea(5), titleArea(5), 'the same moment, the same position');
+  const short = t => Array.from(Led.headerModel(data(t), cols, rows, 16, 12).map.a.slice(0, 18 * cols)).filter((v, i) => i % cols < 200).join('');
+  assert.equal(short(3), short(7), 'a title that fits does not move');
+  assert.ok(lit(Led.headerModel(data(104, {sections: [], title: long}), 400, rows, 16, 12).map) > 0);
+});
+
+test('stations: passed dim, this one brightest and boxed, the next one\'s name medium and its lamp blinking each song second, later ones dimmest', () => {
+  const rows = Led.headerRows(16, 12), cols = 330, yL = 1 + 16 + 2;
+  const model = t => Led.headerModel(data(t), cols, rows, 16, 12);
+  const m = model(104.2), sx = k => Math.round(m.plan.x0 + m.plan.step * k);
+  assert.equal(m.plan.cur, 2); // 副歌 1
+  assert.equal(at(m.map, sx(1), yL), 2, 'passed');
+  assert.equal(at(m.map, sx(2), yL), 4, 'this station');
+  assert.equal(at(m.map, sx(2), yL - 2), 4, 'boxed');
+  assert.equal(at(m.map, sx(3), yL), 4, 'next lamp on in the first half of the second');
+  assert.equal(at(model(104.7).map, sx(3), yL), 1, 'and off in the second half');
+  assert.equal(at(m.map, sx(4), yL), 1, 'later');
+  const name = (M, k) => maxIn(M, sx(k) - 1, sx(k) - 1 + Math.round(m.plan.step) - 1, yL + 3, rows);
+  assert.deepEqual([0, 1, 2, 3, 4].map(k => name(m.map, k)), [2, 2, 4, 3, 1]);
 });
 
 test('route labels shorten when they do not fit; with too many stations only the current one is named', () => {
