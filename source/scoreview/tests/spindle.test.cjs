@@ -207,7 +207,7 @@ test("struck lanes draw exactly as in 'two'; vocals, drums, the texture band and
     const spin = frames(ScoreView, oneLane(group), {...LOOK, ...SPIN, shapeLinks: true}, [3, 4.1, 10.2]).list;
     spin.forEach((frame, i) => assert.equal(frame.calls, two[i].calls, group));
   }
-  for (const model of [oneLane('synth'), oneLane('other')]) {
+  for (const model of [oneLane('synth'), oneLane('kazoo')]) {
     const off = frames(ScoreView, model, LOOK, [3, 10.2]).list, on = frames(ScoreView, model, {...LOOK, ...SPIN}, [3, 10.2]).list;
     on.forEach((frame, i) => assert.equal(frame.calls, off[i].calls, model.lanes[0].group));
   }
@@ -218,6 +218,12 @@ test("struck lanes draw exactly as in 'two'; vocals, drums, the texture band and
     const off = frames(ScoreView, model, look, [9.5, 10.2, 30.5]).list, on = frames(ScoreView, model, {...look, ...SPIN}, [9.5, 10.2, 30.5]).list;
     on.forEach((frame, i) => assert.equal(frame.calls, off[i].calls));
   }
+  const at = [3, 10.2], options = {...LOOK, ...SPIN};
+  const reference = frames(ScoreView, oneLane('strings'), options, at).list;
+  frames(ScoreView, oneLane('other'), options, at).list.forEach((frame, i) => {
+    assert.ok(spindles(frame).length > 0);
+    assert.deepEqual(spindles(frame), spindles(reference[i]));
+  });
 });
 
 test('the cores keep the colours, light and order of the fills (one path a layer a bucket), the effects stay; a sounding note is a spindle too', () => {

@@ -209,7 +209,7 @@
         // The recorded stem is shared data. A split timbre lane takes its share of
         // the same field, and a hidden timbre never boosts its surviving siblings.
         const weight = clamp(visible / (members.get(key) || visible || 1), 0, 1);
-        if (weight > 0) result.push({id: lane.id, group, key, level, weight, box});
+        if (weight > 0) result.push({id: lane.id, group, palette: lane.visualGroup || group, key, level, weight, box});
       }
       if (geometry.texture) {
         for (const [group, items] of levels.textures) {
@@ -262,7 +262,7 @@
       guide.rect(floor, 0, ceiling - floor, HEIGHT);
       guide.clip();
       for (const layer of layers) {
-        const {box, group, key, level, weight, db, opacity, dim, share, exposure} = layer;
+        const {box, group, palette = group, key, level, weight, db, opacity, dim, share, exposure} = layer;
         const half = (box.bottom - box.top) * unit / 2;
         const center = py((box.top + box.bottom) / 2);
         const seed = seedOf(key);
@@ -273,7 +273,7 @@
         const oneWisp = (x, y, w, h, variant, alpha) => {
           if (alpha < .008 || x - w / 2 >= ceiling || x + w / 2 <= floor) return;
           guide.globalAlpha = alpha;
-          guide.drawImage(wispSprite(group, variant), x - w / 2, y - h / 2, w, h);
+          guide.drawImage(wispSprite(palette, variant), x - w / 2, y - h / 2, w, h);
           count++;
         };
         for (let i = Math.floor(earliest / EMISSION_STEP); i * EMISSION_STEP <= Math.min(now, level.end); i++) {
@@ -366,7 +366,7 @@
         fog.setTransform(1 / FOG.scale, 0, 0, 1 / FOG.scale, 0, 0);
         let thinnest = Infinity;
         for (const layer of layers) {
-          const {box, group, level, weight, dim} = layer;
+          const {box, group, palette = group, level, weight, dim} = layer;
           const half = (box.bottom - box.top) * unit / 2, center = py((box.top + box.bottom) / 2);
           const xs = [], raw = [], grid = fogGrid(level);
           for (let x = floor; x <= span + FOG.step; x += FOG.step) {
@@ -386,7 +386,7 @@
             }
             return sum / total;
           });
-          const light = fog.createLinearGradient(floor, 0, span, 0), [smoke] = colorOf(group);
+          const light = fog.createLinearGradient(floor, 0, span, 0), [smoke] = colorOf(palette);
           for (let i = 0; i < xs.length; i += 2) {
             light.addColorStop(clamp((xs[i] - floor) / Math.max(1, span - floor), 0, 1), fogInk(smoke, strength * Math.min(1, .25 + .75 * as[i])));
           }
@@ -476,7 +476,7 @@
         const dim = focus && group !== focus ? .18 : 1;
         const level = layers.find(item => item.box === box);
         const exposure = level ? level.exposure * level.weight : 0;
-        const [, ink] = colorOf(group);
+        const [, ink] = colorOf(lane.visualGroup || group);
         ctx.save();
         ctx.beginPath();
         ctx.rect(floor, py(box.top), right - floor, py(box.bottom) - py(box.top));

@@ -59,15 +59,18 @@ class Select extends EventTarget {
   replaceChildren(option) { this.options = [option]; this.value = option.value; }
   add(option) { this.options.push(option); }
 }
-async function setup(t) {
+async function setup(t, otherRoute) {
   const audio = new Media(), select = new Select(), status = new EventTarget(), probes = [];
   const state = {track: {id: 'song'}, changes: 0, audible: audio};
   const original = 'file:///original.flac';
   const stems = ['bass', 'piano', 'drums', 'guitar'].map(name => ({name, audioUrl: 'file:///' + name + '.wav'}));
+  if (otherRoute) stems.push({name:'other',audioUrl:'file:///stems/other.flac',playbackUrl:'file:///decoded/other.wav',playbackGain:0.8});
+  const midiRequests=[], midiStatus=new EventTarget();
   global.Option = class { constructor(text, value) { this.textContent = text; this.value = value; } };
   global.document = {
     getElementById(id) {
-      return {fusionStemSelect: select, fusionStemReveal: new EventTarget(), fusionStemStatus: status}[id];
+      return {fusionStemSelect: select, fusionStemReveal: new EventTarget(), fusionStemStatus: status,
+        fusionMidiStatus: otherRoute ? midiStatus : undefined}[id];
     },
     createElement(tag) {
       assert.equal(tag, 'audio');
@@ -76,7 +79,8 @@ async function setup(t) {
       return probe;
     }
   };
-  const bridge = {readStems: async () => ({ok: true, stems})};
+  const bridge = {readStems: async () => ({ok: true, stems, otherRoute}),
+    readMidi: async (id,stem) => {midiRequests.push({id,stem}); return {ok:true,noteCount:10};}};
   const output = {
     original() { state.audible = audio; },
     prepare(media, gain) {
@@ -115,8 +119,25 @@ async function setup(t) {
     await flush();
     return media;
   }
-  return {audio, select, probes, status, original, state, controls, pick, loaded, bridge, output, stems};
+  return {audio, select, probes, status, original, state, controls, pick, loaded, bridge, output, stems,midiRequests};
 }
+
+test('the direct route auditions the genuine decoded other stem and reads its MIDI', async t => {
+  const {loaded,state,controls,midiRequests}=await setup(t, 'direct');
+  const other=await loaded('other');
+  assert.equal(state.audible,other);
+  assert.equal(other.src,'file:///decoded/other.wav');
+  assert.equal(other.inputGain,0.8);
+  assert.equal(controls.activeName(),'other');
+  assert.deepEqual(midiRequests,[{id:'song',stem:'other'}]);
+});
+
+test('the split route can audition raw other without opening the alternate MIDI', async t => {
+  const {loaded,state,midiRequests}=await setup(t, 'split');
+  const other=await loaded('other');
+  assert.equal(state.audible,other);
+  assert.deepEqual(midiRequests,[]);
+});
 
 test('cold prepare, late readiness and muted clock alignment keep the previous output advancing', async t => {
   const {audio, select, original, pick, state, controls} = await setup(t);

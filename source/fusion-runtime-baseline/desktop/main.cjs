@@ -121,7 +121,16 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   const listeningModule=require('./listening-state.cjs');
   const listeningState=listeningModule.createStore(listeningModule.rootFor(app.getPath('appData'),app.getPath('userData')));
   const dynamicsModule=require('./score-dynamics.cjs');
-  const dynamics=dynamicsModule.createService({root:dynamicsModule.rootFor(app.getPath('appData'),app.getPath('userData')),readMidi:(track,stem)=>xldAnalysis.readMidi(track,stem),profileForResult:require('../../xld-runtime-baseline/core/derived-assets.cjs').profileForResult});
+  const {createDerivedAssets,profileForResult}=require('../../xld-runtime-baseline/core/derived-assets.cjs');
+  const {readOtherRoute}=createDerivedAssets({analysisRoot:()=>fusionAnalysisRoot});
+  const {midiStemAllowed}=require('../../scoreview/adapter/track-model.cjs');
+  const dynamics=dynamicsModule.createService({root:dynamicsModule.rootFor(app.getPath('appData'),app.getPath('userData')),readMidi:(track,stem)=>xldAnalysis.readMidi(track,stem),readOtherRoute,profileForResult});
+  async function readScoreMidi(track, stem) {
+    try {
+      if (!midiStemAllowed(stem, await readOtherRoute(track))) return {ok:false,error:'midi-missing'};
+      return await xldAnalysis.readMidi(track, stem);
+    } catch (error) {return {ok:false,error:error.message};}
+  }
   app.on('before-quit',()=>dynamics.shutdown());
   // An analysis still running when XML quits (the score layers prepared in the background, or any other
   // one started here) is cancelled: its Python process is stopped and nothing half-made is kept. Once
@@ -667,7 +676,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   });
   ipcMain.handle('fusion:midi-read', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
-    return track ? xldAnalysis.readMidi(track, payload?.stem) : { ok: false, error: 'track-missing' };
+    return track ? readScoreMidi(track, payload?.stem) : { ok: false, error: 'track-missing' };
   });
   // The listening score's model for one track: its sections and chords from the bridge manifest, its notes from
   // each stem's active MIDI. Read-only; the adapter lives with the score view (source/scoreview).
@@ -680,7 +689,8 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       const adapter = require('../../scoreview/adapter/track-model.cjs');
       let manualCaptions=[],notesError=null;
       try{manualCaptions=await scoreNotes.list(track.id);}catch(error){notesError=String(error.message||error);}
-      let stems=await adapter.readStems(stem => xldAnalysis.readMidi(track, stem));
+      const otherRoute=await readOtherRoute(track);
+      let stems=await adapter.readStems(stem => xldAnalysis.readMidi(track, stem), otherRoute);
       let dynamicsHealth={enabled:payload?.useDynamics===true,state:'original',applied:[]};
       if(dynamicsHealth.enabled){try{const found=await dynamics.read(track),overlay=dynamicsModule.applyOverlay(stems,found.cache);stems=overlay.stems;dynamicsHealth={enabled:true,state:found.state,eligible:found.eligible,applied:overlay.applied,runId:found.cache?.runId||null,damaged:found.damaged};if(found.cache&&!overlay.applied.length)dynamicsHealth.state='missing';}catch(error){dynamicsHealth={enabled:true,state:'unavailable',applied:[],error:String(error.message||error)};}}
       const layersBody = require('./fixture-meter.cjs').withLocalRuns(track.id, await adapter.readLayers(loaded.filePath ? path.dirname(loaded.filePath) : null));
@@ -692,7 +702,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
         track: { id: track.id, title: track.title, artist: track.artist, album: track.album, number: track.number,
                  date: track.date, albumArtist: track.albumArtist, genre: track.genre, composer: track.composer, ...(facts&&facts.length?{facts}:{}) },
         duration: track.duration, audioUrl: loaded.audioUrl, coverUrl: loaded.coverUrl, manifest: loaded.manifest,
-        stems,
+        stems, otherRoute,
         layers: layersBody,
         vocalLine: await adapter.readVocalLine(loaded.filePath ? path.dirname(loaded.filePath) : null),manualCaptions,
         // The renderer says which language it shows (it asks again when that changes); otherwise the app's.
@@ -786,7 +796,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle('fusion:midi-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!track) return { ok: false, error: 'track-missing' };
-    const result = await xldAnalysis.readMidi(track, payload?.stem);
+    const result = await readScoreMidi(track, payload?.stem);
     if (!result.ok) return result;
     const error = await shell.openPath(result.directory);
     return { ok: !error, error: error || null };
@@ -796,11 +806,17 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if(!track)return {ok:false,error:'track-missing'};
     const base=await xldAnalysis.readStems(track);
     if(!base.ok)return base;
+    let otherRoute;
+    try {otherRoute=await readOtherRoute(track);} catch (error) {return {ok:false,error:error.message};}
     // Parts made from a refinement result (strings; winds dug out of what the strings left) are not stems: their audio
     // is the dug-out file their current MIDI was made from. A song without winds has no winds MIDI, so no entry.
     const dug=[];
-    for(const name of ['strings','winds']){const midi=await xldAnalysis.readMidi(track,name);if(midi.ok&&midi.source?.path)dug.push({name,audioUrl:pathToFileURL(midi.source.path).href});}
-    return {...base,stems:await Promise.all([...base.stems,...dug].map(xmlPlayback.describe))};
+    for(const name of ['strings','winds']) {
+      if (!midiStemAllowed(name, otherRoute)) continue;
+      const midi=await xldAnalysis.readMidi(track,name);
+      if(midi.ok&&midi.source?.path)dug.push({name,audioUrl:pathToFileURL(midi.source.path).href});
+    }
+    return {...base,otherRoute,stems:await Promise.all([...base.stems,...dug].map(xmlPlayback.describe))};
   });
   ipcMain.handle('fusion:stems-reveal', async (_event, payload) => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));

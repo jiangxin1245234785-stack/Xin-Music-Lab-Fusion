@@ -65,13 +65,15 @@ test('every group of the colour table has a drawn icon: strokes only, round ends
   }
 });
 
-test('the icons are not copies of each other', () => {
-  const shapes = GROUPS.map(group => {
+test('the icons are distinct except for pitched other, which shares the strings icon', () => {
+  const shapes = new Map(GROUPS.map(group => {
     const {surface, stats} = draw(oneLane(group), {laneLabels: 'icon'});
     const {x, y, size} = stats.labels[0];
-    return JSON.stringify(points(iconCalls(surface)[0]).map(([px, py]) => [Math.round((px - x) / size * 240), Math.round((py - y) / size * 240)]));
-  });
-  assert.equal(new Set(shapes).size, GROUPS.length);
+    return [group, JSON.stringify(points(iconCalls(surface)[0]).map(([px, py]) => [Math.round((px - x) / size * 240), Math.round((py - y) / size * 240)]))];
+  }));
+  assert.equal(shapes.get('other'), shapes.get('strings'));
+  shapes.delete('other');
+  assert.equal(new Set(shapes.values()).size, shapes.size);
 });
 
 test('an icon stays in the name column and inside its own lane; the column is no wider', () => {
@@ -214,9 +216,12 @@ test('every lane has an icon (0.22.0): a group without one takes the nearest kin
   assert.ok(!odd.surface.texts().some(item => item.text === '名字-kazoo'), '不再写整行名字');
   assert.equal(draw(oneLane('cello'), {laneLabels: 'icon'}).stats.labels[0].shown, 'icon');
   // The nearest kind: a cello lane draws the strings' icon (same pen moves as a strings lane), a kazoo the quaver.
-  const moves = group => JSON.stringify(iconCalls(draw(oneLane(group), {laneLabels: 'icon'}).surface)[0].map(call => [call.name, ...call.args.map(v => Math.round(v * 100))]));
-  assert.equal(moves('cello'), moves('strings'));
-  assert.equal(moves('kazoo'), moves('other'));
+  const moves = model => JSON.stringify(iconCalls(draw(model, {laneLabels: 'icon'}).surface)[0].map(call => [call.name, ...call.args.map(v => Math.round(v * 100))]));
+  const quaver = oneLane('other');
+  quaver.lanes[0].kind = 'melody'; // The cue group uses the generic icon; pitched other uses strings.
+  assert.equal(moves(oneLane('cello')), moves(oneLane('strings')));
+  assert.equal(moves(oneLane('kazoo')), moves(quaver));
+  assert.notEqual(moves(oneLane('kazoo')), moves(oneLane('strings')));
   // Timbre tracks shown apart: both guitar lanes by the guitar icon, numbered 1 and 2 top to bottom, no names.
   const split = draw(fullModel(), {laneLabels: 'icon', mergeTimbres: false}, 10);
   const shown = Object.fromEntries(split.stats.labels.map(item => [item.lane, [item.shown, item.number || 0]]));

@@ -33,6 +33,19 @@ test('one stem one range, near to far; drums are not a range; a stem the song la
   assert.equal(d.basis, 'levels');
 });
 
+test('a pitched other range uses the strings position and reacts to the other levels', () => {
+  const mock = (group, label, kind = 'pitched') => song({
+    lanes: [{id: group, group, kind, label, notes: notes(20, 100, .5, .4)}],
+    levels: {hop: 1, groups: {guitar: level(20, 100), winds: level(20, 100), [group]: level(20, 100)}}
+  });
+  const ranges = (group, label, kind) => terrain.inspect(frame(mock(group, label, kind), 60)).detail.ranges;
+  const synth = ranges('other', '合成');
+  assert.deepEqual(synth.map(r => r.id), ['guitar', 'winds', 'strings']);
+  assert.equal(synth[2].name, '合成');
+  assert.equal(synth[2].heightAtNow, ranges('strings', 'Strings')[2].heightAtNow);
+  assert.deepEqual(ranges('other', 'Texture', 'texture').map(r => r.id), ['guitar', 'other', 'winds']);
+});
+
 test('height follows loudness: ranges stand while their stem sounds and sink into the plain when it is quiet', () => {
   const s = song({levels: {hop: 1, groups: {bass: level(20, 100), guitar: level(20, 100), vocals: level(20, 60).map((v, i) => i >= 80 && i < 100 ? -18 : v)}}});
   const loud = terrain.inspect(frame(s, 50)).detail.ranges.find(r => r.id === 'vocals');

@@ -210,6 +210,7 @@
   // ---------- the song: stems, loudness, note texture ----------
   const songCache = new WeakMap();
   const groupOf = g => STEM_COLOR[g] ? g : 'other';
+  const scoreApi = () => globalThis.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null);
   function prefixOf(db) { const p = new Float64Array(db.length + 1); for (let i = 0; i < db.length; i++) p[i + 1] = p[i] + Math.pow(10, Math.max(Number.isFinite(db[i]) ? db[i] : -100, -100) / 10); return p; }
   function prefixAt(p, x) { const n = p.length - 1; x = clamp(x, 0, n); const i = Math.min(n - 1, Math.floor(x)); return p[i] + (x - i) * (p[i + 1] - p[i]); }
   const dbOf = v => 10 * Math.log10(Math.max(v, 1e-10));
@@ -279,10 +280,13 @@
   function songSource(song, duration) {
     const cached = songCache.get(song);
     if (cached && cached.duration === duration) return cached;
+    const other = (song.lanes || []).find(lane => scoreApi()?.isOtherMidi(lane));
+    const layerId = group => groupOf(other && group === 'other' ? 'strings' : group);
     const notes = {};
     for (const lane of Array.isArray(song.lanes) ? song.lanes : []) {
       if (!lane || lane.kind === 'drums' || lane.group === 'drums' || !Array.isArray(lane.notes)) continue;
-      const list = notes[groupOf(lane.group)] || (notes[groupOf(lane.group)] = []);
+      const id = layerId(lane.group);
+      const list = notes[id] || (notes[id] = []);
       for (const n of lane.notes) if (Array.isArray(n) && Number.isFinite(n[0]) && Number.isFinite(n[1])) list.push([n[0], Math.max(0, n[1]), Number.isFinite(n[3]) ? n[3] : 90]);
     }
     for (const id of Object.keys(notes)) notes[id].sort((a, b) => a[0] - b[0]);
@@ -295,7 +299,7 @@
       basis = 'levels';
       const hop = song.levels.hop > 0 ? song.levels.hop : 1, power = {};
       for (const k of rawIds) {
-        const id = groupOf(k), v = raw[k], p = power[id] || (power[id] = new Float64Array(v.length));
+        const id = layerId(k), v = raw[k], p = power[id] || (power[id] = new Float64Array(v.length));
         for (let i = 0; i < v.length && i < p.length; i++) p[i] += Number.isFinite(v[i]) && v[i] > -100 ? Math.pow(10, v[i] / 10) : 0;
       }
       for (const id of Object.keys(power)) { db[id] = Array.from(power[id], x => x > 0 ? 10 * Math.log10(x) : -100); hops[id] = hop; }
@@ -323,7 +327,8 @@
     const N = ids.length;
     const layers = ids.map((id, i) => {
       const d = N > 1 ? i / (N - 1) : 0, span = lerp(SPAN_NEAR, SPAN_FAR, d);
-      return {id, i, d, span, f: span / 16, dt: span * COL / M_W, pps: M_W / span, amp: lerp(150, 250, Math.pow(d, 1.1)), rw: lerp(1, .6, d), seed: 100 + i * 9,
+      const name = id === 'strings' && other ? other.label : STEM_NAME[id];
+      return {id, name, i, d, span, f: span / 16, dt: span * COL / M_W, pps: M_W / span, amp: lerp(150, 250, Math.pow(d, 1.1)), rw: lerp(1, .6, d), seed: 100 + i * 9,
         R: new Map(), P: new Map(), E: new Map()};
     });
     // drum hits for the roadside: one object per hit; crashes thinned as in the sketch (a windmill only if none in the
@@ -561,7 +566,7 @@
       if (k > R.ja && k < R.jb && hgt > 4) { rough += Math.abs(R.ys[k + 1] - 2 * R.ys[k] + R.ys[k - 1]); cnt++; }
     }
     const s = L.s, toY = y => L.win.y + (y - M_TOP) * s;
-    return {id: R.id, name: STEM_NAME[R.id], span: +R.layer.span.toFixed(2), pxPerSecond: R.layer.pps * s,
+    return {id: R.id, name: R.layer.name, span: +R.layer.span.toFixed(2), pxPerSecond: R.layer.pps * s,
       heightAtNow: (R.foot[j] - R.ys[j]) * s, footAtNow: toY(R.foot[j]), ridgeAtNow: toY(R.ys[j]), envAtNow: R.env[j],
       maxHeight: tall * s, top: toY(top), roughness: cnt ? rough / cnt : 0, x0: L.win.x + (R.x0 - M_LEFT) * s, step: COL * s,
       ridge: (from, to) => Array.from(R.ys.subarray(from, to), y => toY(y))};

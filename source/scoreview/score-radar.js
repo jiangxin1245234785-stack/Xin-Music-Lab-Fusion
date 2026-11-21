@@ -102,6 +102,7 @@
   // The channel lamps (score-radar-lamps.js: three jewel lamps a strip, red / amber / green, lit by how loud the
   // channel is against itself). Loaded before this file in the page; in Node, beside it.
   const lampsApi = () => root.XinScoreRadarLamps || (typeof require === 'function' ? (() => { try { return require('./score-radar-lamps.js'); } catch (_) { return null; } })() : null);
+  const scoreApi = () => root.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null);
   const LAMP_SIZE = 12, LAMP_GAP = 14;
   // The channel meters' scale: the needle rests at METER_ZERO_DB and reaches full scale METER_SPAN_DB above it. The
   // lamps' "sounding" gate is the same zero.
@@ -414,6 +415,8 @@
   }
   // Everything that depends only on the model, made once per model.
   function prepare(model, events) {
+    const otherLane = (model.lanes || []).find(lane => scoreApi()?.isOtherMidi(lane));
+    const channelOf = group => CAT_OF.get(otherLane && group === 'other' ? 'strings' : group);
     const duration = Number(model.track && model.track.duration) || 0;
     const steps = Math.max(2, Math.ceil(duration / GRID) + 2);
     const present = new Array(CATS.length).fill(false);
@@ -423,7 +426,7 @@
     const notes = [], drums = [];
     let longest = 0, firstNote = Infinity, lastNote = -Infinity;
     for (const e of events) {
-      const cat = CAT_OF.get(e.group);
+      const cat = channelOf(e.group);
       if (cat === undefined) continue;
       present[cat] = true;
       firstNote = Math.min(firstNote, e.start); lastNote = Math.max(lastNote, e.end);
@@ -444,7 +447,9 @@
     notes.sort((a, b) => a.start - b.start);
     drums.sort((a, b) => a.time - b.time);
     // Channel levels: the loudest member stem's dB on the grid; null when the song has no level for that channel.
-    const levels = model.levels && model.levels.groups && model.levels.hop > 0 ? model.levels : null;
+    let levels = model.levels && model.levels.groups && model.levels.hop > 0 ? model.levels : null;
+    // Meters and lamp calibration both read the existing strings channel's level.
+    if (otherLane && levels) levels = {...levels, groups: {...levels.groups, strings: levels.groups.other, violin: undefined}};
     const Lm = lampsApi(), calibration = levels && Lm ? Lm.thresholds(levels, {gateDb: METER_ZERO_DB}) : null, calibrated = CATS.map(() => null);
     const meter = CATS.map(cat => {
       if (!levels) return null;
@@ -534,7 +539,7 @@
       for (let i = 0; i < steps; i++) if (series[i] > .02) { n++; sum += series[i]; }
       return n ? {channel: c, seconds: n * GRID, mean: sum / n} : null;
     }).filter(Boolean).sort((a, b) => b.seconds - a.seconds || a.channel - b.channel).slice(0, 3);
-    return {duration, steps, present, sounding, meter, calibrated, lampCut: calibration, caution, register, contour, vocalRange, range, notes, drums, longest, usage,
+    return {duration, steps, present, sounding, meter, calibrated, lampCut: calibration, caution, register, contour, vocalRange, range, notes, drums, longest, usage, channelOf, otherLane,
       sections, kinds, chords, wheelPlan, energy, pan, firstNote, lastNote};
   }
 
@@ -1084,7 +1089,7 @@
       const bars = barGrid(env);
       const fall = Number.isFinite(env.options.radarFall) ? env.options.radarFall : .6;
       const echo = Number.isFinite(env.options.radarEcho) ? env.options.radarEcho : 1;
-      const solo = env.options.focusGroup ? CAT_OF.get(env.options.focusGroup) : undefined;
+      const solo = data.channelOf(env.options.focusGroup);
       const muted = c => solo !== undefined && c !== solo;
       const out = {kind: 'radar-echo-post', scale, origin: [ox, oy], design: [+designW.toFixed(2), DESIGN.height], wide: +wide.toFixed(2), levers: [], solo: solo === undefined ? null : CATS[solo].id};
       const s = {data, env, bars, now, fall, echo, muted, scale, ox, oy};
@@ -1402,7 +1407,9 @@
           if (depth > 0) circle(lx + lw / 2 - 2.6, knob - 2.8, 2.8, `rgba(255,255,255,${.55 * Math.min(1, depth)})`);
         }
 
-        out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other'});
+        const other = cat.id === 'strings' ? data.otherLane : null;
+        out.levers.push({channel: cat.id, x: lx - 4, y: ly - 4, width: lw + 8, height: lh + 8, up, clickable: has && cat.id !== 'other',
+          ...(other ? {group: other.group, label: other.label} : {})});
       });
       // Caution lamps.
       out.caution = {};
@@ -2478,7 +2485,7 @@
       const [ox, oy] = frame.origin, s = frame.scale, dx = (x - ox) / s, dy = (y - oy) / s;
       for (const lever of frame.levers) {
         if (dx >= lever.x && dx <= lever.x + lever.width && dy >= lever.y && dy <= lever.y + lever.height) {
-          return lever.clickable ? {kind: 'lane', group: lever.channel, label: CATS.find(c => c.id === lever.channel).strip} : null;
+          return lever.clickable ? {kind: 'lane', group: lever.group || lever.channel, label: lever.label || CATS.find(c => c.id === lever.channel).strip} : null;
         }
       }
       const box = frame.recorderBox;

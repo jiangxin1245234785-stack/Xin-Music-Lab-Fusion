@@ -614,7 +614,8 @@
       return names.length ? say('score.laneModel', '音符来自：{model}').replace('{model}', names.join(' · ')) : null;
     };
     const laneName = under => {
-      const group = say(`score.lane.${under.group}`, under.label), model = laneModel(under);
+      const group = under.group === 'other' && !under.texture ? under.label : say(`score.lane.${under.group}`, under.label);
+      const model = laneModel(under);
       // One instrument of a part (model lane id 'winds/3'): the part, then the instrument.
       const single = shownModel && under.label && String(under.id || '').includes('/') && shownModel.lanes.some(lane => lane.id === under.id);
       const name = single && under.label !== group ? `${group} · ${under.label}` : group;

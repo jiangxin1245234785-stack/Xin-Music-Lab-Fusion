@@ -11,6 +11,26 @@ const view = (model, options, size = [800, 400]) => {
   return {surface, view: ScoreView.create(surface.canvas, model, () => 0, {...BENCH, ...options})};
 };
 
+test('pitched other borrows strings rendering while keeping its lane identity and hit target', () => {
+  const base = fullModel(), notes = [[1, 2, 65, 100], [4, 1, 66, 90]];
+  const make = (group, label) => {
+    const result = view({...base, lanes: [{id: group, group, kind: 'pitched', label, notes}]});
+    result.surface.canvas.getContext().clearRect = () => {};
+    return result;
+  };
+  const strings = make('strings', 'Strings').view.materialFrame(2, 'mist');
+  const synth = make('other', '合成').view;
+  const frame = synth.materialFrame(2, 'mist');
+  const a = strings.geometry.lanes[0], b = frame.geometry.lanes[0];
+  assert.deepEqual(b.lane.color, a.lane.color);
+  assert.equal(b.lane.visualGroup, 'strings');
+  assert.deepEqual(frame.parts(b).map(part => part.voice), strings.parts(a).map(part => part.voice));
+  assert.equal(synth.hit(30, (b.top + b.bottom) / 2).group, 'other');
+  assert.equal(synth.lanes()[0].label, '合成');
+  const texture = {id: 'texture', group: 'other', kind: 'texture', level: {hop: 1, db: [-25, -15]}};
+  assert(view({...base, lanes: [texture]}, {showTexture: true}).view.texture(), 'legacy texture keeps its band');
+});
+
 test('the defaults are what gate one decided', () => {
   const {windowSeconds, playhead, simplify, mergeTimbres} = ScoreView.DEFAULTS;
   assert.deepEqual({windowSeconds, playhead, simplify, mergeTimbres},

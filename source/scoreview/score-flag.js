@@ -39,10 +39,11 @@
     return low;
   }
   const eventTime = event => event.start;
+  const scoreApi = () => globalThis.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null);
   const bandKey = lane => {
     if (lane.kind === 'drums') return 'drums';
     const group = lane.group || String(lane.id || '').split('/')[0];
-    if (group === 'violin') return 'strings';
+    if (group === 'violin' || scoreApi()?.isOtherMidi(lane)) return 'strings';
     return Object.hasOwn(materials, group) ? group : 'other';
   };
   function copyEvents(lanes) {
@@ -128,9 +129,10 @@
     }
     const bands = Object.keys(materials).flatMap(key => {
       const lanes = grouped.get(key) || [];
+      const other = key === 'strings' && lanes.some(lane => scoreApi()?.isOtherMidi(lane));
       const events = copyEvents(lanes);
       const texture = textures.get(key);
-      const recording = recordedLevel(song,key,texture);
+      const recording = recordedLevel(song,other ? 'other' : key,texture);
       // A named audible stem can supply the cloth width even when its transcription is absent.
       // The residual mix stays out of a score with individual parts.
       const audible = recording && (key !== 'other' || grouped.size === 0) &&
@@ -146,7 +148,7 @@
         Number.isFinite(lane.contour.start) && Array.isArray(lane.contour.midi))?.contour;
       let latestEnd = 0;
       const ends = events.map(event => (latestEnd = Math.max(latestEnd, event.end)));
-      return [{ key, colors, events, ends, range, contour, source: levelSource(recording, events, duration) }];
+      return [{ key, group: other ? 'other' : key, colors, events, ends, range, contour, source: levelSource(recording, events, duration) }];
     });
     songs.set(song, { duration, bands });
     return bands;
@@ -765,8 +767,8 @@
     return Math.floor(cs/6000)+':'+String(Math.floor(cs/100)%60).padStart(2,'0')+'.'+String(cs%100).padStart(2,'0');
   }
   const hidden = new Set(Array.isArray(frame.hidden) ? frame.hidden : []);
-  const shown = (band, note) => !hidden.has(band.key) && (!note || (!hidden.has(note.group) && !hidden.has(note.lane)));
-  const focused = (band, note) => !frame.focusGroup || frame.focusGroup === band.key ||
+  const shown = (band, note) => !hidden.has(band.key) && !hidden.has(band.group) && (!note || (!hidden.has(note.group) && !hidden.has(note.lane)));
+  const focused = (band, note) => !frame.focusGroup || frame.focusGroup === band.key || frame.focusGroup === band.group ||
     frame.focusGroup === note?.group || frame.focusGroup === note?.lane;
   const progress = note => note.percussive ? Number(time >= note.start) : clamp((time - note.start) / note.length);
   const active = bands.flatMap(b => b.visible.filter(note => shown(b,note) && (note.percussive

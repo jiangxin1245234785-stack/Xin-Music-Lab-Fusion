@@ -36,6 +36,6 @@ assert.equal(none.health.lanes.winds.ok, false);
 
 const read = rel => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 assert.match(read('stem-controls.js'), /'strings','winds'\]/, 'the stem selector lists winds');
-assert.match(read('desktop/score-dynamics.cjs'), /\['guitar','strings','winds','drums','bass','piano'\]/, 'the loudness layer covers winds');
-assert.match(read('desktop/main.cjs'), /for\(const name of \['strings','winds'\]\)\{const midi=await xldAnalysis\.readMidi\(track,name\)/, 'audition offers the dug-out winds audio');
+assert.match(read('desktop/score-dynamics.cjs'), /for\(const stem of \[[^\]]*'winds'[^\]]*\]\)/, 'the loudness layer covers winds');
+assert.match(read('desktop/main.cjs'), /for\(const name of \['strings','winds'\]\)\s*\{\s*if \(!midiStemAllowed\(name, otherRoute\)\) continue;\s*const midi=await xldAnalysis\.readMidi\(track,name\)/, 'audition offers the dug-out winds audio on the split route');
 console.log('winds score: PASS (winds lanes per instrument in the 管乐 group between strings and bass, model on each lane, none without winds MIDI, audition / selector / loudness lists)');

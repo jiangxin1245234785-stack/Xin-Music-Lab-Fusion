@@ -37,7 +37,7 @@ DRUM_CLASSES = {
 DRUM_ROUTES = ('kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride')
 
 #: Stems the MIDI backends can produce. Used only to warn about unexpected track names.
-STEMS = frozenset({'bass', 'piano', 'guitar', 'strings', 'winds', 'drums', 'vocals'})
+STEMS = frozenset({'bass', 'piano', 'guitar', 'strings', 'winds', 'drums', 'vocals', 'other'})
 
 #: Notes shorter than this are transcription artefacts; real exports contain 8 ms notes
 #: that render as clicks (SPEC §9).

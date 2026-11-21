@@ -83,6 +83,29 @@ test('levers: each channel reports its place; a click is that channel\'s solo; a
   assert.equal(solo.meters.bass, 0);
 });
 
+test('pitched other reuses the strings ring, meter, calibration and lever without adding a channel', () => {
+  const db = Array.from({length: 64}, (_, i) => i % 2 ? -16 : -30);
+  const mock = (group, label) => post(steady([
+    {id: group, group, label, kind: 'pitched', notes: [[1, 4, 60, 100]]}
+  ], 64, {levels: {hop: 1, groups: {[group]: db}}}));
+  const original = mock('strings', 'Strings').frame(2).motion;
+  const {frame, view, canvas} = mock('other', '合成');
+  const synth = frame(2).motion, lever = synth.levers.find(l => l.channel === 'strings');
+  assert.equal(synth.levers.length, 7);
+  assert.equal(synth.echoes, original.echoes);
+  assert(synth.echoes > 0 && synth.meters.strings > 0);
+  assert.deepEqual(synth.meters, original.meters);
+  assert.deepEqual(synth.lamps, original.lamps);
+  const unit = canvas.clientHeight / 1080;
+  const x = (synth.origin[0] + (lever.x + lever.width / 2) * synth.scale) * unit;
+  const y = (synth.origin[1] + (lever.y + lever.height / 2) * synth.scale) * unit;
+  assert.deepEqual(view.hit(x,y), {kind: 'lane', group: 'other', label: '合成'});
+  view.setOptions({...options, focusGroup: 'other'});
+  assert.equal(frame(2).motion.solo, 'strings');
+  const texture = steady([{id: 'texture', group: 'other', kind: 'texture', level: {hop: 1, db}}], 64, {levels: {hop: 1, groups: {other: db}}});
+  assert.equal(post(texture).frame(2).motion.levers.find(l => l.channel === 'strings').up, false);
+});
+
 test('chord quality lamps cover every suffix the library holds; sections light their kind', () => {
   const lamps = label => [...(Radar.chordParts(label)?.lamps || [])].sort().join(' ');
   assert.equal(lamps('C'), 'MAJ');

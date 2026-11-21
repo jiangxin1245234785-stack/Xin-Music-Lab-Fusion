@@ -43,7 +43,7 @@ function spellPitch(midi,flats=true){
     const paperCache=new Map(),spriteCache=new Map(),staffCache=new Map();
     let W=1920,H=1080,options=initial,cover=null,lyrics=null,last=null;
     let dbBoundsModel=null,dbBounds=null;
-    let names=[],groups=[],scoreEvents=[],events=[],beats=[],downbeats=[],longest=0,now=0,motion=null;
+    let names=[],groups=[],sourceGroups=[],scoreEvents=[],events=[],beats=[],downbeats=[],longest=0,now=0,motion=null;
     let viewport={width:1280,height:720,unit:1.5},preparedWindow=[];
 
     function line(x,y,X,Y,color,width=1) {
@@ -83,7 +83,7 @@ function spellPitch(midi,flats=true){
       if(paperCache.size>4)paperCache.clear();paperCache.set(key,cached);
     }
     function rebuild() {
-      names=[];groups=[];events=[];scoreEvents=[];longest=0;staffCache.clear();
+      names=[];groups=[];sourceGroups=[];events=[];scoreEvents=[];longest=0;staffCache.clear();
       const laneMap=new Map();
       for(const lane of model.lanes||[]) {
         if((options.hidden||[]).includes(lane.id))continue;
@@ -92,7 +92,8 @@ function spellPitch(midi,flats=true){
         if(!notes.length)continue;
         const key=options.mergeTimbres===false?lane.id:group;
         if(!laneMap.has(key)){
-          laneMap.set(key,names.length);groups.push(group);
+          laneMap.set(key,names.length);sourceGroups.push(group);
+          groups.push(root.XinScoreView.isOtherMidi(lane)?'strings':group);
           names.push(String(options.mergeTimbres===false?lane.label||group:lane.groupLabel||group).toUpperCase());
         }
         const band=laneMap.get(key);
@@ -109,7 +110,7 @@ function spellPitch(midi,flats=true){
         }
       }
       scoreEvents=root.XinScoreView.canonicalOnsets(scoreEvents).map(e=>({...e,time:e.start,duration:e.end-e.start}));
-      if(!names.length){names=['SCORE'];groups=['other'];}
+      if(!names.length){names=['SCORE'];groups=['other'];sourceGroups=['other'];}
       events.sort((a,b)=>a.time-b.time);
       const strokes=new Map();
       for(const event of scoreEvents){
@@ -519,7 +520,7 @@ function spellPitch(midi,flats=true){
         const mapped=Math.abs(shift)<=1?shift*.78:Math.sign(shift)*(.78+.22*(1-1/Math.abs(shift)));
         return midpoint-row*.414*mapped;
       };
-      const ticks=printTicks(start,end),focus=band=>!options.focusGroup||groups[band]===options.focusGroup?1:.32;
+      const ticks=printTicks(start,end),focus=band=>!options.focusGroup||sourceGroups[band]===options.focusGroup?1:.32;
       p.fillStyle='#2445ab0a';p.fillRect(margin,top,left-margin,bottom-top);
       printColorRegister(margin,left,right,top,bottom,row);
       for(let band=0;band<names.length;band++){
@@ -678,9 +679,10 @@ function spellPitch(midi,flats=true){
       theatreEvents=scoreEvents;
       const levelsByGroup=new Map(),contourByLane=new Map();
       for(const lane of model.lanes||[])if(lane.group==='vocals')contourByLane.set(lane.id,theatreContour(lane));
-      theatreCast=groups.map(kind=>{
-        if(!levelsByGroup.has(kind))levelsByGroup.set(kind,theatreLevels(kind));
-        return {kind,notes:[],maxEnd:[],phrases:[],levels:levelsByGroup.get(kind),laneIds:new Set()};
+      theatreCast=groups.map((kind,index)=>{
+        const source=sourceGroups[index];
+        if(!levelsByGroup.has(source))levelsByGroup.set(source,theatreLevels(source));
+        return {kind,notes:[],maxEnd:[],phrases:[],levels:levelsByGroup.get(source),laneIds:new Set()};
       });
       for(const event of scoreEvents){const player=theatreCast[event.band];player.notes.push(event);player.laneIds.add(event.lane);}
       for(const player of theatreCast){

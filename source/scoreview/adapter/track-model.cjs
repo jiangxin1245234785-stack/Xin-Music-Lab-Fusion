@@ -42,8 +42,9 @@ const CONTRACT = 'xin.score-view/1';
 // Top to bottom on screen, as gate one settled it.
 const STEMS = [
   ['vocals', '人声', 'melody'], ['guitar', '吉他', 'pitched'], ['piano', '钢琴', 'pitched'],
-  ['strings', '弦乐', 'pitched'], ['winds', '管乐', 'pitched'], ['bass', '贝斯', 'pitched'], ['drums', '鼓', 'drums']
+  ['other', '合成', 'pitched'], ['strings', '弦乐', 'pitched'], ['winds', '管乐', 'pitched'], ['bass', '贝斯', 'pitched'], ['drums', '鼓', 'drums']
 ];
+const midiStemAllowed = (stem, route) => route === 'direct' ? stem !== 'strings' && stem !== 'winds' : stem !== 'other';
 // General MIDI percussion -> the seven rows of the drum lane (the same table memesynth uses).
 const DRUM_ROWS = ['kick', 'snare', 'hihat', 'openhat', 'tom', 'crash', 'ride'];
 const DRUM_CLASS = {
@@ -106,10 +107,11 @@ function notesOf(raw) {
   return notes.sort((a, b) => a[0] - b[0] || a[2] - b[2]);
 }
 
-function lanesOf(stems, health) {
+function lanesOf(stems, health, route) {
   const lanes = [];
   health.lanes = {};
   for (const [stem, label, kind] of STEMS) {
+    if (!midiStemAllowed(stem, route)) continue;
     const entry = stems && stems[stem];
     const notes = notesOf(entry && entry.notes);
     if (!notes.length) { health.lanes[stem] = {ok: false, why: entry && entry.error ? String(entry.error) : '没有转写'}; continue; }
@@ -127,7 +129,7 @@ function lanesOf(stems, health) {
       health.lanes[stem] = {ok: true, engine: meta.engine, notes: hits.length, unknownPitches: unknown};
     } else {
       const parts=Array.isArray(entry.instruments)&&entry.instruments.reduce((n,p)=>n+(p.notes||[]).length,0)===(entry.notes||[]).length?entry.instruments.filter(p=>p.notes.length):[];
-      if(parts.length>1)for(const part of parts){
+      if(parts.length>1 && stem!=='other')for(const part of parts){
         lanes.push({id:stem+'/'+part.index,label:partLabel(part,label),kind,group:stem,groupLabel:label,notes:notesOf(part.notes),meta:{...meta,instrumentIndex:part.index,program:part.program,instrumentName:part.name}});
       }else {
         const part=parts[0];
@@ -182,8 +184,10 @@ function vocalLineInto(lanes, line, health) {
 
 // `layers`: the body of score-layers.json, or nothing. Each layer is taken only if it has the
 // shape the core draws; the reason a layer is missing is kept for the host to show.
-function layersInto(model, layers, health) {
+function layersInto(model, layers, health, route) {
   const numbers = list => Array.isArray(list) && list.every(finite);
+  const visibleLevel = (name, row) => numbers(row) && row.length &&
+    (route !== 'direct' || !['strings', 'violin', 'winds'].includes(name));
   // Whether the analysis has been run at all: a host offers to run it only when it has not.
   health.layersRun = Boolean(layers);
   const none = name => (layers && layers.missing && layers.missing[name]) || (layers ? '这一层没有算出来' : '还没有跑过「谱面层」分析');
@@ -204,7 +208,7 @@ function layersInto(model, layers, health) {
   } else health.energy = {ok: false, why: none('energy')};
   const levels = layers && layers.levels;
   const groups = levels && levels.groups && typeof levels.groups === 'object'
-    ? Object.fromEntries(Object.entries(levels.groups).filter(([, row]) => numbers(row) && row.length)) : {};
+    ? Object.fromEntries(Object.entries(levels.groups).filter(([name, row]) => visibleLevel(name, row))) : {};
   if (levels && finite(levels.hop) && levels.hop > 0 && Object.keys(groups).length) {
     model.levels = {hop: levels.hop, groups};
     health.levels = {ok: true, groups: Object.keys(groups)};
@@ -213,7 +217,7 @@ function layersInto(model, layers, health) {
     const pan = levels.pan;
     if (pan && typeof pan === 'object' && finite(pan.hop) && pan.hop > 0) {
       const panGroups = pan.groups && typeof pan.groups === 'object'
-        ? Object.fromEntries(Object.entries(pan.groups).filter(([, row]) => numbers(row) && row.length)) : {};
+        ? Object.fromEntries(Object.entries(pan.groups).filter(([name, row]) => visibleLevel(name, row))) : {};
       const mix = numbers(pan.mix) && pan.mix.length ? pan.mix : null;
       if (mix || Object.keys(panGroups).length) model.levels.pan = {hop: pan.hop, groups: panGroups, mix};
     }
@@ -231,6 +235,10 @@ const TEXTURE_LABEL = {zh: '其它', en: 'Other'};
 // An 'other' that never rises above it would only be an empty strip with an icon: no lane then (SPEC-FIX.md §8.3).
 const TEXTURE_FLOOR = -50;
 function textureInto(model, lang, health) {
+  if (model.lanes.some(lane => lane.id === 'other' && lane.kind === 'pitched')) {
+    health.texture = {ok: false, why: '已显示合成音符'};
+    return;
+  }
   if (!model.levels) { health.texture = {ok: false, why: '没有分轨响度层'}; return; }
   const row = model.levels.groups.other;
   if (!Array.isArray(row) || !row.length) { health.texture = {ok: false, why: '响度层里没有「其它」分轨'}; return; }
@@ -267,7 +275,7 @@ function rolesInto(model, health) {
 //           captionStyle: 'mark' (default since 2026-11-14, adapter/cues.cjs) | 'sentence' (the rule sentences)}
 function modelFrom(input) {
   const health = {};
-  const lanes = lanesOf(input.stems, health);
+  const lanes = lanesOf(input.stems, health, input.otherRoute);
   vocalLineInto(lanes, input.vocalLine, health);
   if (!lanes.length) return {ok: false, error: 'score-no-notes', health};
   const manifest = input.manifest || {};
@@ -294,7 +302,7 @@ function modelFrom(input) {
   if (sections) model.sections = sections;
   if (input.coverUrl) { model.cover = {src: String(input.coverUrl)}; health.cover = {ok: true}; }
   else health.cover = {ok: false, why: '专辑文件夹里没有封面图片'};
-  layersInto(model, input.layers, health);
+  layersInto(model, input.layers, health, input.otherRoute);
   textureInto(model, input.lang, health);
   rolesInto(model, health);
   // Captions say what the notes and sections do, so they come last, from the finished model.
@@ -312,9 +320,10 @@ function modelFrom(input) {
 // Reads each stem's notes through the host's own "active MIDI of this stem" lookup, so the
 // score shows exactly the transcription XLD and XML consider current.
 //   readMidi(stem) -> the record XML's `fusion:midi-read` returns ({ok, directory, notesFile, engine, runId} | {ok: false, error})
-async function readStems(readMidi) {
+async function readStems(readMidi, route) {
   const stems = {};
   for (const [stem] of STEMS) {
+    if (!midiStemAllowed(stem, route)) continue;
     try {
       const record = await readMidi(stem);
       if (!record || !record.ok) { stems[stem] = {error: record && record.error || 'midi-missing'}; continue; }
@@ -376,4 +385,4 @@ async function readVocalLine(directory, xld = loadXld()) {
   }
 }
 
-module.exports = {partLabel, TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS};
+module.exports = {partLabel, TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, midiStemAllowed, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS};

@@ -1060,6 +1060,8 @@ function canonicalOnsets(rows) {
 
   // --- model ---------------------------------------------------------------
 
+  const isOtherMidi = lane => lane?.group === 'other' && lane.kind === 'pitched' && Boolean(lane.notes?.length);
+
   function prepareLane(lane, index) {
     if (!isObject(lane)) return null;
     const id = typeof lane.id === 'string' && lane.id ? lane.id : `lane-${index}`;
@@ -1081,9 +1083,10 @@ function canonicalOnsets(rows) {
       const name = [instrument.instrumentName, lane.label, id].join(' ');
       const pluckedString = /pizz(?:icato)?\b|\bharp\b|orchestral_harp|拨奏|拨弦|竖琴/i.test(name) ||
         instrument.program === 45 || instrument.program === 46;
-      const skyVoice = STRUCK_GROUPS.includes(group) || (SPINDLE_GROUPS.includes(group) && pluckedString)
-        ? 'meteor' : group === 'winds' ? 'wind' : group === 'strings' || group === 'violin' ? 'bow' : 'line';
-      return {...base, notes, contour, skyVoice, ...(leadLines && leadLines.length ? {leadLines} : {})};
+      const visualGroup = isOtherMidi({...base, notes}) ? 'strings' : group;
+      const skyVoice = STRUCK_GROUPS.includes(visualGroup) || (SPINDLE_GROUPS.includes(visualGroup) && pluckedString)
+        ? 'meteor' : visualGroup === 'winds' ? 'wind' : visualGroup === 'strings' || visualGroup === 'violin' ? 'bow' : 'line';
+      return {...base, notes, contour, visualGroup, skyVoice, ...(leadLines && leadLines.length ? {leadLines} : {})};
     }
     if (lane.kind === 'texture') {
       const level = isObject(lane.level) && finite(lane.level.hop) && lane.level.hop > 0 && Array.isArray(lane.level.db) && lane.level.db.length
@@ -1146,7 +1149,7 @@ function canonicalOnsets(rows) {
     for (const lane of lanes) {
       const position = inGroup.get(lane.group) || 0;
       inGroup.set(lane.group, position + 1);
-      lane.groupColor = parseHex(hue.get(lane.group));
+      lane.groupColor = parseHex(GROUP_COLORS[lane.visualGroup] || hue.get(lane.group));
       lane.color = mix(lane.groupColor, SHADES[position % SHADES.length]);
     }
 
@@ -1232,6 +1235,7 @@ function canonicalOnsets(rows) {
     const add = (id, label, kind, members, color) => {
       const visible = members.filter(lane => !hidden.has(lane.id));
       const entry = {id, label, kind, color, lit: mix(color, 0.55), group: members[0].group,
+                     visualGroup: members[0].visualGroup || members[0].group,
                      members: members.map(lane => lane.id),
                      visible: visible.length > 0, count: 0, shown: 0, removed: null};
       display.push(entry);
@@ -1273,7 +1277,7 @@ function canonicalOnsets(rows) {
       entry.shown = notes.length;
       entry.set = noteSet(notes);
       if (options.weakNoteHints && entry.group === 'piano') entry.weak = weakPianoNotes(notes, prepared.localLevels);
-      entry.strands = SPINDLE_GROUPS.includes(entry.group) ? strandsOf(entry.set) : null;
+      entry.strands = SPINDLE_GROUPS.includes(entry.visualGroup) ? strandsOf(entry.set) : null;
       // The shapes showRoles draws, made once here from the notes as shown: blocks, and links between lead notes.
       if (entry.set.role) Object.assign(entry, shapesOf(entry.set, [].concat(...visible.map(lane => lane.leadLines || []))));
       entry.contour = visible.length === 1 ? visible[0].contour : null;
@@ -2514,9 +2518,9 @@ function canonicalOnsets(rows) {
       const attacks = options.attackWeight ? [] : null;
       const hints = lane.weak ? [] : null;
       const thickness = box.thickness, half = thickness / 2;
-      const weighted = options.pitchWeight && WEIGHT_GROUPS.includes(lane.group);
+      const weighted = options.pitchWeight && WEIGHT_GROUPS.includes(lane.visualGroup);
       const thinnest = Math.min(thickness, lane.kind === 'melody' ? 3.5 : 2);
-      const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.group);
+      const spindle = options.showShapes && options.shapeSet === 'spindle' && SPINDLE_GROUPS.includes(lane.visualGroup);
       const linked = spindle && options.shapeLinks && lane.strands && lane.strands.links.length > 0;
       const joins = linked ? [[], [], []] : null;
       const extra = frameFx ? {set, thickness, halos: [], glow: [], shimmer: [], near: [], sound: [], burnt: [], burning: []} : null;
@@ -2575,7 +2579,7 @@ function canonicalOnsets(rows) {
       if (blocked) drawBlocks(box, now, line, pps, stats);
       if (shapes && shapes.links && shapes.links.length) drawLinks(box, now, line, pps, stats);
       // showShapes: a struck lane's notes as head and tapering body, in the same buckets, colours and light.
-      const shape = spindle ? 'spindle' : options.showShapes ? SHAPE_BY_GROUP[lane.group] : null;
+        const shape = spindle ? 'spindle' : options.showShapes ? SHAPE_BY_GROUP[lane.visualGroup] : null;
       const paint = spindle ? (list, colour, light, floor, ends) => {
         fillSpindles(list, rgba(colour, round3(Math.max(floor, light * SPINDLE.halo))), 'halo', pps);
         fillSpindles(list, rgba(colour, light), 'core', pps, ends);
@@ -3107,7 +3111,7 @@ function canonicalOnsets(rows) {
       }
       for (const [index, box] of geometry.lanes.entries()) {
         const {lane} = box;
-        const icon = options.laneLabels === 'icon' ? iconFor(lane.group) : null;
+        const icon = options.laneLabels === 'icon' ? iconFor(lane.visualGroup) : null;
         const number = icon && groupCount.get(lane.group) > 1 ? groupRank[index] : 0;
         // The lane a mark names glows in its own colour as the mark lights, then settles.
         const flash = frameMark && frameMark.flash > 0 && frameMark.cue.object === groupOf(lane) ? frameMark.flash : 0;
@@ -4250,7 +4254,7 @@ function canonicalOnsets(rows) {
   }
 
   return Object.freeze({
-    create, swellOf, canonicalOnsets, simplifyNotes,
+    create, swellOf, canonicalOnsets, simplifyNotes, isOtherMidi,
     SHORT_NOTE, NIGHT,
     drumKit: Object.freeze({gaps: kitGaps, rows: DRUM_KIT.rows, center: kitCenter, size: kitSize, mark: kitMark, row: kitRow}), drumAccents, smoothChords, toneNames, noteName, transientTiming, CONTRACT, VERSION,
     DEFAULTS, SIMPLIFY, STRUCK_GROUPS, DRUM_ACCENT, CHORD_SMOOTHING, DRAWN_LAYERS, FX_PRESETS, SWELL, SWELL_QUIET, TEXTURE, ROLES, SHAPES, SHAPE_BY_GROUP, SPINDLE, SPINDLE_GROUPS, STRANDS, PITCH_WEIGHT, WEIGHT_GROUPS, pitchWeightOf, erbSemitones,

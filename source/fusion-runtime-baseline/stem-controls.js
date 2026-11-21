@@ -19,7 +19,8 @@
     const stemSource = name => result?.stems?.find(stem => stem.name === name);
     const playbackUrl = stem => stem?.playbackUrl || stem?.audioUrl;
     let midiResult = null, midiSequence = 0;
-    const hasMidiStem = () => result?.ok && ['bass', 'piano', 'guitar', 'drums'].includes(select.value);
+    const hasMidiStem = () => result?.ok && (['bass', 'piano', 'guitar', 'drums'].includes(select.value) ||
+      (select.value === 'other' && result.otherRoute === 'direct'));
     // Kept in step with MANUAL_ENGINE in xld-runtime-baseline/core/derived-assets.cjs; a renderer cannot require
     // it, so tests/midi-revision-record.cjs pins the two together rather than trusting them to stay equal.
     const MANUAL_ENGINE = 'manual-revision';

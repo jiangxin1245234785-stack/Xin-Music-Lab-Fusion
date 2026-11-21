@@ -16,6 +16,9 @@ import numpy as np
 import soundfile
 
 
+STEM_VOICE_FALLBACKS = {'winds': 'vocals', 'other': 'strings'}
+
+
 class KitError(Exception):
     """Raised with every problem found, so one run reports them all (SPEC §5)."""
 
@@ -70,7 +73,7 @@ class Kit:
         if route in self.voices:
             return self.voices[route]
         family = route.split('/')[0]
-        return self.voices.get(family) or (self.voices.get('vocals') if family == 'winds' else None)
+        return self.voices.get(family) or self.voices.get(STEM_VOICE_FALLBACKS.get(family))
 
 
 def load_sample_audio(path, sample_rate):

@@ -11,6 +11,7 @@ not of a fixture we wrote ourselves. They skip when the artifact tree is absent.
 import sys
 import tempfile
 from pathlib import Path
+from dataclasses import replace
 
 import numpy as np
 import pretty_midi
@@ -20,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from memesynth.kit import KitError, load_kit  # noqa: E402
+from memesynth.kit import KitError, Voice, load_kit  # noqa: E402
 from memesynth.render import peak_factor, pitch_to_hz, render, resample, to_stereo  # noqa: E402
 from memesynth.score import DRUM_CLASSES, DRUM_ROUTES, normalise_route, read_score  # noqa: E402
 
@@ -137,7 +138,7 @@ def _():
     score = read_score(found[0])
     stems = {route.split('/')[0] for route in score.routes}
     assert 'drums' in stems, stems
-    assert stems <= {'bass', 'piano', 'guitar', 'strings', 'drums'}, stems
+    assert stems <= {'bass', 'piano', 'guitar', 'strings', 'drums', 'other'}, stems
     assert not score.warnings, score.warnings
     drum_routes = {route.split('/')[1] for route in score.routes if route.startswith('drums/')}
     assert drum_routes <= set(DRUM_ROUTES), drum_routes
@@ -214,6 +215,28 @@ def _():
             '"voices": {"bass": {"sample": "a"}}}', encoding='utf-8')
         kit = load_kit(directory / 'kit.json', sample_rate=RATE)
     assert abs(kit.samples['a'].audio.size - RATE) < 10, kit.samples['a'].audio.size
+
+
+@check('other keeps its own route and renders with the strings voice')
+def _():
+    with tempfile.TemporaryDirectory() as box:
+        path = Path(box) / 'merged.mid'
+        midi = pretty_midi.PrettyMIDI()
+        track = pretty_midi.Instrument(program=0, name='other')
+        track.notes.append(pretty_midi.Note(velocity=100, pitch=57, start=0.0, end=0.5))
+        midi.instruments.append(track)
+        midi.write(str(path))
+        score = read_score(path)
+        kit = synthetic_kit(box)
+    assert score.routes == {'other': 1} and not score.warnings
+    assert kit.resolve('other') is kit.resolve('strings') is None
+    strings = Voice(route='strings', sample='lead')
+    kit = replace(kit, voices={**kit.voices, 'strings': strings})
+    assert kit.resolve('other') is strings
+    assert kit.resolve('other/overlap 2') is strings
+    result = render(score, kit)
+    assert set(result.stems) == {'other'}
+    assert np.max(np.abs(result.stems['other'])) > 0.1
 
 
 # --- render layer ----------------------------------------------------------------

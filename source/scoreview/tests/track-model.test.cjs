@@ -143,11 +143,39 @@ test('stem notes are read through the host\'s own lookup, one stem at a time, an
     return {ok: false, error: 'midi-missing'};
   });
   fs.rmSync(folder, {recursive: true, force: true});
-  assert.deepEqual(asked, STEMS);
+  assert.ok(STEMS.includes('other'));
+  assert.deepEqual(asked, STEMS.filter(stem => stem !== 'other'));
   assert.deepEqual(read.bass, {notes: [note(0, 1, 40)], engine: 'bass-highres', runId: 'run'});
   assert.equal(read.piano.error, 'ENOENT');
   assert.equal(read.guitar.error, 'boom');
   assert.equal(read.drums.error, 'midi-missing');
+});
+
+test('the direct route has one other score lane and omits existing split results and duplicate texture', async () => {
+  const groups = {other: [-20], violin: [-21], strings: [-22], winds: [-25], bass: [-18]};
+  const layers = {levels: {hop: 0.25, groups, pan: {hop: 0.25, groups}}};
+  const other = [note(1, 2, 60), note(1.5, 2.5, 60)];
+  const stems = {
+    other: {notes: other, instruments: [{index:0, program:0, notes:[other[0]]}, {index:1, program:0, notes:[other[1]]}]},
+    strings: {notes: [note(1, 2, 63)]},
+    winds: {notes: [note(1, 2, 67)]},
+    bass: {notes: [note(1, 2, 36)]}
+  };
+  const direct = modelFrom({stems, layers, otherRoute: 'direct'});
+  assert.deepEqual(direct.model.lanes.map(lane => lane.id), ['other', 'bass']);
+  assert.equal(direct.model.lanes[0].label, '合成');
+  assert.equal(direct.model.lanes[0].group, 'other');
+  assert.deepEqual(direct.model.lanes[0].notes.map(note => note.slice(0, 3)), [[1, 1, 60], [1.5, 1, 60]]);
+  assert.deepEqual(Object.keys(direct.model.levels.groups), ['other', 'bass']);
+  assert.deepEqual(Object.keys(direct.model.levels.pan.groups), ['other', 'bass']);
+  const split = modelFrom({stems, layers, otherRoute: 'split'});
+  assert.deepEqual(split.model.lanes.map(lane => lane.id), ['strings', 'winds', 'bass', 'texture']);
+  assert.deepEqual(modelFrom({stems, layers}), split, 'old tracks stay split even if a direct take has been manually created');
+  const withoutNotes = modelFrom({stems: {...stems, other: {notes: []}}, layers, otherRoute: 'direct'});
+  assert.deepEqual(withoutNotes.model.lanes.map(lane => lane.id), ['bass', 'texture']);
+  const asked = [];
+  await readStems(async stem => {asked.push(stem); return {ok: false};}, 'direct');
+  assert.deepEqual(asked, STEMS.filter(stem => stem !== 'strings' && stem !== 'winds'));
 });
 
 // Against the library itself: whatever is there today must go through. Counts are not asserted.

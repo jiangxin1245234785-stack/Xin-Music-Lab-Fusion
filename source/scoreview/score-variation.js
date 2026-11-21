@@ -187,6 +187,8 @@
 
   function create(model) {
     const sections = sectionList(model), grid = gridOf(model.bars);
+    const score = globalThis.XinScoreView || (typeof require === 'function' ? require('./score-view.js') : null);
+    const otherMidi = (model.lanes || []).some(lane => score?.isOtherMidi(lane));
     const sourceId = model.track?.id;
     let pair = defaultPair(sections), alignment, dynamic, points = [];
     let sourceLines, lyricsOffset;
@@ -279,7 +281,7 @@
           if (energy) result.energy = energy;
         }
       }
-      if (options.legend !== false) drawLegend(ctx,frame,options,pair,value,palette);
+      if (options.legend !== false) drawLegend(ctx,frame,options,pair,value,palette,otherMidi);
       ctx.restore();
       return result;
     }
@@ -525,7 +527,7 @@
     return label+(n?' '+n:'');
   }
 
-  function drawLegend(ctx, frame, options, pair, value, palette) {
+  function drawLegend(ctx, frame, options, pair, value, palette, otherMidi) {
     const part = frame.geometry.info;
     // Keep this in the central part of the section/chord band. Score labels
     // anchor at the sides here; lyrics and the section timeline use other bands.
@@ -556,7 +558,8 @@
     const pad = 7*unit, h = Math.min((part.bottom-part.top)*unit-2*unit,(full?31:26)*unit);
     const level = value.dynamic, gap = level?.delta;
     const db = finite(gap) ? (gap < 0 ? '−' : '+')+Math.abs(gap).toFixed(1)+' dB' : '';
-    const group = level ? (stemNames[level.group]?.[en?1:0] || level.group) : '';
+    const group = level?.group === 'other' && otherMidi ? (en ? 'Synth' : '合成')
+      : level ? (stemNames[level.group]?.[en?1:0] || level.group) : '';
     const detail = !value.reason && group ? basis+' · '+group+' B−A '+db : basis;
     const detailFont = '400 '+(full?10:9)*unit+'px "Segoe UI","Microsoft YaHei",sans-serif';
     const mainFont = ctx.font;

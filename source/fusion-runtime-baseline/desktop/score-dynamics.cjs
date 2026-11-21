@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
 const {notesRoot}=require('./score-notes.cjs');
+const {midiStemAllowed}=require('../../scoreview/adapter/track-model.cjs');
 const VERSION='xml-relative-energy/1';
 const rootFor=(appData,userData)=>path.join(path.dirname(notesRoot(appData,userData)),'Score Dynamics');
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
@@ -20,7 +21,7 @@ function applyOverlay(stems,cache){
  }
  return{stems:result,applied};
 }
-function createService({root,readMidi,profileForResult,python=process.env.XLD_MIDI_PYTHON,spawnProcess=spawn,algorithmPath=path.resolve(__dirname,'../../xld-runtime-baseline/analysis-midi/velocity.py'),runnerPath=path.join(__dirname,'score-dynamics.py'),timeoutMs=600000}){
+function createService({root,readMidi,readOtherRoute,profileForResult,python=process.env.XLD_MIDI_PYTHON,spawnProcess=spawn,algorithmPath=path.resolve(__dirname,'../../xld-runtime-baseline/analysis-midi/velocity.py'),runnerPath=path.join(__dirname,'score-dynamics.py'),timeoutMs=600000}){
  if(!path.isAbsolute(root))throw Error('dynamics-root-invalid');
  let current=null,owner=null;
  const snapshot=()=>current?JSON.parse(JSON.stringify(current)):null;
@@ -29,7 +30,9 @@ function createService({root,readMidi,profileForResult,python=process.env.XLD_MI
  async function prepare(track,signal){
   if(!validId(track?.id))throw Error('track-missing');
   const inputs=[],skipped=[];
-  for(const stem of ['guitar','strings','winds','drums','bass','piano']){
+  const route=await readOtherRoute?.(track);
+  for(const stem of ['guitar','other','strings','winds','drums','bass','piano']){
+   if(!midiStemAllowed(stem,route))continue;
    signal?.throwIfAborted();const record=await readMidi(track,stem);
    if(!record?.ok){skipped.push({stem,why:record?.error||'midi-missing'});continue;}
    const notesFile=path.join(record.directory,path.basename(record.notesFile)),raw=await fsp.readFile(notesFile),body=JSON.parse(raw);
