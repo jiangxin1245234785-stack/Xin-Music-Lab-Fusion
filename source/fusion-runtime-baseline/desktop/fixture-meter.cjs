@@ -8,6 +8,6 @@ function withLocalRuns(trackId, layers) {
   const record = catalog[trackId];
   if (!record || bars?.steady !== false || bars.checkpointSha256 !== record.checkpoint ||
       !isDeepStrictEqual(bars.barLengthsInBeats, record.histogram)) return layers;
-  return {...layers, bars:{...bars, localRuns:record.runs, candidateMeasures:record.candidateMeasures}};
+  return {...layers, bars:{...bars, localRuns:record.runs, candidateMeasures:Array.isArray(bars.candidateMeasures) ? bars.candidateMeasures : record.candidateMeasures}};
 }
 module.exports = {withLocalRuns};

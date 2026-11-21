@@ -61,6 +61,26 @@ def bar_lengths(beats, downbeats):
     return dict(Counter(int(n) for n in np.diff(index) if n >= 1))
 
 
+def candidate_measures(beats, downbeats):
+    """Group the detector's actual beats by its own downbeats, in song order."""
+    import math
+
+    if len(beats) < 2 or len(downbeats) < 2:
+        return []
+    times = [round(float(t), 4) for t in beats]
+    starts = [round(float(t), 4) for t in downbeats]
+    for values in (times, starts):
+        if any(not math.isfinite(t) or t < 0 for t in values):
+            return []
+        if any(left >= right for left, right in zip(values, values[1:])):
+            return []
+    indexes = {t: i for i, t in enumerate(times)}
+    if any(t not in indexes for t in starts):
+        return []
+    bounds = [indexes[t] for t in starts] + [len(times)]
+    return [times[a:b] for a, b in zip(bounds, bounds[1:])]
+
+
 def make_bars(source, duration):
     import numpy as np
     sys.path.insert(0, str(MIDI))
@@ -104,10 +124,13 @@ def make_bars(source, duration):
         # every beatsPerBar beats. Beats before it are a pickup and get no bar line.
         first = min(range(len(beats)), key=lambda i: abs(beats[i] - timing['firstDownbeat']))
         downbeats = beats[first::timing['beatsPerBar']]
-    return {'beatsPerBar': timing['beatsPerBar'] if steady else None, 'bpm': round(float(timing['bpm']), 3), 'beats': beats,
+    result = {'beatsPerBar': timing['beatsPerBar'] if steady else None, 'bpm': round(float(timing['bpm']), 3), 'beats': beats,
             'downbeats': downbeats, 'steady': steady, 'why': '；'.join(reasons) or None,
             'barAgreement': round(agreement, 3), 'barLengthsInBeats': {str(k): v for k, v in sorted(lengths.items())},
             'engine': 'analysis-midi/tempo.analyze (Beat This)', 'checkpointSha256': timing.get('checkpointSha256')}
+    if not steady:
+        result['candidateMeasures'] = candidate_measures(captured.get('beats', []), captured.get('downbeats', []))
+    return result
 
 
 def make_energy(mono, rate):

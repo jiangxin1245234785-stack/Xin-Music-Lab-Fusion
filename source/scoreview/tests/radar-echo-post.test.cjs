@@ -61,6 +61,35 @@ test('without downbeats BAR · BEAT reads ---·-; without beats TEMPO reads --- 
   assert.equal(loose.angle, 180);
 });
 
+test('FILL uses only hits that have happened, including a fill just before a bar line', () => {
+  const times = [5.1, 5.2, 5.3, 5.4, 5.5, 5.98];
+  const at = (times, t) => post(steady([{id:'d', group:'drums', kind:'drums', rows:['kick'],
+    hits:times.map(s => [s, 0, 90])}], 12)).frame(t).motion.caution.FILL;
+  for (const t of [4.4, 5.5, 5.97, 5.99, 6.12]) {
+    assert.equal(at(times, t), at(times.filter(s => s <= t), t));
+  }
+  assert.equal(at(times, 5.97), 0);
+  assert.ok(at(times, 5.99) > 0);
+  assert.ok(at(times, 6.12) > 0, 'a short fill still has afterglow');
+  assert.equal(at(times, 6.31), 0);
+});
+
+test('each printed bar seeks its own downbeat, and a historical echo seeks the heard note', () => {
+  const {frame,view,canvas} = post(steady([{id:'g',group:'guitar',kind:'pitched',notes:[[8.1, .8, 60, 80]]}]));
+  for (const now of [8, 13.6, 15.98, 16.01]) {
+    const panel = frame(now).motion, ratio = canvas.clientHeight / 1080;
+    function pick(radius, a) {
+      const x = 661 + panel.wide / 4 + radius * Math.cos(a), y = 425 + radius * Math.sin(a);
+      return view.hit((panel.origin[0] + x * panel.scale) * ratio, (panel.origin[1] + y * panel.scale) * ratio);
+    }
+    panel.barNumbers.forEach((number, i) => assert.equal(pick(242, -Math.PI / 2 + i * Math.PI / 2 + .14).time, (number - 1) * 2));
+    if (now === 13.6) {
+      const ring = 256 - 1.5 * (256 - 42) / 6;
+      assert.ok(Math.abs(pick(ring, -Math.PI / 2 + .05 * Math.PI * 2).time - 8.4) < .00001);
+    }
+  }
+});
+
 test('levers: each channel reports its place; a click is that channel\'s solo; a channel the song lacks is down and not clickable', () => {
   const model = steady([{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, 4, 60, 100]]},
     {id: 'b', kind: 'pitched', group: 'bass', notes: [[1, 4, 40, 100]]}]);
@@ -893,10 +922,32 @@ test('radar.9 feedback: an echo stays where it was drawn: the same note has the 
       return stage.calls.filter(c => c.name === 'arc' && /^rgba\(130,242,166/.test(String(c.strokeStyle || c.fillStyle)) && c.args[2] > 30 && c.args[2] < 260)
         .map(c => [+c.args[2].toFixed(3), +c.args[3].toFixed(5)]); };
     const a = pieces(5.03), b = pieces(5.53);
-    assert.ok(a.length > 3, name + ': echoes drawn');
-    // Every piece of the first frame starts at the same angle on the same ring in the second (the held note's pieces
-    // are cut on the disc's own grid, so a growing note adds pieces, it does not move them).
+    assert.equal(a.length, 2, name + ': one continuous stroke for each of the two notes');
+    // A growing note keeps its angular origin; its old trace does not slide forward with the scan.
     const missing = a.filter(([r, s0]) => !b.some(([r2, s2]) => r2 === r && Math.abs(s2 - s0) < 1e-4));
     assert.deepEqual(missing, [], name + ': a piece moved between 5.03 and 5.53 s');
   }
+});
+
+test('only timed beats keep one track counter on seek; annotated bars and the trial switch keep their reading', () => {
+  const grid = require('../local-grid.js');
+  const beats = [.2, .8, 1.2, 1.8, 2.5, 3.2, 4, 4.7];
+  const model = steady([], 5, {bars: {steady: false, beats, downbeats: []}, localBarTrial: true});
+  const beatAt = t => (t - .2) / .6, timeAtBeat = n => .2 + n * .6;
+  const base = {W: 1440, H: 900, options: {}, events: [], downbeats: [], beats, beatAt, timeAtBeat, model};
+  const renderer = Radar.create(), ctx = mockCanvas(1440, 900).canvas.getContext('2d');
+  const draw = e => renderer.paint(ctx, grid.radar(e));
+  for (const [now, label] of [[0,'---'], [.2,'001'], [.799,'001'], [.8,'002'], [4.9,'008'], [.2,'001']]) {
+    const a = draw({...base, now}), b = draw({...base, now, model: {...model, localBarTrial: false}});
+    assert.equal(a.readoutUnit, 'track-beat'); assert.equal(a.barBeat, label);
+    assert.equal(b.barBeat, '---·-'); assert.equal(a.angle, b.angle);
+    assert.equal(a.drums.step, b.drums.step);
+  }
+  const bars = {...model.bars, candidateMeasures: [[.8,1.2,1.8],[2.5,3.2,4,4.7]]};
+  for (const [now, label] of [[.2,'---·-'],[.8,'001·1'],[2.5,'002·1']]) {
+    const out = draw({...base, now, model: {...model, bars}});
+    assert.equal(out.readoutUnit, 'bar-beat'); assert.equal(out.barBeat,label);
+  }
+  const empty = draw({...base, now: 1, beats: [], model: {...model,bars:{steady:false,beats:[]}}});
+  assert.equal(empty.barBeat,'---·-');
 });

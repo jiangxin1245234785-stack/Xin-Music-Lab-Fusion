@@ -1,5 +1,7 @@
 # Xin’s Music Lab — Source of Truth after D-drive migration
 
+2026-11-21 本地开发版为 **0.5.0-dev.other.4**。根目录 XML 和 XLD 启动器共用 `releases/current-release.cmd`。雷达改动已接入主线源码，覆盖 other 第四路、电传打印罩、parts.4 修复、曲名牌与小节／拍数读窗。详见[接续记录](docs/XML_RADAR_OTHER4.md)。
+
 最新本地入口（2026-11-12，优先于下方历史）：**releases/0.5.0-dev.score.25（XLD core.76 / XML score.25）**，上一稳定score.21。XML已接入“按录音强弱显示”，默认关闭；显式生成独立力度副本，缓存、进度、取消、强制复跑、原值回退、中英与重开记忆齐全。原音频/MIDI/分析只读，每次完成留新run，失败/取消不替换旧副本；已有动态、人工修订和人声曲线保持。完整默认/最小窗口验收、40组/240状态、启用副本64次换歌、22→25缓存复用、播放连续与169原文件SHA通过；6后端、147谱面、38适配器改坏、48渲染和两个exe通过。新包2803/旧包2800文件完整；XLD包内固定为21已验证基线，工作区额外XLD改动保留未混入。阶段22–25与源码SHA均留存，未提交。见 [当前交接](work/score-dynamics-20261112/HANDOFF.md)、[验收报告](work/score-dynamics-20261112/REPORT.md)、[后续清单](work/score-dynamics-20261112/NEXT_WORK.md)。
 
 节拍候选更新（2026-10-26，优先于下文历史）：当前本机入口为 `releases/0.5.0-dev.tempo.1/XLD.exe`，XLD core.73 / XML stems.13。MuScriptor v0.4.0（8a1ef886）已作为弦乐的“v0.4 · 节拍试验”独立卡片；默认仍是用户确认的4c03caf/50ms。新拍点分析在CPU处理原曲，正常MIDI/编辑/混合仍按秒且不量化，另行导出带速度图的谱面MIDI；谱面可能增加弱起留白。Large权重不变，无新的音符精度结论。真实MEGURI/toe拍点与导出、既有回归和对照页逻辑通过，拍号未确定、听评待用户验收；MEGURI音符复用已验收事件，本轮未重新运行Large GPU。旧strings.1及原数据保留。详见[本轮报告](work/muscriptor-v04-20261026/REPORT.md)和[试听对照](work/muscriptor-v04-20261026/listening/index.html)。未发布GitHub。

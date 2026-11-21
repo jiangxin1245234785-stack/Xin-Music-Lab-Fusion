@@ -47,10 +47,9 @@
     fresh: 12, freshBands: 4, freshInk: '#100e0a', freshWidth: 2.4});   // fresh ink: design units behind the nib (host's correction: 1.5 s was under 2 px)
   // The teleprinter (SPEC-TELEPRINTER): a step's time (s), the fresh-ink run (cells), the ink's base strength and spread,
   // the baseline's spread (design units), one smudge in about this many cells, the paper sprite's period, the tape's
-  // rise and fall, its margin in the slot, the supply reel's radius, the strike lamp's blink (s), the print point from
-  // the window's right edge, the slit's width, the tear bar's width, the title's smallest size.
-  const TELE = Object.freeze({step: .04, freshCells: 4, freshInk: '#0d0c09', inkBase: .88, inkSpread: .12, baseSpread: .6, smudgeEvery: 30,
-    period: 256, wave: .9, margin: 5, reelR: 22, flash: .06, headFromRight: 64, slit: 40, tearWidth: 12, titleMin: 11, overlap: 2});
+  // rise and fall, margin in the slot, supply reel radius, strike lamp blink (s), tear bar width, title's smallest size.
+  const TELE = Object.freeze({step: .04, contactFraction: .25, freshCells: 4, freshInk: '#0d0c09', inkBase: .88, inkSpread: .12, baseSpread: .6, smudgeEvery: 30,
+    period: 256, wave: .9, margin: 5, reelR: 22, flash: .06, tearWidth: 12, titleMin: 11, overlap: 2});
   // A fixed noise in -1..1 of a position (never of time): pencil pressure, fuzz and the hand-drawn lines' wobble.
   const noise = k => { const h = Math.sin(k * 12.9898 + 4.1414) * 43758.5453; return (h - Math.floor(h)) * 2 - 1; };
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
@@ -554,17 +553,24 @@
     // FILL needs the bar grid; it is added once the grid is known.
     function addFill(env) {
       const bars = barGrid(env);
+      prep.fills = [];
       if (!bars || !prep.drums.length) return;
-      const counts = bars.starts.map((s, i) => {
-        const e = bars.starts[i + 1] ?? s + bars.length;
-        return lower(prep.drums, e, d => d.time) - lower(prep.drums, s, d => d.time);
-      });
-      for (let b = 2; b < counts.length; b++) {
-        const mean = (counts[b - 1] + counts[b - 2]) / 2;
-        if (counts[b] < RULES.fillLeast || counts[b] < mean * RULES.fillRatio || counts[b] < mean + RULES.fillMore) continue;
-        const s = bars.starts[b], e = bars.starts[b + 1] ?? s + bars.length;
-        for (let i = Math.floor(s / GRID); i <= Math.min(prep.steps - 1, Math.floor(e / GRID)); i++) prep.caution[5][i] = 1;
+      const firstHit = bars.starts.map(t => lower(prep.drums, t, d => d.time));
+      for (let b = 2; b < bars.starts.length; b++) {
+        const end = bars.starts[b + 1] ?? bars.starts[b] + bars.length;
+        const mean = (firstHit[b] - firstHit[b - 2]) / 2;
+        const count = Math.ceil(Math.max(RULES.fillLeast, mean * RULES.fillRatio, mean + RULES.fillMore));
+        const hit = prep.drums[firstHit[b] + count - 1];
+        if (hit && hit.time < end) prep.fills.push({start: hit.time, end});
       }
+    }
+    function fillLight(fills, now) {
+      const from = now - RULES.glow;
+      let on = 0;
+      for (let i = lower(fills, from, f => f.end); i < fills.length && fills[i].start < now; i++) {
+        on += Math.min(fills[i].end, now) - Math.max(fills[i].start, from);
+      }
+      return clamp(on / RULES.glow, 0, 1);
     }
     // Bars: the model's downbeats, else groups of four beats from the first beat; null without beats.
     function barGrid(env) {
@@ -1029,6 +1035,7 @@
     let pass = 'live', layers = null, layerKey = null;
     let bridgeLook = null;   // the recorder bridge's gradients, made once per drawing context (SPEC-RECORDER)
     let wide = 0;   // the layout's extra width this frame (SPEC-WEATHER B): 0 at 16:10 or narrower, WIDE_MAX at 16:9
+    const hitRegions = new WeakMap();
     function every(which, s, out) {
       pass = which;
       try {
@@ -1056,7 +1063,7 @@
     function cachedLayers(ctx, s) {
       const {env, bars, scale, ox, oy} = s, t = env.model.track || {};
       const key = [env.W, env.H, prepGen, bars ? bars.source + bars.perBar : '-', env.beats.length >= 2, tapeOf(env) ? 'lyrics' : 'sheet',
-        t.title, t.artist, assetGen, depth, corner, env.barLight !== undefined, !!env.wideBeat].join('|');
+        t.title, t.artist, assetGen, depth, corner, env.barLight !== undefined, !!env.wideBeat, beatCounterWidth(env)].join('|');
       if (auditSink) return null;   // the audit sees every pass drawn
       if (layers && layerKey === key) return layers;
       const base = layerCanvas(ctx, env.W, env.H, layers && layers.base), over = base && layerCanvas(ctx, env.W, env.H, layers && layers.over);
@@ -1111,7 +1118,13 @@
       return out;
     }
 
+    function beatCounterWidth(env) {
+      if (env.model.localBarTrial !== true || env.model.bars?.steady || env.downbeats.length >= 2 ||
+          env.beats.length < 2 || root.XinLocalBarTrial?.counter(env.model.bars)) return 0;
+      return Math.max(3,String(env.beats.length).length);
+    }
     function top(data, env, bars, now, out) {
+      const counterWidth = beatCounterWidth(env), countBeats = counterWidth > 0;
       if (pass === 'base') {
         panel(18, 16, 1404 + wide, 80, 'plateTop', ['slot', 'slot', 'slot', 'slot']);
         // The rating plate (the user's, SPEC-RADAR.md 铭牌): the two numbers are the telegraph codes of 蒋 and 鑫 from
@@ -1144,7 +1157,7 @@
         // Wider (SPEC-WEATHER B): the section windows share the extra width, so they still reach the tubes.
         SECTION_LAMPS.forEach((name, k) => bed(516 + k * (82 + wide / 7), 40, 77 + wide / 7, 36, 2, '#1a1712', '#4a3d2c'));
         tubeBase(1101 + wide, 28, 72, 42, '888', 'TEMPO');
-        tubeBase(1183 + wide, 28, 106, 42, env.wideBeat ? '888·88' : '888·8', 'BAR · BEAT');
+        tubeBase(1183 + wide, 28, 106, 42, countBeats ? '8'.repeat(counterWidth) : env.wideBeat ? '888·88' : '888·8', countBeats ? 'TRACK BEAT' : 'BAR · BEAT');
         tubeBase(1299 + wide, 28, 104, 42, '88:88', 'TIME');
         return;
       }
@@ -1160,13 +1173,13 @@
         light[at] = Math.max(light[at], Math.min(into, left));
       }
       SECTION_LAMPS.forEach((name, k) => {
-        const x = 516 + k * (82 + wide / 7), y = 40, w = 77 + wide / 7, h = 36, v = light[k], has = data.kinds.has(name);
+        const x = 516 + k * (82 + wide / 7), y = 40, w = 77 + wide / 7, h = 36, v = light[k];
         if (v > .01) {
           const g = p.createLinearGradient(x, y, x, y + h);
           g.addColorStop(0, mixHex('#3a2a18', '#ffcf7a', v)); g.addColorStop(1, mixHex('#2a1d10', '#ff9a30', v));
           p.fillStyle = g; p.fillRect(x + 2, y + 2, w - 4, h - 4);
         }
-        write(name, x + w / 2, y + h / 2, 16, v > .4 ? '#2a1a08' : '#b9a27c', 'plate', 'center', w - 6, '', 'cap');
+        write(name, x + w / 2, y + h / 2, 16, mixHex('#887454', '#93805c', v), 'plate', 'center', w - 6, '', 'cap');
       });
       out.section = {lamps: Object.fromEntries(SECTION_LAMPS.map((n, k) => [n, +light[k].toFixed(3)])), kinds: [...data.kinds]};
       // TEMPO / BAR · BEAT / TIME.
@@ -1179,6 +1192,11 @@
         if (bpm > 20 && bpm < 400) tempo = String(Math.round(bpm)).padStart(3, '0');
       }
       let barBeat = env.wideBeat ? '---· -' : '---·-';
+      if (countBeats) {
+        let i=lower(env.beats, now);
+        if (env.beats[i] === now) i++;
+        barBeat = i ? String(i).padStart(counterWidth,'0') : '-'.repeat(counterWidth);
+      }
       if (env.localPosition) {
         const {bar, beat} = env.localPosition;
         barBeat = String(bar).padStart(3, '0') + '·' + String(beat).padStart(env.wideBeat ? 2 : 1, ' ');
@@ -1192,7 +1210,7 @@
       tube(1101 + wide, 28, 72, 42, tempo);
       tube(1183 + wide, 28, 106, 42, barBeat);
       tube(1299 + wide, 28, 104, 42, time);
-      Object.assign(out, {tempo, barBeat, time});
+      Object.assign(out, {tempo, barBeat, time, readoutUnit:countBeats?'track-beat':'bar-beat'});
     }
 
     // The hand-written tapes (batch 4): each strip's name on its own piece of tape stock, stuck at its own angle.
@@ -1415,13 +1433,43 @@
       out.caution = {};
       CAUTION.forEach((name, k) => {
         const x = 36 + (k % 4) * 66, y = 813 + Math.floor(k / 4) * 30, w = 62, h = 26;
-        const v = name === 'SPARE' ? 0 : glow(data.caution[k], now);
+        const v = name === 'FILL' ? fillLight(data.fills, now) : glow(data.caution[k], now);
         out.caution[name] = +v.toFixed(3);
         rounded(x, y, w, h, 2, mixHex('#3a2a1a', '#ffb24c', v), '#14120d', 1);
-        write(name, x + w / 2, y + h / 2, 15, v > .45 ? '#2a1a08' : name === 'SPARE' ? '#7a6a56' : '#d2b48a', 'plate', 'center', w - 4, '', 'cap');
+        write(name, x + w / 2, y + h / 2, 15, name === 'SPARE' ? '#7a6a56' : mixHex('#887454', '#93805c', v), 'plate', 'center', w - 4, '', 'cap');
       });
     }
 
+    // The opacity varies along one continuous stroke per winding. A cap belongs to a note end.
+    function drawEcho(cx, cy, r, start, end, turn, echo, dim, bloom) {
+      const tau = Math.PI * 2;
+      const alphaAt = u => (1 - clamp((turn - u) / echo, 0, 1)) ** 1.6 * dim;
+      const ink = u => 'rgba(130,242,166,' + alphaAt(u) + ')';
+      const spread = u => bloom ? 1 + .6 * clamp((turn - u) / echo, 0, 1) : 1;
+      const angle = u => (u - .25) * tau;
+      if (end - start < .004) {
+        circle(cx + Math.cos(angle(start)) * r, cy + Math.sin(angle(start)) * r, 2.6 * spread(end), ink(end));
+        return;
+      }
+      for (let u = start; u < end; u += 1) {
+        const v = Math.min(u + 1, end), span = Math.min(1, v - u), mid = (u + v) / 2;
+        const room = Math.max(0, (1 - span) / 2);
+        let color = ink(mid);
+        if (p.createConicGradient && alphaAt(v) - alphaAt(u) > .015) {
+          const g = p.createConicGradient(angle(u - room), cx, cy);
+          const stops = Math.max(2, Math.ceil(span * 12));
+          for (let k = 0; k <= stops; k++) {
+            const f = k / stops;
+            g.addColorStop(clamp(room + span * f, 0, 1), ink(u + span * f));
+          }
+          color = g;
+        }
+        p.strokeStyle = color; p.lineWidth = 3 * spread(mid);
+        p.lineCap = span < 1 && u === start ? 'round' : 'butt';
+        p.beginPath(); p.arc(cx, cy, r, angle(u), angle(v)); p.stroke();
+        p.lineCap = 'butt';
+      }
+    }
     function disc(data, env, bars, now, echo, muted, out) {
       const cx = 661 + wide / 4, cy = 425, bezel = 300, screen = 270;
       const outer = screen - 14, inner = 42, band = (outer - inner) / RINGS;
@@ -1513,6 +1561,8 @@
           p.fillStyle = `rgba(110,240,160,${.10 * (1 - k / 24) ** 2})`; p.fill();
         }
         // Echoes: notes from the last `echo` turns, brightest where the sweep just passed, gone after it.
+        const targets = {bars: [], echoes: []};
+        hitRegions.set(out, targets);
         let echoes = 0;
         const from = data.notes, startFrom = lower(from, now - Math.max(data.longest, 1) - 60, n => n.start);
         const turnLen = Math.max(.5, now - turnTime(env, bars, turn - 1));
@@ -1529,23 +1579,9 @@
           const ring = n.cat, r = outer - (ring + 1) * band + band * (.18 + .64 * k);
           const dim = muted(n.cat) ? .18 : 1;
           const u0 = Math.max(turnAt(env, bars, n.start), turn - echo), u1 = turnAt(env, bars, end);
-          // Pieces on a grid fixed to the disc (1/64 turn), not a share of the note's span: a span that grows while the
-          // note sounds, or loses its tail to the next turn, would move every piece boundary (radar.9 feedback).
-          const g0 = Math.floor(u0 * 64), g1 = Math.max(g0 + 1, Math.ceil(u1 * 64));
-          for (let g = g0; g < g1; g++) {
-            const a0 = Math.max(u0, g / 64), a1 = Math.min(u1, (g + 1) / 64);
-            if (a1 < a0) continue;
-            const age = clamp((turn - a1) / echo, 0, 1), alpha = (1 - age) ** 1.6 * dim;
-            if (alpha < .02) continue;
-            const A0 = -Math.PI / 2 + a0 * Math.PI * 2, A1 = -Math.PI / 2 + a1 * Math.PI * 2;
-            p.strokeStyle = `rgba(130,242,166,${alpha})`;
-            // Phosphor bloom (batch 4): the trace spreads a little as it fades.
-            const spread = bloom ? 1 + .6 * age : 1;
-            if (u1 - u0 < .004) {
-              circle(cx + Math.cos(A0) * r, cy + Math.sin(A0) * r, 2.6 * spread, `rgba(130,242,166,${alpha})`);
-            } else {
-              p.beginPath(); p.arc(cx, cy, r, A0, Math.max(A1, A0 + .01)); p.lineWidth = 3 * spread; p.lineCap = 'round'; p.stroke(); p.lineCap = 'butt';
-            }
+          if ((1 - ageEnd / echo) ** 1.6 * dim >= .02) {
+            drawEcho(cx, cy, r, u0, u1, turn, echo, dim, bloom);
+            targets.echoes.push({r, u0, u1, dim});
           }
           echoes++;
         }
@@ -1565,6 +1601,7 @@
             const a = -Math.PI / 2 + q / 4 * Math.PI * 2 + .14, r = screen - 28, bx = cx + Math.cos(a) * r, by = cy + Math.sin(a) * r;
             font('plate', 15);
             const bw = p.measureText(String(first + q + 1)).width + 6;
+            targets.bars.push({x: bx, y: by, halfWidth: bw / 2 + 2, time: bars.starts[first + q]});
             rect(bx - bw / 2, by - 8, bw, 16, 'rgba(6,18,12,.85)');
             write(String(first + q + 1), bx, by, 15, '#8ef5b0', 'plate', 'center');
           });
@@ -1839,7 +1876,7 @@
       const mode = per ? 'bar' : env.beats.length >= 2 ? 'beats' : 'time';
       const steps = per ? per * 4 : DRUM_FREE_STEPS, group = mode === 'beats' ? 8 : 4;
       if (pass === 'base') {
-        write(mode === 'bar' ? 'DRUMS · THIS BAR' : mode === 'beats' ? 'DRUMS · ' + DRUM_SWEEP_BEATS + ' BEATS' : 'DRUMS · ' + FREE_TURN + ' SEC', 1028 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
+        write(mode === 'bar' ? 'DRUMS · THIS BAR' : mode === 'beats' ? 'DRUMS · ' + DRUM_SWEEP_BEATS + ' BEATS' : 'DRUMS · ' + FREE_TURN + ' SEC', 1028 + wide / 2, 411, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
         write(mode === 'bar' ? (per === 4 ? '' : per + ' BEATS / BAR · ') + steps + ' STEPS' : mode === 'beats' ? 'NO BAR LINES · 2 STEPS A BEAT' : 'NO BEATS · 4 STEPS A SECOND', 1404 + wide, 411, 12, C.stampFaint, 'stamp', 'right', 0, '', 'alphabetic');
         bed(1028 + wide / 2, 420, 376 + wide / 2, 122, 5, '#1f201b', '#4a4c42');
         if (env.barLight !== undefined) write('BAR', 1173 + wide / 2, 411, 12, C.stampDim, 'stamp', 'left', 0, 'bold', 'alphabetic');
@@ -2160,18 +2197,108 @@
     // tape's place is the cells struck before the newest, plus the newest's step so far: a function of song time.
     // The title row: the song being taken down, in its own language; too wide, it gets smaller down to TELE.titleMin,
     // then only the title, then the title cut by characters, never an ellipsis.
+    // Runs in the static hardware pass, in the radar's design coordinates.
+    function plateHardware(p, x, y, width, height) {
+      const clamp01 = n => Math.max(0, Math.min(1,n));
+      const exp2 = t => Math.exp(-t*t);
+      function ellipseGlow(cx,cy,rx,ry,angle,inner,outer) {
+        p.save(); p.translate(cx,cy); p.rotate(angle); p.scale(rx,ry);
+        const g=p.createRadialGradient(0,0,0,0,0,1);
+        g.addColorStop(0,inner); g.addColorStop(1,outer);
+        p.fillStyle=g; p.fillRect(-1,-1,2,2); p.restore();
+      }
+      function shoulder(points,color,width) {
+        p.beginPath(); p.moveTo(points[0],points[1]); p.bezierCurveTo(...points.slice(2));
+        p.lineCap='round'; p.strokeStyle=color; p.lineWidth=width; p.stroke();
+      }
+      p.save(); p.translate(x,y);
+      // Removing a plate lifts the lower right first. The contact trace dies out towards the middle.
+      ellipseGlow(width-5.4,height-.3,14.0,3.8,-.21,'rgba(184,174,147,.56)','rgba(131,123,106,0)');
+      ellipseGlow(3.1,height-2.1,7.5,2.15,.45,'rgba(165,155,132,.43)','rgba(126,119,99,0)');
+      shoulder([width-11,height+.75,width-6,height+.65,width-.4,height+1.2,width+1.4,height-2.8],'rgba(163,157,136,.72)',1.0);
+      shoulder([width-6.1,height+1.05,width-2.2,height+.9,width+.55,height-.3,width+.9,height-1.6],'rgba(207,199,173,.67)',.53);
+      shoulder([-1.0,height-5,-1.1,height-1.8,1,height-.1,4.1,height+.6],'rgba(158,152,131,.65)',.85);
+      // A thin sheared plate lies flush against paint. Only its thickness casts a contact shadow.
+      p.shadowColor='rgba(14,15,13,.55)';p.shadowBlur=1.45;p.shadowOffsetY=1.02;
+      p.fillStyle='#42433c';p.beginPath();p.roundRect(.2,.5,width,height,1.8);p.fill();p.shadowBlur=0;p.shadowOffsetY=0;
+      const density=3, sheet=layerCanvas(p,Math.ceil(width*density),Math.ceil(height*density));
+      const c=sheet?.getContext('2d');
+      if(typeof c?.createImageData !== 'function' || typeof c.putImageData !== 'function') {
+        p.fillStyle='#a6a398';p.fillRect(0,0,width,height);
+        for(const [cx,angle] of [[7.2,-.53],[width-7.2,.66]]){
+          p.save();p.translate(cx,height/2);p.rotate(angle);
+          p.fillStyle='#767771';p.beginPath();p.arc(0,0,4,0,2*Math.PI);p.fill();
+          p.fillStyle='#35362f';p.fillRect(-3.4,-.53,6.8,1.06);p.restore();
+        }
+        p.restore();return;
+      }
+      const pixels=c.createImageData(sheet.width,sheet.height);
+      const radii=[4.25,4.12], centers=[7.2,width-7.2], angles=[-.53,.66];
+      function screw(sx,sy,k) {
+        const radius=radii[k],r=Math.hypot(sx,sy);
+        if(r>radius+1.15)return null;
+        if(r>radius+.48) return 79+23*(-sx-sy)/(2*radius); // countersunk seat
+        if(r>radius) return 150+36*(-sx-sy)/(2*radius);
+        const nx=sx/radius,ny=sy/radius, crown=Math.sqrt(Math.max(0,1-nx*nx-ny*ny));
+        const projection=nx*.69+ny*.72;
+        let v=103+30*crown-24*projection+66*exp2((projection+.37)/.34)*(.55+.45*crown);
+        // Shallow bright rub on the domed head, and a deeper dark flat at the bottom of the slot.
+        v+=35*exp2((nx+.33)/.46)*exp2((ny+.49)/.31);
+        const a=angles[k],u=sx*Math.cos(a)+sy*Math.sin(a),w=-sx*Math.sin(a)+sy*Math.cos(a);
+        const taper=clamp01((radius*.93-Math.abs(u))/.89);
+        const burr=k===0?.31:.14;
+        const shift=burr*exp2((u-radius*.47)/.88)-burr*.46*exp2((u+radius*.5)/.9);
+        const across=w-shift,half=.48+.16*Math.abs(u)/radius+.20*exp2((u-1.35)/.92);
+        const walls=taper*clamp01((half+.18-Math.abs(across))/.3);
+        const floor=45+11*clamp01((across+half)/(2*half));
+        v=v*(1-walls)+floor*walls;
+        v+=taper*(27+18*exp2((u-1.35)/.92))*exp2((across-half-.26)/.33);
+        v-=26*taper*exp2((across+half+.25)/.34);
+        return v;
+      }
+      for(let j=0;j<sheet.height;j++)for(let i=0;i<sheet.width;i++){
+        const xx=(i+.5)/density,yy=(j+.5)/density,t=xx/width, h=yy/height;
+        const dx=Math.abs(xx-width/2)-(width/2-1.45),dy=Math.abs(yy-height/2)-(height/2-1.45);
+        const distance=Math.hypot(Math.max(0,dx),Math.max(0,dy))+Math.min(Math.max(dx,dy),0)-1.45;
+        if(distance>.18)continue;
+        // The nickel-silver reflects one broad light and a dark shape outside the instrument.
+        // Grain changes the finish slightly. It never cuts scratch lines across the lettering.
+        const band=t+.075*(h-.5);
+        const grain=Math.sin(yy*4.5+.6*Math.sin(xx*.10))+Math.sin(xx*1.09+yy*2.67)*.6;
+        let v=148+35*exp2((band-.18)/.24)-24*exp2((band-.62)/.22)+20*exp2((band-.96)/.19)+4*(.5-h)+grain*1.55;
+        const top=exp2((yy-.68)/.52),bottom=exp2((yy-height+.82)/.60);
+        v+=top*(24+12*exp2((t-.24)/.18))-bottom*36;
+        if(-distance<.42)v-=14;
+        const screwId=xx<width/2?0:1,head=screw(xx-centers[screwId],yy-height*.5,screwId);
+        let redBias=6,blueBias=-8;
+        if(head!==null){v=head+grain*.8;redBias=3;blueBias=-5;}
+        const z=4*(j*sheet.width+i);
+        pixels.data[z]=Math.min(230,v+redBias);pixels.data[z+1]=Math.min(222,v+1);pixels.data[z+2]=Math.min(195,v+blueBias);
+        pixels.data[z+3]=255*clamp01((.18-distance)*density);
+      }
+      c.putImageData(pixels,0,0);
+      p.drawImage(sheet,0,0,width,height);p.restore();
+    }
+
     function teleTitle(env, key, out) {
       const t = env.model.track || {}, title = String(t.title || ''), song = [title, clean(t.artist)].filter(Boolean).join(' · ');
       write('TELEPRINTER', 970 + wide / 2, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
       font('stamp', 15);
-      const left = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 12, room = 1290 + wide - left;
+      const plateX = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 7;
+      const plateY = 765, plateWidth = 1297 + wide - plateX, plateHeight = 24;
+      const room = plateWidth - 30;
+      plateHardware(p,plateX,plateY,plateWidth,plateHeight);
       const han = /\p{Script=Han}/u.test(song), kind = han ? 'hanzi' : 'mono';
       const fits = (text, size) => { font(kind, size, 'bold'); return p.measureText(text).width <= room; };
       let text = song || '— NO SIGNAL —', size = 15;
       while (size > TELE.titleMin && !fits(text, size)) size--;
       if (!fits(text, size) && title) text = title;
       if (!fits(text, size)) { const chars = Array.from(text); while (chars.length > 1 && !fits(chars.join(''), size)) chars.pop(); text = chars.join(''); }
-      out.teleTitle = write(text, left, 782, size, C.stamp, kind, 'left', 0, 'bold', 'alphabetic');
+      const center = plateX + plateWidth/2;
+      font(kind, size, 'bold');
+      p.textAlign = 'center'; p.textBaseline = 'alphabetic';
+      p.fillStyle = 'rgba(217,213,190,.60)'; p.fillText(text, center, 782.3);
+      out.teleTitle = write(text, center, 781.95, size, '#302f28', kind, 'center', 0, 'bold', 'alphabetic');
       out.teleTitleSize = size;
       write(key[0], 1404 + wide, 770, 12, C.stampFaint, 'stamp', 'right');
       write(key[1], 1404 + wide, 785, 12, C.stampFaint, 'stamp', 'right');
@@ -2219,41 +2346,25 @@
       } finally { p = keep; }
       return (tapeSprites[key] = made);
     }
-    // The supply reel: a pressed-metal spool, six spoke holes round a hub, centre-symmetric. Made once, turned by the
-    // paper fed.
-    let reelSprite = null, reelKey = null;
-    function reel(cx, cy, r, angle) {
-      const drawReel = () => {
-        const g = p.createRadialGradient(-r * .3, -r * .35, r * .1, 0, 0, r);
-        g.addColorStop(0, '#a9a79b'); g.addColorStop(.7, '#6d6c63'); g.addColorStop(1, '#3c3c35');
-        p.beginPath(); p.arc(0, 0, r, 0, Math.PI * 2); p.fillStyle = g; p.fill();
-        p.beginPath(); p.arc(0, 0, r - 1, 0, Math.PI * 2); p.strokeStyle = 'rgba(20,20,16,.8)'; p.lineWidth = 1.4; p.stroke();
-        p.beginPath(); p.arc(0, 0, r - 3.5, 0, Math.PI * 2); p.strokeStyle = 'rgba(255,255,240,.18)'; p.lineWidth = .8; p.stroke();
-        for (let k = 0; k < 6; k++) {
-          const a = k * Math.PI / 3, hx = Math.cos(a) * r * .58, hy = Math.sin(a) * r * .58;
-          p.beginPath(); p.arc(hx, hy, r * .2, 0, Math.PI * 2); p.fillStyle = '#15160f'; p.fill();
-          p.beginPath(); p.arc(hx, hy, r * .2, Math.PI * .9, Math.PI * 1.9); p.strokeStyle = 'rgba(0,0,0,.6)'; p.lineWidth = 1; p.stroke();
-          p.beginPath(); p.arc(hx, hy, r * .2 + .6, Math.PI * -.1, Math.PI * .9); p.strokeStyle = 'rgba(255,255,240,.22)'; p.lineWidth = .7; p.stroke();
-        }
-        p.beginPath(); p.arc(0, 0, r * .24, 0, Math.PI * 2); p.fillStyle = '#4a4a42'; p.fill();
-        p.beginPath(); p.arc(0, 0, r * .24, 0, Math.PI * 2); p.strokeStyle = 'rgba(15,15,12,.8)'; p.lineWidth = 1; p.stroke();
-        p.beginPath(); p.arc(0, 0, r * .08, 0, Math.PI * 2); p.fillStyle = '#16160f'; p.fill();
-      };
-      const key = r;   // the sprite is an image: any context can lay it
-      if (reelKey !== key) {
-        reelKey = key; reelSprite = null;
-        const doc = p.canvas && p.canvas.ownerDocument;
-        if (doc && typeof doc.createElement === 'function') {
-          const made = doc.createElement('canvas'), S = 3, keep = p;
-          made.width = made.height = Math.ceil((2 * r + 2) * S);
-          p = made.getContext('2d');
-          try { p.setTransform(S, 0, 0, S, (r + 1) * S, (r + 1) * S); drawReel(); } finally { p = keep; }
-          reelSprite = made;
-        }
+    // The lamp lighting the pressed metal face is fixed to the chassis.
+    function reelFace(cx, cy, r) {
+      const g = p.createRadialGradient(cx - r * .3, cy - r * .35, r * .1, cx, cy, r);
+      g.addColorStop(0, '#a9a79b'); g.addColorStop(.7, '#6d6c63'); g.addColorStop(1, '#3c3c35');
+      circle(cx, cy, r, g);
+      circle(cx, cy, r - 1, null, 'rgba(20,20,16,.8)', 1.4);
+      circle(cx, cy, r - 3.5, null, 'rgba(255,255,240,.18)', .8);
+      circle(cx, cy, r * .24, '#4a4a42', 'rgba(15,15,12,.8)', 1);
+      circle(cx, cy, r * .08, '#16160f');
+    }
+    function reelHoles(cx, cy, r, angle) {
+      for (let k = 0; k < 6; k++) {
+        const a = angle + k * Math.PI / 3, hx = cx + Math.cos(a) * r * .58, hy = cy + Math.sin(a) * r * .58;
+        circle(hx, hy, r * .2, '#15160f');
+        p.beginPath(); p.arc(hx, hy, r * .2, Math.PI * .9, Math.PI * 1.9);
+        p.strokeStyle = 'rgba(0,0,0,.6)'; p.lineWidth = 1; p.stroke();
+        p.beginPath(); p.arc(hx, hy, r * .2 + .6, Math.PI * -.1, Math.PI * .9);
+        p.strokeStyle = 'rgba(255,255,240,.22)'; p.lineWidth = .7; p.stroke();
       }
-      p.save(); p.translate(cx, cy); p.rotate(angle);
-      if (reelSprite) p.drawImage(reelSprite, -r - 1, -r - 1, 2 * r + 2, 2 * r + 2); else drawReel();
-      p.restore();
     }
     // Where the tape is at `now` for a list of cells ({time, width, u, stepDur}, by time): how many are struck, the
     // tape fed (design units), the newest strike's age and whether the tape is stepping.
@@ -2261,8 +2372,12 @@
       let n = lower(cells, now, c => c.time);
       while (n < cells.length && cells[n].time <= now) n++;
       if (!n) return {printed: 0, fed: 0, age: Infinity, stepping: false};
-      const c = cells[n - 1], f = c.stepDur > 0 && now - c.time < c.stepDur - 1e-9 ? clamp((now - c.time) / c.stepDur, 0, 1) : 1;
-      return {printed: n, fed: c.u + (1 - (1 - f) ** 3) * c.width, age: now - c.time, stepping: f < 1};
+      const c = cells[n - 1], age = now - c.time;
+      // Impression and release occupy the first quarter of the cycle. The feed roller
+      // then accelerates and brakes; paper, ink and reel all follow this displacement.
+      const contact = c.stepDur * TELE.contactFraction;
+      const f = age >= c.stepDur - 1e-9 ? 1 : clamp((age - contact) / (c.stepDur - contact), 0, 1);
+      return {printed: n, fed: c.u + smooth(f) * c.width, age, stepping: f > 0 && f < 1};
     }
     // Each cell's place on the tape and its step time: the step takes TELE.step, or 80 % of the gap to the next strike
     // when that is shorter, so two steps never overlap.
@@ -2290,7 +2405,7 @@
       if (p.globalAlpha !== 1) p.globalAlpha = 1;
     }
     function teleprinter(env, now, out) {
-      const x = 970 + wide / 2, y = 796, w = 316 + wide / 2, h = 74, head = x + w - TELE.headFromRight;
+      const x = 970 + wide / 2, y = 796, w = 330 + wide / 2, h = 74, head = x + w;
       const knob = 1378 + wide, knobY = 832;
       const tape = tapeOf(env);
       if (pass === 'base') {
@@ -2303,9 +2418,14 @@
         if (auditSink) auditShape('frame', auditBox(x, y, x + w, y + h));
         p.strokeStyle = '#4a4a40'; p.lineWidth = 1; p.strokeRect(x + .5, y + .5, w - 1, h - 1);
         inset(box(x, y, w, h, 0), .7);
-        raisedPlate(x + w, y - 2, 30, h + 4, 2, '#1f201b', '#4a4c42', .7);
+        // The right-hand lamp housing encloses an entire 40-unit strike cell.
+        // Its left lip is the exit. The tape and ink underneath it are masked together.
+        const enamel = p.createLinearGradient(head, y, head + 46, y + h);
+        enamel.addColorStop(0, '#41443a'); enamel.addColorStop(.45, '#34372f'); enamel.addColorStop(1, '#2a2d26');
+        raisedPlate(head, y - 2, 46, h + 4, 2, enamel, '#4a4c42', .7);
         cast(disk(knob, knobY, 23), 1.2);
         circle(knob, knobY, 24, '#1b1c17');   // the reel's well
+        reelFace(knob, knobY, TELE.reelR);
         return;
       }
       if (pass === 'over') {
@@ -2321,17 +2441,9 @@
         const shade = p.createLinearGradient(x + bar, 0, x + bar + 7, 0);
         shade.addColorStop(0, 'rgba(30,26,18,.28)'); shade.addColorStop(1, 'rgba(30,26,18,0)');
         p.fillStyle = shade; p.fillRect(x + bar, y + 1, 7, h - 2);
-        // The ribbon guard at the print point: a thin metal plate over the tape with the slit the type strikes through.
-        const gx0 = head - 3, gx1 = head + TELE.slit + 8, sy0 = y + 9, sy1 = y + h - 9;
-        p.save();
-        p.beginPath(); p.rect(gx0, y + 1, gx1 - gx0, h - 2); p.rect(head + TELE.slit + 1, sy0, -(TELE.slit + 2), sy1 - sy0); p.clip('evenodd');
-        const plate = p.createLinearGradient(0, y, 0, y + h);
-        plate.addColorStop(0, 'rgba(92,91,82,.96)'); plate.addColorStop(.5, 'rgba(58,58,51,.96)'); plate.addColorStop(1, 'rgba(34,34,30,.96)');
-        p.fillStyle = plate; p.fillRect(gx0, y + 1, gx1 - gx0, h - 2);
-        p.restore();
-        p.strokeStyle = 'rgba(12,12,10,.75)'; p.lineWidth = .8;
-        p.strokeRect(head - 1 + .4, sy0 + .4, TELE.slit + 2 - .8, sy1 - sy0 - .8);
-        p.fillStyle = 'rgba(0,0,0,.22)'; p.fillRect(gx1, y + 1, 2, h - 2);
+        const lip = p.createLinearGradient(head - 2.5, 0, head, 0);
+        lip.addColorStop(0, 'rgba(20,20,16,0)'); lip.addColorStop(1, 'rgba(20,20,16,.35)');
+        p.fillStyle = lip; p.fillRect(head - 2.5, y + 1, 2.5, h - 2);
         return;
       }
       if (pass !== 'live') return;
@@ -2339,13 +2451,13 @@
       const cells = tape ? tape.cells : sheet.cells;
       const st = tapeState(cells, now);
       // The strip: sprite tiles laid so that tape place u is at head + u - fed.
-      p.save(); p.beginPath(); p.rect(x + 1, y + 1, w - 2, h - 2); p.clip();
+      p.save(); p.beginPath(); p.rect(x + 1, y + 1, head - x - 1, h - 2); p.clip();
       const sprite = tapeSprite(h), P = TELE.period;
       if (sprite) {
         const first = Math.floor((x - head + st.fed) / P) - 1;
         for (let k = first; head + k * P - st.fed < x + w; k++) p.drawImage(sprite, head + k * P - st.fed, y, P + TELE.overlap, h);
       } else rect(x, y + TELE.margin, w, h - 2 * TELE.margin, C.paper);
-      auditClip = {x: x + 1, y: y + 1, w: w - 2, h: h - 2};
+      auditClip = {x: x + 1, y: y + 1, w: head - x - 1, h: h - 2};
       const glyphs = [];
       const faults = env.options.radarInk !== false;
       for (let k = st.printed - 1; k >= 0; k--) {
@@ -2353,8 +2465,12 @@
         if (left + c.width < x) break;
         const cx = left + c.width / 2, dy = tapeWave(c.u + c.width / 2), age = st.printed - 1 - k, fault = faults ? faultOf(k) : null;
         if (c.dot) { circle(cx, y + h / 2 + 8 + dy, 2.5, C.paperInk); continue; }
+        if (tape && c.blank) { glyphs.push({ch: c.ch, code: null, clear: true}); continue; }
+        // An overhanging glyph or a second ink impression belongs to this cell.
+        // Even its fringe stays inside the hood while the type is in contact.
+        const atMouth = left + c.width > head;
+        if (atMouth) { p.save(); p.beginPath(); p.rect(left, y, c.width, h); p.clip(); }
         if (tape) {
-          if (c.blank) { glyphs.push({ch: c.ch, code: null, clear: true}); continue; }
           const code = c.han ? (root.XinScoreTelegraph && root.XinScoreTelegraph.code(c.ch)) || '----' : '';
           if (code) strike(code, cx, y + 17 + dy, 15, 'mono', '', age, fault);
           strike(c.ch, cx, y + 49 + dy, c.wide ? 28 : TAPE_MONO_SIZE, c.wide ? 'hanzi' : 'mono', 'bold', age, fault);
@@ -2363,12 +2479,13 @@
           if (c.name) strike(c.name, cx, y + 17 + dy, 13, 'mono', '', age, fault);
           if (c.ch && c.ch !== ' ') strike(c.ch, cx, y + 49 + dy, c.han ? 24 : 20, c.han ? 'hanzi' : 'mono', 'bold', age, fault);
         }
+        if (atMouth) p.restore();
       }
       auditClip = null;
       p.restore();
-      reel(knob, knobY, TELE.reelR, st.fed / TELE.reelR);
+      reelHoles(knob, knobY, TELE.reelR, st.fed / TELE.reelR);
       // The lamp beside the reel: a blink at each strike, dark again within TELE.flash.
-      lamp(x + w + 15, y + 12, 5, st.age < TELE.flash ? 1 - st.age / TELE.flash : 0);
+      lamp(head + 29, y + 12, 5, st.age < TELE.flash ? 1 - st.age / TELE.flash : 0);
       const common = {printed: st.printed, fed: +st.fed.toFixed(3), stepping: st.stepping, strikeAge: Number.isFinite(st.age) ? +st.age.toFixed(3) : null,
         reel: +(st.fed / TELE.reelR).toFixed(4), head: +head.toFixed(2)};
       if (tape) {
@@ -2494,9 +2611,26 @@
       }
       const r = Math.hypot(dx - (661 + wide / 4), dy - 425);
       if (r <= 270) {
+        const regions = hitRegions.get(frame);
+        const label = regions?.bars.find(b => Math.abs(dx - b.x) <= b.halfWidth && Math.abs(dy - b.y) <= 10);
+        if (label) return {kind: 'time', time: label.time};
         const bars = barGrid(env), turn = turnAt(env, bars, env.now);
         let phase = (Math.atan2(dy - 425, dx - (661 + wide / 4)) + Math.PI / 2) / (Math.PI * 2);
         phase = ((phase % 1) + 1) % 1;
+        // A visible echo owns its time, including the previous winding ahead of the beam.
+        let selected = -Infinity, distance = Infinity;
+        for (const hit of regions?.echoes || []) {
+          const radial = Math.abs(hit.r - r);
+          if (radial > 4) continue;
+          const pad = 3 / (2 * Math.PI * hit.r);
+          const u = Math.floor(hit.u1 + pad - phase) + phase;
+          if (u < hit.u0 - pad) continue;
+          const at = clamp(u, hit.u0, hit.u1);
+          const echo = Number.isFinite(env.options.radarEcho) ? env.options.radarEcho : 1;
+          if ((1 - clamp((turn - at) / echo, 0, 1)) ** 1.6 * hit.dim < .02) continue;
+          if (radial < distance || (radial === distance && at > selected)) { selected = at; distance = radial; }
+        }
+        if (Number.isFinite(selected)) return {kind: 'time', time: Math.max(0, turnTime(env, bars, selected))};
         let delta = phase - ((turn % 1) + 1) % 1;
         if (delta > .5) delta -= 1; if (delta < -.5) delta += 1;
         return {kind: 'time', time: Math.max(0, turnTime(env, bars, turn + delta))};
