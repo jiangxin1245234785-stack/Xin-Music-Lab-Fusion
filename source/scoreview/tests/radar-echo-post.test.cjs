@@ -430,6 +430,23 @@ test('without lyrics the teleprinter prints the track sheet: title and artist fi
   assert.deepEqual(frame(20).motion.teleprinter, frame(20).motion.teleprinter, 'a function of song time');
 });
 
+test('the song plate gives its fixed mounting bounds when the full credit needs disclosure', () => {
+  const lanes = [{id:'g', kind:'pitched', group:'guitar', notes:[[1,4,60,100]]}];
+  const frame = (title, artist) => post(steady(lanes, 12, {track:{title,artist,duration:12}})).frame(5).motion;
+  const short = frame('Xtal','Aphex Twin');
+  assert.deepEqual(short.teleTitleLines,['Xtal · Aphex Twin']);
+  const title = 'Everything That Is Difficult Will Come to an End';
+  const double = frame(title,'Flotation Toy Warning');
+  assert.equal(double.teleTitleLines.length,2);
+  assert.equal(double.teleTitleLines.join(' '),title);
+  const long = frame(('a long sentence ').repeat(20).trim(),'Ciśnienie');
+  assert.equal(long.teleTitleLines.length,2);
+  assert.ok(long.teleTitle.length < 200);
+  assert.deepEqual(long.titlePlate,double.titlePlate);
+  assert.equal(long.titlePlate.height,29);
+  assert.equal(short.titlePlate,undefined);
+});
+
 test('the rating plate reads 蒋 and 鑫 from the telegraph table; the song sits in the teleprinter\'s title row; a host\'s facts list prints in its order', () => {
   assert.equal(Telegraph.code('蒋'), '5592');
   assert.equal(Telegraph.code('鑫'), '9515');

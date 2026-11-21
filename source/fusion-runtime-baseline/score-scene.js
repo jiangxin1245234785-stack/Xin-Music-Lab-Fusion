@@ -80,6 +80,34 @@
     };
 
     let view = null, clock = clocks.create(audio, {offset: 0}), shownModel = null;
+    const titleButton = root.document.getElementById('scoreTitlePlate'), titleCard = root.document.getElementById('scoreTitleCard');
+    const fullTitle = root.document.getElementById('scoreFullTitle'), fullArtist = root.document.getElementById('scoreFullArtist');
+    let platePlacement = '', dismissingTitle = false;
+    function hideTitlePlate() {
+      if (!titleButton || titleButton.hidden) return;
+      titleCard?.hidePopover?.();
+      titleButton.hidden = true;
+      platePlacement = '';
+    }
+    function placeTitleButton(draw) {
+      const m = draw?.motion, box = m?.titlePlate;
+      if (scoreStyle !== 'glass' || !titleButton || !box || !shownModel?.track) { hideTitlePlate(); return; }
+      const {width, height} = draw.viewport;
+      const sx = canvas.clientWidth / width, sy = canvas.clientHeight / height;
+      const x = canvas.offsetLeft + (m.origin[0] + box.x * m.scale) * sx;
+      const y = canvas.offsetTop + (m.origin[1] + box.y * m.scale) * sy;
+      const w = box.width * m.scale * sx, h = box.height * m.scale * sy;
+      const placement = [x, y, w, h].join('|');
+      if (platePlacement !== placement) {
+        Object.assign(titleButton.style, {left:x+'px', top:y+'px', width:w+'px', height:h+'px'});
+        platePlacement = placement;
+      }
+      const track = shownModel.track;
+      if (fullTitle.textContent !== track.title) fullTitle.textContent = track.title;
+      const artist = track.artist || '';
+      if (fullArtist.textContent !== artist) fullArtist.textContent = artist;
+      if (titleButton.hidden) titleButton.hidden = false;
+    }
     const trialSwitch = root.document.getElementById('trialLocalBars');
     if (trialSwitch) { trialSwitch.checked = root.localStorage.getItem('xml-local-bars-trial') !== 'off';
       trialSwitch.addEventListener('change', () => { root.localStorage.setItem('xml-local-bars-trial',trialSwitch.checked?'on':'off'); if(trackId) load(trackId); }); }
@@ -212,6 +240,7 @@
     if (styleInput) {
       styleInput.value = scoreStyle;
       styleInput.addEventListener('change', () => {
+        hideTitlePlate();
         scoreStyle = root.XinScoreMood.normalize(styleInput.value);
         try { root.localStorage.setItem('xin-score-style-v1', scoreStyle); } catch (_) {}
         showRadar(); showTerrain();
@@ -425,6 +454,7 @@
     const setLoop = next => { loop = next; if (view) view.setOptions({loop: loop ? [loop.start, loop.end] : null}); };
 
     function touch(event, repeat) {
+      if (dismissingTitle) return;
       compare?.settle();
       if (!active() || status !== 'ready' || !view) return;
       const box = canvas.getBoundingClientRect();
@@ -472,6 +502,7 @@
           view.setLyrics?.(root.XinScoreLyricsView?.snapshot?.(trackId));
           view.resize();
           const draw = view.draw(undefined, audio.paused || audio.seeking);
+          placeTitleButton(draw);
           compare?.update(draw?.time);
           if (albumLayout) showAlbumCaption(view.options().presentationLayout ? '' : draw?.caption || '');
         }
@@ -494,6 +525,7 @@
     const wake = () => {
       measured = 0;
       const now = active();
+      if (!now) hideTitlePlate();
       const presentationLayout = Boolean(now && stage.classList.contains('is-immersive'));
       stage.classList.toggle?.('score-presentation-active', presentationLayout);
       view?.setOptions({presentationLayout});
@@ -526,6 +558,7 @@
 
     // Called by fusion.js whenever a track is accepted or its results are refreshed.
     async function load(id) {
+      hideTitlePlate();
       const ticket = ++sequence;
       const trackChanged = String(id || '') !== trackId;
       if (trackChanged) showAlbumCaption();
@@ -573,6 +606,7 @@
     }
 
     function reset() {
+      hideTitlePlate();
       showAlbumCaption();
       sequence++;
       trackId = '';
@@ -652,6 +686,8 @@
       else if (!nameTimer) nameTip.hidden = true;
     });
     canvas.addEventListener('pointerleave', () => { if (!nameTimer) nameTip.hidden = true; });
+    // The first click outside a title card dismisses it, even over a seek or solo control.
+    canvas.addEventListener('pointerdown', () => { dismissingTitle = titleCard?.matches?.(':popover-open') === true; });
     canvas.addEventListener('click', event => touch(event, false));
     canvas.addEventListener('dblclick', event => touch(event, true));
     // The layers only an analysis can give (bar lines, loudness). When the track lacks them a
@@ -761,7 +797,7 @@
                              line: hint && root.performance.now() < hint.until ? null : (prepText() || {}).text || null},
                       layers: view && status === 'ready' ? view.layers() : null,
                       frame: view && status === 'ready' ? view.lastFrame() : null}),
-      destroy: () => { trackId = ''; prepare?.forgetWaiting(''); if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; scoreDriver?.detach(); clock.destroy(); }
+      destroy: () => { hideTitlePlate(); trackId = ''; prepare?.forgetWaiting(''); if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; scoreDriver?.detach(); clock.destroy(); }
     });
   }
 

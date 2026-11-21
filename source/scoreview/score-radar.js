@@ -47,9 +47,9 @@
     fresh: 12, freshBands: 4, freshInk: '#100e0a', freshWidth: 2.4});   // fresh ink: design units behind the nib (host's correction: 1.5 s was under 2 px)
   // The teleprinter (SPEC-TELEPRINTER): a step's time (s), the fresh-ink run (cells), the ink's base strength and spread,
   // the baseline's spread (design units), one smudge in about this many cells, the paper sprite's period, the tape's
-  // rise and fall, margin in the slot, supply reel radius, strike lamp blink (s), tear bar width, title's smallest size.
+  // rise and fall, margin in the slot, supply reel radius, strike lamp blink (s) and tear bar width.
   const TELE = Object.freeze({step: .04, contactFraction: .25, freshCells: 4, freshInk: '#0d0c09', inkBase: .88, inkSpread: .12, baseSpread: .6, smudgeEvery: 30,
-    period: 256, wave: .9, margin: 5, reelR: 22, flash: .06, tearWidth: 12, titleMin: 11, overlap: 2});
+    period: 256, wave: .9, margin: 5, reelR: 22, flash: .06, tearWidth: 12, overlap: 2});
   // A fixed noise in -1..1 of a position (never of time): pencil pressure, fuzz and the hand-drawn lines' wobble.
   const noise = k => { const h = Math.sin(k * 12.9898 + 4.1414) * 43758.5453; return (h - Math.floor(h)) * 2 - 1; };
   // A drum lamp after its hit (radar.8 feedback: no preview, dark to the end): full at the hit, then (1 - age / span)^2,
@@ -2195,8 +2195,6 @@
     // code above it, a field value with its name, a space, a line's dot) is struck at the print point at its time; then
     // the tape steps left by that cell's width in TELE.step seconds (eased out) and stands until the next strike. The
     // tape's place is the cells struck before the newest, plus the newest's step so far: a function of song time.
-    // The title row: the song being taken down, in its own language; too wide, it gets smaller down to TELE.titleMin,
-    // then only the title, then the title cut by characters, never an ellipsis.
     // Runs in the static hardware pass, in the radar's design coordinates.
     function plateHardware(p, x, y, width, height) {
       const clamp01 = n => Math.max(0, Math.min(1,n));
@@ -2280,26 +2278,79 @@
       p.drawImage(sheet,0,0,width,height);p.restore();
     }
 
+    function fitPlateTitle(title, full, kind, room) {
+      const width = value => p.measureText(value).width;
+      for (const [text, face] of [[full, kind], [title, kind], [title, 'plateBold']]) {
+        for (const size of [15, 14]) {
+          font(face, size, 'bold');
+          if (width(text) <= room) return {lines: [text], face, size};
+        }
+      }
+      const segments = new Intl.Segmenter('und', {granularity: 'word'});
+      const breaks = Array.from(segments.segment(title), word => word.index).slice(1);
+      const face = 'plateBold';
+      for (const size of [14, 13, 12]) {
+        font(face, size, 'bold');
+        if (width(title.trim().replace(/\s+/gu, ' ')) > 2 * room + width('　')) continue;
+        let best = null, bestCost = Infinity;
+        for (const at of breaks) {
+          const left = title.slice(0, at).trimEnd(), right = title.slice(at).trimStart();
+          if (!left || !right || /[（(《\[]$/u.test(left) || /^[,，。.)）\]》]/u.test(right)) continue;
+          if (/\b(?:album|radio|extended|original|live)$/iu.test(left) && /^(?:version|edit|mix)\b/iu.test(right)) continue;
+          const a = width(left), b = width(right);
+          if (Math.max(a, b) > room) continue;
+          let cost = Math.abs(a - b);
+          if (/^[(（]|^(?:album version|radio edit|live version|feat\.)\b/iu.test(right)) cost -= 18;
+          if (/\b(?:to|of|the|and|feat\.?)$/iu.test(left)) cost += 18;
+          if (cost < bestCost) { bestCost = cost; best = [left, right]; }
+        }
+        if (best) return {lines: best, size, face};
+      }
+      // Fill two readable lines at word boundaries. An unbroken word may span the entire plate.
+      const lines = [];
+      let rest = title;
+      while (rest && lines.length < 2) {
+        let end = 0;
+        function take(segmenter) {
+          for (const word of segmenter.segment(rest)) {
+            const next = word.index + word.segment.length;
+            if (width(rest.slice(0, next).trimEnd()) > room) break;
+            end = next;
+          }
+        }
+        take(segments);
+        if (!end) take(new Intl.Segmenter('und', {granularity: 'grapheme'}));
+        if (!end) break;
+        lines.push(rest.slice(0, end).trimEnd());
+        rest = rest.slice(end).trimStart();
+      }
+      return {lines, size: 12, face};
+    }
+
     function teleTitle(env, key, out) {
       const t = env.model.track || {}, title = String(t.title || ''), song = [title, clean(t.artist)].filter(Boolean).join(' · ');
       write('TELEPRINTER', 970 + wide / 2, 782, 15, C.stamp, 'stamp', 'left', 0, 'bold', 'alphabetic');
       font('stamp', 15);
       const plateX = 970 + wide / 2 + p.measureText('TELEPRINTER').width + 7;
-      const plateY = 765, plateWidth = 1297 + wide - plateX, plateHeight = 24;
-      const room = plateWidth - 30;
+      const plateY = 762.5, plateWidth = 1297 + wide - plateX, plateHeight = 29;
       plateHardware(p,plateX,plateY,plateWidth,plateHeight);
       const han = /\p{Script=Han}/u.test(song), kind = han ? 'hanzi' : 'mono';
-      const fits = (text, size) => { font(kind, size, 'bold'); return p.measureText(text).width <= room; };
-      let text = song || '— NO SIGNAL —', size = 15;
-      while (size > TELE.titleMin && !fits(text, size)) size--;
-      if (!fits(text, size) && title) text = title;
-      if (!fits(text, size)) { const chars = Array.from(text); while (chars.length > 1 && !fits(chars.join(''), size)) chars.pop(); text = chars.join(''); }
+      const full = song || '— NO SIGNAL —';
+      const {lines, size, face} = fitPlateTitle(title || full, full, kind, plateWidth - 30);
       const center = plateX + plateWidth/2;
-      font(kind, size, 'bold');
-      p.textAlign = 'center'; p.textBaseline = 'alphabetic';
-      p.fillStyle = 'rgba(217,213,190,.60)'; p.fillText(text, center, 782.3);
-      out.teleTitle = write(text, center, 781.95, size, '#302f28', kind, 'center', 0, 'bold', 'alphabetic');
+      lines.forEach((line, i) => {
+        const y = lines.length === 1 ? 781.95 : i === 0 ? 773.75 : 787.75;
+        font(face, size, 'bold');
+        p.textAlign = 'center'; p.textBaseline = 'alphabetic';
+        p.fillStyle = 'rgba(217,213,190,.60)'; p.fillText(line, center, y+.35);
+        write(line, center, y, size, '#302f28', face, 'center', 0, 'bold', 'alphabetic');
+      });
+      out.teleTitle = lines.join(' ');
       out.teleTitleSize = size;
+      out.teleTitleLines = lines;
+      if (title && (lines.length > 1 || lines[0] !== full)) {
+        out.titlePlate = {x:plateX, y:plateY, width:plateWidth, height:plateHeight};
+      }
       write(key[0], 1404 + wide, 770, 12, C.stampFaint, 'stamp', 'right');
       write(key[1], 1404 + wide, 785, 12, C.stampFaint, 'stamp', 'right');
     }

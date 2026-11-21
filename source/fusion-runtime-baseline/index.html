@@ -24,6 +24,8 @@
       <canvas id="glitchWebglCanvas" class="glitch-webgl-canvas" aria-label="WebGL2 跨帧反馈 Glitch 渲染" data-i18n-aria-label="canvas.webgl"></canvas>
       <canvas id="generatorCanvas" class="generator-canvas" aria-label="Generator Source-aware WebGL2 输出" data-i18n-aria-label="canvas.generator"></canvas>
       <canvas id="scoreCanvas" class="score-canvas" aria-label="跟着音乐滚动的谱面" data-i18n-aria-label="canvas.score"></canvas>
+      <button type="button" id="scoreTitlePlate" hidden popovertarget="scoreTitleCard" aria-labelledby="scoreFullTitle scoreFullArtist"></button>
+      <div id="scoreTitleCard" popover="auto"><strong id="scoreFullTitle" dir="auto"></strong><span id="scoreFullArtist" dir="auto"></span></div>
       <div id="scoreVariationControls" class="score-compare" role="group" aria-label="段落对照" data-i18n-aria-label="score.variation" hidden>
         <button id="scoreVariationPlayA" type="button" aria-label="跳到 A 段开头" title="跳到 A 段开头" data-i18n-aria-label="score.variationPlayA" data-i18n-title="score.variationPlayA" aria-pressed="false">A</button>
         <button id="scoreVariationPlayB" type="button" aria-label="跳到 B 段开头" title="跳到 B 段开头" data-i18n-aria-label="score.variationPlayB" data-i18n-title="score.variationPlayB" aria-pressed="false">B</button>

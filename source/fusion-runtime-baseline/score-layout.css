@@ -281,3 +281,21 @@
 /* Immersive and export share the canvas footer; suppress the old DOM copies. */
 .stage.score-presentation-active #scoreCanvas { inset: 0 !important; width: 100% !important; height: 100% !important; }
 .stage.score-presentation-active :is(#scoreCompactLyrics, .score-lyrics, #scoreSidebarCaption, #scoreCompactCaption) { display: none !important; }
+
+/* The canvas paints the plate. Its native button provides pointer, touch and keyboard disclosure. */
+#scoreTitlePlate {
+  position: absolute; z-index: 5; anchor-name: --radar-title;
+  margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer;
+}
+#scoreTitlePlate:focus-visible { outline: 2px solid #e7dfc4; outline-offset: 1px; }
+#scoreTitleCard {
+  position: fixed; position-anchor: --radar-title; inset: auto; margin: 0;
+  right: clamp(8px, anchor(right), max(8px, calc(100vw - 23rem - 8px)));
+  bottom: calc(anchor(top) + 7px); box-sizing: border-box;
+  width: min(23rem, calc(100vw - 16px)); max-height: 50vh; overflow: auto;
+  padding: 12px 16px; border: 1px solid #69665a; border-radius: 5px;
+  background: #24251f; color: #ece5cf; box-shadow: 0 3px 12px #1119;
+  text-align: start; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}
+#scoreFullTitle { display: block; font-size: 16px; line-height: 1.35; }
+#scoreFullArtist:not(:empty) { display: block; margin-top: 5px; color: #c6beab; font-size: 13px; }
