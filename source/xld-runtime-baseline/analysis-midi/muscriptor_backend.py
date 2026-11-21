@@ -49,7 +49,8 @@ def finish_timing(midi,profile):
 
 def instrument_names(profile, string_target='strings'):
     options = profile['options']
-    return options.get('instrumentsByTarget', {}).get(string_target, options['instruments']).split(',')
+    names = options.get('instrumentsByTarget', {}).get(string_target, options.get('instruments'))
+    return names.split(',') if names is not None else None
 
 def predict(audio_path,profile,notify,duration,string_target='strings'):
     if not ready(profile):raise ValueError('MuScriptor 环境或权重未就绪')

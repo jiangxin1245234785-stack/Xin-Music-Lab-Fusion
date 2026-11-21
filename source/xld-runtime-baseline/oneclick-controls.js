@@ -11,6 +11,7 @@
     const t = (key, params) => rt('runtime.oneclick.' + key, params);
     let choice = P.load(storage), engines = null, enginesPromise = null;
     let view = {trackId: null, steps: [], finished: false, title: ''}, running = null, status = null, previewToken = 0, previewKey = '';
+    let previewRoute = null, savingRoute = false;
 
     function loadEngines(force = false) {
       if (engines && !force) return Promise.resolve(engines);
@@ -41,12 +42,28 @@
     });
     const customTag = document.createElement('span'); customTag.className = 'oneclick-custom'; presetBox.append(customTag);
     const rows = {};
-    const ROWS = [['separation', 'select'], ['refine', 'check'], ['piano', 'select'], ['bass', 'select'], ['guitar', 'select'], ['strings', 'select'], ['winds', 'select'], ['drums', 'select'], ['vocals', 'check']];
+    const ROWS = [['separation', 'select'], ['otherRoute', 'route'], ['other', 'select'], ['refine', 'check'], ['piano', 'select'], ['bass', 'select'], ['guitar', 'select'], ['strings', 'select'], ['winds', 'select'], ['drums', 'select'], ['vocals', 'check']];
     for (const [key, kind] of ROWS) {
       const row = document.createElement('div'); row.className = 'oneclick-choice'; row.dataset.choice = key;
       const label = document.createElement('label'); const name = document.createElement('span'); name.className = 'oneclick-choice-name';
       let input = null;
-      if (kind === 'select') {
+      if (kind === 'route') {
+        input = document.createElement('select');
+        for (const route of P.OTHER_ROUTES) { const option = document.createElement('option'); option.value = route; input.append(option); }
+        input.addEventListener('change', async () => {
+          const track = getTrack();
+          if (!track || savingRoute || isBusy()) return;
+          const route = input.value;
+          savingRoute = true; render();
+          const response = await derived.selectOtherRoute(track, route);
+          savingRoute = false;
+          if (getTrack()?.id !== track.id) { render(); return; }
+          if (response.ok) schedulePreview(true);
+          else status = {done: t('routeSaveFailed')};
+          render();
+        });
+        label.append(name, input);
+      } else if (kind === 'select') {
         input = document.createElement('select');
         for (const value of P.OPTIONS[key]) { const option = document.createElement('option'); option.value = value; input.append(option); }
         input.addEventListener('change', () => { choice = P.choose(choice, key, input.value); P.save(storage, choice); schedulePreview(true); render(); });
@@ -102,9 +119,16 @@
       customTag.hidden = choice.preset !== 'custom';
       $('oneclickChoicesSummary').textContent = t('choices') + ' · ' + summaryLine();
       const M = P.MEASURED;
+      const track = getTrack(), album = getAlbum();
+      const splitting = previewRoute === 'split';
       for (const [key, {name, input, advice, kind, row}] of Object.entries(rows)) {
         name.textContent = t('choice.' + key);
-        if (kind === 'select') {
+        row.hidden = (key === 'refine' || key === 'strings' || key === 'winds') ? !splitting : key === 'other' && splitting;
+        if (kind === 'route') {
+          for (const option of input.options) option.textContent = t('route.' + option.value);
+          input.value = previewRoute || 'direct';
+          input.disabled = Boolean(isBusy() || savingRoute || !track || view.trackId !== track.id || view.otherRouteError);
+        } else if (kind === 'select') {
           for (const option of input.options) option.textContent = modelName(option.value) + (installed(option.value) ? '' : ' · ' + t('notInstalled'));
           input.value = choice.choices[key];
           input.disabled = Boolean(running) || ((key === 'strings' || key === 'winds') && !choice.choices.refine);
@@ -117,8 +141,7 @@
           drums: M.drums.secPerMin, drumsRuns: M.drums.runs, drumSep: M.drumSep.secPerMin, drumSepRuns: M.drumSep.runs,
           vocals: M.vocals.secPerMin, vocalsRuns: M.vocals.runs});
       }
-      const busy = Boolean(isBusy());
-      const track = getTrack(), album = getAlbum();
+      const busy = Boolean(isBusy() || savingRoute);
       $('oneclickTrack').textContent = running === 'track' ? t('running') : t('runTrack');
       $('oneclickAlbum').textContent = running === 'album' && status?.index ? t('albumProgress', status) : t('runAlbum');
       $('oneclickTrack').disabled = busy || !track;
@@ -129,12 +152,13 @@
     }
     function summaryLine() {
       const c = choice.choices;
-      return [modelName(c.separation), c.refine ? t('refineOn') : t('refineOff'), modelName(c.guitar), modelName(c.drums), c.vocals ? t('vocalsOn') : t('vocalsOff')].join(' · ');
+      return [modelName(c.separation), t('route.' + (previewRoute || 'direct')), modelName(c.guitar), modelName(c.drums), c.vocals ? t('vocalsOn') : t('vocalsOff')].join(' · ');
     }
     function statusLine(track) {
       if (running === 'album' && status) return t('albumWorking', status);
       if (running) return view.title ? t('trackWorking', {title: view.title}) : '';
       if (status?.done) return status.done;
+      if (view.otherRouteError) return t('routeReadFailed', {error: view.otherRouteError});
       if (!track) return t('chooseTrack');
       return view.steps.some(step => step.state === 'unavailable') ? t('someUnavailable') : t('ready');
     }
@@ -143,10 +167,12 @@
     async function planFor(track) {
       await loadEngines();
       const [derivedNow, summary] = await Promise.all([
-        Promise.resolve(bridge.readDerived(track.id)).catch(() => null),
+        Promise.resolve(bridge.readDerived(track.id)).catch(error => ({otherRouteError: String(error)})),
         Promise.resolve(bridge.getAnalysisSummary?.()).catch(() => null)]);
+      const otherRouteError = derivedNow?.otherRouteError || (!Object.hasOwn(derivedNow || {}, 'otherRoute') ? 'read-failed' : null);
+      if (otherRouteError) return {otherRoute: null, otherRouteError, steps: []};
       const has = engine => summary?.[track.id]?.[engine]?.status === 'complete';
-      return P.plan(choice.choices, {analysis: getEngines?.() || [], ...engines, derived: derivedNow, has});
+      return {otherRoute: P.otherRouteFor(derivedNow), storedOtherRoute: derivedNow.otherRoute, steps: P.plan(choice.choices, {analysis: getEngines?.() || [], ...engines, derived: derivedNow, has})};
     }
     function schedulePreview(force = false) {
       const track = getTrack();
@@ -155,14 +181,16 @@
       if (!force && key === previewKey) return;
       previewKey = key; status = null;
       const token = ++previewToken;
-      if (!track) { view = {trackId: null, steps: [], finished: false, title: ''}; render(); return; }
-      planFor(track).then(steps => {
+      if (!track) { previewRoute = null; view = {trackId: null, steps: [], finished: false, title: ''}; render(); return; }
+      if (track.id !== view.trackId) previewRoute = null;
+      planFor(track).then(({otherRoute, steps, otherRouteError}) => {
         if (token !== previewToken || running || getTrack()?.id !== track.id) return;
-        view = {trackId: track.id, steps, finished: false, title: track.title}; render();
+        previewRoute = otherRoute;
+        view = {trackId: track.id, steps, otherRouteError, finished: false, title: track.title}; render();
       }).catch(() => {});
     }
 
-    function ops(track) {
+    function ops(track, otherRoute, storedOtherRoute) {
       const say = (engine, engineName) => onTask?.({trackId: track.id, trackTitle: track.title, engine, engineName, status: 'starting', progress: 0});
       return {
         has: async engine => { const summary = await Promise.resolve(bridge.getAnalysisSummary?.()).catch(() => null); return summary?.[track.id]?.[engine]?.status === 'complete'; },
@@ -207,16 +235,23 @@
           return {ok: true, cached: Boolean(response.result?.cached)};
         },
         midi: async ({exclude, onStep, onResult}) => {
+          const autoDirect = !storedOtherRoute && otherRoute === 'direct';
+          if (autoDirect) {
+            const saved = await derived.selectOtherRoute(track, 'direct', true);
+            if (!saved.ok) return saved;
+          }
           await derived.setModels(P.midiPicks(choice.choices));
-          return derived.runBatch(track, {exclude, onStep: (index, total, step) => onStep(step), onResult});
+          return derived.runBatch(track, {exclude, expectedOtherRoute: autoDirect ? 'direct' : storedOtherRoute, onStep: (index, total, step) => onStep(step), onResult});
         }
       };
     }
 
     async function runOne(track) {
-      const steps = await planFor(track);
-      view = {trackId: track.id, steps, finished: false, title: track.title}; render();
-      const outcome = await P.run({steps, ops: ops(track), cancelled: () => Boolean(isCancelled()), onUpdate: () => render()});
+      const {otherRoute, storedOtherRoute, steps, otherRouteError} = await planFor(track);
+      if (getTrack()?.id === track.id) previewRoute = otherRoute;
+      view = {trackId: track.id, steps, otherRouteError, finished: Boolean(otherRouteError), title: track.title}; render();
+      if (otherRouteError) return {ok: false, otherRouteError, steps};
+      const outcome = await P.run({steps, ops: ops(track, otherRoute, storedOtherRoute), cancelled: () => Boolean(isCancelled()), onUpdate: () => render()});
       view.finished = true; render();
       return outcome;
     }
@@ -225,7 +260,7 @@
 
     async function runTrack() {
       const track = getTrack();
-      if (!track || running || isBusy()) return null;
+      if (!track || running || savingRoute || isBusy()) return null;
       running = 'track'; status = null; setBatch(true); render();
       let outcome;
       try {
@@ -236,7 +271,7 @@
       finally {
         running = null;
         const c = counts(view.steps);
-        status = {done: outcome?.cancelled ? t('trackCancelled', c) : outcome?.ok ? t('trackDone', c) : t('trackFailed', c)};
+        status = {done: outcome?.otherRouteError ? t('routeReadFailed', {error: outcome.otherRouteError}) : outcome?.cancelled ? t('trackCancelled', c) : outcome?.ok ? t('trackDone', c) : t('trackFailed', c)};
         log?.(t('logTrack', {title: track.title, result: status.done}));
         setBatch(false); previewKey = JSON.stringify([track.id, choice.choices]); render();
       }
@@ -246,7 +281,7 @@
     // Every track of the album, one after another. A failing song does not stop the next; cancel stops the album.
     async function runAlbum() {
       const album = getAlbum();
-      if (!album?.tracks?.length || running || isBusy()) return null;
+      if (!album?.tracks?.length || running || savingRoute || isBusy()) return null;
       running = 'album'; setBatch(true);
       const total = album.tracks.length, tally = {complete: 0, failed: 0, left: 0, total};
       let cancelled = false;
@@ -264,7 +299,7 @@
           try { outcome = await runOne(track); } catch (error) { outcome = {ok: false, error: String(error)}; }
           if (outcome?.cancelled) { cancelled = true; break; }
           if (outcome?.ok) tally.complete += 1;
-          else { tally.failed += 1; const bad = (view.steps || []).find(step => step.state === 'failed'); log?.(t('logTrackFailed', {title: track.title, step: bad ? stepName(bad) : '', why: bad ? reasonText(bad.reason) : ''})); }
+          else { tally.failed += 1; const bad = (view.steps || []).find(step => step.state === 'failed'); log?.(t('logTrackFailed', {title: track.title, step: bad ? stepName(bad) : '', why: outcome?.otherRouteError ? t('routeReadFailed', {error: outcome.otherRouteError}) : bad ? reasonText(bad.reason) : ''})); }
         }
       } finally {
         tally.left = total - tally.complete - tally.failed;
@@ -285,7 +320,7 @@
     loadEngines().then(() => { schedulePreview(true); render(); }).catch(() => {});
     render();
     // sync(): called by the app whenever busy state or the selected track may have changed.
-    return {runTrack, runAlbum, render, sync: () => { schedulePreview(false); render(); }, snapshot: () => ({choice, view, running})};
+    return {runTrack, runAlbum, render, refresh: () => schedulePreview(true), sync: () => { schedulePreview(false); render(); }, snapshot: () => ({choice, view, running})};
   }
   root.XldOneClick = {create};
 })(globalThis);

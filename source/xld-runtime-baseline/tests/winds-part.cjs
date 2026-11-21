@@ -53,7 +53,7 @@ function floatWav(file, frames, channels = 2, rate = 44100) {
   assert.equal(winds[0].defaultFor, 'winds', 'Medium is the manual default');
   assert.equal(new Set(models.map(p => p.model)).size, models.length, 'model strings stay unique');
   const runner = read('analysis-midi/runner.py');
-  assert.match(runner, /"winds": 56\}/, 'the MIDI runner knows the part');
+  assert.match(runner, /^STEMS = \{[^\r\n]*"winds": 56(?:,|\})/m, 'the MIDI runner knows the part');
   assert.match(runner, /stem in \('strings', 'winds'\)/, 'overlapping wind notes are kept, one track per instrument');
   assert.match(read('analysis-refine/runner.py'), /'strings-residual'\] or \(engine!='mega-53'/, 'the refinement runner takes the chained source');
 

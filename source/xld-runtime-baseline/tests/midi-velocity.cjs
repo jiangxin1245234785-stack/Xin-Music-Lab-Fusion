@@ -23,6 +23,7 @@ const profileFor = id => profiles.find(profile => profile.id === id);
 // piano- / bass-muscriptor-large (MODELS-1, 2026-11-15) run with guitar Large's settings, window included.
 const WINDOWS = {'muscriptor-medium': 0.08, 'muscriptor-large': 0.08, 'piano-muscriptor-medium': 0.08, 'piano-muscriptor-large': 0.08, 'bass-muscriptor-medium': 0.08, 'bass-muscriptor-large': 0.08, 'strings-muscriptor-medium': 0.15, 'winds-muscriptor-medium': 0.15, 'winds-muscriptor-large': 0.15,
   'strings-muscriptor-large': 0.15, 'strings-muscriptor-large-raw': 0.15, 'strings-muscriptor-large-v04': 0.15,
+  'other-muscriptor-medium': 0.15, 'other-muscriptor-large': 0.15,
   'yourmt3-plus': 0.10, 'drums-adtof': 0.08, 'vocals-pyin': 0.12};
 // Backends that return a real performance velocity, plus the DrumSep engine, which already measures
 // every hit on its own separated kit stem — a broadband pass over the whole kit would be worse.
@@ -53,7 +54,8 @@ for (const id of SCALED) {
   assert(options.onsetGroupSeconds > 0 && options.onsetGroupSeconds <= 0.05, id + ' onset grouping');
   assert(options.minimumOnsetsForScale >= 1, id + ' pooling threshold');
   // The output differs from what this engine wrote before, so it must not answer to the same name.
-  assert(/-stemvel1$/.test(profile.model), id + ' must version its new output: ' + profile.model);
+  const suffix = profile.options.oneTrack ? '-stemvel1-onetrack1' : '-stemvel1';
+  assert(profile.model.endsWith(suffix), id + ' must version its new output: ' + profile.model);
 }
 for (const id of UNTOUCHED) {
   assert(profileFor(id), id + ' must stay registered');

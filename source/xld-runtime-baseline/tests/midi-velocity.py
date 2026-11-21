@@ -109,7 +109,7 @@ for name, program in (('acoustic guitar', 25), ('clean electric guitar', 27)):
     track.notes = [pretty_midi.Note(100, 60 + index, 1.0 + index, 1.6 + index) for index in range(4)]
     flat.instruments.append(track)
 expected = sorted((round(n.start, 4), round(n.end, 4), n.pitch)
-                  for part in flat.instruments for n in part.notes)
+                  for n in flat.instruments[0].notes)
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
@@ -123,16 +123,16 @@ with tempfile.TemporaryDirectory() as tmp:
     notes = json.loads((root / result['notesFile']).read_text(encoding='utf-8'))['notes']
 
 velocities = [n.velocity for part in written.instruments for n in part.notes]
-assert len(velocities) == 8 == result['noteCount'], (len(velocities), result['noteCount'])
+assert len(velocities) == 4 == result['noteCount'], (len(velocities), result['noteCount'])
 assert len(set(velocities)) > 1, 'the runner must replace the backend constant'
 assert min(velocities) >= 1 and max(velocities) <= 127, velocities
 assert sorted((round(n.start, 4), round(n.end, 4), n.pitch)
-              for part in written.instruments for n in part.notes) == expected, 'only velocity may change'
+              for part in written.instruments for n in part.notes) == expected, 'retained notes keep their timing'
 assert [n['velocity'] for n in notes] == [n.velocity for part in written.instruments for n in part.notes], \
     'notes.json carries the same velocities as the MIDI'
 backend = result['backend']
 assert backend['velocityMode'] == 'stem-energy-relative' and backend['velocityReplaced'] == 'constant-100', backend
-assert backend['onsets'] == 4 and backend['notes'] == 8, backend
+assert backend['onsets'] == 4 and backend['notes'] == 4 and backend['deduplicatedNotes'] == 4, backend
 assert backend['referenceSampleRate'] == RATE, backend
 
 # A backend that predicts its own velocity is left alone.
@@ -147,7 +147,8 @@ assert len(scaled) >= 9, scaled
 for engine in scaled:
     options = PROFILES[engine]['options']['velocityFromStem']
     assert 0 < options['windowPostSeconds'] <= .3 and options['velocityFloor'] < options['velocityCeil'] <= 127, (engine, options)
-    assert PROFILES[engine]['model'].endswith('-stemvel1'), engine + ' must version its new output'
+    suffix = '-stemvel1-onetrack1' if 'oneTrack' in PROFILES[engine]['options'] else '-stemvel1'
+    assert PROFILES[engine]['model'].endswith(suffix), engine + ' must version its new output'
 
 print('midi-velocity: ok (ramp, one strum one velocity, per-class drum scales, runner wiring, '
       'notes.json agreement, registry coverage)')

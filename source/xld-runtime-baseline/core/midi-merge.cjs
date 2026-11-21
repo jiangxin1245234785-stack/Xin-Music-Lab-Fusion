@@ -31,8 +31,10 @@ function createMidiMerge({analysisRoot,python}) {
   }
   async function plan(track) {
     const source=await assets.readStems(track);
+    const route=await assets.readOtherRoute(track);
     const parts=[],provenance=[],skipped=[];
     for(const stem of STEMS) {
+      if(route==='direct' ? stem==='strings'||stem==='winds' : stem==='other')continue;
       const midi=await assets.readMidi(track,stem);
       if(!midi.ok && !TOLERATED.includes(midi.error))throw Error(midi.error);
       if(!midi.ok || !midi.noteCount) {
@@ -50,7 +52,7 @@ function createMidiMerge({analysisRoot,python}) {
       provenance.push({stem,runId:midi.runId,engine:midi.engine||null,model:midi.model||null,identity:midi.identity||null,matches:midi.matches!==false,
         checkpointSha256:midi.backend?.checkpointSha256||null,adapterVersion:midi.options?.adapterVersion??null,weightDtype:midi.options?.weightDtype||midi.backend?.weightDtype||null,createdAt:midi.createdAt||null});
     }
-    if(parts.length<2)return {ok:false,error:'merge-needs-parts',parts,skipped};
+    if(parts.length<2 && !(route==='direct' && parts[0]?.stem==='other'))return {ok:false,error:'merge-needs-parts',parts,skipped};
     const fingerprint=hash(JSON.stringify({version:2,trackId:track.id,sourceRunId:source.runId||null,parts}));
     // New merges go to a 16-character folder (audit fix 1, item 10: full paths came within 3 characters of Windows'
     // 260 limit); an existing 64-character folder from before is read where it is. The manifest keeps the full

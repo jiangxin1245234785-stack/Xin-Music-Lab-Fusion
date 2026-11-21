@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_left
 from collections import Counter
 import contextlib
 from datetime import datetime, timezone
@@ -64,7 +65,7 @@ def available_engines():
     return results
 # W1 (2026-11-15): winds - every wind instrument MuScriptor hears keeps its own track and program; 56 (trumpet) is
 # only the fallback for a backend that returns one part.
-STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48, "vocals": 53, "winds": 56}
+STEMS = {"bass": 33, "piano": 0, "guitar": 24, "drums": 0, "strings": 48, "vocals": 53, "winds": 56, "other": 0}
 STRING_PROGRAMS = {"strings": 48, "strings-all": 48, "violin": 40, "viola": 41, "cello": 42, "double-bass": 43}
 
 
@@ -85,6 +86,48 @@ def validate_midi_roundtrip(midi, midi_file):
         return (note.pitch, note.velocity, int(midi.time_to_tick(note.start)), int(midi.time_to_tick(note.end)))
     if Counter(map(signature, saved)) != Counter(map(signature, original)):
         raise ValueError("MIDI 时间校验失败")
+
+
+def merge_muscriptor_tracks(midi, dedupe_ms, *, track_name=None):
+    from pretty_midi import Instrument
+    from yourmt3 import preserve_overlapping_notes
+
+    parts = midi.instruments
+    source_tracks = [{'name': part.name, 'program': part.program, 'noteCount': len(part.notes)}
+                     for part in parts]
+    deduplicated = 0
+    if parts:
+        ordered = sorted(parts, key=lambda part: (-len(part.notes), part.program))
+        primary = ordered[0]
+        merged = Instrument(program=primary.program, name=primary.name if track_name is None else track_name)
+        window = dedupe_ms / 1000
+        # MIDI tick-to-second conversion can introduce rounding at the boundary.
+        limit = window + 1e-12
+        retained_by_pitch = {}
+        for part in ordered:
+            new_by_pitch = {}
+            for note in part.notes:
+                if window:
+                    retained = retained_by_pitch.get(note.pitch, ())
+                    index = bisect_left(retained, note.start - limit)
+                    if index < len(retained) and retained[index] <= note.start + limit:
+                        deduplicated += 1
+                        continue
+                    new_by_pitch.setdefault(note.pitch, []).append(note.start)
+                merged.notes.append(note)
+            # Notes from this instrument are only candidates for subsequent instruments.
+            for pitch, starts in new_by_pitch.items():
+                retained = retained_by_pitch.setdefault(pitch, [])
+                retained.extend(starts)
+                retained.sort()
+        merged.pitch_bends = sorted((bend for part in parts for bend in part.pitch_bends),
+                                    key=lambda bend: bend.time)
+        merged.control_changes = sorted((control for part in parts for control in part.control_changes),
+                                        key=lambda control: control.time)
+        midi.instruments = [merged]
+    return {'sourceTracks': source_tracks, 'deduplicatedNotes': deduplicated,
+            'programMode': 'one track per stem; most frequent native program',
+            **preserve_overlapping_notes(midi)}
 
 
 def transcribe(input_path: Path, output_path: Path, track_id: str, stem: str,
@@ -109,7 +152,7 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
         raise ValueError("无效弦乐音源")
     options = profile["options"]
     if stem not in STEMS:
-        raise ValueError("请选择 bass、piano、guitar、drums、strings、winds 或 vocals")
+        raise ValueError("请选择 bass、piano、guitar、drums、strings、winds、vocals 或 other")
     run_id, source_run_id = str(uuid.UUID(run_id)), str(uuid.UUID(source_run_id))
     started = time.monotonic()
     input_path = input_path.resolve()
@@ -153,7 +196,12 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
             backend = {'name': 'basic-pitch', 'version': importlib.metadata.version('basic-pitch'), 'device': 'cpu'}
         elif profile['backend'] == 'muscriptor':
             from muscriptor_backend import predict as muscriptor_predict
-            detected, backend = muscriptor_predict(audio_path, profile, notify, duration, string_target=string_target)
+            try:
+                detected, backend = muscriptor_predict(audio_path, profile, notify, duration, string_target=string_target)
+            except RuntimeError as error:
+                if stem != 'other' or 'did not emit EOS within' not in str(error):
+                    raise
+                raise ValueError(f'MuScriptor 严格解码失败，音频片段已达到词元上限但仍未结束（{error}）') from error
         elif profile['backend'] == 'yourmt3':
             from yourmt3 import predict as yourmt3_predict
             detected, backend = yourmt3_predict(audio_path, profile, notify, duration)
@@ -178,7 +226,15 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
     notify("保存 MIDI", 0.92, "save")
     midi = pretty_midi.PrettyMIDI(initial_tempo=options["midiTempo"], resolution=960)
     instrument = pretty_midi.Instrument(program=STRING_PROGRAMS[string_target] if stem == "strings" else STEMS[stem], name=string_target if stem == "strings" else stem, is_drum=(stem == "drums"))
+    if profile['backend'] == 'muscriptor' and stem == 'other':
+        drums = [part for part in detected.instruments if part.is_drum]
+        backend.update(droppedDrumTracks=len(drums),
+                       droppedDrumNotes=sum(len(part.notes) for part in drums),
+                       droppedDrumSourceTracks=[{'name': part.name, 'program': int(part.program), 'noteCount': len(part.notes)}
+                                                for part in drums])
     for detected_instrument in detected.instruments:
+        if stem == 'other' and detected_instrument.is_drum:
+            continue
         if profile['backend'] == 'muscriptor' and stem != 'drums':
             instrument = pretty_midi.Instrument(program=STRING_PROGRAMS[string_target] if stem == 'strings' else int(detected_instrument.program), name=detected_instrument.name, is_drum=False)
             midi.instruments.append(instrument)
@@ -215,6 +271,9 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
         backend['programMode'] = ('source-string-timbre; native groups retained' if stem == 'strings'
                                   else 'native wind programs; one track per instrument' if stem == 'winds'
                                   else 'source-guitar-timbre; native groups combined, all notes retained')
+    if profile['backend'] == 'muscriptor' and stem in ('bass', 'piano', 'guitar', 'other') and 'oneTrack' in options:
+        backend.update(merge_muscriptor_tracks(midi, options['oneTrack']['dedupeMs'],
+                                               track_name='other' if stem == 'other' else None))
     if profile['backend']=='muscriptor' and stem=='strings' and 'gapFillMs' in options:
         from muscriptor_backend import finish_timing
         backend.update(finish_timing(midi,profile))

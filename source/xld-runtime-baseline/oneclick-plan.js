@@ -6,8 +6,8 @@
   'use strict';
   const STORAGE_KEY = 'xld.oneclick';
   const PRESETS = Object.freeze({
-    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, piano:'piano-muscriptor-medium', bass:'bass-muscriptor-medium', guitar:'muscriptor-medium', strings:'strings-muscriptor-medium', winds:'winds-muscriptor-medium', drums:'drums-adtof', vocals:true}),
-    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, piano:'piano-muscriptor-large', bass:'bass-muscriptor-large', guitar:'muscriptor-large', strings:'strings-muscriptor-large', winds:'winds-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
+    efficiency: Object.freeze({separation:'bs-roformer-sw', refine:false, piano:'piano-muscriptor-medium', bass:'bass-muscriptor-medium', guitar:'muscriptor-medium', other:'other-muscriptor-medium', strings:'strings-muscriptor-medium', winds:'winds-muscriptor-medium', drums:'drums-adtof', vocals:true}),
+    quality: Object.freeze({separation:'bs-roformer-sw', refine:true, piano:'piano-muscriptor-large', bass:'bass-muscriptor-large', guitar:'muscriptor-large', other:'other-muscriptor-large', strings:'strings-muscriptor-large', winds:'winds-muscriptor-large', drums:'drums-adtof-stems', vocals:true})
   });
   // MODELS-2: every part transcribed with MuScriptor (piano, bass, guitar, strings) is Medium in 效率 and Large in
   // 质量; the manual default of each part (models.json defaultFor) must agree (tests/model-defaults.cjs).
@@ -15,11 +15,13 @@
     separation: ['bs-roformer-sw', 'demucs-6s'], refine: [false, true],
     piano: ['piano-muscriptor-medium', 'piano-muscriptor-large'], bass: ['bass-muscriptor-medium', 'bass-muscriptor-large'],
     guitar: ['muscriptor-medium', 'muscriptor-large'], strings: ['strings-muscriptor-medium', 'strings-muscriptor-large'],
+    other: ['other-muscriptor-medium', 'other-muscriptor-large'],
     winds: ['winds-muscriptor-medium', 'winds-muscriptor-large'],
     drums: ['drums-adtof', 'drums-adtof-stems'], vocals: [true, false]
   });
   const KEYS = Object.keys(OPTIONS);
-  const PARTS = ['bass', 'piano', 'guitar', 'drums', 'strings', 'winds', 'vocals'];
+  const OTHER_ROUTES = ['direct', 'split'];
+  const PARTS = ['bass', 'piano', 'guitar', 'drums', 'other', 'strings', 'winds', 'vocals'];
   // Measured on this machine (GPU), read from the real analysis root on 2026-11-14: logs/analysis.jsonl and
   // analysis.dev-root-20261113.jsonl "finish" events that were not cache reads (elapsedSeconds), divided by the
   // track length from its stems manifest; fine split from refinement/<key>.json backend.elapsedSeconds and the size of
@@ -56,7 +58,13 @@
     return {preset: presetOf(choices), choices};
   }
   // The models the 转谱 panel is told to use (and then remembers): one per part.
-  const midiPicks = choices => ({bass: choices.bass, piano: choices.piano, guitar: choices.guitar, drums: choices.drums, strings: choices.strings, winds: choices.winds});
+  const midiPicks = choices => ({bass: choices.bass, piano: choices.piano, guitar: choices.guitar, drums: choices.drums, other: choices.other, strings: choices.strings, winds: choices.winds});
+  function otherRouteFor(derived) {
+    if (derived?.otherRoute) return derived.otherRoute;
+    const split = derived?.strings?.active || derived?.winds?.active || derived?.winds?.none
+      || derived?.midi?.strings?.ok || derived?.midi?.winds?.ok || derived?.merged?.ok;
+    return split ? 'split' : 'direct';
+  }
 
   // env: {analysis:[{id,available}], separation:[{id,available}], refinement:[{id,available}], midi:[{id,stems,available}],
   //       derived: the track's readDerived answer (may be null), has: engine -> boolean (a section / chord result exists)}
@@ -65,6 +73,7 @@
     const usable = (list, id) => Boolean(find(list, id)?.available);
     const has = env.has || (() => false);
     const derived = env.derived || null;
+    const split = otherRouteFor(derived) === 'split';
     const steps = [];
     const add = step => { steps.push({state: 'pending', reason: null, ...step}); return steps[steps.length - 1]; };
     const off = (step, code, extra = {}) => { step.state = 'unavailable'; step.reason = {code, ...extra}; };
@@ -83,7 +92,7 @@
 
     const stringsSource = Boolean(derived?.strings?.active);
     let refine = null;
-    if (choices.refine) {
+    if (split && choices.refine) {
       refine = add({id: 'refine', kind: 'refine', engine: 'mega-53'});
       if (noStems) off(refine, 'needs-stems');
       else if (!stringsSource && !usable(env.refinement, 'mega-53') && !derived?.strings?.choices?.length) off(refine, 'engine-missing');
@@ -91,7 +100,7 @@
     // W1: the winds, dug out of what the strings step left. Already there (a winds source, or "no winds") = nothing to do.
     const windsSource = Boolean(derived?.winds?.active), noWinds = Boolean(derived?.winds?.none);
     let refineWinds = null;
-    if (choices.refine && !windsSource && !noWinds) {
+    if (split && choices.refine && !windsSource && !noWinds) {
       refineWinds = add({id: 'refine-winds', kind: 'refine', engine: 'mega-53', target: 'wind'});
       if (noStems) off(refineWinds, 'needs-stems');
       else if (refine?.state === 'unavailable') off(refineWinds, 'needs-strings');
@@ -100,6 +109,8 @@
 
     const picks = midiPicks(choices);
     for (const stem of PARTS) {
+      if (stem === 'other' && split) continue;
+      if ((stem === 'strings' || stem === 'winds') && !split) continue;
       if (stem === 'strings' && !choices.refine && !stringsSource) continue;
       if (stem === 'winds' && ((!choices.refine && !windsSource) || noWinds)) continue;
       if (stem === 'vocals' && !choices.vocals) continue;
@@ -187,7 +198,7 @@
     return {ok: !steps.some(step => step.state === 'failed'), cancelled: false, steps};
   }
 
-  const api = {STORAGE_KEY, PRESETS, OPTIONS, KEYS, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, plan, run};
+  const api = {STORAGE_KEY, PRESETS, OPTIONS, KEYS, OTHER_ROUTES, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, otherRouteFor, plan, run};
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.XldOneClickPlan = api;
 })(globalThis);

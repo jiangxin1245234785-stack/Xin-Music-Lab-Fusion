@@ -377,6 +377,31 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource, read
 
 function createDerivedAssets({analysisRoot}) {
  const analysisDirectory = track => derivedDirectory(track, typeof analysisRoot === 'function' ? analysisRoot() : analysisRoot);
+ const otherRouteFile = track => path.join(analysisDirectory(track), 'midi', 'other-route.json');
+ async function readOtherRoute(track) {
+   let contents;
+   try {contents = await fs.readFile(otherRouteFile(track), 'utf8');}
+   catch (error) {if (error.code === 'ENOENT') return null; throw error;}
+   let route;
+   try {route = JSON.parse(contents)?.route;} catch (_) {throw Error('other-route-invalid');}
+   if (route !== 'direct' && route !== 'split') throw Error('other-route-invalid');
+   return route;
+ }
+ async function setOtherRoute(track, route, requireUnset = false) {
+   if (route !== 'direct' && route !== 'split') throw Error('other-route-invalid');
+   if (requireUnset && await readOtherRoute(track) !== null) throw Error('midi-batch-source-changed');
+   const file = otherRouteFile(track);
+   const temporary = file + '.' + require('node:crypto').randomUUID() + '.tmp';
+   await fs.mkdir(path.dirname(file), {recursive: true});
+   try {
+     await fs.writeFile(temporary, JSON.stringify({route}), 'utf8');
+     // Keep the old selection readable until the rename replaces it. writeAtomic moves it aside first.
+     await fs.rename(temporary, file);
+   } finally {
+     await fs.rm(temporary, {force: true}).catch(() => {});
+   }
+   return {ok: true, route};
+ }
   async function validateStems(result, track, engine = null) {
     const profile = separationForResult(result);
     if (result?.schemaVersion !== 1 || result.kind !== 'stems' || result.trackId !== track.id ||
@@ -454,7 +479,7 @@ function createDerivedAssets({analysisRoot}) {
    }
    return {ok:false,error:'midi-missing'};
  }
- return {stringSources,windSources,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
+ return {stringSources,windSources,readOtherRoute,setOtherRoute,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
 }
 
 module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, MANUAL, MANUAL_ENGINE, profileFor, profileForResult, defaultEngine, identityOf, engineOf, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};

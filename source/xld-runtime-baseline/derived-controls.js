@@ -1,6 +1,6 @@
 (function(root) {
   'use strict';
-  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onBatchState, onMidiActivated, onMidiListen, getPlaybackPosition, beforeMerge, isBatchCancelled, localizeError=value=>value}) {
+  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onBatchState, onMidiActivated, onMidiListen, onOtherRouteChange, getPlaybackPosition, beforeMerge, isBatchCancelled, localizeError=value=>value}) {
     const select=document.getElementById('derivedSelect'), audition=document.getElementById('derivedAudition');
     const refreshButton=document.getElementById('derivedRefresh'), wavButton=document.getElementById('derivedWav');
     const midiButton=document.getElementById('derivedMidi'), status=document.getElementById('derivedStatus');
@@ -28,10 +28,33 @@
     const inputFor=(stem,derived=result)=>derived?.midiInputs?.[stem] || (derived?.ok && derived?.stems?.some(item=>item.name===stem)?{runId:derived.runId,audioUrl:derived.stems.find(item=>item.name===stem).audioUrl}:null);
     // vocals last: its first step may be the vocal line (score-vocals), and a failure there must not stop the others.
     // Strings and winds are transcribed from a fine-split result: offered only when the song has one (W1: winds).
-    const supportedParts=(derived=result)=>['bass','piano','guitar','drums','strings','winds','vocals'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && ((stem!=='strings'&&stem!=='winds')||inputFor(stem,derived)));
+    const supportedParts=(derived=result)=>['bass','piano','guitar','drums','other','strings','winds','vocals'].filter(stem=>(models||[]).some(model=>model.stems.includes(stem)) && ((stem!=='strings'&&stem!=='winds')||inputFor(stem,derived)));
+    const routeIncludes=(stem,derived)=>derived?.otherRoute==='direct'?stem!=='strings'&&stem!=='winds':stem!=='other';
+    const mergeParts=derived=>Object.entries(derived?.midi||{}).filter(([stem,midi])=>routeIncludes(stem,derived)&&midi?.ok&&midi.noteCount>0);
+    const canMerge=parts=>parts.length>=2||parts[0]?.[0]==='other';
     const sourceKey=()=>result?.midiSourceKey || result?.runId;
     const auditionStems=()=>[...(result?.stems||[]),...(result?.strings?.active?[{name:'strings',audioUrl:result.strings.active.audioUrl}]:[]),...(result?.winds?.active?[{name:'winds',audioUrl:result.winds.active.audioUrl}]:[])];
     const stringsSelect=document.getElementById('midiStringsSource');
+    const otherRouteSelect=document.getElementById('midiOtherRoute');
+    let otherRouteFailed=false;
+    function renderOtherRoute(busy){
+      document.getElementById('midiOtherRouteLabel').textContent=rt('runtime.oneclick.choice.otherRoute');
+      otherRouteSelect.replaceChildren(...['direct','split'].map(route=>new Option(rt('runtime.oneclick.route.'+route),route)));
+      const error=result?.otherRouteError||(result?.error==='read-failed'?result.error:null);
+      otherRouteSelect.value=error?'':result?.otherRoute||'split';
+      otherRouteSelect.disabled=busy||!getSelected()||!result||Boolean(error);
+      document.getElementById('midiOtherRouteStatus').textContent=error?rt('runtime.oneclick.routeReadFailed',{error}):otherRouteFailed?rt('runtime.oneclick.routeSaveFailed'):'';
+    }
+    async function selectOtherRoute(track,route,requireUnset=false){
+      let response;
+      try {response=await bridge.setOtherRoute(track.id,route,requireUnset);}
+      catch(error){return {ok:false,error:'request-failed',detail:String(error)};}
+      if(response?.ok && getSelected()?.id===track.id){
+        await refresh().catch(()=>{});
+        onOtherRouteChange?.();
+      }
+      return response||{ok:false,error:'request-failed'};
+    }
     let stringsMessage=null;
     const stringLabel=source=>rt('runtime.assets.stringSourceLabel',{target:rt('runtime.assets.stringTarget.'+source.target),input:source.sourceStem,seconds:Math.round(source.duration),id:source.runId.slice(0,8)});
     function renderStrings(busy){
@@ -47,22 +70,24 @@
     const mergeText=(key,params)=>rt('runtime.merge.'+key,params);
     async function requestMerge(track){
       const latest=await bridge.readDerived(track.id);
-      const parts=Object.entries(latest?.midi||{}).filter(([,m])=>m?.ok&&m.noteCount>0).map(([stem,m])=>({stem,runId:m.runId}));
+      if(latest?.otherRouteError)return {ok:false,error:latest.otherRouteError};
+      const parts=mergeParts(latest).map(([stem,m])=>({stem,runId:m.runId}));
       const prepared=await beforeMerge?.(track.id,parts);
       if(prepared?.ok===false)return prepared;
       return bridge.mergeMidi(track.id);
     }
     function renderMerge(busy) {
       for(const [id,key] of [['midiMergeTitle','title'],['midiMergeBadge','badge'],['midiMergeHint','hint'],['midiMergeRun','run'],['midiMergeOpen','open'],['midiMergeFolder','folder']]) document.getElementById(id).textContent=mergeText(key);
-      const parts=supportedParts().filter(stem=>result?.midi?.[stem]?.ok && result.midi[stem].noteCount>0);
+      const candidates=supportedParts().filter(stem=>routeIncludes(stem,result));
+      const parts=mergeParts(result), ready=new Set(parts.map(([stem])=>stem));
       const list=document.getElementById('midiMergeParts');list.replaceChildren();
-      for(const stem of supportedParts()) {
+      for(const stem of candidates) {
         const item=document.createElement('span'), midi=result?.midi?.[stem];
-        item.className=parts.includes(stem)?'ready':'';
-        item.textContent=parts.includes(stem)?stem+' · '+((models||[]).find(model=>model.id===midi.engine)?.name || midi.engine || midi.model):stem+' · '+mergeText(midi?.ok && midi.noteCount===0?'empty':'missing');
+        item.className=ready.has(stem)?'ready':'';
+        item.textContent=ready.has(stem)?stem+' · '+((models||[]).find(model=>model.id===midi.engine)?.name || midi.engine || midi.model):stem+' · '+mergeText(midi?.ok && midi.noteCount===0?'empty':'missing');
         list.append(item);
       }
-      mergeRun.disabled=busy || parts.length<2;
+      mergeRun.disabled=busy || Boolean(result?.otherRouteError) || !canMerge(parts);
       mergeOpen.disabled=mergeFolder.disabled=!result?.merged?.ok;
       // A skipped part is appended to whatever the line already says, including "merged". A merge that succeeded
       // without a voice is the case this exists for, so the notice must survive the success message.
@@ -72,7 +97,7 @@
       const folded=result?.merged?.ok&&!inSourceScope(mergeMessage)&&result.merged.folded?.length?' · '+mergeText('folded',{list:result.merged.folded.join(mergeText('skippedJoin'))}):'';
       document.getElementById('midiMergeStatus').textContent=(inSourceScope(mergeMessage) ? mergeText(mergeMessage.key,{error:mergeMessage.error})
         : result?.merged?.ok ? mergeText('ready',{parts:result.merged.parts.length,notes:result.merged.noteCount})
-        : !getSelected()?mergeText('choose'):result?.merged?.error?.startsWith('merge-draft-')?localizeError(result.merged.error):parts.length<2?mergeText('needsParts'):mergeText('pending'))+folded+leftOut;
+        : !getSelected()?mergeText('choose'):result?.merged?.error?.startsWith('merge-draft-')?localizeError(result.merged.error):!canMerge(parts)?mergeText('needsParts'):mergeText('pending'))+folded+leftOut;
     }
 
     const stemModelsElement=document.getElementById('derivedStemModels');
@@ -122,7 +147,7 @@
     const batchButton=document.getElementById('midiBatchRun'), batchFolder=document.getElementById('midiBatchFolder');
     const batchText=(key,params)=>rt('runtime.midiBatch.'+key,params);
     let batchReport=null;
-    function batchModels(derived=result) {return supportedParts(derived).filter(stem=>inputFor(stem,derived)).map(stem=>({stem,model:selectedModel(stem)}));}
+    function batchModels(derived=result) {return supportedParts(derived).filter(stem=>routeIncludes(stem,derived)&&inputFor(stem,derived)).map(stem=>({stem,model:selectedModel(stem)}));}
     // The vocals part is the vocal line (score-vocals.json: lead split + RMVPE) written as a MIDI run (models.json
     // `vocals-rmvpe`). A run is reused only while the vocal line is current and is the one it was converted from
     // (readDerived's vocals.sha256); a song with no singing gets no run, and that counts as done.
@@ -377,7 +402,7 @@
       deleteMidiButton.textContent=rt('runtime.assets.deleteMidi');
       deleteMidiButton.disabled=busy||!selectedMidi()?.ok||!bridge.deleteMidi;
       midiButton.textContent=rt(selectedMidi()?.ok?'runtime.assets.partMidi':'runtime.assets.midi');
-      renderStemModels(busy); renderModels(busy); renderVersions(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy); renderTempo(busy);
+      renderStemModels(busy); renderModels(busy); renderVersions(busy); renderMerge(busy); renderBatch(busy); renderStrings(busy); renderOtherRoute(busy); renderTempo(busy);
       const failure=selectedFailure();
       if(deletionMessage && inSourceScope(deletionMessage) && deletionMessage.stem===midiStem() && deletionMessage.engine===selectedModel()?.id) status.textContent=rt(deletionMessage.key,deletionMessage);
       else if(failure) status.textContent=rt('runtime.assets.failedDetail',{model:failure.model || rt('runtime.assets.separate'),error:localizeError(failure.detail)});
@@ -412,7 +437,7 @@
       }catch(_){message='runtime.assets.tempoExportFailed';}render();
     });
     function reset() {
-      sequence++; trackId=getSelected()?.id || null; result=null; message=null; mergeMessage=null; batchReport=null; stringsMessage=null;
+      sequence++; trackId=getSelected()?.id || null; result=null; message=null; mergeMessage=null; batchReport=null; stringsMessage=null; otherRouteFailed=false;
       forceByView.stems=forceByView.midi=force.checked=false; midiSelect.replaceChildren(); versionCache.clear(); versionMessage=null;
       select.replaceChildren(new Option(rt('runtime.assets.original'),'original')); render();
     }
@@ -473,6 +498,15 @@
     midiAudition.addEventListener('click',()=>switchAudio(true,inputFor(midiStem())?.audioUrl));
     document.getElementById('derivedMidiListen')?.addEventListener('click',()=>onMidiListen?.(midiStem()));
     refreshButton.addEventListener('click',()=>{models=null;stemModels=null;refresh();});
+    otherRouteSelect.addEventListener('change',async()=>{
+      const track=getSelected(), route=otherRouteSelect.value;
+      if(!track||pending||getBusy())return;
+      pending=true;otherRouteFailed=false;render();
+      try {
+        const response=await selectOtherRoute(track,route);
+        if(getSelected()?.id===track.id)otherRouteFailed=!response.ok;
+      } finally {pending=false;render();}
+    });
     stringsSelect.addEventListener('change',async()=>{
       const track=getSelected(),value=(result?.strings?.choices||[]).find(item=>item.runId===stringsSelect.value);
       if(!track||pending||getBusy())return;
@@ -543,10 +577,12 @@
     // one-click analysis (oneclick-controls.js) runs it per track, album included, after setModels(). `derived` is the
     // track's readDerived answer (read here when not given); `exclude` drops parts the caller has already marked
     // unavailable; `onStep(index,total,step)` / `onResult(step,response)` report each step. Busy state is the caller's.
-    async function runBatch(track,{derived=null,regenerate=false,exclude=[],onStep=null,onResult=null}={}) {
+    async function runBatch(track,{derived=null,regenerate=false,exclude=[],expectedOtherRoute,onStep=null,onResult=null}={}) {
       await loadModels();
       const latest=derived||await bridge.readDerived(track.id).catch(()=>null);
       const sourceRunId=latest?.midiSourceKey||latest?.runId;
+      if(latest?.otherRouteError)return {ok:false,error:latest.otherRouteError};
+      if(expectedOtherRoute!==undefined && latest?.otherRoute!==expectedOtherRoute)return {ok:false,error:'midi-batch-source-changed'};
       const plan=batchModels(latest).filter(({stem})=>!exclude.includes(stem)).map(({stem,model})=>Object.freeze({stem,engine:model?.id,name:model?.name,kind:'midi',sourceRunId:inputFor(stem,latest)?.runId}));
       plan.push(Object.freeze({kind:'merge',engine:'midi-merge',name:mergeText('title')}));
       const midiParts=plan.filter(step=>step.kind==='midi').length;
@@ -558,7 +594,7 @@
         if(step.kind==='merge') {
           const latest=await bridge.readDerived(track.id);
           if(!(latest?.ok||Object.keys(latest?.midiInputs||{}).length) || (latest.midiSourceKey||latest.runId)!==sourceRunId)return {ok:false,error:'midi-batch-source-changed'};
-          if(Object.values(latest.midi||{}).filter(m=>m?.ok && m.noteCount>0).length<2) {
+          if(!canMerge(mergeParts(latest))) {
             mergeSkipped=true;return {ok:true,skipped:true};
           }
         }
@@ -638,7 +674,7 @@
     separate.addEventListener('click',()=>generate('stems'));
     transcribe.addEventListener('click',()=>generate('midi'));
     root.addEventListener('focus',()=>{if(!switching) refresh();});
-    return {reset,refresh,render,onPlayback,runBatch,setModels,midiEngines:loadModels,
+    return {reset,refresh,render,onPlayback,runBatch,setModels,selectOtherRoute,midiEngines:loadModels,
       setView: value => {if(value!==view){forceByView[view]=force.checked;view=value;force.checked=forceByView[view]||false;message=null;}render();},
       snapshot: () => ({trackId, result, pending, failure:selectedFailure()}),
       playingStem: track => playback?.trackId===track?.id && playback.stem!=='original'?playback.stem:null};

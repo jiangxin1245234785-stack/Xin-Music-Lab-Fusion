@@ -9,8 +9,8 @@ const P = require('../oneclick-plan.js');
 {
   const eff = P.applyPreset('efficiency'), q = P.applyPreset('quality');
   assert.equal(eff.preset, 'efficiency'); assert.equal(q.preset, 'quality');
-  assert.deepEqual(eff.choices, {separation: 'bs-roformer-sw', refine: false, piano: 'piano-muscriptor-medium', bass: 'bass-muscriptor-medium', guitar: 'muscriptor-medium', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium', drums: 'drums-adtof', vocals: true});
-  assert.deepEqual(q.choices, {separation: 'bs-roformer-sw', refine: true, piano: 'piano-muscriptor-large', bass: 'bass-muscriptor-large', guitar: 'muscriptor-large', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large', drums: 'drums-adtof-stems', vocals: true});
+  assert.deepEqual(eff.choices, {separation: 'bs-roformer-sw', refine: false, piano: 'piano-muscriptor-medium', bass: 'bass-muscriptor-medium', guitar: 'muscriptor-medium', other: 'other-muscriptor-medium', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium', drums: 'drums-adtof', vocals: true});
+  assert.deepEqual(q.choices, {separation: 'bs-roformer-sw', refine: true, piano: 'piano-muscriptor-large', bass: 'bass-muscriptor-large', guitar: 'muscriptor-large', other: 'other-muscriptor-large', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large', drums: 'drums-adtof-stems', vocals: true});
   assert.equal(P.choose(eff, 'piano', 'piano-transkun'), eff, 'Transkun is a manual alternative, not a one-click choice');
   assert.equal(P.choose(eff, 'bass', 'bass-muscriptor-large').preset, 'custom');
   // A choice stored before piano / bass were choices takes the stored preset's piano / bass.
@@ -27,34 +27,46 @@ const P = require('../oneclick-plan.js');
   assert.deepEqual(P.load(storage), custom);
   store.set('xld.oneclick', '{broken'); assert.deepEqual(P.load(storage), eff, 'broken storage falls back');
   store.set('xld.oneclick', JSON.stringify({preset: 'quality', choices: {guitar: 'nonsense'}})); assert.deepEqual(P.load(storage), q, 'unknown values take the preset');
-  assert.deepEqual(P.midiPicks(q.choices), {bass: 'bass-muscriptor-large', piano: 'piano-muscriptor-large', guitar: 'muscriptor-large', drums: 'drums-adtof-stems', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large'});
-  assert.deepEqual(P.midiPicks(eff.choices), {bass: 'bass-muscriptor-medium', piano: 'piano-muscriptor-medium', guitar: 'muscriptor-medium', drums: 'drums-adtof', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium'});
+  assert.deepEqual(P.midiPicks(q.choices), {bass: 'bass-muscriptor-large', piano: 'piano-muscriptor-large', guitar: 'muscriptor-large', drums: 'drums-adtof-stems', other: 'other-muscriptor-large', strings: 'strings-muscriptor-large', winds: 'winds-muscriptor-large'});
+  assert.deepEqual(P.midiPicks(eff.choices), {bass: 'bass-muscriptor-medium', piano: 'piano-muscriptor-medium', guitar: 'muscriptor-medium', drums: 'drums-adtof', other: 'other-muscriptor-medium', strings: 'strings-muscriptor-medium', winds: 'winds-muscriptor-medium'});
 }
 
 // --- the plan ----------------------------------------------------------------------------------------------
-const midiModels = ['bass-muscriptor-medium', 'bass-muscriptor-large', 'piano-muscriptor-medium', 'piano-muscriptor-large', 'muscriptor-medium', 'muscriptor-large', 'strings-muscriptor-medium', 'strings-muscriptor-large', 'winds-muscriptor-medium', 'winds-muscriptor-large', 'drums-adtof', 'drums-adtof-stems', 'vocals-rmvpe']
+const midiModels = ['bass-muscriptor-medium', 'bass-muscriptor-large', 'piano-muscriptor-medium', 'piano-muscriptor-large', 'muscriptor-medium', 'muscriptor-large', 'other-muscriptor-medium', 'other-muscriptor-large', 'strings-muscriptor-medium', 'strings-muscriptor-large', 'winds-muscriptor-medium', 'winds-muscriptor-large', 'drums-adtof', 'drums-adtof-stems', 'vocals-rmvpe']
   .map(id => ({id, available: true}));
 const fullEnv = (over = {}) => ({analysis: [{id: 'songformer', available: true}, {id: 'chord-chordmini', available: true}, {id: 'chord-btc', available: true}],
   separation: [{id: 'bs-roformer-sw', available: true}, {id: 'demucs-6s', available: true}], refinement: [{id: 'mega-53', available: true}],
   midi: midiModels, derived: null, has: () => false, ...over});
+const splitEnv = (over = {}) => fullEnv({...over, derived: {...over.derived, otherRoute: 'split'}});
 const ids = steps => steps.map(step => step.id);
 const states = steps => Object.fromEntries(steps.map(step => [step.id, step.state + (step.reason ? ':' + step.reason.code : '')]));
 {
   const eff = P.plan(P.PRESETS.efficiency, fullEnv());
-  assert.deepEqual(ids(eff), ['sections', 'chords', 'stems', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:vocals', 'merge'], 'efficiency: no fine split, no strings');
-  assert.deepEqual(eff.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-medium', 'piano-muscriptor-medium', 'muscriptor-medium', 'drums-adtof', 'vocals-rmvpe']);
+  assert.deepEqual(ids(eff), ['sections', 'chords', 'stems', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:other', 'midi:vocals', 'merge']);
+  assert.deepEqual(eff.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-medium', 'piano-muscriptor-medium', 'muscriptor-medium', 'drums-adtof', 'other-muscriptor-medium', 'vocals-rmvpe']);
   assert.equal(eff.find(s => s.id === 'chords').engine, 'chord-chordmini');
   assert(eff.every(s => s.state === 'pending'));
-  const q = P.plan(P.PRESETS.quality, fullEnv());
+  const direct = P.plan(P.PRESETS.quality, fullEnv({derived: {otherRoute: 'direct', strings: {active: true}, winds: {active: true}}}));
+  assert.deepEqual(ids(direct), ids(eff), 'quality direct leaves existing fine-split parts out');
+  assert.equal(direct.find(step => step.stem === 'other').engine, 'other-muscriptor-large');
+  assert.deepEqual(ids(P.plan(P.PRESETS.quality, fullEnv())), ids(direct), 'new quality plans default to direct');
+  const q = P.plan(P.PRESETS.quality, splitEnv());
+  assert.deepEqual(ids(P.plan(P.PRESETS.quality, fullEnv({derived: {otherRoute: null, midi: {winds: {ok: true, noteCount: 0}}}}))), ids(q),
+    'a legacy winds result keeps the split plan even when it has zero notes');
+  assert.deepEqual(ids(P.plan(P.PRESETS.quality, fullEnv({derived: {otherRoute: null, merged: {ok: true}}}))), ids(q),
+    'a legacy merge also keeps the split plan');
+  for (const derived of [{strings: {active: {runId: 's'}}}, {winds: {active: {runId: 'w'}}}, {winds: {none: {}}}]) {
+    assert.equal(P.otherRouteFor(derived), 'split', 'existing fine split state is preserved before transcription');
+  }
   assert.deepEqual(ids(q), ['sections', 'chords', 'stems', 'refine', 'refine-winds', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:strings', 'midi:winds', 'midi:vocals', 'merge'], 'quality: fine split, strings, then the winds from what the strings left');
   assert.deepEqual(q.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-large', 'piano-muscriptor-large', 'muscriptor-large', 'drums-adtof-stems', 'strings-muscriptor-large', 'winds-muscriptor-large', 'vocals-rmvpe']);
   // W1: a song with a winds source needs no winds fine split; a song found to have no winds has no winds steps at all.
-  assert.ok(!ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('refine-winds'));
-  assert.ok(ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('midi:winds'));
-  const none = ids(P.plan(P.PRESETS.quality, fullEnv({derived: {winds: {none: {level: {}}}}})));
+  assert.ok(!ids(P.plan(P.PRESETS.quality, splitEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('refine-winds'));
+  assert.ok(ids(P.plan(P.PRESETS.quality, splitEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('midi:winds'));
+  const none = ids(P.plan(P.PRESETS.quality, splitEnv({derived: {winds: {none: {level: {}}}}})));
   assert.ok(!none.includes('refine-winds') && !none.includes('midi:winds'), 'no winds: no winds steps');
   // A strings source already chosen: strings is a part even without the fine split (as in 一键生成 MIDI).
-  assert(ids(P.plan(P.PRESETS.efficiency, fullEnv({derived: {strings: {active: {runId: 'x'}}}}))).includes('midi:strings'));
+  assert(ids(P.plan(P.PRESETS.efficiency, splitEnv({derived: {strings: {active: {runId: 'x'}}}}))).includes('midi:strings'));
   // Vocals off.
   assert(!ids(P.plan({...P.PRESETS.efficiency, vocals: false}, fullEnv())).includes('midi:vocals'));
 }
@@ -65,12 +77,12 @@ const states = steps => Object.fromEntries(steps.map(step => [step.id, step.stat
   const noAnalysis = states(P.plan(P.PRESETS.efficiency, fullEnv({analysis: []})));
   assert.equal(noAnalysis.sections, 'unavailable:engine-missing'); assert.equal(noAnalysis.chords, 'unavailable:engine-missing');
   assert.equal(states(P.plan(P.PRESETS.efficiency, fullEnv({analysis: [], has: id => id === 'songformer'}))).sections, 'pending', 'an existing result is still answered without the runtime');
-  const noStems = states(P.plan(P.PRESETS.quality, fullEnv({separation: [{id: 'bs-roformer-sw', available: false}]})));
+  const noStems = states(P.plan(P.PRESETS.quality, splitEnv({separation: [{id: 'bs-roformer-sw', available: false}]})));
   assert.equal(noStems.stems, 'unavailable:engine-missing');
   for (const id of ['refine', 'refine-winds', 'midi:bass', 'midi:vocals', 'merge']) assert.equal(noStems[id], 'unavailable:needs-stems', id);
   const keptStems = states(P.plan(P.PRESETS.efficiency, fullEnv({separation: [{id: 'bs-roformer-sw', available: false}], derived: {stemVariants: {'bs-roformer-sw': {ok: true}}}})));
   assert.equal(keptStems.stems, 'pending', 'stems on disk are answered without the separation runtime');
-  const noMega = states(P.plan(P.PRESETS.quality, fullEnv({refinement: [{id: 'mega-53', available: false}]})));
+  const noMega = states(P.plan(P.PRESETS.quality, splitEnv({refinement: [{id: 'mega-53', available: false}]})));
   assert.equal(noMega.refine, 'unavailable:engine-missing'); assert.equal(noMega['midi:strings'], 'unavailable:needs-strings');
   const noLarge = states(P.plan(P.PRESETS.quality, fullEnv({midi: midiModels.map(m => m.id === 'muscriptor-large' ? {...m, available: false} : m)})));
   assert.equal(noLarge['midi:guitar'], 'unavailable:engine-missing'); assert.equal(noLarge['midi:bass'], 'pending');
@@ -92,7 +104,7 @@ function fakeOps(script = {}) {
     refine: async () => { calls.push('refine'); return script.refine || {ok: true}; },
     midi: async ({exclude, onStep, onResult}) => {
       calls.push('midi:' + exclude.join(','));
-      const plan = (script.batch || ['bass', 'piano', 'guitar', 'drums', 'vocals']).filter(stem => !exclude.includes(stem)).map(stem => ({kind: 'midi', stem})).concat([{kind: 'merge'}]);
+      const plan = (script.batch || ['bass', 'piano', 'guitar', 'drums', 'other', 'vocals']).filter(stem => !exclude.includes(stem)).map(stem => ({kind: 'midi', stem})).concat([{kind: 'merge'}]);
       const completed = [];
       for (const step of plan) {
         if (script.cancelAt === (step.stem || 'merge')) return {ok: false, error: 'analysis-cancelled', completed};
@@ -133,7 +145,7 @@ function fakeOps(script = {}) {
   }
   {
     // Stems failing: this track stops there.
-    const steps = P.plan(P.PRESETS.quality, fullEnv());
+    const steps = P.plan(P.PRESETS.quality, splitEnv());
     const {ops, calls} = fakeOps({stems: {ok: false, error: 'analysis-failed', detail: 'CUDA out of memory'}});
     const out = await P.run({steps, ops});
     const s = states(steps);
@@ -144,7 +156,7 @@ function fakeOps(script = {}) {
   }
   {
     // Fine split failing: noted; strings never reaches the batch (no source) and says so.
-    const steps = P.plan(P.PRESETS.quality, fullEnv());
+    const steps = P.plan(P.PRESETS.quality, splitEnv());
     const {ops} = fakeOps({refine: {ok: false, error: 'analysis-failed', detail: '细分模型尚未安装'}, batch: ['bass', 'piano', 'guitar', 'drums', 'vocals']});
     await P.run({steps, ops});
     const s = states(steps);
@@ -194,7 +206,7 @@ function fakeOps(script = {}) {
 
   // --- the seam: derived-controls.js runBatch / setModels, driven from outside ------------------------------
   class Element {
-    constructor(tag = 'div') { this.tagName = tag; this.children = []; this.handlers = {}; this.dataset = {}; this.attrs = {}; this.disabled = false; this.checked = false; this._value = ''; this.textContent = ''; }
+    constructor(tag = 'div') { this.tagName = tag; this.children = []; this.handlers = {}; this.dataset = {}; this.attrs = {}; this.classList = {toggle() {}}; this.disabled = false; this.checked = false; this._value = ''; this.textContent = ''; }
     get options() { return this.children; }
     get value() { return this._value; } set value(v) { this._value = v; }
     append(...items) { this.children.push(...items); }
@@ -207,9 +219,10 @@ function fakeOps(script = {}) {
   const get = id => { if (!elements.has(id)) { const e = new Element(id.endsWith('Select') ? 'select' : 'div'); e.id = id; elements.set(id, e); } return elements.get(id); };
   const stored = new Map();
   const context = {document: {getElementById: get, createElement: tag => new Element(tag)}, localStorage: {getItem: k => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v)},
+    MutationObserver: class { observe() {} },
     addEventListener: () => {}, Option: function (text, value) { const e = new Element('option'); e.textContent = text; e.value = value; return e; }};
   vm.createContext(context);
-  for (const name of ['midi-batch.js', 'derived-controls.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', name), 'utf8'), context);
+  for (const name of ['midi-batch.js', 'derived-controls.js', 'oneclick-plan.js', 'oneclick-controls.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', name), 'utf8'), context);
   const messages = require('../i18n/runtime-messages.js');
   const rt = (key, params) => messages.translateRuntime('zh-CN', key, params);
   const models = [{id: 'bass-highres', name: 'HiRes Bass', stems: ['bass'], defaultFor: 'bass', available: true},
@@ -218,6 +231,7 @@ function fakeOps(script = {}) {
     {id: 'muscriptor-large', name: 'MuScriptor Large', stems: ['guitar'], available: true},
     {id: 'drums-adtof', name: 'ADTOF', stems: ['drums'], available: true},
     {id: 'drums-adtof-stems', name: 'ADTOF · DrumSep', stems: ['drums'], defaultFor: 'drums', available: true},
+    {id: 'other-muscriptor-large', name: 'MuScriptor Large', stems: ['other'], defaultFor: 'other', available: true},
     {id: 'vocals-rmvpe', name: 'RMVPE', stems: ['vocals'], defaultFor: 'vocals', available: true}];
   // Another track than the selected one: the batch must read and plan from that track's own state.
   const other = {id: 'song-b', title: 'Song B'};
@@ -228,9 +242,10 @@ function fakeOps(script = {}) {
     readDerived: async id => id === 'song-b' ? structuredClone(derivedB) : {ok: false, stems: []},
     runDerived: async (trackId, kind, stem, force, engine) => { calls.push([trackId, stem, engine]); derivedB.midi[stem] = {ok: true, noteCount: 5, runId: stem, engine}; return {ok: true, cached: stem === 'bass'}; },
     mergeMidi: async trackId => { calls.push([trackId, 'merge']); return {ok: true}; }};
-  let cancel = false;
+  let cancel = false, preparedParts = [];
   const controls = context.XldDerivedControls.create({bridge, audio: {currentTime: 0, paused: true}, getSelected: () => ({id: 'song-a', title: 'Song A'}), getCurrent: () => null,
-    queueFor: () => [], playTrack: async () => {}, rt, getBusy: () => true, onTask: () => {}, onBatchState: () => {}, isBatchCancelled: () => cancel, beforeMerge: () => ({ok: true})});
+    queueFor: () => [], playTrack: async () => {}, rt, getBusy: () => true, onTask: () => {}, onBatchState: () => {}, isBatchCancelled: () => cancel,
+    beforeMerge: (_trackId, parts) => { preparedParts = Array.from(parts, part => part.stem); return {ok: true}; }});
   await controls.setModels({guitar: 'muscriptor-large', drums: 'drums-adtof', bass: 'bass-highres', piano: 'piano-transkun', strings: 'strings-muscriptor-large'});
   assert.deepEqual(JSON.parse(stored.get('xld.midi.models')), {guitar: 'muscriptor-large', drums: 'drums-adtof', bass: 'bass-highres', piano: 'piano-transkun'},
     'the chosen models are remembered by the 转谱 panel; an id it does not offer is not');
@@ -244,6 +259,59 @@ function fakeOps(script = {}) {
   cancel = true; calls.length = 0;
   const stopped = await controls.runBatch(other, {});
   assert.equal(stopped.error, 'analysis-cancelled'); assert.equal(calls.length, 0, 'the shared cancel flag stops it before the first part');
+  cancel = false;
+  derivedB.otherRoute = 'direct';
+  derivedB.midi = {strings: {ok: true, noteCount: 5, runId: 'old-strings'}};
+  const directBatch = await controls.runBatch(other, {expectedOtherRoute: 'direct', exclude: ['bass', 'piano', 'guitar', 'drums', 'vocals']});
+  assert.equal(directBatch.ok, true);
+  assert.deepEqual(calls, [['song-b', 'other', 'other-muscriptor-large'], ['song-b', 'merge']], 'other alone can merge and the old strings result does not participate');
+  assert.deepEqual(preparedParts, ['other'], 'draft preparation only sees the selected route');
+  calls.length = 0;
+  assert.equal((await controls.runBatch(other, {expectedOtherRoute: 'split'})).error, 'midi-batch-source-changed');
+  assert.equal(calls.length, 0, 'a route change before MIDI prevents any batch work');
+
+  // The real one-click controller previews and runs by the same route and cannot replace unreadable choices.
+  const routeTrack = {id: 'route-song', title: 'Route song'};
+  let routeData = {otherRoute: null, midi: {strings: {ok: true, noteCount: 0}}};
+  const writes = [], batchRoutes = [];
+  const oneClick = context.XldOneClick.create({
+    bridge: {
+      readDerived: async () => routeData,
+      refinementEngines: async () => fullEnv().refinement,
+      separationEngines: async () => fullEnv().separation,
+      getAnalysisSummary: async () => ({[routeTrack.id]: {songformer: {status: 'complete'}, 'chord-chordmini': {status: 'complete'}}}),
+      runDerived: async () => ({ok: true})
+    },
+    derived: {
+      midiEngines: async () => midiModels,
+      setModels: async () => {},
+      selectOtherRoute: async (track, route, requireUnset) => {
+        writes.push([track.id, route, Boolean(requireUnset)]);
+        routeData = {...routeData, otherRoute: route};
+        return {ok: true};
+      },
+      runBatch: async (track, {expectedOtherRoute}) => {
+        batchRoutes.push(expectedOtherRoute);
+        return {ok: true};
+      }
+    },
+    rt, getTrack: () => routeTrack, getAlbum: () => null, getEngines: () => fullEnv().analysis,
+    isBusy: () => false, isCancelled: () => false, setBatch: () => {}
+  });
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  await tick();
+  assert(!ids(oneClick.snapshot().view.steps).includes('midi:other'));
+  assert.equal((await oneClick.runTrack()).ok, true);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(batchRoutes, [null]);
+  routeData = {otherRoute: null};
+  assert.equal((await oneClick.runTrack()).ok, true);
+  assert.deepEqual(writes, [['route-song', 'direct', true]]);
+  assert.deepEqual(batchRoutes, [null, 'direct']);
+  routeData = {otherRoute: null, otherRouteError: 'other-route-invalid'};
+  assert.equal((await oneClick.runTrack()).otherRouteError, 'other-route-invalid');
+  assert.match(get('oneclickStatus').textContent, /other-route-invalid/);
+  assert.equal(writes.length, 1, 'an unreadable route never triggers the default write');
 
   // The vocal add-on check the plan relies on mirrors vocals_runner.py addons(): same variables, same files.
   {

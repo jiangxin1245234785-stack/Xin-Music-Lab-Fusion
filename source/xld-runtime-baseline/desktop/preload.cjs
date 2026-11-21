@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('XLD', Object.freeze({
   keepRefinement: payload => ipcRenderer.invoke('refinement:keep',payload),
   revealRefinement: payload => ipcRenderer.invoke('refinement:reveal',payload),
   mergeMidi: trackId => ipcRenderer.invoke('assets:merge-midi', {trackId}),
+  setOtherRoute: (trackId, route, requireUnset = false) => ipcRenderer.invoke('assets:set-other-route', {trackId, route, requireUnset}),
   openMergedMidi: (trackId, folder = false) => ipcRenderer.invoke('assets:open-merged-midi', {trackId, folder}),
   runDerived: (trackId, kind, stem = null, force = false, engine = null) => ipcRenderer.invoke('assets:run', {trackId, kind, stem, force, engine}),
   separationEngines: () => ipcRenderer.invoke('assets:separation-engines'),

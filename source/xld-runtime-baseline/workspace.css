@@ -573,6 +573,7 @@
 .oneclick-choices > summary { cursor:pointer; color:var(--muted); font-size:calc(10px * var(--font-scale)); overflow-wrap:anywhere; }
 .oneclick-choice-list { display:grid; gap:8px; margin-top:8px; }
 .oneclick-choice { display:grid; gap:2px; padding:6px 0; border-top:1px solid var(--line); }
+.oneclick-choice[hidden] { display:none; }
 .oneclick-choice label { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
 .oneclick-choice-name { min-width:120px; font-size:calc(11px * var(--font-scale)); }
 .oneclick-choice select { max-width:100%; }

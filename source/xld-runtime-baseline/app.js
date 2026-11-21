@@ -79,6 +79,7 @@ const derivedControls = window.XldDerivedControls.create({
   playTrack, rt, onMidiListen:listenMidi, beforeMerge:(trackId,parts)=>midiEditorControls.prepareMerge(trackId,parts), getPlaybackPosition:playbackPosition, localizeError: runtimeLocale.localizeBackendMessage, onPlaybackChange: renderNowPlayingCopy,
   getBusy: () => Boolean(state.activeTask || state.batchRunning || state.trackRemoving), onTask: applyTask,
   onChange: () => {workspaceControls?.render();refinementControls?.update();},
+  onOtherRouteChange: () => oneclickControls?.refresh(),
   isBatchCancelled: () => state.batchCancelled,
   // Switching versions changes which notes the timeline draws for that stem; onChange fires on every render.
   // The audition is holding one of those note arrays, so it has to be told too or it keeps sounding the old version.

@@ -84,11 +84,21 @@ def merge(parts, output):
         raise ValueError('Too many pitched tracks for distinct MIDI channels')
     for part, source, tracks, was_folded in prepared:
         count = 0
-        for instrument in tracks:
+        one_track = (part['stem'] in ('bass', 'piano', 'guitar')
+                     and (part.get('model') or '').endswith('-onetrack1'))
+        for index, instrument in enumerate(tracks):
             if not instrument.notes:
                 continue
             instrument = copy.deepcopy(instrument)
-            instrument.name = part['stem'] if len(source.instruments) == 1 or was_folded else part['stem'] + ' / ' + instrument.name
+            if part['stem'] == 'other':
+                instrument.name = 'other' if index == 0 else f'other / overlap {index + 1}'
+            elif one_track:
+                name = source.instruments[0].name
+                if index:
+                    name += f' / overlap {index + 1}'
+                instrument.name = part['stem'] + ' / ' + name
+            else:
+                instrument.name = part['stem'] if len(source.instruments) == 1 or was_folded else part['stem'] + ' / ' + instrument.name
             merged.instruments.append(instrument)
             count += len(instrument.notes)
         if count == 0:

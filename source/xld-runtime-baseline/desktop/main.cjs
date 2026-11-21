@@ -840,7 +840,7 @@ const storageManager=require('../core/storage.cjs').createStorage({getRoot:analy
 const TRACK_MUTATION_CHANNELS=new Set([
  'library:scan','library:choose','library:consume-open-request',
  'analysis:run','analysis:delete-result','analysis:delete-results','analysis:choose-root','analysis:open-root',
- 'assets:run','assets:merge-midi','assets:strings-source','assets:winds-source','assets:winds-adopt','assets:delete-midi','assets:activate-midi-run','assets:keep-midi-run','assets:export-midi','assets:save-midi-revision','assets:write-midi-draft','assets:midi-evidence-check','assets:midi-evidence-apply',
+ 'assets:run','assets:merge-midi','assets:set-other-route','assets:strings-source','assets:winds-source','assets:winds-adopt','assets:delete-midi','assets:activate-midi-run','assets:keep-midi-run','assets:export-midi','assets:save-midi-revision','assets:write-midi-draft','assets:midi-evidence-check','assets:midi-evidence-apply',
  'assets:stem-envelope','assets:wav-chunk',
  'refinement:run','refinement:keep',
  'storage:keep','storage:optimize','storage:clear','storage:relink-source','storage:discard-source',
@@ -932,6 +932,15 @@ app.whenReady().then(async () => {
     return {trackId:match?.id || null,source:request.source};
   });
   trackMutationIpc('assets:merge-midi', (_event, payload) => executeAnalysis(payload?.trackId,'midi-merge'));
+  trackMutationIpc('assets:set-other-route', async (_event, payload) => {
+    if (analysisService.task() || storageManager.busy() || midiSourceChanging) return {ok:false,error:'analysis-busy'};
+    const track = trackIndex.get(String(payload?.trackId || ''));
+    if (!track) return {ok:false,error:'track-missing'};
+    midiSourceChanging = true;
+    try {return await derivedAssets.setOtherRoute(track, payload.route, payload.requireUnset === true);}
+    catch (error) {return {ok:false,error:error.message};}
+    finally {midiSourceChanging = false;}
+  });
   ipcMain.handle('assets:open-merged-midi', async (_event, payload) => {
     const track=trackIndex.get(String(payload?.trackId || ''));
     if(!track)return {ok:false,error:'track-missing'};
@@ -1130,10 +1139,13 @@ trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
     for(const profile of require('../core/derived-assets.cjs').SEPARATION_PROFILES) stemVariants[profile.id] = await derivedAssets.readStems(track, profile.id);
     analysisService.setAnalysisRoot(analysisRoot());
     const merged=await analysisService.readMidiMerge(track);
+    let otherRoute = null, otherRouteError = null;
+    try {otherRoute = await derivedAssets.readOtherRoute(track);} catch (error) {otherRouteError = error.message;}
     const midiInputs=Object.fromEntries((stems.ok?stems.stems:[]).filter(item=>require('../core/derived-assets.cjs').STEMS.includes(item.name)).map(item=>[item.name,{runId:stems.runId,audioUrl:item.audioUrl}]));
     if(strings.active)midiInputs.strings=strings.active;
     if(winds.active)midiInputs.winds=winds.active;
-    const midiSourceKey=JSON.stringify([stems.ok?stems.runId:null,strings.active?.runId||null,winds.active?.runId||null]);
+    const midiSourceKey=JSON.stringify([stems.ok?stems.runId:null,strings.active?.runId||null,winds.active?.runId||null,
+      otherRouteError ? null : otherRoute || 'split']);
     // Whether 生成 MIDI for vocals has to make the vocal line first (`due`, core/score-vocals.cjs), whether the song
     // has singing at all, and the digest of the current line, which a vocals-rmvpe run must have been converted from
     // to count as reusable. The state name is shown, never the result.
@@ -1143,7 +1155,7 @@ trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
     // A few file checks: the one-click analysis marks vocals unavailable up front (when a run is owed, or will be once the
     // track is separated) instead of failing on that step.
     if(vocals.state!=='current')vocals.missing=require('../core/score-vocals.cjs').addonsMissing();
-    return {...stems, midi, variants, stemVariants, merged,strings,winds,midiInputs,midiSourceKey,vocals};
+    return {...stems, midi, variants, stemVariants, merged,strings,winds,otherRoute,otherRouteError,midiInputs,midiSourceKey,vocals};
   });
   ipcMain.handle('assets:reveal', async (_event, payload) => {
     const track = trackIndex.get(String(payload?.trackId || ''));
