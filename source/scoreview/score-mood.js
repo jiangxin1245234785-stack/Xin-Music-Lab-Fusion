@@ -162,11 +162,13 @@ function spellPitch(midi,flats=true){
       return {held,attack,velocity,level:Math.max(held*.7,attack),hands,phase:lead?clamp((now-lead.time)/lead.duration,0,1):0,note:lead?{time:lead.time,duration:lead.duration,pitch:lead.pitch,stroke:lead.stroke}:null};
     }
     function resize() {
-      const ratio=clamp(Number(root.devicePixelRatio)||1,1,2.5);
+      const ratio=canvas.scoreExportRatio || clamp(Number(root.devicePixelRatio)||1,1,2.5);
       const width=canvas.clientWidth||canvas.width/ratio||1280;
       const height=canvas.clientHeight||canvas.height/ratio||720;
-      W=Math.max(1,Math.round(width/height*1080));
-      viewport={width,height,unit:1080/height};
+      // Radar geometry and its hardware layers are drawn directly at the export resolution.
+      H=options.scoreStyle==='glass' && canvas.scoreExportRatio>1.5 ? Math.round(height*ratio) : 1080;
+      W=Math.max(1,Math.round(width/height*H));
+      viewport={width,height,unit:H/height};
       if(stage.width!==W)stage.width=W;if(stage.height!==H)stage.height=H;
       if(canvas.width!==Math.round(width*ratio))canvas.width=Math.round(width*ratio);
       if(canvas.height!==Math.round(height*ratio))canvas.height=Math.round(height*ratio);

@@ -1,5 +1,5 @@
 // "Export video": the score of the current song as an MP4 to give to someone (source/scoreview/export).
-// Two sizes, each with a rough size; then the system's save dialog; then one progress line with a
+// Each resolution, each with a rough size; then the system's save dialog; then one progress line with a
 // cancel, and at the end where the file went with a button to open its folder. While it runs the
 // score scene stops drawing (the export needs the GPU); the music keeps playing.
 (function (root) {
@@ -10,13 +10,13 @@
   const choices = doc.getElementById('scoreExportChoices'), status = doc.getElementById('scoreExportStatus');
   const meter = doc.getElementById('scoreExportProgress'), cancel = doc.getElementById('scoreExportCancel');
   const reveal = doc.getElementById('scoreExportReveal'), audio = doc.getElementById('fusionAudio');
-  const sizes = {'1080p': doc.getElementById('scoreExport1080Size'), '720p': doc.getElementById('scoreExport720Size')};
+  const sizes = {'2160p': doc.getElementById('scoreExport2160Size'), '1080p': doc.getElementById('scoreExport1080Size'), '720p': doc.getElementById('scoreExport720Size')};
   const buttons = Array.from(choices.querySelectorAll('button[data-tier]'));
   const bitrate = doc.getElementById('scoreExportBitrate'), custom = doc.getElementById('scoreExportCustomBitrate');
   const customRow = doc.getElementById('scoreExportCustomRow'), bitrateError = doc.getElementById('scoreExportBitrateError');
   const i18n = root.XinMusicLabDynamicUi, say = (key, fallback, params = {}) => i18n?.t(key, params, fallback) || fallback;
-  const tierRates = {'1080p': {video: 1650000, audio: 128000}, '720p': {video: 200000, audio: 96000}};
-  const modes = ['auto', '1', '2', '4', '8', 'custom'];
+  const tierRates = {'2160p': {video: 32000000, audio: 192000}, '1080p': {video: 1650000, audio: 128000}, '720p': {video: 200000, audio: 96000}};
+  const modes = ['auto', '1', '2', '4', '8', '16', '32', 'custom'];
   const rateKey = 'xin-score-export-bitrate', customKey = 'xin-score-export-custom-mbps';
   let working = false, cancelling = false, step = null, saved = null, failure = null;
 
@@ -24,7 +24,7 @@
     const value = String(text ?? '').trim();
     if (!/^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/.test(value)) return null;
     const bps = Math.round(Number(value) * 1000000);
-    return bps >= 50000 && bps <= 16000000 ? bps : null;
+    return bps >= 50000 && bps <= 32000000 ? bps : null;
   }
   function selectedRate() {
     const mode = bitrate?.value || 'auto';
@@ -67,7 +67,7 @@
     if (custom) custom.setAttribute('aria-invalid', String(invalid));
     if (bitrateError) {
       bitrateError.hidden = !invalid;
-      bitrateError.textContent = invalid ? say('export.bitrateInvalid', '请输入 0.05–16 Mbps，最多三位小数。') : '';
+      bitrateError.textContent = invalid ? say('export.bitrateInvalid', '请输入 0.05–32 Mbps，最多三位小数。') : '';
     }
     for (const button of buttons) button.disabled = invalid || working || !usable;
     for (const [tier, node] of Object.entries(sizes)) {

@@ -1,5 +1,7 @@
 # Claude 接手入口：XML / XLD
 
+**2026-11-22 · XML 4K 试用版 `0.5.0-dev.midiin.4`。** 从 `releases/0.5.0-dev.midiin.4/XML.exe` 启动，日常入口仍是 other.5。这个包包含外部 MIDI 导入。「谱面设置 → 导出视频 → 自动 → 4K（2160p）」以 3840 × 2160、30 fps 导出，视频目标 32 Mbps，AAC 双声道 192 kbps。4K 雷达在目标像素尺寸重画，MP4 导出时分段写入并回填开头的索引。参见[使用说明](docs/XML_EXTERNAL_MIDI.md)。
+
 **2026-11-22 · XML 外部 MIDI 试用版 `0.5.0-dev.midiin.2`。** 独立入口在 `releases/0.5.0-dev.midiin.2/XML.exe`，日常入口仍是 other.5。使用说明见[外部 MIDI](docs/XML_EXTERNAL_MIDI.md)。主线 XML 的 `desktop/external-midi.cjs` 负责解析、声部与按曲保存，`external-midi-controls.js` 负责谱面设置。播放和视频导出共用 `scoreModelFor`，导入记录优先，恢复后回到曲库谱面。下一次打包应带上两个新文件及共享 MIDI 读取器。回归命令为在 `source/fusion-runtime-baseline` 内运行 `node --test tests/external-midi.cjs`。
 
 **2026-11-21 · 当前入口为 `0.5.0-dev.other.5`。** 雷达曲名牌采用已选右版。长标题排两行，点铭牌能看完整曲名与艺人，原曲继续播放。四处实现已在主线 `source/`，后续打包直接继承。先读[本版接续记录和实机截图](docs/XML_RADAR_OTHER5.md)。

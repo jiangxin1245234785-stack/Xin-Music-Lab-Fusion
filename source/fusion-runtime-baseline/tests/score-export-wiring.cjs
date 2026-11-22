@@ -99,14 +99,14 @@ async function channel() {
   assert.equal(asked.length, 1, '没有分析根清单时引擎不该被叫到');
   done.push('导出通道：禁写目录原样交给引擎；没有清单就不导出');
   const channel = make(roots);
-  for (const videoBitrate of [49999, 16000001, 95000.5, NaN, Infinity, -Infinity, '2500000', false, {}, [8000000]]) {
+  for (const videoBitrate of [49999, 32000001, 95000.5, NaN, Infinity, -Infinity, '2500000', false, {}, [8000000]]) {
     const rejected = await channel.start({sender}, {tier:'1080p', videoBitrate});
     assert.equal(rejected.error, 'invalid-video-bitrate');
     assert.equal(saveDialogs, 1);
     assert.equal(asked.length, 1);
   }
-  for (const tier of ['720p', '1080p']) {
-    for (const videoBitrate of [50000, 2738291, 16000000, null, undefined]) {
+  for (const tier of ['720p', '1080p', '2160p']) {
+    for (const videoBitrate of [50000, 2738291, 32000000, null, undefined]) {
       const selected = await channel.start({sender}, {trackId:'x', tier, videoBitrate, meteorMotion:true});
       assert.ok(selected.ok);
       assert.equal(asked.at(-1).tier, tier);
@@ -114,7 +114,7 @@ async function channel() {
       assert.equal(asked.at(-1).look.meteorMotion, true);
     }
   }
-  done.push('两档分辨率逐次转发视频码率，无效值不打开保存对话框');
+  done.push('三档分辨率逐次转发视频码率，无效值不打开保存对话框');
   const flag = await channel.start({sender}, {trackId:'x', presentationLook:{scoreStyle:'flag', lang:'en-US'}});
   assert.ok(flag.ok);
   assert.equal(asked.at(-1).look.scoreStyle, 'flag');
@@ -288,7 +288,7 @@ async function keptScoreStyle() {
 function sizeEstimate() {
   const scene = {status: () => ({active: true, status: 'ready', trackId: 't', fxPreset: 'clear', reading: {}})};
   const p = page({scene});
-  for (const id of ['scoreExportOpen', 'scoreExportChoices', 'scoreExportStatus', 'scoreExportProgress', 'scoreExportCancel', 'scoreExportReveal', 'scoreExport1080Size', 'scoreExport720Size'])
+  for (const id of ['scoreExportOpen', 'scoreExportChoices', 'scoreExportStatus', 'scoreExportProgress', 'scoreExportCancel', 'scoreExportReveal', 'scoreExport2160Size', 'scoreExport1080Size', 'scoreExport720Size'])
     p.byId.set(id, p.element());
   p.byId.set('fusionAudio', Object.assign(p.element('audio'), {duration: 568.77}));
   p.byId.get('scoreExportChoices').querySelectorAll = () => [];
@@ -312,14 +312,14 @@ function exportPanel(storage) {
   const p = page({scene: {status: () => ({...state})}});
   const get = id => p.byId.get(id);
   for (const id of ['scoreExportOpen', 'scoreExportChoices', 'scoreExportStatus', 'scoreExportProgress', 'scoreExportCancel', 'scoreExportReveal',
-                    'scoreExportBitrate','scoreExportCustomBitrate','scoreExportCustomRow','scoreExportBitrateError','scoreExport1080Size','scoreExport720Size','fusionAudio'])
+                    'scoreExportBitrate','scoreExportCustomBitrate','scoreExportCustomRow','scoreExportBitrateError','scoreExport2160Size','scoreExport1080Size','scoreExport720Size','fusionAudio'])
     p.byId.set(id, p.element());
   p.byId.set('trialLocalBars', Object.assign(p.element('input'), {checked: true}));
   const mode = get('scoreExportBitrate'), custom = get('scoreExportCustomBitrate');
   mode.value = 'auto'; custom.value = '2';
   custom.setAttribute = (key, value) => { custom[key] = value; };
   get('fusionAudio').duration = 60;
-  const tiers = ['720p', '1080p'].map(tier => Object.assign(p.element('button'), {dataset: {tier}}));
+  const tiers = ['720p', '1080p', '2160p'].map(tier => Object.assign(p.element('button'), {dataset: {tier}}));
   get('scoreExportChoices').querySelectorAll = () => tiers;
   p.win.localStorage = {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value)};
   p.win.XinsMusicLabFusion = {scoreExport: payload => {
@@ -336,9 +336,9 @@ function exportPanel(storage) {
 async function exportSettingsAtStart() {
   const storage = new Map();
   const {state, calls, tiers, get, mode, custom, setMode, setMbps, finish, p} = exportPanel(storage);
-  const estimates = () => [get('scoreExport720Size'), get('scoreExport1080Size')].map(n => n.textContent);
+  const estimates = () => [get('scoreExport720Size'), get('scoreExport1080Size'), get('scoreExport2160Size')].map(n => n.textContent);
   assert.equal(mode.value, 'auto');
-  assert.deepEqual(estimates(), ['约 2.2 MB', '约 13 MB']);
+  assert.deepEqual(estimates(), ['约 2.2 MB', '约 13 MB', '约 241 MB']);
   assert.equal(get('scoreExportCustomRow').hidden, true);
   for (const preset of ['1','2','4','8']) {
     setMode(preset);
@@ -348,15 +348,15 @@ async function exportSettingsAtStart() {
   }
   setMode('custom');
   assert.equal(get('scoreExportCustomRow').hidden, false);
-  for (const invalid of ['', '.049', '16.001', '-1', '1e1', '1.2345', 'abc']) {
+  for (const invalid of ['', '.049', '32.001', '-1', '1e1', '1.2345', 'abc']) {
     setMbps(invalid);
     assert.equal(custom['aria-invalid'], 'true');
     assert.equal(get('scoreExportBitrateError').hidden, false);
-    assert.deepEqual(estimates(), ['', '']);
+    assert.deepEqual(estimates(), ['', '', '']);
     for (const button of tiers) { assert.equal(button.disabled, true); button.fire('click'); }
     assert.equal(calls.length, 4);
   }
-  for (const value of ['.05','1.234','16']) {
+  for (const value of ['.05','1.234','32']) {
     setMbps(value);
     assert.equal(custom['aria-invalid'], 'false');
     assert.equal(get('scoreExportBitrateError').hidden, true);
@@ -366,7 +366,7 @@ async function exportSettingsAtStart() {
     await finish();
   }
   setMbps('0.5');
-  assert.deepEqual(estimates(), ['约 4.5 MB', '约 4.7 MB']);
+  assert.deepEqual(estimates(), ['约 4.5 MB', '约 4.7 MB', '约 5.2 MB']);
   const restored = exportPanel(storage);
   assert.equal(restored.mode.value, 'custom');
   assert.equal(restored.custom.value, '0.5');
@@ -391,9 +391,9 @@ async function exportSettingsAtStart() {
       assert.equal(p.win.XinScoreExportControls.status().working, false);
     }
   }
-  assert.equal(calls.length, 11);
+  assert.equal(calls.length, 7 + tiers.length * 2);
   assert.equal(exportPanel(storage).mode.value, '2');
-  done.push('两种分辨率均在开始导出时取流星和码率；无效值阻止导出，自定义、预估体积与重启记忆均通过');
+  done.push('三种分辨率均在开始导出时取流星和码率；无效值阻止导出，自定义、预估体积与重启记忆均通过');
 }
 
 async function scoreSnapshot() {

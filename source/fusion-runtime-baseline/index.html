@@ -320,11 +320,12 @@
               <div id="scoreExportChoices" class="score-export__choices" hidden>
                 <label class="xl-row"><span class="xl-row__label" data-i18n="export.bitrate">视频码率</span><select id="scoreExportBitrate">
                   <option value="auto" data-i18n="export.bitrateAuto">自动（随分辨率）</option>
-                  <option value="1">1 Mbps</option><option value="2">2 Mbps</option><option value="4">4 Mbps</option><option value="8">8 Mbps</option>
+                  <option value="1">1 Mbps</option><option value="2">2 Mbps</option><option value="4">4 Mbps</option><option value="8">8 Mbps</option><option value="16">16 Mbps</option><option value="32">32 Mbps</option>
                   <option value="custom" data-i18n="export.bitrateCustom">自定义</option>
                 </select></label>
-                <label id="scoreExportCustomRow" class="xl-row" hidden><span class="xl-row__label" data-i18n="export.bitrateValue">自定义（Mbps）</span><input id="scoreExportCustomBitrate" type="text" inputmode="decimal" value="2" placeholder="0.05–16" aria-describedby="scoreExportBitrateError" /></label>
+                <label id="scoreExportCustomRow" class="xl-row" hidden><span class="xl-row__label" data-i18n="export.bitrateValue">自定义（Mbps）</span><input id="scoreExportCustomBitrate" type="text" inputmode="decimal" value="2" placeholder="0.05–32" aria-describedby="scoreExportBitrateError" /></label>
                 <p id="scoreExportBitrateError" class="score-export__status" role="status" aria-live="polite" hidden></p>
+                <button type="button" data-tier="2160p"><span data-i18n="export.ultra">4K（2160p）</span><small id="scoreExport2160Size"></small></button>
                 <button type="button" data-tier="1080p"><span data-i18n="export.clear">清晰（1080p）</span><small id="scoreExport1080Size"></small></button>
                 <button type="button" data-tier="720p"><span data-i18n="export.small">小（720p）</span><small id="scoreExport720Size"></small></button>
               </div>

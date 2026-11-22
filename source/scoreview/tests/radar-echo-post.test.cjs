@@ -53,6 +53,16 @@ test('one turn is four bars, 12 o\'clock on every fourth bar line; an echo fades
   assert.deepEqual(frame(12.34).motion, a.motion);
 });
 
+test('UHD radar paints the instruments on a 3840 by 2160 stage at the same musical position', () => {
+  const {canvas, frame, stage} = post(song, 1280, 720);
+  const previous = frame(3.25);
+  canvas.scoreExportRatio = 3;
+  const current = frame(3.25);
+  assert.deepEqual([canvas.width, canvas.height, stage.canvas.width, stage.canvas.height], [3840, 2160, 3840, 2160]);
+  assert.equal(current.motion.angle, previous.motion.angle);
+  assert.deepEqual(current.motion.keys, previous.motion.keys);
+});
+
 test('without downbeats BAR · BEAT reads ---·-; without beats TEMPO reads --- and a turn takes eight seconds', () => {
   const lanes = [{id: 'g', kind: 'pitched', group: 'guitar', notes: [[1, .1, 60, 100]]}];
   const loose = post({...song, track: {...song.track, duration: 30}, bars: {bpm: 100}, lanes}).frame(4).motion;

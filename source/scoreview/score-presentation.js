@@ -177,6 +177,7 @@
     function ensureMovie(){
       if(movie)return;
       filmCanvas=canvas.ownerDocument.createElement('canvas');
+      filmCanvas.scoreExportRatio = canvas.scoreExportRatio;
       // Stable logical geometry; only its backing raster follows the output density.
       Object.defineProperties(filmCanvas,{clientWidth:{get:()=>metrics.width},clientHeight:{get:()=>metrics.height-56},scoreRenderRatio:{get:()=>metrics.scale*metrics.ratio}});
       movie=Core.create(filmCanvas,translated(model),clock,movieOptions());
@@ -184,7 +185,7 @@
     }
     function resize(){
       if(!options.presentationLayout){normal.resize();return;}
-      const ratio=Math.max(1,Math.min(2.5,Number(root.devicePixelRatio)||1));
+      const ratio=canvas.scoreExportRatio || Math.max(1,Math.min(2.5,Number(root.devicePixelRatio)||1));
       const width=canvas.clientWidth||canvas.width/ratio||1280,height=canvas.clientHeight||canvas.height/ratio||720;
       metrics={width:width/height*720,height:720,scale:height/720,ratio};
       const pw=Math.round(width*ratio),ph=Math.round(height*ratio);
@@ -206,7 +207,7 @@
     }
     function drawArt(renderer, at, locating) {
       resize();
-      const ratio = Math.max(1, Math.min(2.5, Number(root.devicePixelRatio) || 1));
+      const ratio = canvas.scoreExportRatio || Math.max(1, Math.min(2.5, Number(root.devicePixelRatio) || 1));
       // World-space grain and type use the same composition in immersive playback and export.
       const w = options.presentationLayout ? metrics.width : canvas.clientWidth || canvas.width / ratio;
       const h = options.presentationLayout ? metrics.height : canvas.clientHeight || canvas.height / ratio;

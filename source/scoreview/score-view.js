@@ -1683,7 +1683,7 @@ function canonicalOnsets(rows) {
     }
 
     function resize() {
-      const ratio = clamp(finite(canvas.scoreRenderRatio) ? canvas.scoreRenderRatio : finite(host.devicePixelRatio) ? host.devicePixelRatio : 1, 1, 2.5);
+      const ratio = canvas.scoreExportRatio || clamp(finite(canvas.scoreRenderRatio) ? canvas.scoreRenderRatio : finite(host.devicePixelRatio) ? host.devicePixelRatio : 1, 1, 2.5);
       const width = canvas.clientWidth || canvas.width / ratio || 0;
       const height = canvas.clientHeight || canvas.height / ratio || 0;
       const pixelWidth = Math.max(1, Math.round(width * ratio)), pixelHeight = Math.max(1, Math.round(height * ratio));

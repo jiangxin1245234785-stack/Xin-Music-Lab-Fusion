@@ -34,6 +34,7 @@
   async function makeView(job) {
     fixRatio(job.tier.ratio);
     const canvas = root.document.createElement('canvas');
+    canvas.scoreExportRatio = job.tier.ratio;
     canvas.width = job.tier.width;
     canvas.height = job.tier.height;
     const view = (root.XinScorePresentation || Core).create(canvas, job.model, () => 0, {...job.look, meteorMotion: true, presentationLayout: true, offsetSeconds: job.look?.offsetSeconds || 0});
@@ -115,10 +116,13 @@
     const frames = Math.max(1, Math.round(audioSeconds * fps));
     const frameUs = 1e6 / fps;
     const keyEvery = Math.max(1, Math.round((tier.keySeconds || 4) * fps));
+    const stream = tier.width >= 3840 ? await Mp4.openStream({audio, fps, frames, write: io.write}) : null;
     const videoSamples = [];
+    let received = 0;
     let config = null, failure = null;
     const encoder = new root.VideoEncoder({
       output: (chunk, meta) => {
+        received++;
         videoSamples.push({data: copyChunk(chunk), key: chunk.type === 'key', timestamp: chunk.timestamp});
         if (meta && meta.decoderConfig) config = meta.decoderConfig;
       },
@@ -150,40 +154,45 @@
       frame.close();
       while (encoder.encodeQueueSize > 6) await new Promise(resolve => encoder.addEventListener('dequeue', resolve, {once: true}));
       if (failure) throw fail('video-encode', String(failure.message || failure));
+      if (stream && videoSamples.length >= fps) await stream.append(videoSamples.splice(0, fps));
       if (k % 30 === 0) io.progress({stage: 'video', done: k, total: frames});
     }
     await encoder.flush();
     encoder.close();
     if (failure) throw fail('video-encode', String(failure.message || failure));
     if (!config || !config.description) throw fail('video-encode', 'encoder gave no avcC');
-    if (videoSamples.length !== frames) throw fail('video-encode', `encoder gave ${videoSamples.length} frames for ${frames}`);
+    if (received !== frames) throw fail('video-encode', `encoder gave ${received} frames for ${frames}`);
     timing.video = root.performance.now() - t0;
 
     io.progress({stage: 'write', done: 0, total: 1});
     t0 = root.performance.now();
     const description = new Uint8Array(config.description instanceof ArrayBuffer ? config.description : config.description.buffer.slice(0));
-    const file = Mp4.build({
-      video: {samples: videoSamples, description, width: tier.width, height: tier.height, timescale: fps * 1000, frameDuration: 1000,
-              colorSpace: config.colorSpace || null},
-      audio
-    });
-    // Larger blocks, fewer round trips to whoever writes the file.
-    let block = [], blockSize = 0;
-    for (const part of file.parts) {
-      block.push(part); blockSize += part.byteLength;
-      if (blockSize >= 4 << 20) { await io.write(Mp4.concat(block)); block = []; blockSize = 0; if (io.cancelled()) throw fail('cancelled'); }
+    const video = {description, width: tier.width, height: tier.height, timescale: fps * 1000, frameDuration: 1000,
+                   colorSpace: config.colorSpace || null};
+    let file;
+    if (stream) {
+      while (videoSamples.length) await stream.append(videoSamples.splice(0, fps));
+      file = await stream.finish(video);
+    } else {
+      file = Mp4.build({video: {...video, samples: videoSamples}, audio});
+      // Larger blocks, fewer round trips to whoever writes the file.
+      let block = [], blockSize = 0;
+      for (const part of file.parts) {
+        block.push(part); blockSize += part.byteLength;
+        if (blockSize >= 4 << 20) { await io.write(Mp4.concat(block)); block = []; blockSize = 0; if (io.cancelled()) throw fail('cancelled'); }
+      }
+      if (blockSize) await io.write(Mp4.concat(block));
     }
-    if (blockSize) await io.write(Mp4.concat(block));
     timing.write = root.performance.now() - t0;
 
-    const videoBytes = videoSamples.reduce((sum, sample) => sum + sample.data.byteLength, 0);
+    const videoBytes = file.videoBytes ?? videoSamples.reduce((sum, sample) => sum + sample.data.byteLength, 0);
     const audioBytes = audio.samples.reduce((sum, sample) => sum + sample.data.byteLength, 0);
     return {
       bytes: file.size, frames, fps, width: tier.width, height: tier.height, ratio: tier.ratio,
       audioSeconds, audioSampleRate: buffer.sampleRate, audioChannelsInFile: buffer.numberOfChannels,
       videoSeconds: frames / fps, videoMs: file.videoMs, audioMs: file.audioMs,
       videoBytes, audioBytes, headerBytes: file.header,
-      keyFrames: videoSamples.filter(sample => sample.key).length,
+      keyFrames: file.keyFrames ?? videoSamples.filter(sample => sample.key).length,
       codec: config.codec, colorSpace: config.colorSpace || null, encoder: acceleration === 'prefer-hardware' ? 'hardware' : 'software', audioCodec: 'mp4a.40.2', audioPriming: audio.priming,
       coverTaken, marks: marks.length, drawMsMean: drawMs / frames, drawMsWorst: worstDraw,
       ms: {...timing, total: root.performance.now() - started}
@@ -202,7 +211,9 @@
       let stop = false;
       host.onCancel(() => { stop = true; });
       try {
-        const summary = await run(job, {write: bytes => host.write(bytes), progress: step => host.progress(step), cancelled: () => stop});
+        const summary = await run(job, {write: async (bytes, position) => {
+          if (!await host.write(bytes, position)) throw fail(stop ? 'cancelled' : 'write-failed');
+        }, progress: step => host.progress(step), cancelled: () => stop});
         host.done(summary);
       } catch (error) {
         host.fail({code: error && error.code || 'failed', message: String(error && error.message || error)});

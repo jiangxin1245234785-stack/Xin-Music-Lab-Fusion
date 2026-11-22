@@ -31,6 +31,30 @@ function written(streams) {
   return {file, info: readMp4(out), out};
 }
 
+test('streamed UHD index references interleaved samples including a partial final second', async () => {
+  const {audio, video} = fakeStreams({frames: 95});
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xml-uhd-'));
+  const out = path.join(dir, 'stream.mp4');
+  const file = await fs.promises.open(out, 'w');
+  try {
+    const stream = await Mp4.openStream({audio, fps: 30, frames: video.samples.length,
+      write: (bytes, position) => file.write(bytes, 0, bytes.length, position ?? null)});
+    for (let k = 0; k < video.samples.length; k += 30) await stream.append(video.samples.slice(k, k + 30));
+    const result = await stream.finish({...video, width: 3840, height: 2160});
+    const info = readMp4(out);
+    assert.deepEqual(info.order, ['ftyp', 'moov', 'free', 'mdat']);
+    assert.equal(info.layoutProblems, 0);
+    assert.equal(info.bytes, result.size);
+    assert.equal(info.tracks[0].samples, video.samples.length);
+    assert.equal(info.tracks[1].samples, audio.samples.length);
+    assert.deepEqual(info.tracks[0].syncSamples, [1, 31, 61, 91]);
+  } finally {
+    await file.close();
+    fs.rmSync(out);
+    fs.rmdirSync(dir);
+  }
+});
+
 test('index first, every sample inside mdat once, sizes add up', () => {
   const {file, info} = written(fakeStreams());
   assert.deepEqual(info.order, ['ftyp', 'moov', 'mdat']);
@@ -130,14 +154,17 @@ test('a forbidden folder and everything under it is refused; neighbours are not'
   assert.ok(!exporter.inside('C:\\Users\\x\\Videos\\b.mp4', root));
 });
 
-test('two tiers only, same page layout, the chosen look', () => {
-  assert.deepEqual(Object.keys(exporter.TIERS), ['1080p', '720p']);
+test('three resolutions, same page layout, the chosen look', () => {
+  assert.deepEqual(Object.keys(exporter.TIERS), ['2160p', '1080p', '720p']);
   for (const tier of Object.values(exporter.TIERS)) {
     assert.equal(tier.width / tier.ratio, 1280);
     assert.equal(tier.height / tier.ratio, 720);
   }
   assert.deepEqual({...exporter.LOOK}, {fxPreset: 'clear', laneLabels: 'icon', sectionStyle: 'line', captionStyle: 'mark', mergeTimbres: true, simplify: true, backdropLevel: 'steady'});
   assert.equal(exporter.FPS, 30);
+  assert.equal(exporter.TIERS['2160p'].width, 3840);
+  assert.equal(exporter.TIERS['2160p'].videoBitrate, 32000000);
+  assert.equal(exporter.TIERS['2160p'].audioBitrate, 192000);
   // Sound: AAC 128k in the sharp size, 96k in the small one (2026-11-14: 128k alone is about 1 MB a minute).
   assert.deepEqual([exporter.TIERS['1080p'].audioBitrate, exporter.TIERS['720p'].audioBitrate], [128000, 96000]);
   assert.equal(exporter.TIERS['1080p'].videoBitrate, 1650000);
@@ -146,13 +173,13 @@ test('two tiers only, same page layout, the chosen look', () => {
 
 test('custom video bps are integer values in range; old callers can omit the override', async () => {
   const model = {track:{duration:1}, lanes:[{}]};
-  for (const name of ['720p', '1080p']) {
-    for (const videoBitrate of ['4000000', {}, false, 0, 49999, 50000.1, 16000001, NaN, Infinity]) {
+  for (const name of ['720p', '1080p', '2160p']) {
+    for (const videoBitrate of ['4000000', {}, false, 0, 49999, 50000.1, 32000001, NaN, Infinity]) {
       const rejected = await exporter.exportVideo({tier:name, model, videoBitrate, lang:'en'});
       assert.equal(rejected.error, 'invalid-video-bitrate');
-      assert.match(rejected.message, /0\.05 to 16 Mbps/);
+      assert.match(rejected.message, /0\.05 to 32 Mbps/);
     }
-    for (const videoBitrate of [50000, 2738291, 16000000, undefined, null]) {
+    for (const videoBitrate of [50000, 2738291, 32000000, undefined, null]) {
       const valid = await exporter.exportVideo({tier:name, model, videoBitrate});
       assert.equal(valid.error, 'write-failed', 'valid bitrate proceeds to output-file validation');
     }
@@ -163,7 +190,9 @@ test('custom video bps are integer values in range; old callers can omit the ove
 
 test('a packaged XML carries what the export and the marks need', () => {
   const build = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'release-tools', 'build-local.cjs'), 'utf8');
-  const listed = JSON.parse(`[${/const scoreFiles=\[([\s\S]*?)\];/.exec(build)[1].replace(/'/g, '"')}]`);
+  const sourceRoot = path.resolve(__dirname, '../../..');
+  const list = /const scoreFiles=(\[[\s\S]*?\]);/.exec(build)[1];
+  const listed = require('node:vm').runInNewContext(list, {sourceRoot, fs, path, require});
   for (const file of ['adapter/cues.cjs', 'export/export-main.cjs', 'export/export-page.html', 'export/export-preload.cjs', 'export/export-render.js', 'export/mp4-writer.js']) {
     assert.ok(listed.includes(file), `打包清单里没有 ${file}`);
   }

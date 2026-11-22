@@ -13,7 +13,7 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 
 ### 下载与版本
 
-**原曲＋外部 MIDI → 回波雷达 → 带原声的 MP4**：本地开发版 `0.5.0-dev.midiin.2` 已加入 XML 文件导入。操作、MuScriptor 获取方式、同步和导出见[外部 MIDI 使用说明](docs/XML_EXTERNAL_MIDI.md)。目前下方的 GitHub 预览包早于这项功能。
+**原曲＋外部 MIDI → 回波雷达 → 带原声的 MP4**：XML 支持外部 MIDI 文件导入，本地开发版 `0.5.0-dev.midiin.4` 还可导出 4K（2160p）视频。操作、MuScriptor 获取方式、同步和导出见[外部 MIDI 使用说明](docs/XML_EXTERNAL_MIDI.md)。目前下方的 GitHub 预览包早于这项功能。
 
 在 [Windows 预览版 Release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1) 的 **Assets** 中下载 `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`，完整解压后运行 `XLD.exe` 或 `XML.exe`。不要只移动 EXE。
 
@@ -75,7 +75,7 @@ Xin Music Lab is a personal project for instrumental music, post-rock and comple
 
 ### Download and version status
 
-**Original audio + external MIDI → radar score → MP4 with the original recording.** XML development build `0.5.0-dev.midiin.2` adds this workflow. See the [external MIDI guide and English quick start](docs/XML_EXTERNAL_MIDI.md#english-quick-start). The GitHub preview linked below predates the feature.
+**Original audio + external MIDI → radar score → MP4 with the original recording.** XML supports external MIDI import. Local development build `0.5.0-dev.midiin.4` also exports 4K (2160p) video. See the [external MIDI guide and English quick start](docs/XML_EXTERNAL_MIDI.md#english-quick-start). The GitHub preview linked below predates the feature.
 
 Open the [Windows preview release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1), expand **Assets**, and download `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`. Extract the entire archive and launch `XLD.exe` or `XML.exe`. Keep the accompanying files beside the executables.
 

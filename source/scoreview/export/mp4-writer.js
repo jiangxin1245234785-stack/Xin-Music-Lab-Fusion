@@ -28,6 +28,8 @@
     if (!(value >= 0 && value <= 0xffffffff)) throw new Error(`mp4: value out of 32-bit range: ${value}`);
     return Uint8Array.of((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff);
   };
+  const u64 = value => concat([u32(Math.floor(value / 0x100000000)), u32(value % 0x100000000)]);
+  const sampleSize = sample => sample.size ?? bytesOf(sample.data).byteLength;
   const zeros = count => new Uint8Array(count);
   const bytesOf = data => {
     if (data instanceof Uint8Array) return data;
@@ -136,19 +138,20 @@
   }
 
   function stbl(entry, track, offsets) {
-    const sizes = track.samples.map(sample => bytesOf(sample.data).byteLength);
+    const sizes = track.samples.map(sampleSize);
     const parts = [
       fullBox('stsd', 0, 0, u32(1), entry),
-      fullBox('stts', 0, 0, ...(() => { const r = runs(track.durations); return [u32(r.length), ...r.map(([n, d]) => concat([u32(n), u32(d)]))]; })())
+      fullBox('stts', 0, 0, (() => { const r = runs(track.durations); return [u32(r.length), r.map(([n, d]) => concat([u32(n), u32(d)]))]; })())
     ];
-    if (track.keys) parts.push(fullBox('stss', 0, 0, u32(track.keys.length), ...track.keys.map(index => u32(index + 1))));
+    if (track.keys) parts.push(fullBox('stss', 0, 0, u32(track.keys.length), track.keys.map(index => u32(index + 1))));
     // Chunks: the samples per chunk, folded into runs (first chunk numbers are 1-based).
     const perChunk = runs(track.chunks.map(chunk => chunk.count));
     let first = 1;
     const stscRows = perChunk.map(([n, count]) => { const row = concat([u32(first), u32(count), u32(1)]); first += n; return row; });
-    parts.push(fullBox('stsc', 0, 0, u32(stscRows.length), ...stscRows));
-    parts.push(fullBox('stsz', 0, 0, u32(0), u32(sizes.length), ...sizes.map(u32)));
-    parts.push(fullBox('stco', 0, 0, u32(offsets.length), ...offsets.map(u32)));
+    parts.push(fullBox('stsc', 0, 0, u32(stscRows.length), stscRows));
+    parts.push(fullBox('stsz', 0, 0, u32(0), u32(sizes.length), sizes.map(u32)));
+    const wide = offsets.some(offset => offset > 0xffffffff);
+    parts.push(fullBox(wide ? 'co64' : 'stco', 0, 0, u32(offsets.length), offsets.map(wide ? u64 : u32)));
     return box('stbl', ...parts);
   }
 
@@ -254,5 +257,51 @@
             videoMs: tracks[0].presentedMs, audioMs: audio ? tracks[1].presentedMs : 0};
   }
 
-  return Object.freeze({build, concat, MOVIE_TIMESCALE});
+  // Keep long UHD recordings out of renderer memory. Reserve the front index, write
+  // one second of video and matching audio at a time, then fill in the index.
+  async function openStream({audio, fps, frames, write}) {
+    const sound = prepareAudio(audio, 1);
+    interleave([sound]);
+    const videoChunks = [], samples = [];
+    // Sample sizes, durations, keyframe and chunk tables fit in 32 bytes per sample.
+    const header = 8192 + 32 * (audio.samples.length + frames);
+    await write(zeros(header));
+    let position = header, nextAudio = 0;
+    async function put(data) {
+      await write(data);
+      position += data.byteLength;
+    }
+    async function audioBefore(end) {
+      while (nextAudio < sound.chunks.length && sound.chunks[nextAudio].start < end) {
+        const chunk = sound.chunks[nextAudio++];
+        chunk.offset = position;
+        await put(concat(sound.samples.slice(chunk.first, chunk.first + chunk.count).map(s => s.data)));
+      }
+    }
+    async function append(group) {
+      const first = samples.length;
+      await audioBefore(first / fps);
+      videoChunks.push({count: group.length, offset: position});
+      await put(concat(group.map(sample => sample.data)));
+      for (const sample of group) samples.push({timestamp: sample.timestamp, key: sample.key, size: sample.data.byteLength});
+    }
+    async function finish(video) {
+      if (samples.length !== frames) throw new Error('mp4: incomplete video');
+      await audioBefore(Infinity);
+      const picture = prepareVideo({...video, samples}, 1);
+      picture.chunks = videoChunks;
+      const movieMs = Math.max(picture.presentedMs, sound.presentedMs);
+      const ftyp = box('ftyp', ascii('isom'), u32(0x200), ascii('isom'), ascii('iso2'), ascii('avc1'), ascii('mp41'));
+      const moov = box('moov', mvhd(movieMs), [picture, sound].map(track => trak(track, track.chunks.map(chunk => chunk.offset))));
+      const free = header - ftyp.byteLength - moov.byteLength - 16;
+      if (free < 8) throw new Error('mp4: reserved index too small');
+      const payload = position - header;
+      await write(concat([ftyp, moov, u32(free), ascii('free'), zeros(free - 8), u32(1), ascii('mdat'), u64(payload + 16)]), 0);
+      return {size: position, header, payload, videoMs: picture.presentedMs, audioMs: sound.presentedMs,
+              videoBytes: samples.reduce((total, s) => total + s.size, 0), keyFrames: picture.keys.length};
+    }
+    return {append, finish};
+  }
+
+  return Object.freeze({build, openStream, concat, MOVIE_TIMESCALE});
 });

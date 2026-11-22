@@ -19,15 +19,16 @@ const {fileURLToPath} = require('node:url');
 // backdrop keeps one brightness (REPORT-A §10 (b)): a picture that changes every frame costs most of the bits.
 const LOOK = Object.freeze({fxPreset: 'clear', laneLabels: 'icon', sectionStyle: 'line', captionStyle: 'mark', mergeTimbres: true, simplify: true, backdropLevel: 'steady'});
 
-// Two sizes only. Both lay the score out on the same 1280 × 720 page; 1080p draws it at 1.5×.
+// All sizes share the same logical 1280 × 720 page and render at the requested pixel density.
 // The 1080p default was calibrated on real exports of Qilixiang and Satan Veludo Children
 // to target roughly half the previous file size. H.264's actual rate varies with the picture.
 const TIERS = Object.freeze({
+  '2160p': Object.freeze({width: 3840, height: 2160, ratio: 3, videoBitrate: 32000000, audioBitrate: 192000, keySeconds: 10, codec: 'avc1.640033'}),
   '1080p': Object.freeze({width: 1920, height: 1080, ratio: 1.5, videoBitrate: 1650000, audioBitrate: 128000, keySeconds: 10, codec: 'avc1.640028'}),
   '720p': Object.freeze({width: 1280, height: 720, ratio: 1, videoBitrate: 200000, audioBitrate: 96000, keySeconds: 10, codec: 'avc1.64001f'})
 });
 function validVideoBitrate(value) {
-  return Number.isInteger(value) && value >= 50000 && value <= 16000000;
+  return Number.isInteger(value) && value >= 50000 && value <= 32000000;
 }
 const FPS = 30;
 const SAMPLE_RATE = 44100;
@@ -41,7 +42,7 @@ const PRELOAD = path.join(__dirname, 'export-preload.cjs');
 
 const MESSAGES = {
   zh: {
-    'invalid-video-bitrate': '视频码率须在 0.05 到 16 Mbps 之间，并可换算为整数比特/秒。',
+    'invalid-video-bitrate': '视频码率须在 0.05 到 32 Mbps 之间，并可换算为整数比特/秒。',
     'no-model': '这首歌还没有分析结果，导不出谱面视频。',
     'audio-missing': '找不到这首歌的音频文件，导不出来。',
     'audio-decode': '这首歌的音频读不出来，导不出来。',
@@ -57,7 +58,7 @@ const MESSAGES = {
     'failed': '导出失败，没有留下文件。'
   },
   en: {
-    'invalid-video-bitrate': 'Choose a video bitrate from 0.05 to 16 Mbps that converts to a whole number of bits per second.',
+    'invalid-video-bitrate': 'Choose a video bitrate from 0.05 to 32 Mbps that converts to a whole number of bits per second.',
     'no-model': 'This song has no analysis yet, so there is no score to export.',
     'audio-missing': "Can't find this song's audio file.",
     'audio-decode': "Can't read this song's audio.",
@@ -120,10 +121,10 @@ function wire(ipcMain) {
   wired = true;
   const jobOf = event => jobs.get(event.sender.id);
   ipcMain.handle('xin-score-export:job', event => { const job = jobOf(event); return job ? job.payload() : null; });
-  ipcMain.handle('xin-score-export:write', async (event, bytes) => {
+  ipcMain.handle('xin-score-export:write', async (event, bytes, position) => {
     const job = jobOf(event);
     if (!job) return false;
-    return job.write(bytes);
+    return job.write(bytes, position);
   });
   ipcMain.on('xin-score-export:progress', (event, step) => { const job = jobOf(event); if (job) job.progress(step); });
   ipcMain.on('xin-score-export:done', (event, summary) => { const job = jobOf(event); if (job) job.done(summary); });
@@ -142,6 +143,7 @@ async function exportVideo(request) {
   if (videoBitrate != null && !validVideoBitrate(videoBitrate)) return result(false, {error: 'invalid-video-bitrate'});
   const preset = TIERS[tierName];
   const tier = videoBitrate == null ? preset : {...preset, videoBitrate};
+  if (videoBitrate > 16000000 && tierName !== '2160p') tier.codec = 'avc1.640029';
   const outFile = request.outFile && path.resolve(request.outFile);
   if (!outFile) return result(false, {error: 'write-failed', details: 'no output file'});
   if ((request.forbidden || []).some(root => inside(outFile, root))) return result(false, {error: 'forbidden-folder'});
@@ -203,7 +205,7 @@ async function exportVideo(request) {
                        audioPriming: Number.isFinite(request.audioPriming) ? request.audioPriming : AUDIO_PRIMING, acceleration: request.acceleration || 'auto',
                        audioBytes: audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.byteLength),
                        coverUrl: request.coverUrl || null}),
-      write: async bytes => {
+      write: async (bytes, position) => {
         if (finished) return false;
         try {
           if (!handle) {
@@ -218,12 +220,14 @@ async function exportVideo(request) {
             handle = opened;
           }
           const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          if (position != null && (position !== 0 || data.byteLength > written)) throw Error('invalid header rewrite');
+          const base = position ?? written;
           let at = 0;
           while (at < data.byteLength) {
-            const {bytesWritten} = await handle.write(data, at, data.byteLength - at, written + at);
+            const {bytesWritten} = await handle.write(data, at, data.byteLength - at, base + at);
             at += bytesWritten;
           }
-          written += data.byteLength;
+          if (position == null) written += data.byteLength;
           return true;
         } catch (error) {
           finish(false, {error: error.code === 'ENOSPC' ? 'disk-full' : 'write-failed', details: `${error.code || ''} ${error.message}`});

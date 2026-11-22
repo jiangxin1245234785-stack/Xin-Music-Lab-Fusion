@@ -1,7 +1,7 @@
 'use strict';
 // Export a score video from the command line, against a copy of analysed tracks.
 //
-//   electron source/scoreview/export/cli.cjs <scratch appdata folder> <out folder> <exact title> [1080p] [720p]
+//   electron source/scoreview/export/cli.cjs <scratch appdata folder> <out folder> <exact title> [2160p] [1080p] [720p]
 //
 // Like tests/xml-scene-smoke.cjs, it points Electron's appData / userData at the scratch folder
 // (whose "Xin's Local Deck Beta/settings.json" names the library and a copied analysis root),
@@ -21,7 +21,7 @@ const [scratch, out, wanted, ...tierArgs] = process.argv.slice(2).filter(arg => 
 const tiers = tierArgs.length ? tierArgs : ['1080p', '720p'];
 const settingsFile = scratch && path.join(path.resolve(scratch), "Xin's Local Deck Beta", 'settings.json');
 if (!out || !wanted || !settingsFile || !fs.existsSync(settingsFile)) {
-  console.error('用法：<带 settings.json 的临时 appdata 目录> <输出目录> <曲名> [1080p] [720p]');
+  console.error('用法：<带 settings.json 的临时 appdata 目录> <输出目录> <曲名> [2160p] [1080p] [720p]');
   process.exit(2);
 }
 app.setPath('appData', path.resolve(scratch));

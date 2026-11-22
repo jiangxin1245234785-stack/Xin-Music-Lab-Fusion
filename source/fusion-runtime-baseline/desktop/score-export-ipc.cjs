@@ -25,7 +25,7 @@ function createScoreExport(deps) {
     // against, so there is no export either.
     const forbidden = analysisRoots();
     if (!Array.isArray(forbidden) || !forbidden.length) return refuse('failed', 'no analysis roots to keep clear of');
-    const tier = payload?.tier === '720p' ? '720p' : '1080p';
+    const tier = Object.hasOwn(exporter.TIERS, payload?.tier) ? payload.tier : '1080p';
     const built = await scoreModelFor({trackId: payload?.trackId, useDynamics: payload?.useDynamics === true, lang: payload?.lang});
     if (!built?.ok) return refuse('no-model');
     // 分段小节（试用）: the video follows the scene's switch (score-scene.js), candidate measures only while it is on.
