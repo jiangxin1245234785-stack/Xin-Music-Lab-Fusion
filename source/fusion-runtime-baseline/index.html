@@ -261,6 +261,16 @@
         </div>
         <div id="xlScoreSettings" class="xl-settings__body" hidden>
           <section id="scoreReadingGroup" class="xl-group">
+            <div id="externalMidiPanel">
+              <div class="xl-row"><button type="button" id="externalMidiChoose" data-i18n="midi.import" disabled>为当前曲目导入 MIDI</button><input type="file" id="externalMidiFile" accept=".mid,.midi" hidden /></div>
+              <p id="externalMidiStatus" class="hint" role="status" hidden></p>
+              <details id="externalMidiEdit" hidden><summary data-i18n="midi.settings">声部分配与同步</summary>
+                <div id="externalMidiParts"></div>
+                <label class="xl-row"><span data-i18n="midi.offset">音符偏移（毫秒，正数延后）</span><input id="externalMidiOffset" type="number" min="-60000" max="60000" step="1" value="0" /></label>
+                <label class="xl-toggle-field"><span data-i18n="midi.grid">使用 MIDI 拍号与小节</span><input id="externalMidiGrid" class="xl-switch-input" role="switch" type="checkbox" /></label>
+                <div class="xl-row"><button type="button" id="externalMidiApply" data-i18n="midi.apply">应用</button><button type="button" id="externalMidiRestore" data-i18n="midi.restore">恢复曲库谱面</button></div>
+              </details>
+            </div>
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.style">谱面样式</span><select id="scoreStyle"><option value="starry" data-i18n="score.styleStarry">星空谱面</option><option value="plain" data-i18n="score.stylePlain">原样</option><option value="overprint" data-i18n="score.stylePrint">套色舞会</option><option value="glass" data-i18n="score.styleGlass">回波雷达</option><option value="paper" data-i18n="score.stylePaper">压纹纸</option><option value="ember" data-i18n="score.styleEmber">余烬</option><option value="water" data-i18n="score.styleWater">夜水</option><option value="mist" data-i18n="score.styleMist">骨架与声雾</option><option value="terrain" data-i18n="score.styleTerrain">车窗地貌</option><option value="flag" data-i18n="score.styleFlag">旗帜工坊</option></select></label>
             <div id="scoreRadarOptions" hidden>
               <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarFall">指针落下</span><select id="scoreRadarFall"><option value="0.35" data-i18n="score.radarFallSlow">慢</option><option value="0.6" data-i18n="score.radarFallMedium" selected>中</option><option value="1" data-i18n="score.radarFallFast">快</option></select></label>
@@ -660,6 +670,7 @@
     <script src="./score-dynamics-controls.js"></script>
     <script src="./score-notes-controls.js"></script>
     <script src="./score-export-controls.js"></script>
+    <script src="./external-midi-controls.js"></script>
     <script src="./library-status.js"></script>
     <script src="./fusion.js"></script>
     <script src="./score-layout.js"></script>

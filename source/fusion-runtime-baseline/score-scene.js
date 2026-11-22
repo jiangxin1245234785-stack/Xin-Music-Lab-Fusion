@@ -279,6 +279,7 @@
     // started only while the score is on screen (Prepare.starts): a song accepted in another scene, the
     // next song playing on, the last song restored at start-up start nothing until the score is shown.
     function consider() {
+      if (health?.externalMidi) { prepPlan = 'none'; return; }
       prepPlan = Prepare ? Prepare.plan(health, autoLayers && Boolean(prepare)) : 'unknown';
       if (!active()) return;
       const layers = health && health.layers;
@@ -515,7 +516,7 @@
         if (hinting) whisper(hint.text, 10);
       }
       else if (status === 'loading') notice(say('score.loading', '正在读这首歌的谱面…'));
-      else if (status === 'empty') notice(say('score.noNotes', '这首歌还没有转写出来的音符。在 XLD 里跑过转写之后，这里就有谱面。'));
+      else if (status === 'empty') notice(say('score.noNotes', '这首歌还没有音符。可在谱面设置里导入 MIDI，或在 XLD 转谱。'));
       else if (status === 'failed') notice(say('score.failed', '这首歌的谱面读不出来。'));
       else notice(say('score.idle', '选一首歌，这里显示它的谱面。'));
       frame = root.requestAnimationFrame(paint);

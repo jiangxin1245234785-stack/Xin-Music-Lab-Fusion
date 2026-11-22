@@ -9,9 +9,11 @@
 Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、后摇和复杂编配。它把第三方研究模型接入统一工作流，方便分轨、转谱、试听、比较和管理结果。核心模型来自各上游作者，本项目的工作重点是交互、适配与分析结果的衔接。
 
 - **XLD — Xin’s Local Deck**：本地曲库与分析工作台，负责段落、和弦、分轨和 MIDI。
-- **XML — Xin’s Music Lab Fusion**：音乐可视化，消费 XLD 的分析结果。
+- **XML — Xin’s Music Lab Fusion** 用原曲播放音乐可视化。谱面可以读取 XLD 的分析结果，支持外部 MIDI 的版本也可以直接导入用户准备的谱子。
 
 ### 下载与版本
+
+**原曲＋外部 MIDI → 回波雷达 → 带原声的 MP4**：本地开发版 `0.5.0-dev.midiin.2` 已加入 XML 文件导入。操作、MuScriptor 获取方式、同步和导出见[外部 MIDI 使用说明](docs/XML_EXTERNAL_MIDI.md)。目前下方的 GitHub 预览包早于这项功能。
 
 在 [Windows 预览版 Release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1) 的 **Assets** 中下载 `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`，完整解压后运行 `XLD.exe` 或 `XML.exe`。不要只移动 EXE。
 
@@ -23,7 +25,7 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 | 旧版 `0.5.0-preview.ui.1` | 保留旧资产，供回退；功能较少 |
 | 本次更新（2026-09-26） | 新 Windows ZIP、匹配的过滤后源码 ZIP、SHA-256 校验值；无模型权重 |
 
-截至本次更新，仓库仍为私有，下载需要访问权限。版本记录见[发布状态](docs/RELEASE_STATUS.md)。这是个人项目预览版，尚未完成干净 Windows 环境的完整验收。
+仓库已公开，下载请选 Release 的 Windows x64 程序包。版本记录见[发布状态](docs/RELEASE_STATUS.md)。这是个人项目预览版，尚未完成干净 Windows 环境的完整验收。
 
 ### 可以做什么
 
@@ -69,9 +71,11 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 Xin Music Lab is a personal project for instrumental music, post-rock and complex arrangements. It connects third-party research models through a shared workflow for separation, transcription, listening, comparison and result management. Model research belongs to the upstream authors; this project focuses on the interface, adapters and connections between analysis results.
 
 - **XLD — Xin’s Local Deck:** the local music library and workbench for sections, chords, separation and MIDI.
-- **XML — Xin’s Music Lab Fusion:** music visualization that consumes XLD analysis results.
+- **XML — Xin’s Music Lab Fusion** plays music visualizations against the original recording. Scores can use XLD analysis or, in builds with external MIDI support, a MIDI file you supply.
 
 ### Download and version status
+
+**Original audio + external MIDI → radar score → MP4 with the original recording.** XML development build `0.5.0-dev.midiin.2` adds this workflow. See the [external MIDI guide and English quick start](docs/XML_EXTERNAL_MIDI.md#english-quick-start). The GitHub preview linked below predates the feature.
 
 Open the [Windows preview release](https://github.com/jiangxin1245234785-stack/Xin-Music-Lab-Fusion/releases/tag/v0.5.0-preview.setup.1), expand **Assets**, and download `Xin-Music-Lab-0.5.0-preview.setup.1-win-x64.zip`. Extract the entire archive and launch `XLD.exe` or `XML.exe`. Keep the accompanying files beside the executables.
 
@@ -83,7 +87,7 @@ Open the [Windows preview release](https://github.com/jiangxin1245234785-stack/X
 | Previous `0.5.0-preview.ui.1` | Older assets retained for rollback; fewer features |
 | This update (2026-09-26) | New Windows ZIP, matching filtered source ZIP and SHA-256 checksums; no model weights |
 
-The repository remains private as of this update, so downloads require access. See [release status](docs/RELEASE_STATUS.md). This is a personal-project preview; full validation on a clean Windows machine is still outstanding.
+The repository is public. Download the Windows x64 application from the release assets. See [release status](docs/RELEASE_STATUS.md). This is a personal-project preview; full validation on a clean Windows machine is still outstanding.
 
 ### Features
 

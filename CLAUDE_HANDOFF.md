@@ -1,5 +1,7 @@
 # Claude 接手入口：XML / XLD
 
+**2026-11-22 · XML 外部 MIDI 试用版 `0.5.0-dev.midiin.2`。** 独立入口在 `releases/0.5.0-dev.midiin.2/XML.exe`，日常入口仍是 other.5。使用说明见[外部 MIDI](docs/XML_EXTERNAL_MIDI.md)。主线 XML 的 `desktop/external-midi.cjs` 负责解析、声部与按曲保存，`external-midi-controls.js` 负责谱面设置。播放和视频导出共用 `scoreModelFor`，导入记录优先，恢复后回到曲库谱面。下一次打包应带上两个新文件及共享 MIDI 读取器。回归命令为在 `source/fusion-runtime-baseline` 内运行 `node --test tests/external-midi.cjs`。
+
 **2026-11-21 · 当前入口为 `0.5.0-dev.other.5`。** 雷达曲名牌采用已选右版。长标题排两行，点铭牌能看完整曲名与艺人，原曲继续播放。四处实现已在主线 `source/`，后续打包直接继承。先读[本版接续记录和实机截图](docs/XML_RADAR_OTHER5.md)。
 
 最新本地入口（2026-11-12，优先于下方历史）：**releases/0.5.0-dev.score.25（XLD core.76 / XML score.25）**，上一稳定score.21。XML已接入“按录音强弱显示”，默认关闭；显式生成独立力度副本，缓存、进度、取消、强制复跑、原值回退、中英与重开记忆齐全。原音频/MIDI/分析只读，每次完成留新run，失败/取消不替换旧副本；已有动态、人工修订和人声曲线保持。完整默认/最小窗口验收、40组/240状态、启用副本64次换歌、22→25缓存复用、播放连续与169原文件SHA通过；6后端、147谱面、38适配器改坏、48渲染和两个exe通过。新包2803/旧包2800文件完整；XLD包内固定为21已验证基线，工作区额外XLD改动保留未混入。阶段22–25与源码SHA均留存，未提交。见 [当前交接](work/score-dynamics-20261112/HANDOFF.md)、[验收报告](work/score-dynamics-20261112/REPORT.md)、[后续清单](work/score-dynamics-20261112/NEXT_WORK.md)。

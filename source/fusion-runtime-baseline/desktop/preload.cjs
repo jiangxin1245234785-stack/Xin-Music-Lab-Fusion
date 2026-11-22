@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('XinsMusicLabFusion', Object.freeze({
   analysisLockHolder: () => ipcRenderer.invoke('fusion:analysis-lock-holder'),
   runAnalysis: (trackId, engine, options = {}) => ipcRenderer.invoke('fusion:analysis-run', { trackId, engine, options }),
   readMidi: (trackId, stem) => ipcRenderer.invoke('fusion:midi-read', { trackId, stem }),
+  externalMidi: payload => ipcRenderer.invoke('fusion:external-midi', payload),
   scoreModel: (trackId,useDynamics=false,lang) => ipcRenderer.invoke('fusion:score-model', { trackId,useDynamics,lang }),
   scoreLayersState: trackIds => ipcRenderer.invoke('fusion:score-layers-state', { trackIds }),
   lyrics: (trackId, duration) => ipcRenderer.invoke('fusion:lyrics', { trackId, duration }),

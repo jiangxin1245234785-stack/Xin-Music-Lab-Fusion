@@ -77,7 +77,7 @@ function readTrack(buffer, start, length, trackIndex) {
 
 // `instruments` come back in the order pretty_midi would have produced them, each with the number of notes it
 // holds. Those counts are what segment the flat notes.json array.
-function readMidiFile(buffer) {
+function readMidiTracks(buffer, maxEvents = Infinity) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 14) throw new Error('midi-read-too-short');
   const head = reader(buffer);
   if (head.bytes(4).toString('ascii') !== 'MThd') throw new Error('midi-read-not-midi');
@@ -86,16 +86,27 @@ function readMidiFile(buffer) {
   if (division & 0x8000) throw new Error('midi-read-smpte-unsupported');
   const tracks = [];
   let at = 14;
+  let eventCount = 0;
   while (at + 8 <= buffer.length) {
     const id = buffer.toString('ascii', at, at + 4), length = buffer.readUInt32BE(at + 4);
     if (at + 8 + length > buffer.length) throw new Error('midi-read-truncated');
     // Anything that is not an MTrk is skipped by length, which is what the specification asks for.
-    if (id === 'MTrk') tracks.push(readTrack(buffer, at + 8, length, tracks.length));
+    if (id === 'MTrk') {
+      const track = readTrack(buffer.subarray(at + 8, at + 8 + length), 0, length, tracks.length);
+      eventCount += track.events.length;
+      if (eventCount > maxEvents) throw new Error('midi-too-large');
+      tracks.push(track);
+    }
     at += 8 + length;
   }
   // Bytes left over that are too short to be a chunk header mean the file was cut off. Reading the tracks that
   // did arrive and reporting a note count for them would turn a truncated file into a confident wrong answer.
   if (at !== buffer.length) throw new Error('midi-read-truncated');
+  return {format, division, declaredTracks, tracks};
+}
+
+function readMidiFile(buffer) {
+  const {format, division, declaredTracks, tracks} = readMidiTracks(buffer);
   if (!tracks.length) return {format, division, tracks: 0, instruments: [], noteCount: 0, unknownEvents: 0, tempoChanges: 0};
 
   // Conservative lower bound for a new split: at least one tick at the slowest tempo.
@@ -142,4 +153,4 @@ function segment(buffer, flatNoteCount) {
   return {ok: true, ...file, offsets};
 }
 
-module.exports = {readMidiFile, segment};
+module.exports = {readMidiFile, readMidiTracks, segment};

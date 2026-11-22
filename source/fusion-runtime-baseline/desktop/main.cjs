@@ -120,6 +120,14 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   const scoreNotes=noteModule.createStore(noteModule.notesRoot(app.getPath('appData'),app.getPath('userData')));
   const listeningModule=require('./listening-state.cjs');
   const listeningState=listeningModule.createStore(listeningModule.rootFor(app.getPath('appData'),app.getPath('userData')));
+  const externalMidi = require('./external-midi.cjs');
+  const midiImports = externalMidi.createStore(path.join(path.dirname(listeningModule.rootFor(app.getPath('appData'),app.getPath('userData'))),'Imported MIDI'));
+  ipcMain.handle('fusion:external-midi', async (_event, payload) => {
+    const track = fusionTrackIndex.get(String(payload?.trackId || ''));
+    if (!track) return {ok:false,error:'track-missing'};
+    try {return {ok:true,record:await midiImports.action(track,payload)};}
+    catch(error) {return {ok:false,error:String(error.message || error)};}
+  });
   const dynamicsModule=require('./score-dynamics.cjs');
   const {createDerivedAssets,profileForResult}=require('../../xld-runtime-baseline/core/derived-assets.cjs');
   const {readOtherRoute}=createDerivedAssets({analysisRoot:()=>fusionAnalysisRoot});
@@ -683,6 +691,10 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
   const scoreModelFor = async payload => {
     const track = fusionTrackIndex.get(String(payload?.trackId || ''));
     if (!track) return { ok: false, error: 'track-missing' };
+    try {
+      const imported = await midiImports.read(track.id);
+      if (imported) return externalMidi.build(imported,track,pathToFileURL(track.filePath).href,track.coverUrl);
+    } catch(error) {return {ok:false,error:'external-midi-unreadable',details:error.message};}
     const loaded = await loadFusionTrack(track.id);
     if (!loaded.ok) return loaded;
     try {

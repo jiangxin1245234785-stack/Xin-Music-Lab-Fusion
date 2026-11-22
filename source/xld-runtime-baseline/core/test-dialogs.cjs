@@ -25,6 +25,9 @@ function next(file) {
 function install(dialog, env = process.env) {
   if (!active(env) || !dialog) return false;
   const file = env.XLD_TEST_DIALOG_ANSWERS;
+  if (env.XML_TEST === '1' && env.XML_TEST_SCRIPT_SAVE === '1') {
+    dialog.showSaveDialog = async () => { const a = next(file); return typeof a?.save === 'string' ? {canceled:false,filePath:a.save} : {canceled:true}; };
+  }
   dialog.showOpenDialog = async () => { const a = next(file); return a && Array.isArray(a.open) ? {canceled: false, filePaths: a.open} : {canceled: true, filePaths: []}; };
   dialog.showMessageBox = async () => { const a = next(file); return {response: a && Number.isInteger(a.message) ? a.message : 0, checkboxChecked: false}; };
   return true;

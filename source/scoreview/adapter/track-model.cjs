@@ -385,4 +385,4 @@ async function readVocalLine(directory, xld = loadXld()) {
   }
 }
 
-module.exports = {partLabel, TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, midiStemAllowed, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS};
+module.exports = {partLabel, TEXTURE_FLOOR, STALE_KIND, modelFrom, textureInto, rolesInto, readStems, midiStemAllowed, readLayers, readVocalLine, LAYERS_ENGINE: 'score-layers', VOCALS_ENGINE: 'score-vocals', nameSections, CONTRACT, STEMS: STEMS.map(row => row[0]), DRUM_ROWS, DRUM_CLASS};
