@@ -122,3 +122,58 @@ test('listening, full screen and export: the same frame and the same calls for è
     assert.equal(out.calls.length, shownCalls.length);
   });
 });
+
+test('live terrain respects the quality mode without changing the viewport or export resolution', () => {
+  withLook(frames => {
+    const model = fullModel();
+    const quality = {dataset: {mode: 'auto'}};
+    const {canvas} = canvasAt(2294, 960);
+    canvas.ownerDocument.getElementById = () => quality;
+    globalThis.devicePixelRatio = 1.5;
+    const view = P.create(canvas, model, () => 24, {scoreStyle: 'terrain'});
+    const size = c => [c.width, c.height];
+    const pixels = c => c.width * c.height;
+    const drawPosition = () => {
+      view.draw(24);
+      const {w, h, time} = frames.at(-1);
+      const x = view.xOf(24);
+      assert.ok(Math.abs(view.hit(x, canvas.clientHeight * .55).time - 24) < 1e-9);
+      return {w, h, time, x};
+    };
+
+    for (const presentationLayout of [false, true]) {
+      view.setOptions({presentationLayout});
+      quality.dataset.mode = 'auto';
+      const auto = drawPosition();
+      assert.ok(Math.abs(pixels(canvas) - 2_073_600) < 2_000);
+      assert.ok(!canvas.scoreTerrainOpticsFull);
+      quality.dataset.mode = 'eco';
+      assert.deepEqual(drawPosition(), auto);
+      assert.ok(Math.abs(pixels(canvas) - 1_400_000) < 2_000);
+      quality.dataset.mode = 'high';
+      assert.deepEqual(drawPosition(), auto);
+      assert.deepEqual(size(canvas), [3441, 1440]);
+      assert.equal(canvas.scoreTerrainOpticsFull, true);
+    }
+
+    quality.dataset.mode = 'auto';
+    view.setOptions({presentationLayout: false});
+    canvas.clientWidth = 1112; canvas.clientHeight = 790;
+    drawPosition();
+    assert.deepEqual(size(canvas), [1668, 1185]);
+    canvas.clientWidth = 2294; canvas.clientHeight = 960;
+    quality.dataset.mode = 'high';
+    drawPosition();
+    view.setOptions({scoreStyle: 'flag'});
+    assert.deepEqual(size(canvas), [3441, 1440]);
+    assert.equal(canvas.scoreTerrainOpticsFull, false);
+
+    const output = canvasAt(1920, 1080).canvas;
+    output.ownerDocument.getElementById = () => quality;
+    output.scoreExportRatio = 2;
+    quality.dataset.mode = 'eco';
+    const exported = P.create(output, model, () => 24, {scoreStyle: 'terrain', presentationLayout: true});
+    exported.draw(24);
+    assert.deepEqual(size(output), [3840, 2160]);
+  });
+});

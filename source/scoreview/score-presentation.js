@@ -133,6 +133,9 @@
     let mood=null;const ensureMood=()=>mood||(mood=root.XinScoreMood.create(canvas,model,clock,options));
     const moodStyle = () => ['glass','overprint','theatre'].includes(options.scoreStyle) && root.XinScoreMood;
     const artRenderer = () => root.XinArt?.[options.scoreStyle];
+    const rainEnabled = () => options.scoreStyle === 'terrain' && options.terrainWeather === 'rain';
+    const stormAssetsEnabled = () => options.scoreStyle === 'terrain' && (options.terrainWeather === 'rain' || options.terrainWeather === 'snow' || options.terrainWeather === 'sandstorm');
+    let destroyed = false;
     let artFrame = null, artScene = null;
     let variation = null, variationEnabled = initial.variationEnabled === true;
     let variationSelection = variationSnapshot(initial.variation, model.track.id);
@@ -172,7 +175,8 @@
       return {...options, ...reading, hidden:options.hidden.slice(),
         variation: pair ? {trackId:model.track.id,aId:pair.a.id,bId:pair.b.id} : null};
     }
-    let metrics={width:1280,height:720,scale:1,ratio:1};
+    let metrics={width:1280,height:720,scale:1,ratio:1}, terrainWidth=0, terrainHeight=0;
+    const qualityButton = canvas.ownerDocument?.getElementById?.('qualityButton');
     const movieOptions=()=>({...options,albumLayout:true,albumSidebarGap:0,quietText:true,showCaptions:false,liveTextureRaster:false,backdrop:'section'});
     function ensureMovie(){
       if(movie)return;
@@ -184,12 +188,31 @@
       if(cover)movie.setCover(cover);
     }
     function resize(){
-      if(!options.presentationLayout){normal.resize();return;}
-      const ratio=canvas.scoreExportRatio || Math.max(1,Math.min(2.5,Number(root.devicePixelRatio)||1));
-      const width=canvas.clientWidth||canvas.width/ratio||1280,height=canvas.clientHeight||canvas.height/ratio||720;
-      metrics={width:width/height*720,height:720,scale:height/720,ratio};
+      const terrain=options.scoreStyle==='terrain' && artRenderer();
+      const presentation=options.presentationLayout;
+      const quality=terrain ? qualityButton?.dataset.mode : undefined;
+      if(Boolean(canvas.scoreTerrainOpticsFull)!==(quality==='high'))canvas.scoreTerrainOpticsFull=quality==='high';
+      if(!presentation&&!terrain){normal.resize();return;}
+      const exportRatio=canvas.scoreExportRatio;
+      const deviceRatio=!presentation && Number.isFinite(canvas.scoreRenderRatio)
+        ? canvas.scoreRenderRatio : Number(root.devicePixelRatio)||1;
+      const nativeRatio=exportRatio || Math.max(1,Math.min(2.5,deviceRatio));
+      const clientWidth=canvas.clientWidth, clientHeight=canvas.clientHeight;
+      const width=clientWidth||canvas.width/nativeRatio||1280, height=clientHeight||canvas.height/nativeRatio||720;
+      let ratio=nativeRatio;
+      if(terrain){
+        terrainWidth=width; terrainHeight=height;
+        // The playback settings change the backing pixels. The CSS viewport
+        // drives the world coordinates and video export requests its own ratio.
+        if(!exportRatio && clientWidth>0 && clientHeight>0){
+          const budget=quality==='high' ? Infinity : quality==='eco' ? 1_400_000 : 2_073_600;
+          ratio=Math.min(nativeRatio,Math.sqrt(budget/(width*height)));
+        }
+      }
       const pw=Math.round(width*ratio),ph=Math.round(height*ratio);
       if(canvas.width!==pw)canvas.width=pw;if(canvas.height!==ph)canvas.height=ph;
+      if(!presentation)return;
+      metrics={width:width/height*720,height:720,scale:height/720,ratio};
       ensureMovie();movie.resize();
     }
     function footer(time) {
@@ -208,21 +231,24 @@
     function drawArt(renderer, at, locating) {
       resize();
       const ratio = canvas.scoreExportRatio || Math.max(1, Math.min(2.5, Number(root.devicePixelRatio) || 1));
+      const terrain = options.scoreStyle === 'terrain';
       // World-space grain and type use the same composition in immersive playback and export.
-      const w = options.presentationLayout ? metrics.width : canvas.clientWidth || canvas.width / ratio;
-      const h = options.presentationLayout ? metrics.height : canvas.clientHeight || canvas.height / ratio;
+      const w = options.presentationLayout ? metrics.width : terrain ? terrainWidth : canvas.clientWidth || canvas.width / ratio;
+      const h = options.presentationLayout ? metrics.height : terrain ? terrainHeight : canvas.clientHeight || canvas.height / ratio;
       const time = artTime(at);
       const sectionName = (model.sections || []).find(row => row[0] <= time && time < row[1])?.[2];
       const flag = options.scoreStyle === 'flag';
       const section = flag && /^zh\b/i.test(options.lang) ? String(sectionName || '') : sectionLabel(sectionName);
       // 车窗地貌 shows title, sections and words only on its carriage displays: the sill gets its own line and progress,
-      // and the roadside option rides with the frame.
-      const terrain = options.scoreStyle === 'terrain', sill = terrain ? sillLyric(lyrics, time, model.sections) : null;
+      // and the terrain settings ride with the frame.
+      const sill = terrain ? sillLyric(lyrics, time, model.sections) : null;
       const lyric = terrain ? sill.line : lyricAt(lyrics, time, section);
       artFrame = {w, h, song:model, key:model.track.id, time, duration:model.track.duration, playing:!locating,
         section, lyric, cover, presentationLayout:options.presentationLayout, albumLayout:options.albumLayout,
         ...(flag ? {lang:options.lang, hidden:options.hidden, focusGroup:options.focusGroup} : {}),
-        ...(terrain ? {terrainRoadside:options.terrainRoadside || 'all', ...(sill.line ? {lyricProgress:sill.progress} : {})} : {})};
+        ...(terrain ? {terrainRoadside:options.terrainRoadside, terrainWeather:options.terrainWeather, terrainWeatherDriver:options.terrainWeatherDriver,
+          terrainGlassDrops:options.terrainGlassDrops, terrainLightning:options.terrainLightning,
+          ...(sill.line ? {lyricProgress:sill.progress} : {})} : {})};
       ctx.save();
       try {
         ctx.setTransform(canvas.width / w, 0, 0, canvas.height / h, 0, 0);
@@ -254,10 +280,12 @@
     }
     function setOptions(patch = {}) {
       const priorStyle = options.scoreStyle, priorLayout = options.presentationLayout;
+      const wasRaining = rainEnabled();
       normal.setOptions({...patch,meteorMotion:true,nightSky:renderStyle(patch.scoreStyle??options.scoreStyle)==='starry'});
       options = {...normal.options(),scoreStyle:renderStyle(patch.scoreStyle??options.scoreStyle),
         presentationLayout:typeof patch.presentationLayout==='boolean'?patch.presentationLayout:options.presentationLayout,
         lang:typeof patch.lang==='string'?patch.lang:options.lang};
+      if (wasRaining && !rainEnabled()) root.XinTerrainRain?.dispose(canvas);
       if (options.scoreStyle !== priorStyle || options.presentationLayout !== priorLayout) {
         artFrame = null;
         artScene = null;
@@ -296,7 +324,26 @@
       return active().xOf(time,at)*(options.presentationLayout?metrics.scale:1);
     }
     function stop(){if(raf!==null)root.cancelAnimationFrame?.(raf);raf=null;normal.stop();movie?.stop();}
-    const api={...normal,draw,resize,ready:()=>mistStyle()?ensureMist().ready():surfaceStyle()?ensureSurface().ready():moodStyle()?ensureMood().ready():options.scoreStyle==='terrain'&&typeof root.XinArt?.terrain?.ready==='function'?root.XinArt.terrain.ready():Promise.resolve(),
+    async function ready() {
+      if (mistStyle()) return ensureMist().ready();
+      if (surfaceStyle()) return ensureSurface().ready();
+      if (moodStyle()) return ensureMood().ready();
+      if (options.scoreStyle !== 'terrain') return;
+      const landscape = root.XinArt?.terrain?.ready?.();
+      if (!stormAssetsEnabled()) return landscape;
+      const rain = root.XinTerrainRain;
+      const [, loaded] = await Promise.all([landscape, rain?.ready()]);
+      if (destroyed || !stormAssetsEnabled()) return;
+      if (!loaded) throw new Error('Terrain weather assets could not be loaded');
+      if (!rainEnabled()) return;
+      const prepared = await rain.prepare(canvas);
+      if (destroyed || !rainEnabled()) {
+        rain.dispose(canvas);
+        return;
+      }
+      if (!prepared) throw new Error('Terrain rain glass could not be prepared');
+    }
+    const api={...normal,draw,resize,ready,
       setOptions,setModel,setCover,variationController,options:presentationOptions,
       setLyrics:value=>{lyrics=value?.trackId===model.track.id&&!value?.hidden?value:null},lastFrame:()=>last?{...last}:normal.lastFrame(),
       timeAt,xOf,
@@ -310,7 +357,7 @@
         }
         return moodStyle()?ensureMood().hit(x,y):active().hit(options.presentationLayout?x/metrics.scale:x,options.presentationLayout?y/metrics.scale-8:y);
       },
-      start:()=>{if(raf!==null)return;const tick=()=>{raf=root.requestAnimationFrame(tick);draw()};raf=root.requestAnimationFrame(tick)},stop,destroy:()=>{stop();mist?.destroy();surface?.destroy();mood?.destroy?.()}};
+      start:()=>{if(raf!==null)return;const tick=()=>{raf=root.requestAnimationFrame(tick);draw()};raf=root.requestAnimationFrame(tick)},stop,destroy:()=>{destroyed=true;stop();mist?.destroy();surface?.destroy();mood?.destroy?.();root.XinTerrainRain?.dispose(canvas)}};
     resize();return api;
   }
   return Object.freeze({create,sectionLabel,lyricsSnapshot,variationSnapshot,lyricAt,sillLyric,drawFooter});

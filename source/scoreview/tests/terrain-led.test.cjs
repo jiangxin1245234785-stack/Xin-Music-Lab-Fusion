@@ -64,29 +64,27 @@ test('drawing is a pure function of its arguments: same input, same calls, whate
   assert.equal(stamp(b.calls), stamp(a.calls));
 });
 
-test('the cache: an unchanged frame is three blits and builds nothing; a new second rebuilds only the time digits', () => {
-  const m = mockCanvas(1123, 200), g = m.canvas.getContext('2d'), rect = {x: 10, y: 8, w: 1103, h: 100};
-  assert.equal(Led.drawHeader(g, rect, data(104)), 'cold');
+test('stable train data reuses the panel, digits and route; only changing regions are rebuilt', () => {
+  const m = mockCanvas(1123,200), g = m.canvas.getContext('2d'), rect = {x:10,y:8,w:1103,h:100};
+  const route = Led.prepareRoute(sections), frame = t => Led.drawHeader(g,rect,data(t,{route}));
+  assert.equal(frame(104.1),'cold');
   m.reset(); made = 0;
-  assert.equal(Led.drawHeader(g, rect, data(104.4)), 'hit');
-  assert.equal(made, 0);
-  assert.deepEqual(m.calls.filter(c => c.name === 'drawImage').length, 3, 'strip, time, lit route');
-  m.reset(); made = 0;
-  assert.equal(Led.drawHeader(g, rect, data(105)), 'partial');
-  assert.ok(made <= 2, 'the time digits (and the new digit glyph), not the strip: ' + made);
-  const timeBlit = m.calls.filter(c => c.name === 'drawImage')[1];
-  assert.ok(timeBlit.args[3] < rect.w / 4, 'the rebuilt piece is small: ' + timeBlit.args[3]);
-  assert.equal(Led.drawHeader(g, rect, data(140)), 'cold', 'a new station rebuilds the strip');
+  assert.equal(frame(104.11),'hit'); assert.equal(made,0);
+  assert.equal(m.calls.filter(c=>c.name==='drawImage').length,3);
+  m.reset();
+  assert.equal(frame(105.1),'partial');
+  const digits = m.calls.filter(c=>c.name==='drawImage')[1];
+  assert.ok(digits.args[3] < rect.w && digits.args[4] < rect.h * .7);
+  assert.equal(frame(140),'cold');
 });
 
-test('the strip plus its two running pieces light exactly the dots of the whole header', () => {
-  const model = Led.headerModel(data(104.4), 300, 35, 16, 12);
-  const {time, route} = model.regions;
-  assert.ok(time && route && time.x1 > time.x0 && route.x1 > route.x0);
-  const none = Led.headerModel(data(104.4, {sections: []}), 300, 35, 16, 12);
-  assert.equal(none.regions.route, null, 'no sections: no route row');
-  const yL = 1 + 16 + 2;
-  assert.equal(none.map.a.slice(yL * 300, (yL + 1) * 300).some(Boolean), false);
+test('the running readouts and the R2 route occupy disjoint rows', () => {
+  const model = Led.headerModel(data(104.4),414,50,16,12);
+  assert.ok(model.regions.route && model.lines.live.length);
+  for (const f of [...model.lines.fields,model.lines.title,model.lines.artist,model.lines.nextLine]) assert.ok(f.y1 <= model.routeY-2);
+  const none = Led.headerModel(data(104.4,{sections:[]}),414,50,16,12);
+  assert.equal(none.regions.route,null);
+  assert.equal(none.map.a.slice((none.routeY-2)*414).some(Boolean),false);
 });
 
 test('a scrolling lyric moves a whole character at a time and never shows half of one at the edges', () => {
@@ -98,21 +96,93 @@ test('a scrolling lyric moves a whole character at a time and never shows half o
   }
 });
 
+test('long tags scroll independently on whole glyphs with both ends readable', () => {
+  const title = '夜空'.repeat(32), artist = 'Artist 海'.repeat(18);
+  const at = t => Led.headerModel(data(t,{title,artist,readout:'miles',speedMps:16}),414,50,16,12).lines;
+  assert.equal(at(0).board.mode,'full-artist');
+  for (const field of ['title','artist']) {
+    const line = at(0)[field], edges = [0];
+    for (const ch of line.str) edges.push(edges.at(-1)+Led.glyph(ch,line.size).w);
+    const end = at(edges.length * .6)[field];
+    assert.equal(line.offset,0); assert.ok(line.scroll && end.offset>0 && end.total-end.offset<=end.room);
+    for (const t of [1,4,9,21,45]) assert.ok(edges.includes(at(t)[field].offset));
+  }
+  assert.ok(at(9).title.y1 <= at(9).artist.y0);
+});
+
+test('missing artist and no sections leave their respective cells dark', () => {
+  const cols=414;
+  for (const artist of ['', 'Unknown Artist','未知艺术家']) {
+    const m=Led.headerModel(data(31,{title:'Untitled',artist,sections:[],readout:'miles',speedMps:16}),cols,50,16,12);
+    assert.equal(m.lines.artist.str,''); assert.equal(m.lines.name,'END'); assert.equal(m.lines.remaining,'4:32');
+    assert.ok(m.lines.fields.some(f=>f.str===' MI'));
+    assert.equal(m.map.a.slice(18*cols,33*cols).some((v,i)=>v && i%cols<m.lines.artist.x1),false);
+    assert.equal(m.map.a.slice(33*cols).some(Boolean),false);
+  }
+});
+
+test('real title fit table at 1440×900 and 1123×778; changing the artist never consumes title columns', () => {
+  const {layout} = require('../score-terrain.js')._internal;
+  const tracks = [
+    ['in Silence / in Siren', "world's end girlfriend", true], ['MEGURI', "world's end girlfriend", true],
+    ['birthday resistance / 誕生日抵抗日', "world's end girlfriend", true],
+    ['グッドバイ Goodbye　Album Version feat. Toki Asako 土岐麻子', 'toe', false],
+    ["Ceremony (12' Version with Gillian Gilbert)", 'New Order', true], ['周杰伦 - 七里香', 'Unknown Artist', true],
+  ];
+  for (const [w,h] of [[1440,900], [1123,778]]) {
+    const {header} = layout(w,h), rows = Led.headerRows(16,12), pitch = header.h / (rows + 2.6);
+    const cols = Math.floor(header.w / pitch - 3.4);
+    assert.equal(cols,414);
+    for (const [title,artist,fits] of tracks) {
+      const model = Led.headerModel(data(226,{title,artist,readout:'miles',speedMps:5/.316}),cols,rows,16,12);
+      assert.equal(!model.lines.title.scroll,fits, w + ' ' + title);
+      assert.equal(model.lines.artist.scroll,false, w + ' ' + artist);
+    }
+  }
+});
+
+test('a changed marquee offset redraws its overlay and reuses the panel, clock and route', () => {
+  const m = mockCanvas(1000,175), ctx = m.canvas.getContext('2d'), rect = {x:0,y:0,w:1000,h:175};
+  const d = {title:'山道'.repeat(38),artist:'toe', sections, duration:303, now:104, readout:'miles',speedMps:.1};
+  Led.drawHeader(ctx,rect,{...d,time:0});
+  assert.equal(Led.drawHeader(ctx,rect,{...d,time:12}), 'partial');
+  const calls = m.calls.filter(c=>c.name==='drawImage');
+  for (let i=0;i<3;i++) assert.equal(calls[i].args[0],calls[i+4].args[0]);
+  assert.notEqual(calls[3].args[0],calls[7].args[0]);
+});
+
 // levels: 1 dimmest (stations ahead), 2 dim (passed), 3 medium (artist, next station), 4 brightest (title, now)
 const at = (M, x, y) => M.a[y * M.cols + x];
 const maxIn = (M, x0, x1, y0, y1) => { let m = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) m = Math.max(m, at(M, x, y)); return m; };
 
-test('the header row (batch 5): title brightest at the left, the artist one cell after it, the time at the right; no station call', () => {
-  const cols = 520, rows = Led.headerRows(16, 12), r = Led.headerModel(data(104), cols, rows, 16, 12), M = r.map;
-  assert.equal(M.rows, rows);
-  assert.equal(r.title, '七里香');
-  assert.equal(r.mid, '', 'no 本站 / 下一站 words: the route shows the stations');
-  const tw = Led.width('七里香', 16);
-  assert.equal(maxIn(M, 1, 1 + tw, 1, 17), 4, 'title brightest');
-  assert.equal(maxIn(M, 1 + tw + 16, 1 + tw + 16 + Led.width('周杰伦', 16), 1, 17), 3, 'artist medium, one cell after');
-  assert.equal(maxIn(M, 1 + tw, 1 + tw + 16, 1, 17), 0, 'the cell between them is dark');
-  const t = Led.width('1:44', 16), tot = Led.width(' / 5:03', 16);
-  assert.equal(maxIn(M, cols - 3 - t - tot, cols - 3 - tot, 1, 17), 4, 'the time');
+test('the short title, next stop and mileage have separate columns and brightness levels', () => {
+  const m=Led.headerModel(data(104,{readout:'miles',speedMps:16}),414,50,16,12), l=m.lines;
+  assert.equal(l.board.mode,'columns'); assert.equal(l.title.str,'七里香'); assert.equal(l.artist.str,'周杰伦');
+  assert.ok(l.title.x1<=l.dividers[0] && l.artist.x1<=l.dividers[0]);
+  assert.ok(l.nextLine.x0>l.dividers[0] && l.nextLine.x1<l.dividers[1]);
+  for (const f of l.fields) {
+    assert.ok(f.x0>l.dividers[0] && (f.x1<=l.dividers[1] || f.x0>l.dividers[1]));
+    assert.ok(f.x1<=l.board.end && f.y1<=33);
+    if (['NEXT ','IN ',' MI'].includes(f.str)) assert.equal(f.level,2);
+  }
+  assert.equal(maxIn(m.map,1,l.title.x1,0,16),4); assert.equal(maxIn(m.map,1,l.artist.x1,l.artist.y0,l.artist.y1),3);
+});
+
+test('each station switches on the exact boundary, including rapid stops, gaps and the terminus', () => {
+  const stops=[[2,4,'引子'],[4,4.4,'主歌 1'],[4.4,9,'副歌 1'],[9,14,'间奏']];
+  const route=Led.prepareRoute(stops), model=t=>Led.headerModel(data(t,{route,duration:14}),414,50,16,12).lines;
+  const dividers=model(0).dividers;
+  for (let i=0;i<stops.length;i++) {
+    const before=model(stops[i][0]-.01), exact=model(stops[i][0]), after=model(stops[i][0]+.01);
+    assert.equal(before.name,route.names[i]); assert.equal(before.remaining,'0:00');
+    assert.equal(exact.name,route.names[i+1]||'END'); assert.equal(after.name,exact.name);
+    for (const line of [before,exact,after]) assert.deepEqual(line.dividers,dividers);
+  }
+  assert.equal(model(14).remaining,'0:00');
+  const long=Led.headerModel(data(4,{title:'名字很长的真实曲名'.repeat(3),artist:'周杰伦',route,readout:'miles',speedMps:16}),414,50,16,12).lines;
+  assert.equal(long.board.mode,'full-title'); assert.equal(long.artist.scroll,false);
+  assert.equal(long.board.info.showClock,false);
+  assert.ok(long.title.y1<=long.artist.y0 && long.title.x1===long.board.end);
 });
 
 test('no artist in the tags and a title "artist - title": split, title first; a real artist tag is kept as is', () => {
@@ -141,7 +211,7 @@ test('a title row too long for its room scrolls a whole character at a time on s
 });
 
 test('stations: passed dim, this one brightest and boxed, the next one\'s name medium and its lamp blinking each song second, later ones dimmest', () => {
-  const rows = Led.headerRows(16, 12), cols = 330, yL = 1 + 16 + 2;
+  const rows = Led.headerRows(16, 12), cols = 330, yL = rows - 15;
   const model = t => Led.headerModel(data(t), cols, rows, 16, 12);
   const m = model(104.2), sx = k => Math.round(m.plan.x0 + m.plan.step * k);
   assert.equal(m.plan.cur, 2); // 副歌 1
@@ -155,20 +225,20 @@ test('stations: passed dim, this one brightest and boxed, the next one\'s name m
   assert.deepEqual([0, 1, 2, 3, 4].map(k => name(m.map, k)), [2, 2, 4, 3, 1]);
 });
 
-test('route labels shorten when they do not fit; with too many stations only the current one is named', () => {
+test('a crowded route still names every station, including two-digit section numbers', () => {
   const rows = Led.headerRows(16, 12);
   const many = Array.from({length: 20}, (_, i) => ({name: '副歌 ' + (i + 1), start: i * 10, end: i * 10 + 10}));
   const wide = Led.headerModel(data(5, {sections}), 330, rows, 16, 12);
   assert.ok(wide.labels && wide.labels[1] !== undefined);
   const crowded = Led.headerModel(data(55, {sections: many, duration: 200}), 330, rows, 16, 12);
-  assert.ok(crowded.labels === null || crowded.labels.every(l => Led.width(l, 12) <= 15));
+  assert.deepEqual(crowded.labels,many.map((_,i) => 'C'+(i+1)));
   for (const n of [0, 1, 2, 20]) {
     assert.doesNotThrow(() => Led.headerModel(data(55, {sections: many.slice(0, n)}), 330, rows, 16, 12), n + ' stations');
   }
 });
 
 test('the route is lit up to the current position and not beyond', () => {
-  const rows = Led.headerRows(16, 12), yL = 16 + 3;
+  const rows = Led.headerRows(16, 12), yL = rows - 15;
   const lineLevel = (t, x) => Led.headerModel(data(t), 330, rows, 16, 12).map.a[yL * 330 + x];
   const early = Led.headerModel(data(10), 330, rows, 16, 12).plan, late = Led.headerModel(data(250), 330, rows, 16, 12).plan;
   assert.ok(late.litX > early.litX);
@@ -224,4 +294,19 @@ test('the now arrows: top points down at yTop, bottom points up at yBottom, both
   assert.ok(ys.filter(y => y < 100).length === 9, 'nine lamps above the opening');
   assert.ok(ys.filter(y => y > 300).length === 16, 'sixteen below');
   assert.ok(Math.max(...ys.filter(y => y < 100)) < 100 && Math.min(...ys.filter(y => y > 300)) > 300);
+});
+
+test('vfd sill theme: renders lyrics and deterministic instrumental standby with VU bars and cached static strip', () => {
+  Led.clearCaches();
+  const rect = {x: 100, y: 20, w: 728, h: 39};
+  const m1 = mockCanvas(960, 100), g1 = m1.canvas.getContext('2d');
+  assert.equal(Led.drawLyric(g1, rect, {line: '窗外的远山一重又一重', progress: .2}, {idle: 'dim', theme: 'vfd'}), 'cold');
+  assert.equal(Led.drawLyric(g1, rect, {line: '窗外的远山一重又一重', progress: .2}, {idle: 'dim', theme: 'vfd'}), 'hit');
+  const sb = {bars: [.2, .4, .7, .9, .6, .5, .8, .4, .3, .2], tag: 'CHORUS 3', time: 245, duration: 358};
+  const m2 = mockCanvas(960, 100), g2 = m2.canvas.getContext('2d');
+  const m3 = mockCanvas(960, 100), g3 = m3.canvas.getContext('2d');
+  assert.equal(Led.drawLyric(g2, rect, {line: '', progress: 0}, {idle: 'dim', theme: 'vfd', standby: sb}), 'cold');
+  assert.equal(Led.drawLyric(g3, rect, {line: '', progress: 0}, {idle: 'dim', theme: 'vfd', standby: sb}), 'hit');
+  assert.equal(m2.calls.filter(c => c.name === 'drawImage').length, m3.calls.filter(c => c.name === 'drawImage').length, 'deterministic VU + strip blits');
+  assert.ok(m2.calls.filter(c => c.name === 'drawImage').length > 20, 'VU bars draw phosphor dot sprites over the cached base');
 });

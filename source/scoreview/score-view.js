@@ -135,6 +135,10 @@
     radarWheel: 'light',  // the chord wheels (SPEC-WEATHER A): 'light' wheels with dark figures (the user's pick) or 'dark' with light
     radarCell: 'round',  // the drum grid's cells (radar.5 feedback): 'round' lamps behind holes (the user's pick) or 'square' backlit tiles
     terrainRoadside: 'all',  // 车窗地貌: the drums as things passing by the line - 'all' (default since batch 5: the user expected them), 'kick-snare', 'off'
+    terrainWeather: 'clear',
+    terrainWeatherDriver: 'mood',
+    terrainGlassDrops: true,
+    terrainLightning: true,
     nightSky: false, starDim: .48, meteorTail: 1.5,  // starDim .48 since 0.30.1: the user's pick of three (C)
     pluckReleaseSeconds: .70, // 0 selects the shared spatial fade.
     drumDecayScale: 1,        // 0 likewise keeps the full history of each fixed drum mark.
@@ -1492,6 +1496,10 @@ function canonicalOnsets(rows) {
       if (['square', 'round'].includes(patch.radarCell)) next.radarCell = patch.radarCell;
       if (['dark', 'light'].includes(patch.radarWheel)) next.radarWheel = patch.radarWheel;
       if (['off', 'all', 'kick-snare'].includes(patch.terrainRoadside)) next.terrainRoadside = patch.terrainRoadside;
+      if (patch.terrainWeather === 'clear' || patch.terrainWeather === 'rain' || patch.terrainWeather === 'snow' || patch.terrainWeather === 'sandstorm') next.terrainWeather = patch.terrainWeather;
+      if (patch.terrainWeatherDriver === 'mood' || patch.terrainWeatherDriver === 'original') next.terrainWeatherDriver = patch.terrainWeatherDriver;
+      if (typeof patch.terrainGlassDrops === 'boolean') next.terrainGlassDrops = patch.terrainGlassDrops;
+      if (typeof patch.terrainLightning === 'boolean') next.terrainLightning = patch.terrainLightning;
       if (finite(patch.starDim) && patch.starDim >= .05 && patch.starDim <= .9) next.starDim = patch.starDim;
       if (finite(patch.meteorTail) && patch.meteorTail >= .3 && patch.meteorTail <= 4) next.meteorTail = patch.meteorTail;
       Object.assign(next, transientTiming(patch));

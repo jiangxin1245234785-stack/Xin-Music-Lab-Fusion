@@ -42,3 +42,32 @@ test('no pictures (Node): never ready, the look draws with code', async () => {
   const S = terrain.draw(ctx, {song, w: 800, h: 450, time: 10});
   assert.equal(S.art, 'code');
 });
+
+test('the painted wheel makes a continuous full turn around each tower’s measured hub', () => {
+  const {wheelAngle, wheelPlace} = terrain._internal;
+  const tau = 2 * Math.PI, step = 1 / 60;
+  for (const i of [0, 1, 25]) {
+    const positive = n => (n + tau) % tau;
+    let turn = 0;
+    for (let f = 0; f < 360; f++) {
+      const t = 70 + f * step, advance = positive(wheelAngle(t + step, i) - wheelAngle(t, i));
+      assert.ok(Math.abs(advance - tau / 360) < 1e-10, 'each frame advances one degree, even through zero');
+      turn += advance;
+    }
+    assert.ok(Math.abs(turn - tau) < 1e-10);
+    const phase = wheelAngle(70, i);
+    assert.ok(Math.abs(phase - wheelAngle(71, i)) > .9, 'rotation preserves the asymmetrical paint over a full circle');
+    wheelAngle(99, i);
+    assert.equal(wheelAngle(70, i), phase);
+  }
+  const rotor = Assets.TABLE.find(a => a.key === 'roadside/windpump-wheel-a');
+  assert.deepEqual(rotor.anchor, [260, 260]);
+  for (const [variant, letter, hub] of [[0, 'a', [191, 192]], [1, 'b', [203, 94]], [2, 'c', [205, 290]]]) {
+    const tower = Assets.TABLE.find(a => a.key === 'roadside/windpump-' + letter);
+    const {dx, dy, size} = wheelPlace(tower, 65, 96, variant);
+    const f = 9 * 65 * (.9 + .2 * 96 / 127) / 938;
+    assert.ok(size > 0 && size < 413 * f + 1);
+    assert.equal(dx, (hub[0] - tower.anchor[0]) * f);
+    assert.equal(dy, (hub[1] - tower.anchor[1]) * f);
+  }
+});
