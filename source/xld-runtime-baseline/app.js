@@ -71,6 +71,12 @@ let timelineControls = null;
 let auditionControls = null;
 let playbackControls = null;
 let oneclickControls = null;
+let moodBackfillControls = null;
+let moodState = 'missing', moodTrackId = null, moodPending = null, moodRequest = 0;
+const moodMessages = {
+  checking:'runtime.mood.checking', missing:'runtime.mood.missing', current:'runtime.mood.current',
+  stale:'runtime.mood.stale', running:'runtime.mood.running', failed:'runtime.mood.failed'
+};
 let trackRemovalControls = null;
 let removalPlayback = null;
 const derivedControls = window.XldDerivedControls.create({
@@ -79,6 +85,7 @@ const derivedControls = window.XldDerivedControls.create({
   playTrack, rt, onMidiListen:listenMidi, beforeMerge:(trackId,parts)=>midiEditorControls.prepareMerge(trackId,parts), getPlaybackPosition:playbackPosition, localizeError: runtimeLocale.localizeBackendMessage, onPlaybackChange: renderNowPlayingCopy,
   getBusy: () => Boolean(state.activeTask || state.batchRunning || state.trackRemoving), onTask: applyTask,
   onChange: () => {workspaceControls?.render();refinementControls?.update();},
+  onResultsRead: (track,result) => oneclickControls?.refresh(track,result),
   onOtherRouteChange: () => oneclickControls?.refresh(),
   isBatchCancelled: () => state.batchCancelled,
   // Switching versions changes which notes the timeline draws for that stem; onChange fires on every render.
@@ -869,10 +876,33 @@ function renderEngines() {
 
 async function refreshAnalysisSummary() {
   state.analysisSummary = await window.XLD.getAnalysisSummary() || {};
+  oneclickControls?.sync();
   renderTracks();
 }
 
+function renderMood() {
+  const button = document.getElementById('timelineMoodRun'), status = document.getElementById('timelineMoodStatus');
+  const id = state.selectedTrack?.id;
+  const running = id && (moodPending === id || (state.activeTask?.engine === 'mood-curve' && state.activeTask.trackId === id));
+  button.textContent = rt('runtime.mood.run');
+  button.disabled = !id || Boolean(state.activeTask || state.batchRunning || state.trackRemoving || moodPending);
+  const value = running ? 'running' : moodTrackId === id ? moodState : 'checking';
+  status.textContent = id ? rt(moodMessages[value] || moodMessages.failed) : '';
+}
+
+async function refreshMoodStatus(id) {
+  if (!id || id !== state.selectedTrack?.id) return;
+  const ticket = ++moodRequest;
+  let value;
+  try { value = await window.XLD.moodStatus(id); }
+  catch { value = 'failed'; }
+  if (ticket !== moodRequest || state.selectedTrack?.id !== id) return;
+  moodTrackId = id; moodState = value;
+  renderMood();
+}
+
 async function loadTrackAnalysis(trackId) {
+  refreshMoodStatus(trackId);
   const requestTrackId = trackId;
   const [results, annotationDocument] = await Promise.all([
     window.XLD.loadAnalysis(trackId),
@@ -893,6 +923,8 @@ async function loadTrackAnalysis(trackId) {
 }
 
 function updateAnalyzeButton() {
+  renderMood();
+  moodBackfillControls?.render();
   trackRemovalControls?.render();
   derivedControls.render();
   updateSegmentPanel();
@@ -1318,7 +1350,7 @@ function applyTask(task) {
     dom.taskTitle.textContent = task.trackTitle || rt('runtime.task.defaultTitle');
     dom.taskPercent.textContent = `${task.estimatedProgress ? '≈' : ''}${progress}%`;
     dom.taskProgressBar.style.width = `${progress}%`;
-    dom.taskEngine.textContent = task.engineName || task.engine || '—';
+    dom.taskEngine.textContent = task.engine === 'mood-curve' ? rt('runtime.oneclick.step.mood') : task.engineName || task.engine || '—';
     dom.taskMessage.textContent = task.message
       ? runtimeLocale.localizeBackendMessage(task.message)
       : rt('runtime.task.waiting');
@@ -1354,6 +1386,23 @@ async function runAnalysis(engineOverride = null, options = {}) {
   const engineId = typeof engineOverride === 'string' ? engineOverride : state.selectedEngine;
   if (!targetTrack || !engineId || state.activeTask || (state.batchRunning && !options.fromBatch)) return null;
   const trackId = targetTrack.id;
+  if (engineId === 'mood-curve') {
+    if (moodPending) return {ok:false,error:'analysis-busy'};
+    moodPending = trackId;
+    renderMood();
+    let result;
+    try { result = await window.XLD.runAnalysis(trackId,engineId); }
+    catch (error) { result = {ok:false,error:'request-failed',detail:String(error)}; }
+    finally { moodPending = null; }
+    await refreshMoodStatus(trackId);
+    if (state.selectedTrack?.id === trackId && !result.ok && result.error !== 'analysis-cancelled') {
+      moodState = 'failed';
+      logAnalysis('runtime.log.analysisFailed', {error:runtimeError(result.detail || result.error),replacement:''});
+    }
+    if (state.selectedTrack?.id === trackId && result.ok) oneclickControls?.refresh();
+    renderMood();
+    return result;
+  }
   const engineName = state.engines.find(engine => engine.id === engineId)?.name || engineId;
   const replacing = Boolean(state.analysisResults.has(engineId));
   const separation = HARMONY_ENGINE_IDS.includes(engineId) ? (state.separation || 'none') : 'none';
@@ -1501,11 +1550,23 @@ dom.seekBar.addEventListener('change', () => {
 dom.revealButton.addEventListener('click', () => (state.currentTrack || state.selectedTrack) && window.XLD.revealTrack((state.currentTrack || state.selectedTrack).id));
 // Main workspace tabs own navigation and call setActiveLab for the shared lab.
 dom.analyzeButton.addEventListener('click', () => runAnalysis());
+document.getElementById('timelineMoodRun').addEventListener('click', () => runAnalysis('mood-curve'));
 dom.analyzeAllButton.addEventListener('click', runAllAnalyses);
 dom.batchAlbumButton?.addEventListener('click', runAlbumBatch);
+moodBackfillControls = window.XldMoodBackfill?.create({
+  bridge: window.XLD, rt, localizeError: runtimeLocale.localizeBackendMessage,
+  getAlbum: () => state.selectedAlbum,
+  isBusy: () => Boolean(state.activeTask || state.batchRunning || state.trackRemoving || moodPending),
+  onBatch: (running, index, total) => {
+    state.batchRunning = running; state.batchIndex = index; state.batchTotal = total;
+    if (running && index) updateAnalyzeButton(); else applyTask(state.activeTask || state.lastTask);
+  },
+  onFinished: () => { refreshMoodStatus(state.selectedTrack?.id); oneclickControls?.refresh(); }
+});
 oneclickControls = window.XldOneClick?.create({
   bridge: window.XLD, rt, derived: derivedControls, albumButton: dom.batchAlbumButton,
   getTrack: () => state.selectedTrack, getAlbum: () => state.selectedAlbum, getEngines: () => state.engines,
+  getSummary: () => state.analysisSummary,
   isBusy: () => Boolean(state.activeTask || state.batchRunning || state.trackRemoving), isCancelled: () => state.batchCancelled,
   runAnalysis: (engine, options) => runAnalysis(engine, { ...options, fromBatch: true }),
   onTask: applyTask, localizeError: runtimeLocale.localizeBackendMessage, log: text => logAnalysis(text),
@@ -1553,6 +1614,7 @@ dom.tagUseSegmentButton.addEventListener('click', () => {
   updateResultActions();
 });
 dom.cancelAnalysisButton.addEventListener('click', () => {
+  if (moodBackfillControls?.running()) { moodBackfillControls.cancel(); return; }
   if (state.batchRunning) state.batchCancelled = true;
   if (state.activeTask) window.XLD.cancelAnalysis(state.activeTask.taskId);
 });
@@ -1626,6 +1688,7 @@ window.XLD.onAnalysisTask(async task => {
     logBackendAnalysis(task.engineName || task.engine, task.message);
   }
   if (['complete', 'failed', 'cancelled'].includes(task.status)) {
+    if (task.engine === 'mood-curve' && moodBackfillControls?.running()) return;
     await refreshAnalysisSummary();
     if (state.selectedTrack?.id === task.trackId) {
       await loadTrackAnalysis(task.trackId);
@@ -1636,6 +1699,7 @@ window.XLD.onAnalysisTask(async task => {
 });
 
 function refreshRuntimeLocaleUi() {
+  renderMood();
   const scroll = {
     albums: dom.albumGrid.scrollTop,
     tracks: dom.trackList.scrollTop,

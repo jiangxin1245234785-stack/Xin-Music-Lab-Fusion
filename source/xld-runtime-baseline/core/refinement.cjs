@@ -34,7 +34,8 @@ function createRefinement({assets,profiles=PROFILES,python,spawnProcess=spawn,pr
  // The residual file of the strings result the song uses now (pointer midi/strings-source.json -> refinement/<key>.json).
  async function chainedInput(track){
   const folder=directory(track);
-  let pointer;try{pointer=JSON.parse(await fs.readFile(path.join(assets.directory(track),'midi','strings-source.json'),'utf8'));}catch(_){pointer=null;}
+  let pointer;try{pointer=assets.readStringsSelection ? await assets.readStringsSelection(track)
+    : JSON.parse(await fs.readFile(path.join(assets.directory(track),'midi','strings-source.json'),'utf8'));}catch(_){pointer=null;}
   if(!pointer?.runId||!/^[a-f0-9]{64}$/.test(pointer.cacheKey||''))throw Error('refinement-chain-missing');
   const saved=JSON.parse(await fs.readFile(path.join(folder,pointer.cacheKey+'.json'),'utf8'));
   if(saved.runId!==pointer.runId||saved.engine!=='mega-53'||saved.scope!=='full'||typeof saved.files?.residual!=='string')throw Error('refinement-chain-missing');

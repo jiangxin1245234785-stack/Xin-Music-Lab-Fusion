@@ -1,6 +1,6 @@
 (function(root) {
   'use strict';
-  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onBatchState, onMidiActivated, onMidiListen, onOtherRouteChange, getPlaybackPosition, beforeMerge, isBatchCancelled, localizeError=value=>value}) {
+  function create({bridge, audio, getSelected, getCurrent, queueFor, playTrack, rt, onPlaybackChange, getBusy, onTask, onChange, onResultsRead, onBatchState, onMidiActivated, onMidiListen, onOtherRouteChange, getPlaybackPosition, beforeMerge, isBatchCancelled, localizeError=value=>value}) {
     const select=document.getElementById('derivedSelect'), audition=document.getElementById('derivedAudition');
     const refreshButton=document.getElementById('derivedRefresh'), wavButton=document.getElementById('derivedWav');
     const midiButton=document.getElementById('derivedMidi'), status=document.getElementById('derivedStatus');
@@ -163,7 +163,9 @@
         if(made?.task)onTask(made.task);
         if(!made?.ok)return made||{ok:false,error:'request-failed'};
       }
-      return bridge.runDerived(track.id,'midi','vocals',regenerate,engine);
+      const converted=await bridge.runDerived(track.id,'midi','vocals',regenerate,engine);
+      return converted?.noSinging && latest?.vocals?.state==='current' && latest.vocals.sung===false
+        ? {...converted,cached:true} : converted;
     }
     function renderBatch(busy) {
       document.getElementById('midiBatchTitle').textContent=batchText('title');
@@ -450,6 +452,7 @@
       if(request!==sequence || track.id!==getSelected()?.id) return;
       const choice=select.value, midiChoice=midiStem(), previousSource=sourceKey(), previousRun=selectedMidi()?.runId;
       trackId=track.id; result=response; message=null;
+      onResultsRead?.(track,result);
       if(previousSource!==sourceKey()){mergeMessage=null;batchReport=null;versionCache.clear();versionMessage=null;}
       // A run, a batch or a task completion changes which versions exist without moving the source key.
       if(previousRun!==selectedMidi()?.runId){versionCache.clear();versionMessage=null;}

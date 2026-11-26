@@ -193,7 +193,10 @@ for (const identity of [a, b]) assert(!profileIdentities.has(identity) && identi
       assert(runGate > 0 && runGate < stemGate, 'and the IPC refuses it BEFORE the stem gate, which profileFor now passes');
 
       // The cache branch: a hit produces nothing new, so activating it would silently replace the user's edit.
-      assert(/const keepsRevision = Boolean\(active\?\.ok && active\.engine === midiModule\.MANUAL_ENGINE/.test(service), 'a cache hit leaves a revision in place');
+      const {keepsManualRevision} = require('../core/derived-assets.cjs');
+      assert(keepsManualRevision({ok:true,engine:'manual-revision',runId:'edit'},{runId:'model'}));
+      assert(!keepsManualRevision({ok:true,engine:'muscriptor-medium',runId:'old'},{runId:'model'}));
+      assert(service.includes('const keepsRevision = midiModule.keepsManualRevision(active, cached)'), 'the real cache hit uses the same revision decision as the preview');
       assert(/keptActive: keepsRevision \? active\.runId : null/.test(service), 'and says so rather than reporting a switch it did not make');
 
       // The version panel has to fetch revisions unconditionally, or the user cannot see, switch to, or PIN their own

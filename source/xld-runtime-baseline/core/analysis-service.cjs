@@ -11,6 +11,7 @@ const {setInterval, clearInterval} = require('node:timers');
 
 const resultEngines = require('./result-engines.cjs');
 const {bridgeSegments} = require('./sections.cjs');
+const mood = require('./mood-curve.cjs');
 const {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, RESULT_ENGINE_IDS} = resultEngines;
 const STEM_ENGINE_ID = 'demucs-6s';
 const STEM_ENGINE_IDS = midiModule.SEPARATION_ENGINE_IDS;
@@ -21,6 +22,7 @@ const STEM_ENGINE_IDS = midiModule.SEPARATION_ENGINE_IDS;
 // `python` names the environment variable that holds the interpreter: the beat model lives in the MuScriptor
 // add-on, the lead-vocal split runs where the RoFormer separation runs.
 const SCORE_ENGINES = Object.freeze({
+  [mood.ENGINE]: {runner: 'mood_runner.py', python: 'XLD_MIDI_PYTHON'},
   'score-layers': {runner: 'runner.py', python: 'XLD_MUSCRIPTOR_PYTHON'},
   'score-vocals': {runner: 'vocals_runner.py', python: 'XLD_ROFORMER_PYTHON'}
 });
@@ -247,6 +249,10 @@ function createService(options = {}) {
   }
 
   const midiAssets = derivedAssets.midi;
+  const findUpgrade = require('./onetrack-upgrade.cjs').createProbe({
+    python: () => firstExisting([process.env.XLD_MUSCRIPTOR_PYTHON,process.env.XLD_HIGHRES_PYTHON,process.env.XLD_MIDI_PYTHON]),
+    runner:runnerFor,spawn
+  });
   const midiMerge = require('./midi-merge.cjs').createMidiMerge({analysisRoot: () => analysisRoot});
   const refinement = require('./refinement.cjs').createRefinement({assets:derivedAssets,python:engine=>pythonFor(require('./refinement.cjs').profileFor(engine)?.backend==='roformer'?'bs-roformer-sw':'piano-highres')});
   // Without a trash callback (headless, XML, tests) retention reports surplus runs instead of deleting them.
@@ -286,11 +292,11 @@ function createService(options = {}) {
 
   // The vocal line a `vocals-rmvpe` run converts: score-vocals.json, current for the vocal stem by the one judgement
   // in core/score-vocals.cjs, together with the SHA-256 of the exact bytes judged (the runner refuses anything else).
-  async function currentVocalLine(track) {
+  async function currentVocalLine(track, assets = derivedAssets) {
     const directory = analysisDirectory(track), file = path.join(directory, scoreVocals.ENGINE + '.json');
     const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
     const before = await fs.readFile(file).catch(() => null);
-    const state = await scoreVocals.read(derivedAssets, track, directory);
+    const state = await scoreVocals.read(assets, track, directory);
     if (state.state === 'no-stem') throw new Error('midi-needs-stems');
     if (state.state !== 'current') throw new Error('vocals-line-not-current');
     const after = await fs.readFile(file);
@@ -341,9 +347,9 @@ function createService(options = {}) {
     // Retired engines stop being startable. Everything else about them is unchanged: their stored results stay
     // readable, stay in music-lab.json and stay deletable, which is the difference between a flag and a removal.
     if (!isStems && !isMidi && resultEngines.isRetiredResultEngine(engine)) return { ok: false, error: 'engine-retired' };
-    const python = pythonFor(engine);
+    let python = pythonFor(engine);
     const runner = runnerFor(engine);
-    if (!isMidi && !isStems && (!python || !fsSync.existsSync(runner))) return { ok: false, error: 'runtime-missing' };
+    if (engine !== mood.ENGINE && !isMidi && !isStems && (!python || !fsSync.existsSync(runner))) return { ok: false, error: 'runtime-missing' };
     const task = {
       taskId: crypto.randomUUID(), kind: isStems ? 'stems' : isMidi ? 'midi' : 'analysis', track, engine, engineName: runOptions.engineName || (isStems ? '分轨' : isMidi ? `${midiStem} MIDI` : engine),
       status: 'starting', progress: 0, phase: 'starting', message: '正在启动分析器',
@@ -365,7 +371,7 @@ function createService(options = {}) {
           elapsedSeconds: (Date.now() - task.startedAtMs) / 1000, ...extra }) + '\n', 'utf8');
       } catch (error) { task.logWarning = error.message; }
     };
-    let vocalLine = null;
+    let vocalLine = null, moodSource = null, upgrade = null;
     try {
       await log('start');
       // The vocals part is the stored vocal line written as MIDI. Refused unless that line is current for the vocal
@@ -382,7 +388,7 @@ function createService(options = {}) {
         const cached = isMidi ? await midiAssets.read(track, midiStem, engine) : await readStems(track, engine);
         // A readable result from an earlier model version is not a cache hit for the current version, and a vocals
         // part converted from an earlier vocal line is not one for the line the track has now.
-        if (cached.ok && !task.cancelled && (!isMidi || cached.matches) && (!fromVocalLine || cached.backend?.scoreVocals?.sha256 === vocalLine.sha256)) {
+        if (!task.cancelled && (isMidi ? midiModule.midiCacheHit(cached, vocalLine) : cached.ok)) {
           task.committing = true;
           // A cache hit produces nothing new, so activating it is pure side effect — and if the version currently
           // in use is a hand-edited revision, that side effect silently replaces the user's own work with a model
@@ -392,12 +398,16 @@ function createService(options = {}) {
           // Deliberately narrow (STOP-AND-ASK 3): this covers only "the active version is a revision". A genuine
           // model run that produces a new result still takes the pointer, because that is what generating means.
           const active = isMidi ? await midiAssets.read(track, midiStem) : null;
-          const keepsRevision = Boolean(active?.ok && active.engine === midiModule.MANUAL_ENGINE && active.runId !== cached.runId);
+          const keepsRevision = midiModule.keepsManualRevision(active, cached);
           if (isMidi && !keepsRevision) await midiAssets.activate(track, cached);
           else if (!isMidi) await derivedAssets.activateStems(track, cached);
           task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = isMidi ? '已读取 MIDI' : '已读取分轨';
           return { ok: true, kind: isMidi ? 'midi' : 'stems', cached: true, result: cached, task: taskSnapshot(task),
             ...(isMidi ? {activated: !keepsRevision, keptActive: keepsRevision ? active.runId : null} : {}) };
+        }
+        if (isMidi && !task.cancelled) {
+          upgrade = await findUpgrade(track,midiAssets,midiStem,engine,directory,cached.runId);
+          if (upgrade) python=upgrade.python;
         }
       }
       // A score result made from the stems the track has now is answered from disk: the album button can be
@@ -409,6 +419,17 @@ function createService(options = {}) {
         if (state.state === 'current' && !task.cancelled) {
           task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '已读取人声曲线';
           return { ok: true, kind: 'score', cached: true, result: state.result, task: taskSnapshot(task) };
+        }
+      } else if (engine === mood.ENGINE) {
+        moodSource = await mood.inputs(track,directory);
+        const kept = !runOptions.force && await readJson(output,null);
+        if (kept && mood.matches(kept,moodSource) && !task.cancelled) {
+          task.status = 'complete'; task.progress = 1; task.phase = 'complete'; task.message = '';
+          return {ok:true,kind:'score',cached:true,result:kept,task:taskSnapshot(task)};
+        }
+        if (!python || !fsSync.existsSync(runner)) {
+          task.status = 'failed'; task.message = 'runtime-missing';
+          return {ok:false,error:'runtime-missing',task:taskSnapshot(task)};
         }
       } else if (SCORE_ENGINE_IDS.includes(engine) && !runOptions.force) {
         const kept = await readJson(output, null);
@@ -430,6 +451,8 @@ function createService(options = {}) {
       const midiSource = isMidi ? await midiAssets.source(track, midiStem) : null;
       if (isMidi || isStems) await fs.mkdir(path.dirname(output), { recursive: true });
       const args = [runner, '--engine', engine, '--input', midiSource?.path || track.filePath, '--output', staging];
+      if (upgrade) { args.unshift('-B'); args.push('--upgrade-onetrack',upgrade.recordFile,...upgrade.args); }
+      if (moodSource) { args.unshift('-B'); args.push('--mood-source',JSON.stringify(moodSource)); }
       if (isMidi) args.push('--track-id', track.id, '--stem', midiStem, '--source-run-id', midiSource.runId, '--run-id', task.taskId);
       if(isMidi && midiStem==='strings')args.push('--string-target',midiSource.target);
       if(isMidi && midiModule.profileFor(engine)?.options?.tempoAnalysis)args.push('--beat-source',track.filePath);
@@ -455,7 +478,7 @@ function createService(options = {}) {
           if (task.durationSeconds && !task.estimatedSeconds && !isStems && !isMidi) {
             const rates = {songformer:7};
             const featureRate = task.cacheHit ? 0 : HARMONY_ENGINE_IDS.includes(engine) ? 2.2 : 8;
-            task.estimatedSeconds = Math.max(6, task.durationSeconds / 60 * ((rates[engine] || 5) + featureRate));
+            if (engine !== mood.ENGINE) task.estimatedSeconds = Math.max(6, task.durationSeconds / 60 * ((rates[engine] || 5) + featureRate));
           }
           if (payload.message) task.message = payload.message;
           emitTask(task, onTask);
@@ -465,7 +488,8 @@ function createService(options = {}) {
         const child = spawn(python, args, { windowsHide: true, cwd: workDirectory,
           env: {...torchEnv(isStems
             ? (process.env.XLD_SEPARATION_TORCH_HOME || process.env.TORCH_HOME)
-            : (process.env.TORCH_HOME || (xldRoot && path.join(xldRoot, 'analysis-ai', 'torch-home')))), PYTHONIOENCODING: 'utf-8'} });
+            : (process.env.TORCH_HOME || (xldRoot && path.join(xldRoot, 'analysis-ai', 'torch-home')))), PYTHONIOENCODING: 'utf-8',
+            ...(upgrade ? {CUDA_VISIBLE_DEVICES:'',PYTHONDONTWRITEBYTECODE:'1'} : {})} });
         task.child = child;
         task.status = 'running'; task.phase = 'decode'; task.message = '正在读取音频';
         emitTask(task, onTask);
@@ -488,14 +512,22 @@ function createService(options = {}) {
       const previous = isMidi ? await midiAssets.read(track, midiStem, engine) : isStems ? await readStems(track, engine) : null;
       const result = await promoteResult(staging, output, isStems ? value => validateStems(value, track, engine) : isMidi ? async value => {
         if (value?.runId !== task.taskId) throw new Error('midi-invalid');
+        if (upgrade) {
+          const from = value?.backend?.oneTrackUpgrade;
+          if (from?.fromRunId !== upgrade.runId || from.fromDigests?.midi !== upgrade.digests.midi ||
+              from.fromDigests?.notes !== upgrade.digests.notes) throw new Error('onetrack-upgrade-source-changed');
+        }
         if (fromVocalLine && value?.backend?.scoreVocals?.sha256 !== vocalLine.sha256) throw new Error('vocals-line-not-current');
         return midiAssets.validate(value, track, midiStem, engine);
-      } : engine === 'score-vocals' ? value => scoreVocals.validate(derivedAssets, track, directory, value) : null);
+      } : engine === 'score-vocals' ? value => scoreVocals.validate(derivedAssets, track, directory, value) : moodSource ? async value => {
+        if (!mood.matches(value,await mood.inputs(track,directory))) throw Error('mood-input-changed-or-output-invalid');
+      } : null);
       committed = true;
       let response;
       if (isMidi) {
         await midiAssets.activate(track, result);
-        response = { ok: true, kind: 'midi', result: await midiAssets.read(track, midiStem, engine) };
+        response = { ok: true, kind: 'midi', result: await midiAssets.read(track, midiStem, engine),
+          ...(upgrade ? {upgraded:true,upgradeFrom:upgrade.runId} : {}) };
         // Same model version: replace the earlier run. A different version stays on disk as readable history.
         // A pinned run is exempt: this is a hard fs.rm, not a Recycle Bin move, and 保留 promises the opposite.
         // If the markers cannot be read, keep the run — never delete what we could not verify is unpinned.
@@ -509,12 +541,13 @@ function createService(options = {}) {
         let retention;
         try {
           retention = await midiRetention.sweep(track, midiStem, engine, {activeIdentity: response.result.identity,
-            protect: [task.taskId, previous?.ok ? previous.runId : null].filter(Boolean)});
+            protect: [task.taskId, previous?.ok ? previous.runId : null, upgrade?.runId].filter(Boolean)});
         } catch (error) { retention = {removed: [], trashed: [], skipped: [], warning: error.message}; }
         if (keptPrevious) retention.skipped.push({runId: previous.runId, reason: 'kept'});
         response.retention = retention;
         // The activated record, not the current profile: after a rollback or a pin those are different versions.
         midiFinish = {model: response.result.model ?? null, identity: response.result.identity ?? null, runId: response.result.runId ?? null,
+          ...(upgrade ? {upgradeFrom:upgrade.runId} : {}),
           retained: {removed: retention.removed.length, trashed: retention.trashed.length, skipped: retention.skipped.length}};
       } else if (isStems) {
         await derivedAssets.activateStems(track, result);
@@ -530,6 +563,8 @@ function createService(options = {}) {
           response.previousStems = retired.ok ? {runId: previous.runId, recycled: Boolean(options.trash), midi: retired.midi}
             : {runId: previous.runId, kept: true, why: retired.error || batches.keptReason(retired)};
         }
+      } else if (moodSource) {
+        response = {ok:true,kind:'score',result};
       } else {
         let manifest = null, integrationWarning = null;
         try { manifest = options.buildManifest ? await options.buildManifest(track, directory) : await buildManifest(track, directory); }
@@ -581,6 +616,10 @@ function createService(options = {}) {
     readRefinement: refinement.read,
     // {state, due, result?, split?, source}: whether the vocal line is current for the track's vocal stem.
     readScoreVocals: track => scoreVocals.read(derivedAssets, track, analysisDirectory(track)),
+    readMoodStatus: track => mood.status(track,analysisDirectory(track)),
+    previewOneClick: (track, steps, options) => require('./oneclick-cache.cjs').preview(track, steps, options, {
+      assets: derivedAssets, analysisDirectory: analysisDirectory(track), currentVocalLine, findUpgrade
+    }),
     // {ok, sha256, sung} of the vocal line a vocals-rmvpe run would convert now, or {ok:false, error}.
     readVocalLine: track => currentVocalLine(track).then(({sha256, sung}) => ({ok: true, sha256, sung}), error => ({ok: false, error: error.message})),
     keepRefinement: refinement.keep,

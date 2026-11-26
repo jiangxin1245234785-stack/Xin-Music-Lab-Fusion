@@ -42,7 +42,7 @@ const ids = steps => steps.map(step => step.id);
 const states = steps => Object.fromEntries(steps.map(step => [step.id, step.state + (step.reason ? ':' + step.reason.code : '')]));
 {
   const eff = P.plan(P.PRESETS.efficiency, fullEnv());
-  assert.deepEqual(ids(eff), ['sections', 'chords', 'stems', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:other', 'midi:vocals', 'merge']);
+  assert.deepEqual(ids(eff), ['sections', 'chords', 'stems', 'mood', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:other', 'midi:vocals', 'merge']);
   assert.deepEqual(eff.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-medium', 'piano-muscriptor-medium', 'muscriptor-medium', 'drums-adtof', 'other-muscriptor-medium', 'vocals-rmvpe']);
   assert.equal(eff.find(s => s.id === 'chords').engine, 'chord-chordmini');
   assert(eff.every(s => s.state === 'pending'));
@@ -58,7 +58,7 @@ const states = steps => Object.fromEntries(steps.map(step => [step.id, step.stat
   for (const derived of [{strings: {active: {runId: 's'}}}, {winds: {active: {runId: 'w'}}}, {winds: {none: {}}}]) {
     assert.equal(P.otherRouteFor(derived), 'split', 'existing fine split state is preserved before transcription');
   }
-  assert.deepEqual(ids(q), ['sections', 'chords', 'stems', 'refine', 'refine-winds', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:strings', 'midi:winds', 'midi:vocals', 'merge'], 'quality: fine split, strings, then the winds from what the strings left');
+  assert.deepEqual(ids(q), ['sections', 'chords', 'stems', 'mood', 'refine', 'refine-winds', 'midi:bass', 'midi:piano', 'midi:guitar', 'midi:drums', 'midi:strings', 'midi:winds', 'midi:vocals', 'merge'], 'quality: fine split, strings, then the winds from what the strings left');
   assert.deepEqual(q.filter(s => s.kind === 'midi').map(s => s.engine), ['bass-muscriptor-large', 'piano-muscriptor-large', 'muscriptor-large', 'drums-adtof-stems', 'strings-muscriptor-large', 'winds-muscriptor-large', 'vocals-rmvpe']);
   // W1: a song with a winds source needs no winds fine split; a song found to have no winds has no winds steps at all.
   assert.ok(!ids(P.plan(P.PRESETS.quality, splitEnv({derived: {winds: {active: {runId: 'w'}}}}))).includes('refine-winds'));
@@ -67,8 +67,8 @@ const states = steps => Object.fromEntries(steps.map(step => [step.id, step.stat
   assert.ok(!none.includes('refine-winds') && !none.includes('midi:winds'), 'no winds: no winds steps');
   // A strings source already chosen: strings is a part even without the fine split (as in 一键生成 MIDI).
   assert(ids(P.plan(P.PRESETS.efficiency, splitEnv({derived: {strings: {active: {runId: 'x'}}}}))).includes('midi:strings'));
-  // Vocals off.
-  assert(!ids(P.plan({...P.PRESETS.efficiency, vocals: false}, fullEnv())).includes('midi:vocals'));
+  // Switching the one-click vocal option off does not exclude it from the existing shared batch.
+  assert(P.plan({...P.PRESETS.efficiency, vocals: false}, fullEnv()).find(step=>step.id==='midi:vocals').batchVocals);
 }
 {
   // Missing environments, marked before anything runs.
@@ -101,6 +101,7 @@ function fakeOps(script = {}) {
     has: async engine => Boolean(script.has?.[engine]),
     analysis: async step => { calls.push(step.id); return step.id in script ? script[step.id] : {ok: true}; },
     stems: async step => { calls.push('stems'); return script.stems || {ok: true}; },
+    mood: async () => { calls.push('mood'); return script.mood || {ok:true,cached:true}; },
     refine: async () => { calls.push('refine'); return script.refine || {ok: true}; },
     midi: async ({exclude, onStep, onResult}) => {
       calls.push('midi:' + exclude.join(','));
@@ -126,9 +127,10 @@ function fakeOps(script = {}) {
     const updates = [];
     const out = await P.run({steps, ops, onUpdate: step => updates.push(step.id + '=' + step.state)});
     assert.equal(out.ok, true);
-    assert.deepEqual(calls, ['chords', 'stems', 'midi:'], 'existing sections are not run again; one batch for all parts');
+    assert.deepEqual(calls, ['chords', 'stems', 'mood', 'midi:'], 'existing sections are not run again; one batch for all parts');
     const s = states(steps);
     assert.equal(s.sections, 'existing'); assert.equal(s.chords, 'done'); assert.equal(s.stems, 'existing');
+    assert.equal(s.mood,'existing','the mood service rechecks the actual inputs after separation');
     assert.equal(s['midi:bass'], 'existing'); assert.equal(s['midi:piano'], 'done'); assert.equal(s['midi:vocals'], 'done:no-singing'); assert.equal(s.merge, 'existing');
     assert(updates.includes('midi:guitar=running'), 'each part shows as running while it runs');
   }
@@ -150,6 +152,7 @@ function fakeOps(script = {}) {
     const out = await P.run({steps, ops});
     const s = states(steps);
     assert.equal(s.stems, 'failed:failed');
+    assert.equal(s.mood,'existing','mix-only mood remains usable after a separation failure');
     for (const id of ['refine', 'midi:bass', 'midi:strings', 'merge']) assert.equal(s[id], 'skipped:needs-stems', id);
     assert(!calls.includes('refine') && !calls.some(c => c.startsWith('midi')));
     assert.equal(out.ok, false); assert.equal(out.cancelled, false);
@@ -273,10 +276,15 @@ function fakeOps(script = {}) {
   // The real one-click controller previews and runs by the same route and cannot replace unreadable choices.
   const routeTrack = {id: 'route-song', title: 'Route song'};
   let routeData = {otherRoute: null, midi: {strings: {ok: true, noteCount: 0}}};
-  const writes = [], batchRoutes = [];
+  const writes = [], batchRoutes = [], batchExclusions = [];
+  let cacheCheck = async () => ({'midi:bass':{state:'upgrade',reason:{code:'onetrack-upgrade'}}});
+  let selectedTrack = routeTrack;
+  let selectedAlbum = null;
+  const analysisCalls = [];
   const oneClick = context.XldOneClick.create({
     bridge: {
       readDerived: async () => routeData,
+      planOneClickCache: (...args) => cacheCheck(...args),
       refinementEngines: async () => fullEnv().refinement,
       separationEngines: async () => fullEnv().separation,
       getAnalysisSummary: async () => ({[routeTrack.id]: {songformer: {status: 'complete'}, 'chord-chordmini': {status: 'complete'}}}),
@@ -290,16 +298,35 @@ function fakeOps(script = {}) {
         routeData = {...routeData, otherRoute: route};
         return {ok: true};
       },
-      runBatch: async (track, {expectedOtherRoute}) => {
+      runBatch: async (track, {expectedOtherRoute,exclude}) => {
         batchRoutes.push(expectedOtherRoute);
+        batchExclusions.push(Array.from(exclude));
         return {ok: true};
       }
     },
-    rt, getTrack: () => routeTrack, getAlbum: () => null, getEngines: () => fullEnv().analysis,
+    rt, getTrack: () => selectedTrack, getAlbum: () => selectedAlbum, getEngines: () => fullEnv().analysis,
+    runAnalysis: async (engine,{track}) => { analysisCalls.push(engine); if (!selectedAlbum) {assert.equal(engine,'mood-curve'); assert.equal(track,routeTrack);} return {ok:true,cached:true}; },
     isBusy: () => false, isCancelled: () => false, setBatch: () => {}
   });
   const tick = () => new Promise(resolve => setImmediate(resolve));
   await tick();
+  assert.equal(states(oneClick.snapshot().view.steps)['midi:bass'],'upgrade:onetrack-upgrade');
+  assert.match(get('oneclickCounts').textContent,/仅升级 1 步/);
+  assert.match(get('oneclickCounts').textContent,/跳过 2 步/);
+  const moodRow=get('oneclickSteps').children.find(item=>item.dataset.step==='mood');
+  const moodButton=moodRow.children.flatMap(item=>item.children).find(item=>item.id==='oneclickMoodOnly');
+  await moodButton.handlers.click(); await tick();
+  assert.deepEqual(analysisCalls,['mood-curve']); assert.deepEqual(batchRoutes,[]); assert.deepEqual(writes,[]);
+  assert.match(get('oneclickStatus').textContent,/情绪曲线已是当前版本/);
+  let finishSlow;
+  cacheCheck = id => id===routeTrack.id ? new Promise(resolve=>{finishSlow=resolve;}) : {};
+  oneClick.refresh(); await tick();
+  selectedTrack = {id:'new-track',title:'New'}; oneClick.sync();
+  assert.equal(oneClick.snapshot().view.steps.length,0,'hide the previous track while the new check is pending');
+  await tick(); finishSlow({'midi:bass':{state:'existing'}}); await tick();
+  assert.equal(oneClick.snapshot().view.trackId,'new-track');
+  assert.equal(states(oneClick.snapshot().view.steps)['midi:bass'],'pending','discard the late reply for the previous track');
+  selectedTrack = routeTrack; cacheCheck = async () => ({}); oneClick.sync(); await tick();
   assert(!ids(oneClick.snapshot().view.steps).includes('midi:other'));
   assert.equal((await oneClick.runTrack()).ok, true);
   assert.deepEqual(writes, []);
@@ -312,6 +339,19 @@ function fakeOps(script = {}) {
   assert.equal((await oneClick.runTrack()).otherRouteError, 'other-route-invalid');
   assert.match(get('oneclickStatus').textContent, /other-route-invalid/);
   assert.equal(writes.length, 1, 'an unreadable route never triggers the default write');
+  routeData = {otherRoute:'direct'};
+  selectedAlbum = {title:'Album',tracks:[routeTrack,{id:'other-song',title:'Other'}]};
+  assert.equal((await oneClick.runAlbum()).complete,2);
+  await tick();
+  assert.equal(oneClick.snapshot().view.trackId,selectedTrack.id,'after an album run, the plan belongs to the selected song');
+  assert.match(get('oneclickStatus').textContent,/2 首完成/,'the album report survives restoring the selected track');
+  const missing = midiModels.filter(model=>['bass-muscriptor-medium','piano-muscriptor-medium'].includes(model.id));
+  for(const model of missing) model.available=false;
+  cacheCheck=async()=>({'midi:bass':{state:'upgrade',reason:{code:'onetrack-upgrade'}}});
+  await oneClick.runTrack();
+  assert(!batchExclusions.at(-1).includes('bass'),'a verified CPU upgrade still enters the actual MIDI batch when model weights are missing');
+  assert(batchExclusions.at(-1).includes('piano'),'missing weights still exclude ordinary transcription');
+  for(const model of missing) model.available=true;
 
   // The vocal add-on check the plan relies on mirrors vocals_runner.py addons(): same variables, same files.
   {
@@ -342,5 +382,6 @@ function fakeOps(script = {}) {
   assert(/async function runAlbumBatch\(\)[\s\S]{0,200}oneclickControls\?\.runAlbum\(\)/.test(app), 'the album button runs the one-click chain');
   for (const locale of ['zh-CN', 'en-US']) for (const key of ['title', 'preset.efficiency', 'preset.quality', 'preset.custom', 'state.existing', 'state.unavailable', 'reason.addons', 'advice.refine', 'advice.guitar', 'advice.drums'])
     assert(!messages.translateRuntime(locale, 'runtime.oneclick.' + key).startsWith('runtime.'), locale + ' ' + key);
-  console.log('One-click plan: PASS (presets / custom / storage, plans for both presets, unavailable up front, skip existing, failure paths, cancel, runBatch seam on another track, wiring)');
+  await require('./oneclick-cache.cjs')();
+  console.log('One-click plan: PASS (presets, serial runner, cache forecasts, active versions and routes, late replies, counts, actual service reuse and rerun)');
 })().catch(error => { console.error(error); process.exitCode = 1; });

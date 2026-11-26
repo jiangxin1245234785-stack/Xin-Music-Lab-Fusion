@@ -3,6 +3,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('XLD', Object.freeze({
+  runMoodBackfill: (scope, albumId) => ipcRenderer.invoke('analysis:mood-backfill', {scope, albumId}),
+  getMoodBackfill: () => ipcRenderer.invoke('analysis:mood-backfill-status'),
+  stopMoodBackfill: () => ipcRenderer.invoke('analysis:mood-backfill-stop'),
+  onMoodBackfill: callback => {
+    const handler = (_event, status) => callback(status);
+    ipcRenderer.on('analysis:mood-backfill-progress', handler);
+    return () => ipcRenderer.removeListener('analysis:mood-backfill-progress', handler);
+  },
   planTrackRemoval: trackId => ipcRenderer.invoke('library:plan-track-removal', {trackId}),
   confirmTrackRemoval: payload => ipcRenderer.invoke('library:confirm-track-removal', payload),
   executeTrackRemoval: payload => ipcRenderer.invoke('library:execute-track-removal', payload),
@@ -46,6 +54,7 @@ contextBridge.exposeInMainWorld('XLD', Object.freeze({
   applyMidiEvidence: payload => ipcRenderer.invoke('assets:midi-evidence-apply',payload),
   readStemEnvelope: payload => ipcRenderer.invoke('assets:stem-envelope',payload),
   readDerived: trackId => ipcRenderer.invoke('assets:read', { trackId }),
+  planOneClickCache: (trackId, steps, options) => ipcRenderer.invoke('assets:oneclick-cache', {trackId, steps, options}),
   revealDerived: (trackId, kind, stem = null, engine = null, runId = null) => ipcRenderer.invoke('assets:reveal', { trackId, kind, stem, engine, runId }),
   scanLibrary: () => ipcRenderer.invoke('library:scan'),
   getHostLocale: () => ipcRenderer.invoke('locale:get-host'),
@@ -69,6 +78,7 @@ contextBridge.exposeInMainWorld('XLD', Object.freeze({
   runAnalysis: (trackId, engine, range = null, auto = false, separation = 'none') => ipcRenderer.invoke('analysis:run', { trackId, engine, range, auto, separation }),
   loadAnalysis: (trackId, engine = null) => ipcRenderer.invoke('analysis:load', { trackId, engine }),
   getAnalysisSummary: () => ipcRenderer.invoke('analysis:summary'),
+  moodStatus: trackId => ipcRenderer.invoke('analysis:mood-status', trackId),
   deleteAnalysisResult: (trackId, engine) => ipcRenderer.invoke('analysis:delete-result', { trackId, engine }),
   sweepResults: engines => ipcRenderer.invoke('analysis:result-sweep', { engines }),
   deleteResults: items => ipcRenderer.invoke('analysis:delete-results', { items }),

@@ -25,6 +25,7 @@ const {AI_ENGINE_IDS, HARMONY_ENGINE_IDS, SECTION_ENGINE_IDS, RESULT_ENGINE_IDS,
 const ANNOTATIONS_FILENAME = 'manual-tags.json';
 const MUSIC_LAB_FILENAME = 'music-lab.json';
 const trackIndex = new Map();
+const albumIndex = new Map();
 let libraryRoot = DEFAULT_LIBRARY_ROOT;
 let analysisRootPath = null;
 const {consumeRequest} = require('../core/open-request.cjs');
@@ -287,6 +288,7 @@ async function migrateLegacyCaches() {
 async function scanLibrary() {
   const albums = [];
   trackIndex.clear();
+  albumIndex.clear();
   let rootEntries;
   try {
     rootEntries = await fs.readdir(libraryRoot, { withFileTypes: true });
@@ -395,6 +397,7 @@ async function scanLibrary() {
   }
 
   await migrateLegacyCaches();
+  for (const album of albums) albumIndex.set(album.id, album);
   return {
     ok: true,
     root: libraryRoot,
@@ -847,13 +850,29 @@ const TRACK_MUTATION_CHANNELS=new Set([
  'annotations:upsert','annotations:delete','integration:export'
 ]);
 let activeTrackMutations=0;
+let backfillConflicts = 0;
+const moodBackfill = require('../core/mood-backfill.cjs').createMoodBackfill({
+  service: analysisService, getRoot: analysisRoot, onTask: broadcastTask,
+  getAlbum: id => {
+    const album = albumIndex.get(id);
+    return album && {title: album.title, tracks: album.tracks.map(track => trackIndex.get(track.id)).filter(Boolean)};
+  },
+  isBusy: () => Boolean(backfillConflicts || analysisService.task() || storageManager.busy() || trackRemoval.busy() || midiSourceChanging),
+  onChange: status => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('analysis:mood-backfill-progress', status);
+  }
+});
 function trackMutationIpc(channel,handler){
  // Mixed read/write registration loops preserve the original read-only callback and response shape.
  if(!TRACK_MUTATION_CHANNELS.has(channel)){ipcMain.handle(channel,handler);return;}
  ipcMain.handle(channel,async(...args)=>{
   if(trackRemoval.busy())return {ok:false,error:'track-removal-busy'};
+  // Playback reads remain available throughout the batch, including between two mood engine runs.
+  const conflicts = !['assets:wav-chunk', 'assets:stem-envelope', 'analysis:open-root'].includes(channel);
+  if (conflicts && moodBackfill.busy()) return {ok:false, canceled:true, error:'analysis-busy'};
+  if (conflicts) backfillConflicts++;
   activeTrackMutations++;
-  try{return await handler(...args);}finally{activeTrackMutations--;}
+  try{return await handler(...args);}finally{activeTrackMutations--; if (conflicts) backfillConflicts--;}
  });
 }
 
@@ -862,7 +881,7 @@ async function confirmTrackRemovalDialog(plan){
       const answer=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:en?['Cancel','Delete permanently']:['取消','永久删除'],defaultId:0,cancelId:0,noLink:true,title:en?'Delete this song':'删除这首歌',message:plan.title,detail:(en?'Permanently deletes the actual original audio file (not a managed copy), without using the Recycle Bin.':'将永久删除实际原音频文件（不是托管副本），不进入回收站。')+'\n'+plan.original.path+'\n\n'+(plan.keepSmall?(en?'Keeps analysis, MIDI and annotations; deletes generated audio and matched playback cache.':'保留分析、MIDI、人工标注；删除生成音频和可精确匹配的播放缓存。'):(en?'Also deletes the verified song analysis and derived results.':'同时删除经验证属于这首歌的分析和派生结果。'))});return answer.response===1;
 
 }
-const trackRemoval=require('../core/track-removal.cjs').createTrackRemoval({getTrack:id=>trackIndex.get(id),getTracks:()=>trackIndex.values(),getRoot:analysisRoot,suspendDecode:files=>require('../core/stem-audio.cjs').sharedCache().suspend(files),getLegacyRoot:legacyAnalysisRoot,analysisLock:require('../core/analysis-lock.cjs').createAnalysisLock({program:'XLD storage'}),getLibraryRoot:()=>libraryRoot,coverCacheDir:path.join(app.getPath('appData'), 'Xin Music Lab', 'CoverCache-v1'),isBusy:()=>Boolean(activeTrackMutations>0||analysisService.task()||storageManager.busy()||require('../core/stem-audio.cjs').sharedCache().busy?.())});
+const trackRemoval=require('../core/track-removal.cjs').createTrackRemoval({getTrack:id=>trackIndex.get(id),getTracks:()=>trackIndex.values(),getRoot:analysisRoot,suspendDecode:files=>require('../core/stem-audio.cjs').sharedCache().suspend(files),getLegacyRoot:legacyAnalysisRoot,analysisLock:require('../core/analysis-lock.cjs').createAnalysisLock({program:'XLD storage'}),getLibraryRoot:()=>libraryRoot,coverCacheDir:path.join(app.getPath('appData'), 'Xin Music Lab', 'CoverCache-v1'),isBusy:()=>Boolean(activeTrackMutations>0||moodBackfill.busy()||analysisService.task()||storageManager.busy()||require('../core/stem-audio.cjs').sharedCache().busy?.())});
 
 async function executeAnalysis(trackId, engine, options = {}) {
   if(storageManager.busy()||midiSourceChanging)return {ok:false,error:"存储管理正在操作文件，请稍后重试"};
@@ -884,6 +903,7 @@ async function executeAnalysis(trackId, engine, options = {}) {
 async function runAnalysis(_event, trackId, engine, range = null, auto = false, separation = 'none') {
   const sep = HARMONY_ENGINE_IDS.includes(engine) && ['hpss','demucs'].includes(separation) ? separation : 'none';
   const response = await executeAnalysis(trackId,engine,{range,auto,separation:sep});
+  if (engine === 'mood-curve' && response.ok) return {ok:true,cached:Boolean(response.cached),task:response.task};
   // The screens show the tidied section names (core/sections.cjs); the file on disk stays as the engine wrote it.
   return response?.ok && response.result ? {...response, result: withSections(response.result)} : response;
 }
@@ -1157,6 +1177,12 @@ trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
     if(vocals.state!=='current')vocals.missing=require('../core/score-vocals.cjs').addonsMissing();
     return {...stems, midi, variants, stemVariants, merged,strings,winds,otherRoute,otherRouteError,midiInputs,midiSourceKey,vocals};
   });
+  ipcMain.handle('assets:oneclick-cache', (_event, {trackId, steps, options}) => {
+    const track = trackIndex.get(String(trackId));
+    if (!track) throw Error('track-missing');
+    analysisService.setAnalysisRoot(analysisRoot());
+    return analysisService.previewOneClick(track, steps, options);
+  });
   ipcMain.handle('assets:reveal', async (_event, payload) => {
     const track = trackIndex.get(String(payload?.trackId || ''));
     if (!track) return {ok: false, error: 'track-missing'};
@@ -1172,6 +1198,13 @@ trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
     return Array.isArray(loaded) ? loaded.map(result => withSections(result)) : withSections(loaded);
   });
   ipcMain.handle('analysis:summary', analysisSummary);
+  ipcMain.handle('analysis:mood-backfill', (_event, payload) => moodBackfill.run(payload?.scope, payload?.albumId));
+  ipcMain.handle('analysis:mood-backfill-status', () => moodBackfill.status());
+  ipcMain.handle('analysis:mood-backfill-stop', () => moodBackfill.stop());
+  ipcMain.handle('analysis:mood-status', (_event, id) => {
+    const track = trackIndex.get(String(id));
+    return track ? analysisService.readMoodStatus(track) : 'missing';
+  });
   trackMutationIpc('assets:wav-chunk', async (_event,payload) => {try{return await mixAudioReader.chunk(payload||{});}catch(error){return {ok:false,error:error.message};}});
   ipcMain.handle('assets:midi-notes', (_event, payload) => readMidiNotes(payload?.trackId,payload?.selection ?? null));
   trackMutationIpc('analysis:delete-result', (_event, payload) => deleteAnalysisResult(payload.trackId, payload.engine));
@@ -1255,6 +1288,7 @@ trackMutationIpc('assets:save-midi-revision',async(_event,payload)=>{
 });
 
 app.on('before-quit', () => {
-  analysisService.cancel();
+  if (moodBackfill.busy()) moodBackfill.stop();
+  else analysisService.cancel();
 });
 app.on('window-all-closed', () => app.quit());

@@ -1,4 +1,10 @@
 {
+  "mood-curve": {
+    "version": 1,
+    "weights": {
+      "scale": {"file": "mood-scale-1.json", "sha256": "64152a1c75efb9e2976afb4e587debbf442029d3a6b83ab8e962880f67a385d0"}
+    }
+  },
   "score-layers": {
     "version": 2,
     "weights": {

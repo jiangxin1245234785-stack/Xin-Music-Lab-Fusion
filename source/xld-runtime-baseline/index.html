@@ -146,15 +146,30 @@
     <div class="oneclick-head"><div><strong id="oneclickTitle">一键分析</strong><small id="oneclickHint" class="derived-hint"></small></div><div id="oneclickPreset" class="oneclick-preset" role="radiogroup"></div></div>
     <details id="oneclickChoices" class="oneclick-choices"><summary id="oneclickChoicesSummary">具体选择</summary><div id="oneclickChoiceList" class="oneclick-choice-list"></div></details>
     <div class="oneclick-actions"><button id="oneclickTrack" class="primary-button" type="button" disabled>分析这首歌</button><button id="oneclickAlbum" class="secondary-button" type="button" disabled>分析整张专辑</button></div>
+    <strong id="oneclickCounts" class="oneclick-counts" aria-live="polite" hidden></strong>
     <ol id="oneclickSteps" class="oneclick-steps" hidden></ol>
     <small id="oneclickStatus" class="derived-hint" aria-live="polite"></small>
+    <details id="moodBackfill" class="oneclick-choices">
+      <summary id="moodBackfillTitle">只补算情绪曲线</summary>
+      <div class="oneclick-choice-list">
+        <small id="moodBackfillHint" class="derived-hint"></small>
+        <div class="oneclick-actions">
+          <button type="button" id="moodBackfillAlbum" class="quiet-button" disabled>当前专辑</button>
+          <button type="button" id="moodBackfillLibrary" class="quiet-button" disabled>整个已分析曲库</button>
+          <button type="button" id="moodBackfillStop" class="quiet-button" hidden>停止补算</button>
+        </div>
+        <small id="moodBackfillStatus" class="derived-hint" role="status"></small>
+        <details id="moodBackfillIssues" class="oneclick-choices" hidden><summary id="moodBackfillIssuesTitle"></summary><ul id="moodBackfillIssueList" class="derived-hint"></ul></details>
+      </div>
+    </details>
   </section>
   <div id="workspaceResults" class="workspace-results"></div>
   <section class="workspace-export"><div><strong data-workspace-copy="toXml">用于 XML 可视化</strong><p data-workspace-copy="exportHint">段落、和弦与人工标签通过现有接口交给 XML。</p></div><button id="exportMusicLabButton" class="icon-text-button" disabled data-i18n="static.result.export">更新 Music Lab 接口</button>
         <span id="integrationStatus">版本化 JSON · 尚未导出</span></section>
-</section><section id="workspaceTimeline" class="timeline-card" hidden aria-labelledby="timelineTitle">
+</section><section id="workspaceTimeline" class="timeline-card" aria-labelledby="timelineTitle">
   <div class="timeline-head"><div><h2 id="timelineTitle">时间轴</h2><p id="timelineHint"></p></div>
     <div class="timeline-zoom"><label class="timeline-strip"><span id="timelineStripLabel">轨下条带</span><select id="timelineStrip"><option value="role">演奏方式</option><option value="harmony">和声关系</option><option value="off">关闭</option></select></label><button type="button" id="timelineLocate" class="quiet-button">定位光标</button><button type="button" id="timelineAnnotate" class="quiet-button" aria-pressed="false">标注</button><button type="button" id="timelineFocusExit" class="quiet-button" hidden>返回全部轨</button><button type="button" id="timelineZoomOut" class="quiet-button" aria-label="缩小">−</button><button type="button" id="noteTimelineZoomLabel" class="quiet-button" title="适应全曲">适应全曲</button><button type="button" id="timelineZoomIn" class="quiet-button" aria-label="放大">+</button></div></div>
+  <div class="timeline-audition"><button type="button" id="timelineMoodRun" class="quiet-button" disabled></button><span id="timelineMoodStatus" role="status"></span></div>
   <div class="timeline-audition">
     <button type="button" id="timelineAudition" class="quiet-button" aria-pressed="false" disabled>试听本轨</button>
     <select id="timelineAuditionScope" aria-label="试听范围"><option value="mix">全部 MIDI</option><option value="single">当前乐器</option></select>
@@ -417,6 +432,7 @@
   <script src="playback-controls.js"></script>
   <script src="oneclick-plan.js"></script>
   <script src="oneclick-controls.js"></script>
+  <script src="mood-backfill-controls.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

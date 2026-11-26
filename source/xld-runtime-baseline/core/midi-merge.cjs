@@ -15,8 +15,7 @@ const hash=data=>crypto.createHash('sha256').update(data).digest('hex');
 const ABSENT=['midi-missing','midi-needs-stems'];
 const TOLERATED=[...ABSENT,'midi-stale','midi-string-source-stale'];
 
-function createMidiMerge({analysisRoot,python}) {
-  const assets=createDerivedAssets({analysisRoot});
+function createMidiMerge({analysisRoot,python,assets=createDerivedAssets({analysisRoot})}) {
   const drafts=require('./midi-drafts.cjs').createMidiDrafts({assets});
   async function checkDrafts(track,input){
     const list=await drafts.list(track);

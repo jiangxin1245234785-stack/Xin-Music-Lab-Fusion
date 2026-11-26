@@ -65,6 +65,8 @@
       || derived?.midi?.strings?.ok || derived?.midi?.winds?.ok || derived?.merged?.ok;
     return split ? 'split' : 'direct';
   }
+  // Sections and chords use the summary's complete flag both before and during a run.
+  const hasAnalysis = (summary, trackId, engine) => summary?.[trackId]?.[engine]?.status === 'complete';
 
   // env: {analysis:[{id,available}], separation:[{id,available}], refinement:[{id,available}], midi:[{id,stems,available}],
   //       derived: the track's readDerived answer (may be null), has: engine -> boolean (a section / chord result exists)}
@@ -88,6 +90,7 @@
     const stems = add({id: 'stems', kind: 'stems', engine: choices.separation});
     const stemsKept = Boolean(derived?.stemVariants?.[choices.separation]?.ok);
     if (!usable(env.separation, choices.separation) && !stemsKept) off(stems, 'engine-missing');
+    add({id: 'mood', kind: 'mood', engine: 'mood-curve'});
     const noStems = stems.state === 'unavailable';
 
     const stringsSource = Boolean(derived?.strings?.active);
@@ -113,12 +116,16 @@
       if ((stem === 'strings' || stem === 'winds') && !split) continue;
       if (stem === 'strings' && !choices.refine && !stringsSource) continue;
       if (stem === 'winds' && ((!choices.refine && !windsSource) || noWinds)) continue;
-      if (stem === 'vocals' && !choices.vocals) continue;
+      // The existing shared MIDI batch still asks for vocals when the one-click switch is off.
+      // Expose that request without changing its exclusions or running a second batch.
+      const batchVocals = stem === 'vocals' && !choices.vocals;
+      if (batchVocals && !find(env.midi,'vocals-rmvpe')) continue;
       const engine = stem === 'vocals' ? 'vocals-rmvpe' : picks[stem];
-      const step = add({id: 'midi:' + stem, kind: 'midi', stem, engine});
+      const step = add({id: 'midi:' + stem, kind: 'midi', stem, engine, ...(batchVocals ? {batchVocals:true} : {})});
       const model = find(env.midi, engine);
       const kept = derived?.variants?.[stem]?.[engine];
       if (noStems) off(step, 'needs-stems');
+      else if (batchVocals) continue;
       else if (!model) off(step, 'engine-missing');
       else if (!model.available && !(kept?.ok && kept.matches !== false)) off(step, 'engine-missing');
       else if (stem === 'strings' && !stringsSource && refine?.state === 'unavailable') off(step, 'needs-strings');
@@ -153,7 +160,7 @@
         if (response?.ok) set(step, 'done'); else set(step, 'failed', response ? why(response) : {code: 'busy'});
         continue;
       }
-      if (step.kind === 'stems' || step.kind === 'refine') {
+      if (step.kind === 'stems' || step.kind === 'mood' || step.kind === 'refine') {
         set(step, 'running');
         let response; try { response = await ops[step.kind](step); } catch (error) { response = {ok: false, error: 'request-failed', detail: String(error)}; }
         if (isCancel(response)) { skipRest('cancelled'); return {ok: false, cancelled: true, steps}; }
@@ -163,7 +170,9 @@
           continue;
         }
         set(step, 'failed', why(response));
-        if (step.kind === 'stems') { skipRest('needs-stems'); return {ok: false, cancelled: false, steps}; }
+        if (step.kind === 'stems') {
+          for (const dependent of steps) if (dependent.state === 'pending' && dependent.kind !== 'mood') set(dependent,'skipped',{code:'needs-stems'});
+        }
         continue;
       }
       if ((step.kind === 'midi' || step.kind === 'merge') && !midiDone) {
@@ -174,13 +183,23 @@
         let outcome;
         try {
           outcome = await ops.midi({exclude,
-            onStep: batchStep => { const row = rowOf(batchStep); if (row) set(row, 'running'); },
+            onStep: batchStep => {
+              let row = rowOf(batchStep);
+              if (!row && batchStep.kind === 'midi') {
+                row = {id:'midi:'+batchStep.stem, kind:'midi', stem:batchStep.stem, engine:batchStep.engine};
+                const merge = rows.find(item=>item.kind==='merge');
+                rows.splice(rows.indexOf(merge),0,row);
+                steps.splice(steps.indexOf(merge),0,row);
+              }
+              if (row) set(row,'running');
+            },
             onResult: (batchStep, response) => {
               const row = rowOf(batchStep); if (!row) return;
               if (!response?.ok) { if (!isCancel(response)) set(row, 'failed', why(response)); return; }
               if (response.skipped && response.why) set(row, 'failed', {code: 'failed', text: lastLine(response.why)});
               else if (response.skipped) set(row, 'done', {code: 'merge-skipped'});
-              else if (response.noSinging) set(row, 'done', {code: 'no-singing'});
+              else if (response.noSinging) set(row, response.cached ? 'existing' : 'done', {code: 'no-singing'});
+              else if (response.upgraded) set(row,'upgraded');
               else set(row, response.cached ? 'existing' : 'done');
             }});
         } catch (error) { outcome = {ok: false, error: 'request-failed', detail: String(error)}; }
@@ -198,7 +217,7 @@
     return {ok: !steps.some(step => step.state === 'failed'), cancelled: false, steps};
   }
 
-  const api = {STORAGE_KEY, PRESETS, OPTIONS, KEYS, OTHER_ROUTES, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, otherRouteFor, plan, run};
+  const api = {STORAGE_KEY, PRESETS, OPTIONS, KEYS, OTHER_ROUTES, MEASURED, presetOf, normalize, load, save, applyPreset, choose, midiPicks, otherRouteFor, hasAnalysis, plan, run};
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.XldOneClickPlan = api;
 })(globalThis);

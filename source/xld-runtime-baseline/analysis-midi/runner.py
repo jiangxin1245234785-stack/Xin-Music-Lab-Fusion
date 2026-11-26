@@ -271,6 +271,15 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
         backend['programMode'] = ('source-string-timbre; native groups retained' if stem == 'strings'
                                   else 'native wind programs; one track per instrument' if stem == 'winds'
                                   else 'source-guitar-timbre; native groups combined, all notes retained')
+    return finish_midi(midi, backend, input_path, audio_path, output_path, track_id, stem, source_run_id,
+                       run_id, engine, duration, source_stat, started, notify, string_target, timing)
+
+
+def finish_midi(midi, backend, input_path, audio_path, output_path, track_id, stem, source_run_id,
+                run_id, engine, duration, source_stat, started, notify, string_target=None, timing=None):
+    # Both fresh inference and a verified pre-onetrack1 run use exactly this writer and postprocessing order.
+    profile = PROFILES[engine]
+    options = profile['options']
     if profile['backend'] == 'muscriptor' and stem in ('bass', 'piano', 'guitar', 'other') and 'oneTrack' in options:
         backend.update(merge_muscriptor_tracks(midi, options['oneTrack']['dedupeMs'],
                                                track_name='other' if stem == 'other' else None))
@@ -335,10 +344,43 @@ def _transcribe(input_path: Path, audio_path: Path, output_path: Path, track_id:
     return result
 
 
+def upgrade_onetrack(args):
+    from onetrack_upgrade import restore
+    started = time.monotonic()
+    source = args.input.resolve()
+    source_stat = source.stat()
+    record_path = args.check_onetrack or args.upgrade_onetrack
+    midi, record = restore(record_path, args.track_directory, args.engine, PROFILES[args.engine],
+                           args.track_id, args.stem, args.source_run_id, source, source_stat, args.upgrade_from_run_id)
+    if args.check_onetrack:
+        print(json.dumps({'ok': True, 'runId': record['runId']}))
+        return
+    run_id = str(uuid.UUID(args.run_id))
+    if run_id == record['runId']:
+        raise ValueError('midi-upgrade-run-id')
+    if args.output.exists():
+        raise ValueError('midi-upgrade-output-exists')
+    emit('正在升级旧谱（并轨与力度）', .5, 'postprocess')
+    backend = dict(record['backend'])
+    backend.update(device='cpu', peakGpuMiB=None, transcribeSeconds=0,
+                   velocityMode=backend['velocityReplaced'],
+                   oneTrackUpgrade={'fromRunId': record['runId'], 'fromModel': record['model'],
+                                    'fromDigests': record['digests'], 'fromDevice': backend.get('device')})
+    # XLD compares the exact path string from its stem manifest. Windows realpath can change its case.
+    # Read audio through the resolved path and retain the caller's verified spelling in the new record.
+    return finish_midi(midi, backend, args.input.absolute(), source, args.output, args.track_id, args.stem, args.source_run_id,
+                       run_id, args.engine, record['duration'], source_stat, started, emit)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engines", action="store_true")
     parser.add_argument("--engine", choices=PROFILES, default="basic-pitch")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check-onetrack", type=Path, help="Check a pre-onetrack1 run without writing")
+    mode.add_argument("--upgrade-onetrack", type=Path, help="Postprocess a verified pre-onetrack1 run")
+    parser.add_argument("--track-directory", type=Path, help="Track directory containing the old run or pointer")
+    parser.add_argument("--upgrade-from-run-id", help="Expected old run ID when reading a movable pointer")
     parser.add_argument("--input", type=Path, required=False)
     parser.add_argument("--output", type=Path, required=False)
     parser.add_argument("--track-id", required=False)
@@ -354,13 +396,22 @@ def main():
     if args.engines:
         print(json.dumps(available_engines()))
         return 0
-    for name in ['input', 'output', 'track_id', 'stem', 'source_run_id', 'run_id']:
+    required = ['input', 'track_id', 'stem', 'source_run_id']
+    if not args.check_onetrack:
+        required += ['output', 'run_id']
+    for name in required:
         if getattr(args, name) is None:
             parser.error('--' + name.replace('_', '-') + ' is required')
     try:
+        if args.check_onetrack or args.upgrade_onetrack:
+            upgrade_onetrack(args)
+            return 0
         transcribe(args.input, args.output, args.track_id, args.stem, args.source_run_id, args.run_id, engine=args.engine, string_target=args.string_target, keep_kit=args.keep_kit, beat_source=args.beat_source,
                    score_vocals=args.score_vocals, score_vocals_sha256=args.score_vocals_sha256)
     except Exception as error:
+        if args.check_onetrack:
+            print(json.dumps({'ok': False, 'error': str(error)}, ensure_ascii=False))
+            return 1
         emit(str(error), phase="failed")
         print(str(error), file=sys.stderr)
         return 1

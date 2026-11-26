@@ -71,6 +71,10 @@ const sha256 = data => require('node:crypto').createHash('sha256').update(data).
 const canonical = value => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const engineOf = result => result?.engine || profileForResult(result)?.id || null;
+// A caller has already verified the stored record against its source using midi.read().
+const midiCacheHit = (cached, vocalLine = null) => Boolean(cached?.ok && cached.matches &&
+  (!vocalLine || (vocalLine.sung && vocalLine.sha256 && cached.backend?.scoreVocals?.sha256 === vocalLine.sha256)));
+const keepsManualRevision = (active, cached) => Boolean(active?.ok && active.engine === MANUAL_ENGINE && active.runId !== cached.runId);
 // Model-version identity derived from what is already recorded: engine, model string, checkpoint digest and
 // the verbatim inference options. Equal identity means "same version" for cache reuse and cleanup.
 const identityKey = ({engine, model, checkpointSha256, options}) =>
@@ -271,7 +275,7 @@ function createMidiAssets({ analysisDirectory, readStems, readStringSource, read
     for(const {file, pointer} of candidates) {
       const raw = await readJson(file);
       if(raw?.kind !== 'midi' || !validId(raw.runId) || (engine && engineOf(raw) !== engine)) continue;
-      const entry = runs.get(raw.runId) || {raw, pointed: []};
+      const entry = runs.get(raw.runId) || {raw, recordFile:file, pointed: []};
       if(pointer) entry.pointed.push(pointer);
       runs.set(raw.runId, entry);
     }
@@ -482,4 +486,4 @@ function createDerivedAssets({analysisRoot}) {
  return {stringSources,windSources,readOtherRoute,setOtherRoute,readMidiDirectory,directory:analysisDirectory,validateStems,readStems,stemsManifestPath,activateStems,readMidi:midi.read,listMidiRuns:midi.listRuns,midi};
 }
 
-module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, MANUAL, MANUAL_ENGINE, profileFor, profileForResult, defaultEngine, identityOf, engineOf, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};
+module.exports = {writeAtomic, createDerivedAssets, createMidiAssets, trackDirectory, derivedDirectory, safeName, ENGINE, MODEL, STEMS, OPTIONS, PROFILES, ENGINE_IDS, MANUAL, MANUAL_ENGINE, profileFor, profileForResult, defaultEngine, identityOf, engineOf, midiCacheHit, keepsManualRevision, SEPARATION_PROFILES, SEPARATION_ENGINE_IDS, separationProfile, separationForResult, defaultSeparation};

@@ -586,6 +586,11 @@
 .oneclick-step-state { color:var(--muted); }
 .oneclick-step-note { grid-column:1 / -1; color:var(--muted); overflow-wrap:anywhere; }
 .oneclick-step.ready .oneclick-step-state { color:var(--mint); }
+.oneclick-counts { font-size:calc(12px * var(--font-scale)); }
+.oneclick-mood-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:6px; }
+.oneclick-mood-actions button { font-size:inherit; padding:2px 6px; }
+.oneclick-step.upgrade .oneclick-step-state { color:var(--mint); }
+.oneclick-step.rerun .oneclick-step-state { color:var(--amber,#e9bb73); }
 .oneclick-step.running { outline:1px solid var(--mint); }
 .oneclick-step.running .oneclick-step-state { color:var(--text); }
 .oneclick-step.failed .oneclick-step-state, .oneclick-step.failed .oneclick-step-note { color:#ff9cab; }
