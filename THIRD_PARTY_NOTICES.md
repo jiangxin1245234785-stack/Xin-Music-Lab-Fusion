@@ -1,6 +1,6 @@
 # Third-party notices / 第三方说明
 
-Updated / 更新：2026-09-25
+Updated / 更新：2026-11-22
 
 ## Scope / 许可范围
 
@@ -13,6 +13,7 @@ The root [MIT license](LICENSE) applies to original Xin Music Lab code and docum
 | Component / 组件 | Location / 位置 | Notice / 说明 |
 |---|---|---|
 | Butterchurn 2.6.7; Butterchurn Presets 2.4.7 | `source/fusion-runtime-baseline/vendor/` | MIT; retain both [license notices](source/fusion-runtime-baseline/THIRD_PARTY_NOTICES.md) / 保留两份上游声明 |
+| Raindrop FX 1.0.8 and bundled dependencies | `source/scoreview/assets/terrain-weather/vendor/raindrop-fx/` | MIT and Apache-2.0; [pinned provenance and full license texts](source/scoreview/assets/terrain-weather/vendor/raindrop-fx/PROVENANCE.md) / 固定来源与完整许可 |
 | Overlap-add helper adapted from OpenMIRLab | `source/xld-runtime-baseline/analysis-separation/` | MIT; [retained license](source/xld-runtime-baseline/analysis-separation/THIRD_PARTY_LICENSES.txt) / 保留原署名 |
 | AudioSep inference classes | `source/xld-runtime-baseline/analysis-refine/vendor/models/` | MIT; [retained license](source/xld-runtime-baseline/analysis-refine/vendor/LICENSE), [upstream](https://github.com/Audio-AGI/AudioSep) / 此处仅说明源码，不代表权重授权 |
 | Historical ADTOF PyTorch port | `source/xld-runtime-baseline/analysis-midi/vendor/adtof_pytorch/` | **Redistribution clearance unverified.** The pinned snapshot lacks a license file; see [provenance](source/xld-runtime-baseline/analysis-midi/vendor/PROVENANCE.md). It is excluded from the interface-only package by the vendor filter. / **再分发许可尚未核实**，不能将这部分套用本项目 MIT |

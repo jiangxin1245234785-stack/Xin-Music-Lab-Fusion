@@ -1,6 +1,8 @@
 # Claude 接手入口：XML / XLD
 
-**2026-11-22 · 当前日常入口为 `0.5.0-dev.midiin.4`，上一版为 `0.5.0-dev.other.5`。** 根目录的 `启动XML.cmd` 和 `启动XLD.cmd` 共用此入口。XML 已包含外部 MIDI 导入。「谱面设置 → 导出视频 → 自动 → 4K（2160p）」以 3840 × 2160、30 fps 导出，视频目标 32 Mbps，AAC 双声道 192 kbps。4K 雷达在目标像素尺寸重画，MP4 导出时分段写入并回填开头的索引。参见[使用说明](docs/XML_EXTERNAL_MIDI.md)。
+**2026-11-23 · 当前日常入口为 `0.5.0-dev.terrain.13`，上一版为 `0.5.0-dev.terrain.12`。** 根目录的 `启动XML.cmd` 和 `启动XLD.cmd` 共用此入口及原有正式设置。车窗地貌沿用三档画质，宽屏自动档缩小播放画布，高画质保留原生画布，省电档进一步减少像素。渲染改动集中在 `source/scoreview/score-presentation.js`、`score-terrain.js` 和 `score-terrain-rain.js`。[正式发布与回退](work/terrain-performance-20261122/HANDOFF.md)
+
+上一轮山体、站牌、风车和窗帘验收记录在 `work/terrain-motion-20261122/`。XML 已包含外部 MIDI 导入。「谱面设置 → 导出视频 → 自动 → 4K（2160p）」以 3840 × 2160、30 fps 导出，视频目标 32 Mbps，AAC 双声道 192 kbps。4K 雷达在目标像素尺寸重画，MP4 导出时分段写入并回填开头的索引。[外部 MIDI 与视频使用说明](docs/XML_EXTERNAL_MIDI.md)
 
 **2026-11-22 · XML 外部 MIDI 试用版 `0.5.0-dev.midiin.2`。** 独立入口在 `releases/0.5.0-dev.midiin.2/XML.exe`，日常入口仍是 other.5。使用说明见[外部 MIDI](docs/XML_EXTERNAL_MIDI.md)。主线 XML 的 `desktop/external-midi.cjs` 负责解析、声部与按曲保存，`external-midi-controls.js` 负责谱面设置。播放和视频导出共用 `scoreModelFor`，导入记录优先，恢复后回到曲库谱面。下一次打包应带上两个新文件及共享 MIDI 读取器。回归命令为在 `source/fusion-runtime-baseline` 内运行 `node --test tests/external-midi.cjs`。
 

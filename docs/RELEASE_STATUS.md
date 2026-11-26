@@ -1,3 +1,19 @@
+# 2026-11-26 · 日常入口切到 terrain.35
+
+根目录 XML 和 XLD 的日常版本为 `0.5.0-dev.terrain.35`，回退入口为 `0.5.0-dev.terrain.22`（`releases/current-release.cmd`、`previous-release.cmd`）。相对 `.22`，这一版有：车厢改造（窗洞纵深、窗帘、顶屏三行后改为分栏信息屏、线路图站名缩写、窗台便携收音机）；XLD 的情绪曲线（`mood-curve.json`，公式 `mood-direct-1`、尺子 `mood-scale-1`）；车窗地貌的天气强弱按情绪曲线走，可切回原来的办法；XML 的情绪曲线调试台（快捷键 M）和谱面设置收纳；XLD 一键分析列表在运行前显示已有 / 待运行 / 仅需升级 / 需重转，旧的 MuScriptor bass / piano / guitar 谱只补后处理、不重转。`.31`–`.34` 与 `mood.1` 是中间试版，本机已删除。[决定与用户原话](../work/terrain-20261119/SETTING.md) · [车厢与调试台交接](../work/terrain-cabin-20261125/HANDOFF.md) · [情绪曲线交接](../work/mood-curve-20261125/HANDOFF.md)
+
+# 2026-11-25 · 车窗地貌暴雨与风雪试版
+
+`0.5.0-dev.terrain.26` 可从版本目录的 XML.exe 单独启动。雪片在各自深度独立飘动，强风雪短暂遮去远山，极端雨势在道床上激起水雾。[本机试版与同曲动态对照](../work/terrain-storm-20261125/HANDOFF.md)
+
+## 2026-11-25 · 车窗地貌雨雪山景与天气强度试版
+
+`0.5.0-dev.terrain.25` 可从版本目录的 XML.exe 单独启动。雨雪山体沿实际山脊生成坡面，雨、雪和飞沙随曲目连续增强。日常启动器指向 `.22`。[本机试版与同曲对照](../work/terrain-intensity-20261125/HANDOFF.md)
+
+## 2026-11-24 · 车窗地貌四天气美术版
+
+四天气美术候选版 `0.5.0-dev.terrain.23` 可从该版本目录的 XML.exe 打开。根目录 XML 和 XLD 的日常版本为 `0.5.0-dev.terrain.22`，回退入口为 `0.5.0-dev.terrain.13`。[美术版与对照图](../work/terrain-art-20261124/HANDOFF.md) · [日常版发布记录](../work/terrain-polish-20261123/HANDOFF.md)
+
 # 2026-09-26 · 0.5.0-preview.setup.1
 
 新版试用包已发布：最新工作台、首次配置、模型导入检查与 MIDI 基础环境安装。附带匹配的过滤后源码 ZIP 和 SHA-256。旧 ui.1 资产保留。仓库可见性不变。

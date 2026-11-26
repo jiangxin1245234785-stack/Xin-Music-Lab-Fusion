@@ -11,6 +11,7 @@ Xin Music Lab 原创代码采用 MIT，见 PROJECT-LICENSE.txt。第三方组件
 - Chinese telegraph code table (score view, radar look): generated from the Unicode Unihan database (Unihan_OtherMappings.txt, kMainlandTelegraph / kTaiwanTelegraph); Unicode License v3 notice in resources/apps/scoreview/score-telegraph.js.
 - Fonts of the score view's radar look: National Park SemiBold (The National Park Project Authors, SIL Open Font License 1.1), Barlow Condensed Medium and SemiBold (The Barlow Project Authors, SIL Open Font License 1.1; one license file covers both), Courier Prime Regular (The Courier Prime Project Authors, SIL Open Font License 1.1) and Permanent Marker (Font Diner, Apache License 2.0); the font files, unmodified, and their full license texts are in resources/apps/scoreview/assets/fonts/.
 - Materials of the score view's radar look (panel plates, dial paper, paper strip, screws, glass): made for this project; resources/apps/scoreview/assets/radar/.
+- Raindrop FX 1.0.8 and bundled dependencies: MIT and Apache-2.0. Full license texts and pinned provenance are in [the vendored distribution](resources/apps/scoreview/assets/terrain-weather/vendor/raindrop-fx/PROVENANCE.md).
 
 AI vendor source trees, including the historical ADTOF port and BTC source copy, are excluded from this interface-only package. Some optional adapters therefore require independently installed upstream source as well as weights and Python dependencies. Availability is not implied by a model's appearance in the menu.
 

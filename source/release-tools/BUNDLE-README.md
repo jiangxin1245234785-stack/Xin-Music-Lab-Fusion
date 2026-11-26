@@ -1,5 +1,7 @@
 # Xin Music · {{VERSION}}
 
+XML 的「谱面设置 → 谱面样式 → 车窗地貌」提供「天气 → 阴到雨」。雨势随曲内能量、活跃声部与窗外雨区变化。「玻璃水珠」可单独关闭；窗外雨幕与玻璃水雾仍可见。天气默认晴天，切换后自动记住选项。
+
 本版新增鼓 MIDI 备选引擎 “ADTOF · DrumSep 7 类”：鼓点仍由 ADTOF 检测，MDX23C DrumSep 把鼓轨分离为 kick / snare / toms / hh / ride / crash 六轨，用于把镲片拆成 crash 与 ride、并按各击在自己 stem 上的能量给出本曲内的相对力度（32–127）。ADTOF 保持默认，MuScriptor 鼓备选不变；分离权重（CC BY-NC-ND）在 runtime/addons/drumsep-v1，不随包。相对力度不是录音真实力度。
 
 上一版（chords.2）把和弦主引擎从 BTC 换成 ChordMini · BTC-CL（同架构、同 170 类词表的蒸馏版），依据是四首整曲（MEGURI、toe、BCNR Nancy、七里香）的对照页与用户拍板：XLD 专辑批量与和弦页默认选中 ChordMini（不可用时退回 BTC），XML 加权共识给 ChordMini 最高先验（1.5，BTC 1.35，其余 1）。BTC 与 consonance-ACE · Conformer（根音 / 低音 / 音级分解输出，保留转位）保留为备选，已有 BTC 结果继续可读、可在 XML 单选。和弦 runner 与 BTC / ACE 代码随程序发布，权重留在 runtime（BTC 在 runtime/0.5.0，ChordMini 与 ACE 在 runtime/addons/chords-v1）。

@@ -41,7 +41,14 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
   // work/terrain-20261119/batch7/convert-assets.cjs).
   ...(fs.existsSync(path.join(sourceRoot,'scoreview','score-terrain-assets.js'))?require(path.join(sourceRoot,'scoreview','score-terrain-assets.js')).TABLE.map(t=>'assets/terrain/'+t.file):[]),
   'export/export-main.cjs','export/export-page.html','export/export-preload.cjs','export/export-render.js','export/mp4-writer.js'];
- if(fs.existsSync(path.join(sourceRoot,'scoreview')))for(const file of scoreFiles){const to=path.join(apps,'scoreview',file);fs.mkdirSync(path.dirname(to),{recursive:true});fs.copyFileSync(path.join(sourceRoot,'scoreview',file),to);}
+ const scoreSource=path.join(sourceRoot,'scoreview'),scoreDestination=path.join(apps,'scoreview');
+ if(fs.existsSync(scoreSource)){
+  for(const file of [...scoreFiles,'score-terrain-weather.js','score-terrain-rain.js']){
+   const to=path.join(scoreDestination,file);fs.mkdirSync(path.dirname(to),{recursive:true});
+   fs.copyFileSync(path.join(scoreSource,file),to);
+  }
+  fs.cpSync(path.join(scoreSource,'assets/terrain-weather'),path.join(scoreDestination,'assets/terrain-weather'),{recursive:true});
+ }
  const appRoot=path.join(output,'resources/app');fs.mkdirSync(appRoot,{recursive:true});
  fs.copyFileSync(path.join(__dirname,'bootstrap.cjs'),path.join(appRoot,'bootstrap.cjs'));
  fs.copyFileSync(path.join(__dirname,'release-shell.cjs'),path.join(appRoot,'release-shell.cjs'));
@@ -64,6 +71,10 @@ function build({sourceRoot,electronRoot,output,configFile,rcedit=process.env.XIN
  fs.writeFileSync(path.join(output,'使用说明.html'),fs.readFileSync(path.join(__dirname,interfaceOnly?'INTERFACE-GUIDE.html':'USER-GUIDE.html'),'utf8').replaceAll('{{VERSION}}',version));
  if(interfaceOnly)fs.copyFileSync(path.join(__dirname,'MODEL-SETUP.md'),path.join(output,'MODEL-SETUP.md'));
  if(interfaceOnly){fs.copyFileSync(path.resolve(sourceRoot,'../LICENSE'),path.join(output,'PROJECT-LICENSE.txt'));fs.copyFileSync(path.join(__dirname,'DISTRIBUTION-NOTICES.md'),path.join(output,'THIRD_PARTY_NOTICES.md'));}
+ else if(fs.existsSync(scoreSource)){
+  fs.copyFileSync(path.resolve(sourceRoot,'../LICENSE'),path.join(output,'PROJECT-LICENSE.txt'));
+  fs.copyFileSync(path.join(__dirname,'LOCAL-NOTICES.md'),path.join(output,'THIRD_PARTY_NOTICES.md'));
+ }
  // Seed before the manifest is scanned, so a development build can never rely on a manual copy.
  if(development)fs.writeFileSync(path.join(output,'development-settings.json'),JSON.stringify(development,null,2)+'\n');
  const files=[];function scan(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())scan(file);else files.push({path:path.relative(output,file).replaceAll('\\','/'),bytes:fs.statSync(file).size,sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')});}}
