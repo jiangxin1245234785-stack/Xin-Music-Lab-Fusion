@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 const { app, BrowserWindow, dialog, ipcMain, session, shell, nativeImage } = require('electron');
 const { readAudioTags, parseTrackNumber } = require('./audio-tags.cjs');
 const { createService: createXldAnalysisService } = require('./xld-analysis-service.cjs');
-const {readLatestTrack} = require('./refresh-track.cjs');
+const {readLatestTrack, readMoodCurve} = require('./refresh-track.cjs');
 const {writeRequest} = require('../../xld-runtime-baseline/core/open-request.cjs');
 // Scripted dialog answers for isolated acceptance runs only (XLD's hook: XLD_TEST=1 and XLD_TEST_DIALOG_ANSWERS);
 // a normal start never sets XLD_TEST, so this never installs there.
@@ -693,7 +693,14 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
     if (!track) return { ok: false, error: 'track-missing' };
     try {
       const imported = await midiImports.read(track.id);
-      if (imported) return externalMidi.build(imported,track,pathToFileURL(track.filePath).href,track.coverUrl);
+      if (imported) {
+        const built = externalMidi.build(imported, track, pathToFileURL(track.filePath).href, track.coverUrl);
+        const latest = await readLatestTrack(track, existingAnalysisRoots(), xldTimelineProvider.validateManifest);
+        const moodCurve = await readMoodCurve(track, primaryAnalysisRoot(), latest.ok ? latest.filePath : track.bridgePath);
+        if (moodCurve) built.model.moodCurve = moodCurve;
+        built.health.moodCurveAvailable = Boolean(moodCurve);
+        return built;
+      }
     } catch(error) {return {ok:false,error:'external-midi-unreadable',details:error.message};}
     const loaded = await loadFusionTrack(track.id);
     if (!loaded.ok) return loaded;
@@ -720,6 +727,9 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
         // The renderer says which language it shows (it asks again when that changes); otherwise the app's.
         lang: normalizeLocale(payload?.lang) || mainLocale.getState().locale
       });
+      const moodCurve = await readMoodCurve(track, primaryAnalysisRoot(), loaded.filePath);
+      if (moodCurve && built.model) built.model.moodCurve = moodCurve;
+      if (moodCurve && built.error === 'score-no-notes') built.standaloneMoodCurve = moodCurve;
       for(const lane of built.model?.lanes||[])if(dynamicsHealth.applied.includes(lane.group||lane.id))lane.meta={...lane.meta,velocity:'stem-energy-relative',dynamicsRunId:dynamicsHealth.runId};
       // Which engine each lane's notes come from, in the words XLD shows (desktop/score-layers-state.cjs).
       const lang = normalizeLocale(payload?.lang) || mainLocale.getState().locale;
@@ -734,7 +744,7 @@ if (gotSingleInstanceLock) app.whenReady().then(async () => {
       // The vocal line too (B7): XML prepares it after the layers when the song has a vocal stem and no current line.
       const vocalsNow = await layersStateModule.vocalsState(loaded.filePath ? path.dirname(loaded.filePath) : null);
       const vocalsHealth = {state: vocalsNow.state, owed: layersStateModule.vocalsOwed(vocalsNow, stemsKind)};
-      return {...built,health:{...built.health,layers:layersHealth,vocals:vocalsHealth,dynamics:dynamicsHealth,manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
+      return {...built,health:{...built.health,layers:layersHealth,vocals:vocalsHealth,dynamics:dynamicsHealth,moodCurveAvailable:Boolean(moodCurve),manualNotes:{ok:!notesError,count:manualCaptions.length,why:notesError}}};
     } catch (error) {
       return { ok: false, error: 'score-adapter-failed', details: String(error?.message || error) };
     }

@@ -161,8 +161,31 @@
 .xl-settings-link:hover, .xl-settings-link:focus-visible { background: rgba(255,255,255,.06); }
 .xl-settings-chevron { color: var(--xl-dim); font-size: 1.45em; line-height: 1; }
 .xl-settings .xl-settings-back { min-width: calc(29px * var(--ui-scale)); padding: 0; font-size: calc(21px * var(--ui-scale)); line-height: 1; }
-#scoreLightGroup > .xl-more { margin-inline-start: .45em; padding-inline-start: .7em; border-inline-start: 1px solid var(--xl-line); }
-#scoreLightGroup > .xl-more > label:first-of-type { margin-top: .3em; }
+#xlScoreSettings { gap: calc(6px * var(--ui-scale)); }
+#xlScoreSettings [hidden] { display: none !important; }
+.score-settings-section { flex: none; }
+.score-settings-section > h3 { margin: 0; font: inherit; }
+.xl-settings .score-group-toggle {
+  display: flex; align-items: center; gap: .55em; width: 100%; min-height: calc(36px * var(--ui-scale));
+  padding: .55em .7em; border: 1px solid var(--xl-line); border-radius: calc(7px * var(--ui-scale));
+  background: rgba(255,255,255,.045); color: var(--xl-text); text-align: start; font: inherit; cursor: pointer;
+}
+.score-group-toggle::before {
+  content: ''; flex: none; width: .32em; height: .32em; border-block-end: 1.5px solid currentColor;
+  border-inline-end: 1.5px solid currentColor; transform: rotate(-45deg); color: var(--xl-dim);
+}
+.score-group-toggle[aria-expanded="true"]::before { transform: rotate(45deg); color: var(--xl-accent); }
+.xl-settings .score-group-toggle[aria-expanded="true"] { border-color: color-mix(in srgb, var(--xl-accent) 45%, transparent); }
+.xl-settings .score-group-toggle:focus-visible { outline: 2px solid var(--xl-accent); outline-offset: -2px; }
+.score-group-toggle > span { flex: none; font-weight: 600; }
+.score-group-hint { margin-inline-start: auto; min-width: 0; color: var(--xl-dim); font-size: .87em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-group-toggle[aria-expanded="true"] .score-group-hint { display: none; }
+.score-group-fields, #scoreTerrainOptions, #scoreTerrainGlassOptions, #scoreRadarOptions {
+  display: grid; gap: calc(8px * var(--ui-scale));
+}
+.score-settings-section .score-group-fields { margin: .35em 0 .35em .7em; padding: .4em .15em .4em .75em; border-inline-start: 2px solid var(--xl-line); }
+#scoreQuickGroup { margin-bottom: .3em; }
+#scoreQuickGroup .score-export > .xl-row:last-child:has(> button[hidden] + button[hidden]) { display: none; }
 #xlScoreSettings .xl-row:has(> .intensity) > .xl-row__label { flex-basis: 6.5em; }
 #xlScoreSettings .intensity output { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* The nested starry page uses longer labels and three different value units. Keep

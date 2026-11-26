@@ -39,7 +39,8 @@ assert.ok(zh && en, 'catalogs load');
   assert.match(scene, /const group = root\.document\.getElementById\('scoreTimingGroup'\);/);
   assert.match(scene, /group\.appendChild\(row\);/);
   assert.ok(!scene.includes('.xl-group + .xl-group'), '谱面对齐不再落到第二组');
-  assert.ok(html.indexOf('data-i18n="score.options"') < html.indexOf('class="score-export"'));
+  const quick = html.slice(html.indexOf('id="scoreQuickGroup"')).split('</section>')[0];
+  assert.ok(quick.includes('class="score-export"'));
   // Keys, defaults and behaviour unchanged.
   assert.match(html, /<select id="scoreEffects"><option value="clear" data-i18n="score\.fxClear" selected>/);
   done.push('「特效」不再重名：谱面的叫「音符光效 / 光效跟随起伏」，FX 那层仍叫「画面特效」，键名和缺省没动');

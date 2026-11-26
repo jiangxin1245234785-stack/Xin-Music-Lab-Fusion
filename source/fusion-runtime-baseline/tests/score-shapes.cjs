@@ -126,7 +126,7 @@ async function scene() {
 
 async function meteors() {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const section = html.slice(html.indexOf('id="scoreLightGroup"')).split('</section>')[0];
+  const section = html.slice(html.indexOf('id="scoreStyleGroup"')).split('</section>')[0];
   assert.match(section, /id="scoreStarSettingsOpen"/);
   assert.doesNotMatch(html, /id="scoreMeteorMotion"/);
   const starPage=html.slice(html.indexOf('id="xlStarScoreSettings"'));

@@ -281,8 +281,8 @@ async function page() {
   const {MESSAGE_CATALOGS} = require(path.join(root, 'i18n', 'catalogs.js'));
   const tag = /<input id="scoreLyrics"[^>]*>/.exec(html)?.[0];
   assert.ok(tag && /\schecked\b/.test(tag) && /role="switch"/.test(tag), '「显示歌词」开关在，缺省开');
-  const group = html.slice(html.indexOf('data-i18n="score.options"'), html.indexOf('class="score-export"'));
-  assert.ok(group.includes('id="scoreLyrics"'), '开关在「谱面阅读」组里');
+  const group = html.slice(html.indexOf('id="scoreQuickGroup"')).split('</section>')[0];
+  assert.ok(group.includes('id="scoreLyrics"'), '开关在谱面设置第一层');
   assert.match(html, /data-i18n="score\.lyricsHint">[^<]*LRCLIB[^<]*</, '小字说明歌名和歌手会发到 LRCLIB');
   for (const key of ['score.lyrics', 'score.lyricsHint', 'score.lyricsFrom', 'score.lyricsFile'])
     assert.ok(MESSAGE_CATALOGS['zh-CN'][key] && MESSAGE_CATALOGS['en-US'][key], key);
@@ -299,7 +299,7 @@ async function page() {
   assert.match(css, /\.score-lyrics__now \{ font-size: calc\(14px \* var\(--ui-scale, 1\)\);/, '字号跟着界面缩放');
   // The core is not touched for this: score-scene only lends its view.
   assert.match(read('score-scene.js'), /viewHandle: \(\) => \(view && status === 'ready' \? view : null\),/);
-  done.push('设置里「显示歌词」缺省开、在谱面阅读组、小字写明发到 LRCLIB；页面只交歌曲 id，发出去的名字由主进程从曲库取；字没有底板和描边，跟着 140% 缩放');
+  done.push('设置第一层「显示歌词」缺省开，小字写明发到 LRCLIB；页面只交歌曲 id，发出去的名字由主进程从曲库取；字没有底板和描边，跟着 140% 缩放');
 })();
 
 let clock = 0; void clock;

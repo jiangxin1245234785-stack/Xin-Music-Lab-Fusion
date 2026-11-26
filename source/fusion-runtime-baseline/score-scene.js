@@ -80,6 +80,7 @@
     };
 
     let view = null, clock = clocks.create(audio, {offset: 0}), shownModel = null;
+    let inspector = null, standaloneMoodCurve = null;
     const titleButton = root.document.getElementById('scoreTitlePlate'), titleCard = root.document.getElementById('scoreTitleCard');
     const fullTitle = root.document.getElementById('scoreFullTitle'), fullArtist = root.document.getElementById('scoreFullArtist');
     let platePlacement = '', dismissingTitle = false;
@@ -207,18 +208,36 @@
     // score-led-words and the compact lyric line (sidebar collapsed or H) does not lay words over the scenery.
     const TERRAIN_KEY = 'xin-score-terrain-v1', terrainBox = root.document.getElementById('scoreTerrainOptions');
     const roadsideInput = root.document.getElementById('scoreTerrainRoadside');
-    const terrain = {terrainRoadside: 'all'}; // 'all' by default since batch 5; a kept choice stays
-    try { const kept = JSON.parse(root.localStorage.getItem(TERRAIN_KEY)); if (['off', 'all', 'kick-snare'].includes(kept?.terrainRoadside)) terrain.terrainRoadside = kept.terrainRoadside; } catch (_) {}
+    const weatherInput = root.document.getElementById('scoreTerrainWeather');
+    const weatherDriverInput = root.document.getElementById('scoreTerrainWeatherDriver');
+    const dropsBox = root.document.getElementById('scoreTerrainGlassOptions');
+    const dropsInput = root.document.getElementById('scoreTerrainGlassDrops');
+    const lightningInput = root.document.getElementById('scoreTerrainLightning');
+    const terrain = {terrainRoadside: 'all', terrainWeather: 'clear', terrainWeatherDriver: 'mood', terrainGlassDrops: true, terrainLightning: true};
+    const weatherChoices = ['clear', 'rain', 'snow', 'sandstorm'];
+    try {
+      const kept = JSON.parse(root.localStorage.getItem(TERRAIN_KEY));
+      if (['off', 'all', 'kick-snare'].includes(kept?.terrainRoadside)) terrain.terrainRoadside = kept.terrainRoadside;
+      if (weatherChoices.includes(kept?.terrainWeather)) terrain.terrainWeather = kept.terrainWeather;
+      if (kept?.terrainWeatherDriver === 'original') terrain.terrainWeatherDriver = 'original';
+      if (typeof kept?.terrainGlassDrops === 'boolean') terrain.terrainGlassDrops = kept.terrainGlassDrops;
+      if (typeof kept?.terrainLightning === 'boolean') terrain.terrainLightning = kept.terrainLightning;
+    } catch (_) {}
     const showTerrain = () => {
       if (terrainBox) terrainBox.hidden = scoreStyle !== 'terrain';
+      if (dropsBox) dropsBox.hidden = scoreStyle !== 'terrain' || terrain.terrainWeather !== 'rain';
       stage.classList?.toggle?.('score-led-words', scoreStyle === 'terrain');
+    };
+    const setTerrain = () => {
+      try { root.localStorage.setItem(TERRAIN_KEY, JSON.stringify(terrain)); } catch (_) {}
+      view?.setOptions({...terrain});
+      inspector?.refresh();
     };
     if (roadsideInput) {
       roadsideInput.value = terrain.terrainRoadside;
       roadsideInput.addEventListener('change', () => {
         if (['off', 'all', 'kick-snare'].includes(roadsideInput.value)) terrain.terrainRoadside = roadsideInput.value;
-        try { root.localStorage.setItem(TERRAIN_KEY, JSON.stringify(terrain)); } catch (_) {}
-        view?.setOptions({...terrain});
+        setTerrain();
       });
     }
     // The radar look reads its materials and fonts (about 5 MB) only when it is first used. Switching to it, or
@@ -237,6 +256,39 @@
       if (lookWait && root.performance.now() >= lookWait.until) lookWait = null;
       return Boolean(lookWait);
     };
+    if (weatherInput) {
+      weatherInput.value = terrain.terrainWeather;
+      weatherInput.addEventListener('change', () => {
+        if (!weatherChoices.includes(weatherInput.value) || weatherInput.value === terrain.terrainWeather) return;
+        terrain.terrainWeather = weatherInput.value;
+        showTerrain();
+        setTerrain();
+        if (terrain.terrainWeather !== 'clear') awaitLook();
+        else lookWait = null;
+      });
+    }
+    if (weatherDriverInput) {
+      weatherDriverInput.value = terrain.terrainWeatherDriver;
+      weatherDriverInput.addEventListener('change', () => {
+        if (!['mood', 'original'].includes(weatherDriverInput.value)) return;
+        terrain.terrainWeatherDriver = weatherDriverInput.value;
+        setTerrain();
+      });
+    }
+    if (dropsInput) {
+      dropsInput.checked = terrain.terrainGlassDrops;
+      dropsInput.addEventListener('change', () => {
+        terrain.terrainGlassDrops = dropsInput.checked;
+        setTerrain();
+      });
+    }
+    if (lightningInput) {
+      lightningInput.checked = terrain.terrainLightning;
+      lightningInput.addEventListener('change', () => {
+        terrain.terrainLightning = lightningInput.checked;
+        setTerrain();
+      });
+    }
     if (styleInput) {
       styleInput.value = scoreStyle;
       styleInput.addEventListener('change', () => {
@@ -247,6 +299,7 @@
         view?.setOptions({scoreStyle, ...compare?.options(trackId, scoreStyle)});
         awaitLook();
         compare?.refresh(scoreStyle);
+        inspector?.refresh();
       });
     }
     showRadar(); showTerrain();
@@ -275,6 +328,26 @@
                         cancelRunning: () => { try { if (typeof bridge.cancelAnalysis === 'function') bridge.cancelAnalysis(); } catch (_) {} }})
       : null;
     let prepPlan = 'none', preparedAt = 0, noStemsUntil = 0, lineBox = null;
+    const sectionsNotice = {seen: new Set(), until: 0}, moodNotice = {seen: new Set(), until: 0};
+    let missingSections = false, missingMoodCurve = false;
+    function terrainNotice(painting) {
+      if (scoreStyle !== 'terrain' || !trackId) return null;
+      const now = root.performance.now();
+      function showing(notice, missing) {
+        if (!missing) return false;
+        if (painting && !notice.seen.has(trackId)) {
+          notice.seen.add(trackId);
+          notice.until = now + 8000;
+        }
+        return now < notice.until;
+      }
+      const sections = showing(sectionsNotice, missingSections);
+      const mood = showing(moodNotice, missingMoodCurve && terrain.terrainWeatherDriver === 'mood');
+      if (sections && mood) return {text: say('score.noTerrainSectionsAndMood', '请在 XLD 分析段落和情绪曲线。')};
+      if (sections) return {text: say('score.noTerrainSections', '这首歌还没有段落，请去 XLD 分析段落。')};
+      if (mood) return {text: say('score.noTerrainMood', '请在 XLD 计算情绪曲线。')};
+      return null;
+    }
     // Called when the score's song is loaded and when the user switches to the score. A preparation is
     // started only while the score is on screen (Prepare.starts): a song accepted in another scene, the
     // next song playing on, the last song restored at start-up start nothing until the score is shown.
@@ -305,7 +378,7 @@
     // "XLD 正在分析 某某，等它完了再准备": another program holds the analysis lock.
     const lockedText = holder => say('score.prepLocked', '{program} 正在分析 {song}，等它完了再准备')
       .replace('{program}', (holder && holder.program) || 'XLD').replace('{song}', (holder && holder.song) || say('score.prepLockedSong', '一首歌'));
-    function prepText() {
+    function prepText(painting = false) {
       if (!trackId || status !== 'ready') return null;
       const phase = prepare ? prepare.phase(trackId) : 'idle';
       const locked = prepare && prepare.holder ? prepare.holder(trackId) : null;
@@ -317,6 +390,8 @@
       if (phase === 'retrying' || phase === 'held') return {text: say('score.prepRetrying', '这次没准备成，过一会儿再试一次…')};
       if (phase === 'failed') return {text: say('score.prepFailed', '没准备成，点这里再试'), retry: true};
       if (phase === 'done' && root.performance.now() - preparedAt < 3000) return {text: say('score.prepDone', '准备好了')};
+      const terrainStatus = terrainNotice(painting);
+      if (terrainStatus) return terrainStatus;
       if (prepPlan === 'no-stems' && root.performance.now() < noStemsUntil) {
         return {text: say('score.prepNoStems', '这首歌还没在 XLD 里分析过；分析之后，这里会有小节线和响度。')};
       }
@@ -443,7 +518,12 @@
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.font = '500 13px system-ui, "Segoe UI", "Microsoft YaHei", sans-serif';
       const wide = context.measureText(text).width + 28, left = (canvas.clientWidth - wide) / 2;
-      top = noticeTop(left, wide, top, 28);
+      if (scoreStyle === 'terrain') {
+        const u = Math.min(canvas.clientWidth / 1440, canvas.clientHeight / 900);
+        top = Math.max(150 * u, canvas.clientHeight - 142 * u);
+      } else {
+        top = noticeTop(left, wide, top, 28);
+      }
       context.fillStyle = 'rgba(13,16,22,.82)';
       context.fillRect(left, top, wide, 28);
       context.fillStyle = 'rgba(232,236,245,.92)';
@@ -510,13 +590,17 @@
         // The help line and the status line are never shown together: the status waits until the help
         // has gone (6 s at most), so the top of the score holds one line besides the app's own toast.
         const hinting = !view.options().presentationLayout && Boolean(hint && root.performance.now() < hint.until);
-        const prep = held || hinting || view.options().presentationLayout ? null : prepText();
+        const prep = held || hinting || view.options().presentationLayout ? null : prepText(true);
         lineBox = prep ? statusLine(prep.text, prep.retry || prep.cancelWait) : null;
         if (lineBox && prep.cancelWait) lineBox.cancelWait = true;
         if (hinting) whisper(hint.text, 10);
       }
       else if (status === 'loading') notice(say('score.loading', '正在读这首歌的谱面…'));
-      else if (status === 'empty') notice(say('score.noNotes', '这首歌还没有音符。可在谱面设置里导入 MIDI，或在 XLD 转谱。'));
+      else if (status === 'empty') {
+        notice(say('score.noNotes', '这首歌还没有音符。可在谱面设置里导入 MIDI，或在 XLD 转谱。'));
+        const terrainStatus = !held && !stage.classList.contains('is-immersive') && terrainNotice(true);
+        if (terrainStatus) statusLine(terrainStatus.text, false);
+      }
       else if (status === 'failed') notice(say('score.failed', '这首歌的谱面读不出来。'));
       else notice(say('score.idle', '选一首歌，这里显示它的谱面。'));
       frame = root.requestAnimationFrame(paint);
@@ -562,13 +646,16 @@
       hideTitlePlate();
       const ticket = ++sequence;
       const trackChanged = String(id || '') !== trackId;
+      if (trackChanged) sectionsNotice.until = moodNotice.until = 0;
       if (trackChanged) showAlbumCaption();
       trackId = String(id || '');
+      if (trackChanged) standaloneMoodCurve = null;
       if (trackChanged && prepare) prepare.forgetWaiting(trackId);
       root.dispatchEvent(new root.CustomEvent('xin-score-track',{detail:{trackId}}));
       if (trackChanged) setLoop(null);
-      if (!trackId) { status = 'idle'; health = null; compare?.refresh(scoreStyle); return false; }
+      if (!trackId) { status = 'idle'; health = null; compare?.refresh(scoreStyle); inspector?.refresh(); return false; }
       if (trackChanged || status !== 'ready') status = 'loading';
+      inspector?.refresh();
       wake();
       let result = null;
       shownLang = interfaceLang();
@@ -578,7 +665,11 @@
       root.dispatchEvent(new root.CustomEvent('xin-score-ready',{detail:{trackId,dynamics:health?.dynamics||null}}));
       if (!result || !result.ok) {
         status = result && result.error === 'score-no-notes' ? 'empty' : 'failed';
+        standaloneMoodCurve = result?.standaloneMoodCurve || null;
+        missingSections = status === 'empty' && config.hasSections?.(trackId) === false;
+        missingMoodCurve = status === 'empty' && health?.moodCurveAvailable === false;
         compare?.refresh(scoreStyle);
+        inspector?.refresh();
         return false;
       }
       // The stems without notes as a low band at the foot (work/score-dynamics-20261114/SPEC-REST.md): always on here.
@@ -597,8 +688,12 @@
       else view = (root.XinScorePresentation || core).create(canvas, result.model, () => clock.now(), options);
       awaitLook();
       shownModel = result.model;
+      standaloneMoodCurve = null;
+      missingSections = !shownModel.sections?.some(s => Number.isFinite(s?.[0] ?? s?.start));
+      missingMoodCurve = !shownModel.moodCurve;
       showCover(result.model, ticket);
       status = 'ready';
+      inspector?.refresh();
       compare?.refresh(scoreStyle);
       consider();
       offer();
@@ -611,9 +706,12 @@
       showAlbumCaption();
       sequence++;
       trackId = '';
+      sectionsNotice.until = moodNotice.until = 0;
       prepare?.forgetWaiting('');
       root.dispatchEvent(new root.CustomEvent('xin-score-track',{detail:{trackId}}));
       status = 'idle';
+      standaloneMoodCurve = null;
+      inspector?.refresh();
       health = null;
       setLoop(null);
       compare?.refresh(scoreStyle);
@@ -630,6 +728,7 @@
       const value = Math.max(-500, Math.min(500, Number(milliseconds) || 0));
       root.localStorage.setItem(LATENCY_KEY, String(value));
       if (view) view.setOptions({offsetSeconds: -value / 1000});
+      inspector?.refresh();
       return value;
     }
 
@@ -778,13 +877,30 @@
     earlier.addEventListener('click', () => { setLatency(latency() - 10); paintSync(); });
     later.addEventListener('click', () => { setLatency(latency() + 10); paintSync(); });
     const watcher = new root.MutationObserver(wake);
+    inspector = root.XinScoreMoodDebug?.attach({
+      stage, canvas, audio, held: () => held,
+      context() {
+        const track = config.currentTrack?.();
+        if (track?.id && track.id !== trackId) return {status: 'loading', title: track.title};
+        const model = status === 'ready' ? shownModel : null;
+        return {model, curve: model?.moodCurve || (status === 'empty' ? standaloneMoodCurve : null),
+          title: track?.title || model?.track?.title || '', status, scoreStyle, terrain};
+      },
+      time: () => clock.now() - latency() / 1000,
+      seek(seconds) {
+        if (!trackId || (config.currentTrack?.()?.id || trackId) !== trackId || audio.readyState < 1) return;
+        setLoop(null);
+        const target = seconds === 0 ? 0 : seconds + latency() / 1000;
+        audio.currentTime = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration : Infinity, target));
+      }
+    });
     watcher.observe(stage, {attributes: true, attributeFilter: ['data-effect', 'data-fusion-source', 'class']});
     root.addEventListener('resize', () => { measured = 0; });
     wake();
     const scoreDriver = root.SmokeResonanceFrameClock?.attachScoreDriver?.();
 
     return Object.freeze({
-      load, reset, setLatency, makeLayers: () => more.click(), hold: flag => { held = Boolean(flag); },
+      load, reset, setLatency, makeLayers: () => more.click(), hold: flag => { held = Boolean(flag); inspector?.sync(); },
       // The background queue, shared with the library drawer's "prepare the score" batch.
       prepare,
       laneTip: under => laneName(under),
@@ -798,7 +914,7 @@
                              line: hint && root.performance.now() < hint.until ? null : (prepText() || {}).text || null},
                       layers: view && status === 'ready' ? view.layers() : null,
                       frame: view && status === 'ready' ? view.lastFrame() : null}),
-      destroy: () => { hideTitlePlate(); trackId = ''; prepare?.forgetWaiting(''); if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; scoreDriver?.detach(); clock.destroy(); }
+      destroy: () => { inspector?.destroy(); hideTitlePlate(); trackId = ''; prepare?.forgetWaiting(''); if (unsubscribeLanguage) unsubscribeLanguage(); root.removeEventListener('xin-score-dynamics-change',dynamicsChanged);watcher.disconnect(); if (frame) root.cancelAnimationFrame(frame); frame = 0; scoreDriver?.detach(); clock.destroy(); }
     });
   }
 

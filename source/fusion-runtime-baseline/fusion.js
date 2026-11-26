@@ -179,7 +179,8 @@
   // The listening score (score-scene.js). It is told which track is loaded and nothing else.
   const scoreScene = window.XinScoreScene?.create({
     bridge, audio: dom.audio, stage: dom.stage, canvas: document.getElementById('scoreCanvas'),
-    activeStem: stemControls?.activeName
+    currentTrack: () => state.payload?.manifest?.track,
+    activeStem: stemControls?.activeName, hasSections: id => trackById(id)?.hasStructure
   }) || null;
   // Lyrics over the score (score-lyrics.js): asked for only while the score shows a song.
   const scoreLyrics = scoreScene && window.XinScoreLyrics?.create({

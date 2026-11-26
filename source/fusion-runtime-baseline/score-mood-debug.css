@@ -1,0 +1,90 @@
+/* The inspector is playback chrome. Only its own DOM and the live canvas take part. */
+#scoreMoodDebug {
+  --debug-amber: #ffbb50;
+  --debug-blue: #88b8ff;
+  position: absolute;
+  z-index: 8;
+  top: var(--xl-top, 0px);
+  bottom: calc(var(--xl-scenes, 0px) + var(--xl-transport, 0px));
+  right: 0;
+  width: clamp(350px, 32vw, 480px);
+  box-sizing: border-box;
+  padding: 13px 15px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: #20252b;
+  color: #edf0f2;
+  border-left: 1px solid #48515a;
+  font: 400 clamp(12px, calc(10px * var(--ui-scale, 1.4)), 17px)/1.35 system-ui, "Microsoft YaHei", sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+.score-layout-active #scoreMoodDebug { top: 0; bottom: var(--album-foot); }
+#scoreMoodDebug[hidden] { display: none; }
+#scoreCanvas.mood-debug-fitted {
+  max-width: var(--mood-fit-width);
+  max-height: var(--mood-fit-height);
+  margin-top: var(--mood-fit-inset);
+}
+.mood-debug-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.mood-debug-head h2 { margin: 0; color: #f3f2ec; font-size: 1.45em; line-height: 1.2; letter-spacing: 0; }
+#scoreMoodDebugTrack { margin: 4px 0 8px; color: #bfc7cc; overflow-wrap: anywhere; }
+#scoreMoodDebugClose {
+  flex: none; width: 2.1em; height: 2em; padding: 0; color: #d2d7db; background: #30363d;
+  border: 1px solid #4a525b; border-radius: 5px; font: inherit; font-size: 1.15em; cursor: pointer;
+}
+#scoreMoodDebugClose:hover { background: #424951; }
+#scoreMoodDebug :focus-visible { outline: 2px solid var(--debug-amber); outline-offset: 1px; }
+.mood-debug-note { margin: .5em 0; color: #c6ced2; }
+.mood-debug-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 6px; margin: 0; }
+.mood-debug-stats > div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .35em;
+  padding: 3px 6px; background: #191e23; border-radius: 3px;
+}
+.mood-debug-stats dt { color: #bdc4ca; font-size: .93em; }
+.mood-debug-stats dd { margin: 0; color: #f2f2ef; font-weight: 650; }
+#scoreMoodDebug [data-debug-value="slow"], #scoreMoodDebug .mood-legend-slow { color: var(--debug-amber); }
+#scoreMoodDebug [data-debug-value="original"], #scoreMoodDebug .mood-legend-original { color: var(--debug-blue); }
+.mood-debug-section { margin: .76em 0 0; }
+.mood-debug-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 .4em; margin: 0 0 3px; }
+.mood-debug-heading strong { font-weight: 650; }
+.mood-debug-heading small, .mood-debug-axis, .mood-debug-hint { color: #b5bec5; font-size: .87em; }
+.mood-debug-axis { display: flex; justify-content: space-between; margin-top: 1px; }
+.mood-debug-sections { position: relative; height: 1.25em; margin-top: 2px; cursor: crosshair; }
+.mood-debug-section-label {
+  position: absolute; top: 0; bottom: 0; container-type: inline-size; overflow: hidden;
+  box-sizing: border-box; border-inline-start: 1px solid #20252b; background: #39434d; color: #e0e4e8;
+}
+.mood-debug-section-label:nth-child(even) { background: #303941; }
+.mood-debug-section-label.is-current { background: #705632; color: #fff2d9; }
+.mood-debug-section-label small { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; padding-inline: 2px; font-size: .78em; }
+@container (max-width: 27px) { .mood-debug-section-label small { visibility: hidden; } }
+.mood-debug-current-section { padding-inline: .5em; color: var(--debug-amber); text-align: center; overflow-wrap: anywhere; }
+.mood-debug-chart {
+  position: relative; height: clamp(68px, 10.5vh, 106px); overflow: hidden; background: #2a3037;
+  border-radius: 2px; cursor: crosshair; touch-action: pan-y; user-select: none;
+}
+.mood-debug-chart[data-debug-plot="zoom"], .mood-debug-chart[data-debug-plot="compare"] { height: clamp(48px, 7.5vh, 80px); }
+.mood-debug-chart[data-debug-plot="lufs"], .mood-debug-chart[data-debug-plot="band28Dbfs"],
+.mood-debug-chart[data-debug-plot="logFlatness"] { height: clamp(24px, 3.8vh, 45px); }
+.mood-debug-chart > svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+.mood-debug-chart path { fill: none; vector-effect: non-scaling-stroke; }
+.mood-debug-chart .mood-line-slow { stroke: var(--debug-amber); stroke-width: 1.8; }
+.mood-debug-chart .mood-line-fast { stroke: #edf1f6; stroke-width: 1.1; opacity: .88; }
+.mood-debug-chart .mood-line-original { stroke: var(--debug-blue); stroke-width: 1.45; }
+.mood-debug-chart .mood-line-lufs { stroke: #c1a7ee; }
+.mood-debug-chart .mood-line-band28Dbfs { stroke: #7ee4c1; }
+.mood-debug-chart .mood-line-logFlatness { stroke: #e8a6a4; }
+.mood-debug-chart .mood-line-guide { stroke: #a5b6c7; opacity: .47; stroke-dasharray: 4 4; }
+.mood-debug-chart .mood-line-gate { stroke: #f0cc65; stroke-dasharray: 5 4; }
+.mood-debug-chart .mood-line-flash { stroke: #ffdf72; stroke-width: 2; }
+.mood-debug-headmark { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #fff; pointer-events: none; }
+.mood-debug-hint { margin: .48em 0 .1em; }
+.mood-debug-components { margin: .48em 0 0; }
+.mood-debug-components .mood-debug-section { margin-top: .24em; }
+.mood-debug-components .mood-debug-heading strong { font-size: .92em; font-weight: 500; }
+.mood-debug-chart .mood-band { fill: #aac3db; }
+@media (max-width: 1000px) {
+  #scoreMoodDebug { width: min(365px, calc(100% - 22px)); max-height: 87vh; box-shadow: -8px 0 26px #0006; }
+}

@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="./score-layout.css" />
     <link rel="stylesheet" href="./score-compare-controls.css" />
     <link rel="stylesheet" href="./score-theme.css" />
+    <link rel="stylesheet" href="./score-mood-debug.css" />
   </head>
   <body>
     <main class="stage" data-palette="cover" data-effect="spectrum">
@@ -105,6 +106,13 @@
       </div>
       <div id="scoreCompactLyrics" class="score-compact-lyrics" hidden><small id="scoreCompactCaption" aria-live="off" hidden></small></div>
       <div id="scoreSceneDock" class="score-dock" hidden></div>
+      <aside id="scoreMoodDebug" aria-labelledby="scoreMoodDebugTitle" hidden>
+        <header class="mood-debug-head">
+          <div><h2 id="scoreMoodDebugTitle" data-i18n="score.moodDebugTitle">情绪曲线调试台</h2><p id="scoreMoodDebugTrack"></p></div>
+          <button id="scoreMoodDebugClose" type="button" aria-label="关闭情绪曲线调试台" data-i18n-aria-label="score.moodDebugClose">×</button>
+        </header>
+        <div id="scoreMoodDebugBody"></div>
+      </aside>
 
       <aside class="fusion-panel xl-drawer" id="fusionPanel" aria-label="XLD Fusion 控制台" aria-hidden="true">
         <div class="xl-drawer__head">
@@ -260,61 +268,10 @@
           <p class="hint"><kbd>Space</kbd> 播放 / 暂停 · <kbd>H</kbd> 隐藏界面 · <kbd>D</kbd> 自动换画面 · <kbd>G</kbd> 画面特效 · <kbd>S</kbd> 保存画面</p>
         </div>
         <div id="xlScoreSettings" class="xl-settings__body" hidden>
-          <section id="scoreReadingGroup" class="xl-group">
-            <div id="externalMidiPanel">
-              <div class="xl-row"><button type="button" id="externalMidiChoose" data-i18n="midi.import" disabled>为当前曲目导入 MIDI</button><input type="file" id="externalMidiFile" accept=".mid,.midi" hidden /></div>
-              <p id="externalMidiStatus" class="hint" role="status" hidden></p>
-              <details id="externalMidiEdit" hidden><summary data-i18n="midi.settings">声部分配与同步</summary>
-                <div id="externalMidiParts"></div>
-                <label class="xl-row"><span data-i18n="midi.offset">音符偏移（毫秒，正数延后）</span><input id="externalMidiOffset" type="number" min="-60000" max="60000" step="1" value="0" /></label>
-                <label class="xl-toggle-field"><span data-i18n="midi.grid">使用 MIDI 拍号与小节</span><input id="externalMidiGrid" class="xl-switch-input" role="switch" type="checkbox" /></label>
-                <div class="xl-row"><button type="button" id="externalMidiApply" data-i18n="midi.apply">应用</button><button type="button" id="externalMidiRestore" data-i18n="midi.restore">恢复曲库谱面</button></div>
-              </details>
-            </div>
+          <section id="scoreQuickGroup" class="score-group-fields">
             <label class="xl-row"><span class="xl-row__label" data-i18n="score.style">谱面样式</span><select id="scoreStyle"><option value="starry" data-i18n="score.styleStarry">星空谱面</option><option value="plain" data-i18n="score.stylePlain">原样</option><option value="overprint" data-i18n="score.stylePrint">套色舞会</option><option value="glass" data-i18n="score.styleGlass">回波雷达</option><option value="paper" data-i18n="score.stylePaper">压纹纸</option><option value="ember" data-i18n="score.styleEmber">余烬</option><option value="water" data-i18n="score.styleWater">夜水</option><option value="mist" data-i18n="score.styleMist">骨架与声雾</option><option value="terrain" data-i18n="score.styleTerrain">车窗地貌</option><option value="flag" data-i18n="score.styleFlag">旗帜工坊</option></select></label>
-            <div id="scoreRadarOptions" hidden>
-              <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarFall">指针落下</span><select id="scoreRadarFall"><option value="0.35" data-i18n="score.radarFallSlow">慢</option><option value="0.6" data-i18n="score.radarFallMedium" selected>中</option><option value="1" data-i18n="score.radarFallFast">快</option></select></label>
-              <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarEcho">回波淡尽</span><select id="scoreRadarEcho"><option value="0.5" data-i18n="score.radarEchoHalf">半圈</option><option value="1" data-i18n="score.radarEchoTurn" selected>一圈</option></select></label>
-              <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarLead">歌词提前</span><select id="scoreRadarLead"><option value="0.2" data-i18n="score.radarLeadLittle">0.2 秒</option><option value="0.4" data-i18n="score.radarLeadMedium" selected>0.4 秒</option><option value="0.7" data-i18n="score.radarLeadMore">0.7 秒</option></select></label>
-            </div>
-            <div id="scoreTerrainOptions" hidden>
-              <label class="xl-row"><span class="xl-row__label" data-i18n="score.terrainRoadside">路边的东西</span><select id="scoreTerrainRoadside"><option value="off" data-i18n="score.terrainRoadsideOff">关</option><option value="all" data-i18n="score.terrainRoadsideAll" selected>全部</option><option value="kick-snare" data-i18n="score.terrainRoadsideKickSnare">只留底鼓和军鼓</option></select></label>
-            </div>
-            <label class="xl-toggle-field"><span><span data-i18n="score.variation">段落对照</span><small data-i18n="score.variationHint">适用于星空谱面和压纹纸。选两段，用重影看演奏变化。</small></span><input id="scoreVariationEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
-            <div id="scoreVariationDetails" class="score-compare-details" hidden>
-              <div id="scoreVariationPicker" class="score-compare-picker" hidden>
-                <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationA">A 段</span><select id="scoreVariationA"></select></label>
-                <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationB">B 段</span><select id="scoreVariationB"></select></label>
-              </div>
-              <small id="scoreVariationStatus" class="score-compare-status" role="status"></small>
-            </div>
-            <h3 data-i18n="score.options">谱面阅读</h3>
-            <label class="xl-toggle-field"><span data-i18n="score.albumLayout">专辑侧栏</span><input id="scoreAlbumLayout" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-row"><span class="xl-row__label" data-i18n="score.appearance">谱面样式</span><select id="scoreAppearance"><option value="original" data-i18n="score.appearanceOriginal">原版</option><option value="clear" data-i18n="score.appearanceClear" selected>清晰</option><option value="detail" data-i18n="score.appearanceDetail">细读</option></select></label>
-            <label class="xl-toggle-field"><span>分段小节（试用） / Local meter</span><input id="trialLocalBars" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-toggle-field"><span data-i18n="score.merge">合并同类乐器声部</span><input id="scoreMergeTimbres" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-row" data-score-styles="terrain"><span class="xl-row__label" data-i18n="score.terrainWeather">天气</span><select id="scoreTerrainWeather"><option value="clear" data-i18n="score.terrainWeatherClear" selected>晴天</option><option value="rain" data-i18n="score.terrainWeatherRain">阴到雨</option><option value="snow" data-i18n="score.terrainWeatherSnow">暴风雪</option><option value="sandstorm" data-i18n="score.terrainWeatherSandstorm">沙尘暴</option></select></label>
             <label class="xl-toggle-field"><span><span data-i18n="score.lyrics">显示歌词</span><small data-i18n="score.lyricsHint">歌名和歌手会发到 LRCLIB 去查；歌曲文件夹里有同名 .lrc 就先用它</small></span><input id="scoreLyrics" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-          </section>
-          <section id="scoreLightGroup" class="xl-group">
-            <h3 data-i18n="score.noteLights">音符与光效</h3>
-            <label class="xl-toggle-field"><span><span data-i18n="score.shapes">按乐器画音符</span><small data-i18n="score.shapesHint">弹拨的音有个头，弦乐是两头尖的梭</small></span><input id="scoreShapes" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">音符光效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
-            <label class="xl-toggle-field"><span data-i18n="score.fxFollow">光效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <button id="scoreStarSettingsOpen" class="xl-settings-link" type="button" aria-controls="xlStarScoreSettings" aria-expanded="false"><span data-i18n="score.meteorMotion">星空谱面</span><span class="xl-settings-chevron" aria-hidden="true">›</span></button>
-          </section>
-          <section id="scoreTimingGroup" class="xl-group">
-            <h3 data-i18n="score.timingGroup">准备与对齐</h3>
-            <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
-            <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
-            <div id="scoreDynamicsTools" hidden>
-              <p id="scoreDynamicsStatus" class="score-dynamics-status" role="status" aria-live="polite"></p>
-              <div class="xl-row"><button id="scoreDynamicsRun" type="button">生成力度副本</button><button id="scoreDynamicsCancel" type="button" hidden data-i18n="dynamics.cancel">取消</button></div>
-              <small class="score-dynamics-note" data-i18n="dynamics.note">根据分轨能量估计相对强弱，不代表演奏者的真实力度。</small>
-            </div>
-          </section>
-          <section id="scoreToolsGroup" class="xl-group">
-            <h3 data-i18n="score.outputGroup">字幕与导出</h3>
             <div class="score-export">
               <div class="xl-row"><button id="scoreExportOpen" type="button" data-i18n="export.open">导出视频</button></div>
               <div id="scoreExportChoices" class="score-export__choices" hidden>
@@ -333,17 +290,94 @@
               <p id="scoreExportStatus" class="score-export__status" role="status" aria-live="polite" hidden></p>
               <div class="xl-row"><button id="scoreExportCancel" type="button" hidden data-i18n="export.cancel">取消</button><button id="scoreExportReveal" type="button" hidden data-i18n="export.reveal">打开目录</button></div>
             </div>
-            <details id="scoreNotesEditor" class="xl-more">
-              <summary data-i18n="notes.title">手写听歌字幕</summary>
-              <form id="scoreNoteForm" class="score-note-form">
-                <label><span data-i18n="notes.select">选择或新建</span><select id="scoreNoteSelect"></select></label>
-                <div class="xl-grid"><label><span data-i18n="notes.start">开始（秒）</span><input id="scoreNoteStart" type="number" min="0" step="0.01" required /></label><label><span data-i18n="notes.end">结束（秒）</span><input id="scoreNoteEnd" type="number" min="0" step="0.01" required /></label></div>
-                <button id="scoreNoteNow" type="button" data-i18n="notes.now">取当前播放时间</button>
-                <label><span data-i18n="notes.text">显示文字</span><textarea id="scoreNoteText" maxlength="500" rows="3" required></textarea></label>
-                <div class="xl-row"><button id="scoreNoteSave" type="submit" data-i18n="notes.save">保存字幕</button><button id="scoreNoteRemove" type="button" disabled data-i18n="notes.remove">删除这句</button></div>
-                <small id="scoreNoteStatus" aria-live="polite" data-i18n="notes.local">保存在本机；手写字幕覆盖重叠的自动字幕。修改和删除留有历史副本。</small>
-              </form>
-            </details>
+          </section>
+          <section class="score-settings-section" data-score-styles="terrain glass starry plain">
+            <h3><button type="button" class="score-group-toggle" data-score-group="style" aria-expanded="false" aria-controls="scoreStyleGroup"><span data-score-style-title>星空谱面的选项</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreStyleGroup" class="score-group-fields" hidden>
+              <div id="scoreRadarOptions" hidden>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarFall">指针落下</span><select id="scoreRadarFall"><option value="0.35" data-i18n="score.radarFallSlow">慢</option><option value="0.6" data-i18n="score.radarFallMedium" selected>中</option><option value="1" data-i18n="score.radarFallFast">快</option></select></label>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarEcho">回波淡尽</span><select id="scoreRadarEcho"><option value="0.5" data-i18n="score.radarEchoHalf">半圈</option><option value="1" data-i18n="score.radarEchoTurn" selected>一圈</option></select></label>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.radarLead">歌词提前</span><select id="scoreRadarLead"><option value="0.2" data-i18n="score.radarLeadLittle">0.2 秒</option><option value="0.4" data-i18n="score.radarLeadMedium" selected>0.4 秒</option><option value="0.7" data-i18n="score.radarLeadMore">0.7 秒</option></select></label>
+              </div>
+              <div id="scoreTerrainOptions" hidden>
+                <div id="scoreTerrainGlassOptions" hidden><label class="xl-toggle-field"><span data-i18n="score.terrainGlassDrops">玻璃水珠</span><input id="scoreTerrainGlassDrops" class="xl-switch-input" role="switch" type="checkbox" checked /></label><label class="xl-toggle-field"><span data-i18n="score.terrainLightning">远云闪电</span><input id="scoreTerrainLightning" class="xl-switch-input" role="switch" type="checkbox" checked /></label></div>
+                <label class="xl-row"><span class="xl-row__label" data-i18n="score.terrainRoadside">路边的东西</span><select id="scoreTerrainRoadside"><option value="off" data-i18n="score.terrainRoadsideOff">关</option><option value="all" data-i18n="score.terrainRoadsideAll" selected>全部</option><option value="kick-snare" data-i18n="score.terrainRoadsideKickSnare">只留底鼓和军鼓</option></select></label>
+              </div>
+              <button id="scoreStarSettingsOpen" class="xl-settings-link" type="button" aria-controls="xlStarScoreSettings" aria-expanded="false" data-score-styles="starry plain"><span data-i18n="score.meteorMotion">星空谱面</span><span class="xl-settings-chevron" aria-hidden="true">›</span></button>
+            </div>
+          </section>
+          <section class="score-settings-section">
+            <h3><button type="button" class="score-group-toggle" data-score-group="reading" aria-expanded="false" aria-controls="scoreReadingGroup"><span data-i18n="score.options">谱面阅读</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreReadingGroup" class="score-group-fields" hidden>
+              <label class="xl-toggle-field"><span data-i18n="score.albumLayout">专辑侧栏</span><input id="scoreAlbumLayout" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-row"><span class="xl-row__label" data-i18n="score.appearance">读谱外观</span><select id="scoreAppearance"><option value="original" data-i18n="score.appearanceOriginal">原版</option><option value="clear" data-i18n="score.appearanceClear" selected>清晰</option><option value="detail" data-i18n="score.appearanceDetail">细读</option></select></label>
+              <label class="xl-toggle-field"><span data-i18n="score.localMeter">分段小节（试用）</span><input id="trialLocalBars" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-toggle-field"><span data-i18n="score.merge">合并同类乐器声部</span><input id="scoreMergeTimbres" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-toggle-field"><span data-i18n="score.simplify">简化重复与细碎音符</span><input id="scoreSimplify" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+                <div data-score-compare>
+              <label class="xl-toggle-field"><span><span data-i18n="score.variation">段落对照</span><small data-i18n="score.variationHint">适用于星空谱面和压纹纸。选两段，用重影看演奏变化。</small></span><input id="scoreVariationEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
+              <div id="scoreVariationDetails" class="score-compare-details" hidden>
+                <div id="scoreVariationPicker" class="score-compare-picker" hidden>
+                  <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationA">A 段</span><select id="scoreVariationA"></select></label>
+                  <label class="xl-row"><span class="xl-row__label" data-i18n="score.variationB">B 段</span><select id="scoreVariationB"></select></label>
+                </div>
+                <small id="scoreVariationStatus" class="score-compare-status" role="status"></small>
+              </div>
+                </div>
+            </div>
+          </section>
+          <section class="score-settings-section">
+            <h3><button type="button" class="score-group-toggle" data-score-group="lights" aria-expanded="false" aria-controls="scoreLightGroup"><span data-i18n="score.noteLights">音符与光效</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreLightGroup" class="score-group-fields" hidden>
+              <label class="xl-toggle-field"><span><span data-i18n="score.shapes">按乐器画音符</span><small data-i18n="score.shapesHint">弹拨的音有个头，弦乐是两头尖的梭</small></span><input id="scoreShapes" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-row"><span class="xl-row__label" data-i18n="score.effects">音符光效</span><select id="scoreEffects"><option value="clear" data-i18n="score.fxClear" selected>清亮</option><option value="keys" data-i18n="score.fxKeys">琴键灯</option><option value="ink" data-i18n="score.fxInk">墨迹</option><option value="stage" data-i18n="score.fxStage">舞台</option><option value="strong" data-i18n="score.fxStrong">浓</option><option value="off" data-i18n="score.fxOff">素</option></select></label>
+              <label class="xl-toggle-field"><span data-i18n="score.fxFollow">光效跟随起伏</span><input id="scoreFxFollow" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+            </div>
+          </section>
+          <section class="score-settings-section">
+            <h3><button type="button" class="score-group-toggle" data-score-group="timing" aria-expanded="false" aria-controls="scoreTimingGroup"><span data-i18n="score.timingGroup">准备与对齐</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreTimingGroup" class="score-group-fields" hidden>
+              <label class="xl-toggle-field"><span data-i18n="score.autoLayers">打开歌曲时自动准备谱面</span><input id="scoreAutoLayers" class="xl-switch-input" role="switch" type="checkbox" checked /></label>
+              <label class="xl-toggle-field"><span><span data-i18n="dynamics.label">按录音强弱显示</span><small data-i18n="dynamics.hint">只调整谱面；关闭即用原值。</small></span><input id="scoreDynamicsEnabled" class="xl-switch-input" role="switch" type="checkbox" /></label>
+              <div id="scoreDynamicsTools" hidden>
+                <p id="scoreDynamicsStatus" class="score-dynamics-status" role="status" aria-live="polite"></p>
+                <div class="xl-row"><button id="scoreDynamicsRun" type="button">生成力度副本</button><button id="scoreDynamicsCancel" type="button" hidden data-i18n="dynamics.cancel">取消</button></div>
+                <small class="score-dynamics-note" data-i18n="dynamics.note">根据分轨能量估计相对强弱，不代表演奏者的真实力度。</small>
+              </div>
+            </div>
+          </section>
+          <section class="score-settings-section">
+            <h3><button type="button" class="score-group-toggle" data-score-group="import" aria-expanded="false" aria-controls="scoreToolsGroup"><span data-i18n="score.groupImport">导入与字幕</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreToolsGroup" class="score-group-fields" hidden>
+              <div id="externalMidiPanel">
+                <div class="xl-row"><button type="button" id="externalMidiChoose" data-i18n="midi.import" disabled>为当前曲目导入 MIDI</button><input type="file" id="externalMidiFile" accept=".mid,.midi" hidden /></div>
+                <p id="externalMidiStatus" class="hint" role="status" hidden></p>
+                <details id="externalMidiEdit" hidden><summary data-i18n="midi.settings">声部分配与同步</summary>
+                  <div id="externalMidiParts"></div>
+                  <label class="xl-row"><span data-i18n="midi.offset">音符偏移（毫秒，正数延后）</span><input id="externalMidiOffset" type="number" min="-60000" max="60000" step="1" value="0" /></label>
+                  <label class="xl-toggle-field"><span data-i18n="midi.grid">使用 MIDI 拍号与小节</span><input id="externalMidiGrid" class="xl-switch-input" role="switch" type="checkbox" /></label>
+                  <div class="xl-row"><button type="button" id="externalMidiApply" data-i18n="midi.apply">应用</button><button type="button" id="externalMidiRestore" data-i18n="midi.restore">恢复曲库谱面</button></div>
+                </details>
+              </div>
+              <details id="scoreNotesEditor" class="xl-more">
+                <summary data-i18n="notes.title">手写听歌字幕</summary>
+                <form id="scoreNoteForm" class="score-note-form">
+                  <label><span data-i18n="notes.select">选择或新建</span><select id="scoreNoteSelect"></select></label>
+                  <div class="xl-grid"><label><span data-i18n="notes.start">开始（秒）</span><input id="scoreNoteStart" type="number" min="0" step="0.01" required /></label><label><span data-i18n="notes.end">结束（秒）</span><input id="scoreNoteEnd" type="number" min="0" step="0.01" required /></label></div>
+                  <button id="scoreNoteNow" type="button" data-i18n="notes.now">取当前播放时间</button>
+                  <label><span data-i18n="notes.text">显示文字</span><textarea id="scoreNoteText" maxlength="500" rows="3" required></textarea></label>
+                  <div class="xl-row"><button id="scoreNoteSave" type="submit" data-i18n="notes.save">保存字幕</button><button id="scoreNoteRemove" type="button" disabled data-i18n="notes.remove">删除这句</button></div>
+                  <small id="scoreNoteStatus" aria-live="polite" data-i18n="notes.local">保存在本机；手写字幕覆盖重叠的自动字幕。修改和删除留有历史副本。</small>
+                </form>
+              </details>
+            </div>
+          </section>
+          <section class="score-settings-section">
+            <h3><button type="button" class="score-group-toggle" data-score-group="debug" aria-expanded="false" aria-controls="scoreDebugGroup"><span data-i18n="score.groupDebug">调试</span><small class="score-group-hint"></small></button></h3>
+            <div id="scoreDebugGroup" class="score-group-fields" hidden>
+              <label class="xl-toggle-field"><span><span data-i18n="score.moodDebugTitle">情绪曲线调试台</span> <kbd>M</kbd></span><input id="scoreMoodDebugSwitch" class="xl-switch-input" role="switch" aria-keyshortcuts="M" type="checkbox" /></label>
+                <label class="xl-row" data-score-styles="terrain"><span class="xl-row__label" data-i18n="score.terrainWeatherDriver">天气强弱</span><select id="scoreTerrainWeatherDriver"><option value="mood" data-i18n="score.terrainWeatherDriverMood" selected>按情绪曲线</option><option value="original" data-i18n="score.terrainWeatherDriverOriginal">原来的办法</option></select></label>
+            </div>
           </section>
         </div>
         <div id="xlStarScoreSettings" class="xl-settings__body" hidden>
@@ -656,6 +690,9 @@
     <script src="../scoreview/score-mist.js"></script>
     <script src="../scoreview/score-terrain-led.js"></script>
     <script src="../scoreview/score-terrain-assets.js"></script>
+  <script src="../shared-analysis/mood-curve.js"></script>
+  <script src="../scoreview/score-terrain-weather.js"></script>
+    <script src="../scoreview/score-terrain-rain.js"></script>
     <script src="../scoreview/score-terrain.js"></script>
     <script src="../scoreview/score-flag.js"></script>
     <script src="../scoreview/score-variation.js"></script>
@@ -665,6 +702,7 @@
     <script src="./score-transient-controls.js"></script>
     <script src="./score-direction-controls.js"></script>
     <script src="./score-compare-controls.js"></script>
+    <script src="./score-mood-debug.js"></script>
     <script src="./score-scene.js"></script>
     <script src="./lyrics-core.js"></script>
     <script src="./score-lyrics.js"></script>
@@ -675,6 +713,7 @@
     <script src="./library-status.js"></script>
     <script src="./fusion.js"></script>
     <script src="./score-layout.js"></script>
+    <script src="./score-settings-groups.js"></script>
     <script src="./score-theme.js"></script>
   </body>
 </html>

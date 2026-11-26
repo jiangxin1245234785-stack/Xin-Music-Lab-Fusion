@@ -2,6 +2,7 @@
   'use strict';
   const ENABLED_KEY = 'xin-score-variation-enabled-v1';
   const PAIRS_KEY = 'xin-score-variation-pairs-v1';
+  const supports = style => style === 'starry' || style === 'paper';
 
   function attach({audio, getView, getTrackId, seek, isLoading, stage, say}) {
     const byId = id => root.document.getElementById(id);
@@ -19,7 +20,6 @@
       if (Array.isArray(entries)) saved = new Map(entries.slice(-80));
     } catch (_) {}
 
-    const supports = style => style === 'starry' || style === 'paper';
     function options(id, style) {
       const enabled = toggle.checked && supports(style);
       return {variationEnabled: enabled, variation: (enabled && saved.get(id)) || null,
@@ -126,5 +126,5 @@
     });
     return {options, refresh, update, settle};
   }
-  root.XinScoreCompareControls = Object.freeze({attach});
+  root.XinScoreCompareControls = Object.freeze({attach, supports});
 })(globalThis);

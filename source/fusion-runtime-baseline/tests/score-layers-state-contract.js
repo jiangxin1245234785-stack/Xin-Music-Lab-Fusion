@@ -68,7 +68,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   const load = scene.slice(scene.indexOf('async function load(id)'), scene.indexOf('function reset()'));
   assert.match(load, /consider\(\);/);
   // L6: the status line waits while help is up, and stays clear of immersive presentation.
-  assert.match(scene, /const prep = held \|\| hinting \|\| view\.options\(\)\.presentationLayout \? null : prepText\(\);/);
+  assert.match(scene, /const prep = held \|\| hinting \|\| view\.options\(\)\.presentationLayout \? null : prepText\(true\);/);
   // The other caller of load(): fusion.js accepts a song in any scene; it must not start anything itself.
   const fusion = fs.readFileSync(path.join(root, 'fusion.js'), 'utf8');
   assert.equal(/prepare\.auto\(/.test(fusion), false, 'fusion.js never starts an automatic preparation');

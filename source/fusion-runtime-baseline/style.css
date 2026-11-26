@@ -58,8 +58,10 @@ button { color: inherit; }
 .score-lyrics__menu { pointer-events: auto; display: flex; flex-direction: column; align-items: flex-start; gap: calc(2px * var(--ui-scale, 1)); margin-top: calc(4px * var(--ui-scale, 1)); padding: calc(4px * var(--ui-scale, 1)); border: 1px solid rgba(244,240,234,.18); border-radius: 4px; background: rgba(12,14,18,.82); text-shadow: none; white-space: normal; }
 .stage .score-lyrics.is-tight { row-gap: 0; }
 /* The one-line scene toast shares the score's first-source flash. When lyrics are on
-   screen leave them their header and keep the toast above the temporary bottom hint. */
-.stage[data-effect="score"]:has(.score-lyrics:not([hidden])) > .toast {
+   screen — or in terrain look where the top holds the carriage LED header — keep the
+   toast at the bottom above the temporary hint so it never covers words or the route bar. */
+.stage[data-effect="score"]:has(.score-lyrics:not([hidden])) > .toast,
+.stage[data-effect="score"].score-led-words > .toast {
   top: auto;
   bottom: calc(var(--xl-scenes) + var(--xl-transport) + 86px);
 }

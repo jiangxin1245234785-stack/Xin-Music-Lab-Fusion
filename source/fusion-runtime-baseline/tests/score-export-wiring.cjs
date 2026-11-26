@@ -120,6 +120,16 @@ async function channel() {
   assert.equal(asked.at(-1).look.scoreStyle, 'flag');
   assert.equal(asked.at(-1).look.lang, 'zh-CN');
   assert.equal(asked.at(-1).look.presentationLayout, true);
+  const rain = await channel.start({sender}, {trackId:'x', presentationLook:{scoreStyle:'terrain', terrainWeather:'rain', terrainWeatherDriver:'original', terrainGlassDrops:false}});
+  assert.ok(rain.ok);
+  assert.equal(asked.at(-1).look.scoreStyle, 'terrain');
+  assert.equal(asked.at(-1).look.terrainWeather, 'rain');
+  assert.equal(asked.at(-1).look.terrainWeatherDriver, 'original');
+  assert.equal(asked.at(-1).look.terrainGlassDrops, false);
+  assert.equal(asked.at(-1).look.presentationLayout, true);
+  const mood = await channel.start({sender}, {trackId:'x', presentationLook:{scoreStyle:'terrain', terrainWeather:'rain', terrainWeatherDriver:'mood'}});
+  assert.ok(mood.ok);
+  assert.equal(asked.at(-1).look.terrainWeatherDriver, 'mood');
   // 分段小节（试用）: the exported model carries the candidate measures only while the scene's switch is on, like score-scene.js.
   const trial = createScoreExport({
     app: {getPath: () => scratch}, dialog: {showSaveDialog: async () => ({canceled: false, filePath: path.join(scratch, 'out.mp4')})},
@@ -245,6 +255,8 @@ async function keptScoreStyle() {
   assert.deepEqual(options, ['starry','plain','overprint','glass','paper','ember','water','mist','terrain','flag']);
   assert.deepEqual(styles.styles, options);
   for (const page of [html, exportPage]) assert.match(page, /score-flag\.js[\s\S]*score-presentation\.js/);
+  for (const page of [html, exportPage]) assert.match(page, /shared-analysis\/mood-curve\.js[\s\S]*score-terrain-weather\.js[\s\S]*score-terrain-rain\.js[\s\S]*score-terrain\.js/);
+  assert.doesNotMatch(exportPage, /score-scene\.js/, 'the export renderer omits live status notices');
   for (const page of [html, exportPage]) assert.match(page, /local-grid\.js[\s\S]*score-view\.js/, '导出页和窗口一样要在 score-view.js 之前加载 local-grid.js');
   const storage = new Map([['xin-score-style-v1', 'terrain']]);
   const mount = () => {

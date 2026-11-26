@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path');
 const {trackDirectory}=require('../../xld-runtime-baseline/core/derived-assets.cjs');
+const {valid}=require('../../shared-analysis/mood-curve.js');
 async function readLatestTrack(indexed, roots, validate) {
   const candidates=roots.flatMap(root=>[trackDirectory(indexed,root),trackDirectory(indexed,root,true)])
     .map(directory=>path.join(directory,'music-lab.json'));
@@ -17,4 +18,14 @@ async function readLatestTrack(indexed, roots, validate) {
   }
   return {ok:true,manifest:null,filePath:''};
 }
-module.exports={readLatestTrack};
+async function readMoodCurve(track, root, bridgePath) {
+  const directory = bridgePath ? path.dirname(bridgePath) : trackDirectory(track, root);
+  try {
+    const curve = JSON.parse(await fs.readFile(path.join(directory, 'mood-curve.json'), 'utf8'));
+    const knownVersion = curve?.engineVersion === 1 && curve.formulaVersion === 'mood-direct-1' && curve.scaleVersion === 'mood-scale-1';
+    return knownVersion && valid(curve) && curve.slow.every(Number.isFinite) ? curve : null;
+  } catch {
+    return null;
+  }
+}
+module.exports={readLatestTrack,readMoodCurve};
