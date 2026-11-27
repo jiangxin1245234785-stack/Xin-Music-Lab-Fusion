@@ -1,3 +1,207 @@
+# 车窗地貌 · 实时渲染第二轮 · terrain.37
+
+**重天气未稳定提速。两轮实测，主线程绘制回调 7.48 → 7.68 ms/帧（上升 2.7%），整窗平均帧间隔 35.98 → 34.86 ms（下降 3.1%），GPU 进程 CPU 1036 → 1075 ms/s（上升 3.8%）。**
+
+两版各用自己的 XML.exe，Radeon 890M / D3D11，静音离屏、临时档案、私人调试管道、相同单曲分析副本。先测 .36、.37，再反序测 .37、.36。开头数字是两轮各六个重天气格等权平均。每格约 5 秒。逐层账单另用 RTX 5070 Ti Laptop 及 in Silence - in Siren。离屏间隔包含合成与调度，不能据此换算实体屏幕的实测帧率。
+
+| 指标 | 先 .36 后 .37 | 先 .37 后 .36（仍按 .36 → .37 列示） | 两轮均值 |
+| --- | --- | --- | --- |
+| 主线程绘制 ms/帧 | 7.70 → 7.67 | 7.26 → 7.69 | 7.48 → 7.68 |
+| 渲染进程 Task ms/帧 | 9.43 → 9.54 | 8.83 → 9.32 | 9.13 → 9.43 |
+| GPU 进程 CPU ms/s | 1090 → 1141 | 981 → 1009 | 1036 → 1075 |
+| 平均帧间隔 ms | 36.92 → 34.10 | 35.05 → 35.62 | 35.98 → 34.86 |
+| 帧间隔 P95 ms | 47.28 → 47.25 | 47.27 → 50.02 | 47.28 → 48.63 |
+
+以下逐格内存及定位来自第一轮，各格第二次测量见[反序复测明细](round11/native/REPORT-reverse.md)。
+
+[试版 XML.exe](../../releases/0.5.0-dev.terrain.37/XML.exe) · [12 张手机图](phone-11/index.html) · [原生性能与定位明细](round11/native/REPORT.md) · [四天气逐层账单](round11/layers/REPORT.md) · [导出与同帧验证数据](round11/delivery-pixels.json)
+
+| 视口 | 天气 | 绘制回调 ms/帧 | 渲染主线程 Task ms/帧 | GPU 进程 CPU ms/s | 进程私有 MiB |
+| --- | --- | --- | --- | --- | --- |
+| 1440 | 晴 | 3.10 → 2.99 | 4.60 → 4.43 | 985 → 974 | 1658 → 1618 |
+| 2560 | 暴雨 | 9.84 → 9.14 | 11.83 → 10.93 | 1088 → 1140 | 2936 → 2647 |
+| 1440 | 沙尘 | 6.40 → 6.33 | 7.80 → 7.71 | 1178 → 1182 | 2724 → 2451 |
+| 2560 | 风雪 | 7.89 → 7.37 | 10.55 → 9.95 | 986 → 1002 | 4075 → 3786 |
+| 2560 | 晴 | 3.49 → 3.86 | 5.69 → 6.38 | 965 → 963 | 3925 → 3751 |
+| 1440 | 暴雨 | 8.33 → 8.73 | 9.60 → 9.95 | 1133 → 1096 | 3055 → 2995 |
+| 1440 | 风雪 | 7.64 → 7.52 | 8.88 → 8.84 | 1186 → 1201 | 2951 → 2808 |
+| 2560 | 沙尘 | 6.08 → 6.90 | 7.94 → 9.85 | 971 → 1222 | 3771 → 3529 |
+
+### 山间雨、雪、沙
+
+按山体层分发谷间单元，维持原叠画顺序。雨帘只在同一遮罩、同一横纵相位连续出现时复用同一张工作画布；回退到单张画布后，软件栅格的暴雨导出也与 .36 对齐。七种雪帘各预存五个粒子包的静态参数。沙尘保留原径向渐变，逐单元恢复透明度。早期雨脚预合成、沙尘团贴图在 1440 隔离测试中分别达到 4/255、8/255，均已撤回。
+
+| 宽度 | 独立图层 | 均值 .36 → .37 ms | 中位 .36 → .37 ms | 最大 RGBA 单通道差 |
+| --- | --- | --- | --- | --- |
+| 1440 | 雨 | 0.583 → 0.604 | 0.500 → 0.600 | 0/255 |
+| 1440 | 雪 | 0.192 → 0.179 | 0.200 → 0.200 | 0/255 |
+| 1440 | 沙 | 0.321 → 0.317 | 0.300 → 0.300 | 0/255 |
+| 2560 | 雨 | 0.646 → 0.683 | 0.700 → 0.700 | 0/255 |
+| 2560 | 雪 | 0.183 → 0.162 | 0.200 → 0.200 | 0/255 |
+| 2560 | 沙 | 0.262 → 0.317 | 0.300 → 0.200 | 0/255 |
+
+同一 Chrome / SwiftShader 会话、八个固定谷间单元、A–B–B–A，每种实现 24 帧。计时含固定底色和画布命令提交。另在 0、71、324、324.5 秒比较 RGBA 并往返定位。真实乐曲中的层成本见下表，0.1 ms 附近的小差值受计时量化影响。[隔离层原始数据与两版源码哈希](round11/valley/final/results.json)
+
+| 视口 | 天气 | 山间天气 .36 → .37 ms/帧 | 山体合成（含山间天气） | 雨玻璃 |
+| --- | --- | --- | --- | --- |
+| 1440 | 晴 | 0.000 → 0.000 | 0.565 → 0.464 | 0.000 → 0.000 |
+| 1440 | 暴雨 | 0.906 → 1.089 | 1.625 → 2.053 | 0.728 → 1.081 |
+| 1440 | 风雪 | 0.046 → 0.075 | 0.735 → 1.194 | 0.001 → 0.001 |
+| 1440 | 沙尘 | 0.076 → 0.072 | 0.775 → 1.001 | 0.000 → 0.003 |
+| 2560 | 晴 | 0.000 → 0.000 | 0.535 → 0.804 | 0.000 → 0.000 |
+| 2560 | 暴雨 | 3.396 → 3.510 | 4.417 → 4.592 | 1.074 → 1.121 |
+| 2560 | 风雪 | 0.064 → 0.064 | 1.018 → 1.235 | 0.003 → 0.001 |
+| 2560 | 沙尘 | 0.067 → 0.103 | 0.889 → 1.188 | 0.001 → 0.004 |
+
+RTX 分层试场中，六个重天气格的无打点整帧绘制中位数等权平均为 4.10 → 5.33 ms。个别层节省时间，总体仍有回退。独立谷间试场也没有显示三种天气普遍加速。
+
+### 山体、雨玻璃、雪雾
+
+山脚边界及四档渐隐几何跟随既有双视口形状缓存，平移时复用计算值。晴天格的山体账单最接近这项改动的独立收益。雨玻璃复用纹理目标帧缓冲，只上传可见水滴实例，并缓存固定碰撞网格的列数。切换尺寸即释放旧目标。测试场交替切换质量档 12 次，同时持有的帧缓冲最多 9 个；原水雾混合顺序和完整导出光学保留。
+
+雪雾最多保留四个 8,192 元素的双精度噪声格点窗口，WebGL 路径跳过未使用的 CPU 光学颜色数组写入。分项实测雪雾均值为 1440 宽 0.472 → 0.415 ms/帧、2560 宽 0.490 → 0.454 ms/帧。山体几何、雪雾、玻璃三张消融图均从同一份 .36 场景只替换被测代码，最大通道差依次为 0、0、0/255。
+
+### 导出帧与三条路径
+
+此前改动 score-presentation.js 与 score-export-ipc.cjs 是为了把预览质量写入导出任务。这样会让普通预览请求低分辨率雨玻璃，改变 .36 的导出行为。最终两个文件及 export-render.js 均与 .36 包逐字节相同；score-export-wiring.cjs 也已还原。
+
+两版各用正式导出按钮生成 1920×1080、30 fps 的三秒短片。截取歌曲 5:23 起的片段，在视频时间 1.000 秒、送入 VideoFrame 前取 PNG，解码为 RGBA。MEGURI 暴雨 5:24 的 2,073,600 个像素全部相同，四通道最大差均为 0。原始 RGBA 的 SHA-256 为 `e05b466bb1b65491e70ff91fb76571ae1a57b9577e4280e5c1f12218a597ec16`。[.36 原帧](round11/native/release-36-high/pre-encode.png) · [.37 原帧](round11/native/release-37-high/pre-encode.png) · [四倍局部和差异图](phone-11/04-export-rgba.jpg)
+
+SwiftShader 同路跨版本共 64 对画面，含四天气、两画幅和 8 组导出帧。跨版本最大通道差 0/255。AMD 正式高清窗口里，两版各自的播放、前后定位完全相同；实窗与各自独立导出窗口仍分别有 982 和 904 个像素不同，最大通道差分别为 10 和 10/255。三路绝对一致这一项未通过。其来源尚未证实。
+
+同一对正式 XML.exe 改用 SwiftShader 后，MEGURI 5:24 的播放、前后定位及编码前原帧在每版内均为零差，两版之间也为零差。AMD D3D11 的实窗与导出差异仍保留在上面的记录中。[.36 软件渲染核验](round11/native/software-36/pixel-comparison.json) · [.37 软件渲染核验](round11/native/software-37/pixel-comparison.json)
+
+### 内存、定位与交付边界
+
+重天气六格平均，主、渲染及 GPU 三进程私有内存合计 3252 → 3036 MiB，工作集 4437 → 4194 MiB，JS 堆 21.9 → 21.8 MiB。每格播放后取一次快照，未测长时间驻留与显卡专用内存。
+
+每格暂停后定位 35 → 324 → 35 秒，记录前八次绘制。重天气 18 次定位中，最慢的首个准确帧 52.2 → 42.2 ms。前八帧绘制均值（各定位等权）7.78 → 8.05 ms/帧。所有逐次样本及 P95 均在原生报告。
+
+没有新增画质开关。最容易辨认差异的位置是暴雨中玻璃与山体交叠的边缘；独立实窗之间出现的小差值以原始像素记录为准。性能结论只覆盖这里的设备、曲目和采样窗口。
+
+仅列未做项：降低玻璃分辨率、雨滴隔帧更新、山脊整层长图、重画电线杆／路牌、改变窗内陈设。没有制作可选的 20 秒并排短片。
+
+正式包清单校验 1,446 项，日常入口仍指向 .36。产品改动为 source/scoreview/score-terrain.js、score-terrain-rain.js，新增 terrain-valley-perf.test.cjs 和 terrain-glass-perf.test.cjs。测量、截图、打包和验收脚本及记录在 round11，图册在 phone-11。[发布清单差异](round11/suites/package-release.json) · [启动及导出回执](round11/native/release-37-high/export.json)
+
+### 三套 npm test 尾部原样
+
+Scoreview 和 XML 退出 0。XLD 在隔离副本退出 1：Windows 拒绝创建测试用目录联接（EPERM）。续跑和短临时路径复核后，midi-delete.cjs、storage.cjs 仍受阻；audit-fix-f2.cjs 在短路径通过。三套全绿尚未达成。[XLD 原始日志](round11/suites/xld-test-final.log) · [逐项续跑](round11/suites/xld-recovery-final.json) · [短路径复核](round11/suites/xld-recheck.json)
+
+**Scoreview · exit 0**
+
+~~~text
+✔ winds are spindles with the shapes on (like the strings), and their single lines are linked (34.1536ms)
+✔ thickness by pitch reaches winds; simplifying joins them as held notes (not as strikes) (1.3874ms)
+✔ several wind instruments apart: one icon each, numbered; together: one lane, one icon (5.798ms)
+✔ the adapter names wind instruments: by GM program, by MuScriptor name, else the stem with the raw name (2.0872ms)
+ℹ tests 642
+ℹ suites 0
+ℹ pass 641
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 67171.8994
+~~~
+
+**XML · exit 0**
+
+~~~text
+✔ input ranges, gaps, shortened last sample and zoom seek share the record timeline (26.3577ms)
+✔ readouts use the terrain source window, engine timelines and exact flash boundaries (98.4137ms)
+✔ closed is dormant, live values match the engine, all six chart domains seek, and the choice persists (112.223ms)
+✔ other styles and tracks without notes, curves, or active selections cannot leak weather or previous data (15.7727ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 765.7892
+~~~
+
+**XLD · exit 1**
+
+~~~text
+result sweep: ok (fragments discriminate where coverage and segment count do not; unreadable and failed results stay visible; unlisted directories warn)
+source hygiene: ok (256 files, no stray control characters)
+MuScriptor strings PASS: three independent caches, target invalidation, source restore, baseline activation
+Error: EPERM: operation not permitted, symlink 'C:\Users\12452\AppData\Local\Packages\openai.codex_2p2nqsd0c76g0\AC\#!sandbox.{d2fae753-77ae-4d77-9818-130148bc9307}\Temp\r11-fixtures-burpLG\tmp\xld-midi-delete-XkzVVj\outside' -> 'C:\Users\12452\AppData\Local\Packages\openai.codex_2p2nqsd0c76g0\AC\#!sandbox.{d2fae753-77ae-4d77-9818-130148bc9307}\Temp\r11-fixtures-burpLG\tmp\xld-midi-delete-XkzVVj\album\track\midi\strings\b2341350-f022-4dae-be70-cc925d10027b'
+    at async Object.symlink (node:internal/fs/promises:1059:10)
+    at async C:\Users\12452\AppData\Local\Temp\r11-src-NFwy1K\source-final\xld-runtime-baseline\tests\midi-delete.cjs:29:164 {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'symlink',
+  path: 'C:\\Users\\12452\\AppData\\Local\\Packages\\openai.codex_2p2nqsd0c76g0\\AC\\#!sandbox.{d2fae753-77ae-4d77-9818-130148bc9307}\\Temp\\r11-fixtures-burpLG\\tmp\\xld-midi-delete-XkzVVj\\outside',
+  dest: 'C:\\Users\\12452\\AppData\\Local\\Packages\\openai.codex_2p2nqsd0c76g0\\AC\\#!sandbox.{d2fae753-77ae-4d77-9818-130148bc9307}\\Temp\\r11-fixtures-burpLG\\tmp\\xld-midi-delete-XkzVVj\\album\\track\\midi\\strings\\b2341350-f022-4dae-be70-cc925d10027b'
+}
+~~~
+
+# 车窗地貌 · 实时渲染性能测量 · terrain.36
+
+**大窗重天气超过 60 Hz 帧预算。** 正式 XML.exe 离屏合成的 2560×1600 暴雨中位数，Radeon 890M 为 43.8 ms，RTX 5070 Ti Laptop 为 38.4 ms。RTX 的谱面回调中位数为 33.4 ms，停掉谱面回调后，窗口其余界面继续运行，测得 16.7 ms。硬件分层显示山体和雨玻璃的成本远高于窗台直射。terrain.22 已有重天气长帧，三版同场景数据可在报告中对照。
+
+[打开性能报告](round10/PERF-REPORT.md) · [浏览 12 张手机图](phone-10/index.html) · [两卡矩阵与历史原始记录](round10/matrix/summary.json) · [逐层账单](round10/layers/REPORT.md)
+
+**甲类通过 0 项，日常入口仍为 terrain.36。** 复用山体渐变在两个软件画幅都耗时增加，合并车厢采光只省约 0.00010–0.00015 ms/帧。仅裁透明下边在四天气、两画幅的 24 帧逐像素零差，正式 XML 两块显卡四种配置中最好的整窗平均间隔仅缩短 0.59%，低于 2% 门槛。没有发布 terrain.37。[候选的收益与逐像素证据](round10/decision.md)
+
+**乙类四项都留在试验副本。** 同时裁山体上下边，通道最多差 4/255；关闭雨窗折射水滴，3.37% 像素改变；近窗风雪每轴缩半，28.86% 像素改变；晴天隔帧更新，绘制调用时间少 2.88 ms/逻辑刷新，但复用帧有 37.89% 像素改变。雨窗和风雪的同步软件测量均未显示总耗时收益。[乙类对照](phone-10/index.html)
+
+**测量边界。** 两首以 1× 实际播到自然结束，逐个长帧标记歌曲时间和同期证据，包含同机测量重叠区间。矩阵使用独立临时窗口逐一运行，并记录离屏合成事件。实体屏幕没有参与。GPU 硬件执行时间未获取，驱动计数器在本执行环境不可用。最不确定的是屏幕实际掉帧、孤立最长帧的成因和跨版本小差额。内存三轮转换只反映短时状态。[MEGURI 全曲长帧](round10/songs/meguri/over-budget.csv) · [in Silence / in Siren 全曲长帧](round10/songs/silence/over-budget.csv) · [GPU 计数器探针](round10/adapter/PDH-REPORT.md)
+
+**改动文件。** 产品源文件和函数改动数均为零。所有采集、统计、候选替换与验收脚本、数据和报告均在 round10，图片与索引在 phone-10，本节追加在 HANDOFF.md 顶部。开工时 SETTING.md 已有修改。原有版本包和启动指针按基线核对。[4,403 项基线](round10/baseline-sha256.json) · [源码与入口差异](round10/changed-files.json) · [交付复核](round10/delivery-check.json)
+
+**三套正式测试。** Scoreview 638 项通过、1 项既有跳过；XML 通过。XLD 因 Windows 创建目录联接返回 EPERM，原命令退出 1；逐条续跑 81 项有 79 项至少在一种临时环境通过，仍被实际 junction 阻住的是 midi-delete.cjs、storage.cjs。[测试详情](round10/suites/README.md)
+
+## scoreview npm test (exit 0)
+
+~~~text
+✔ several wind instruments apart: one icon each, numbered; together: one lane, one icon (3.874ms)
+✔ the adapter names wind instruments: by GM program, by MuScriptor name, else the stem with the raw name (0.5268ms)
+ℹ tests 639
+ℹ suites 0
+ℹ pass 638
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 26204.807
+~~~
+
+## xml npm test (exit 0)
+
+~~~text
+✔ closed is dormant, live values match the engine, all six chart domains seek, and the choice persists (25.7821ms)
+✔ other styles and tracks without notes, curves, or active selections cannot leak weather or previous data (4.3604ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 175.11
+~~~
+
+## xld npm test (exit 1)
+
+~~~text
+MuScriptor strings PASS: three independent caches, target invalidation, source restore, baseline activation
+Error: EPERM: operation not permitted, symlink 'C:\Users\12452\AppData\Local\Temp\t36-ZfH50G\tmp\xld-midi-delete-1MrJqe\outside' -> 'C:\Users\12452\AppData\Local\Temp\t36-ZfH50G\tmp\xld-midi-delete-1MrJqe\album\track\midi\strings\d59b0073-19da-4e1e-af0b-c6b116e5cb40'
+    at async Object.symlink (node:internal/fs/promises:1059:10)
+    at async D:\Projects\Xin-Music-Lab-Fusion\source\xld-runtime-baseline\tests\midi-delete.cjs:29:164 {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'symlink',
+  path: 'C:\\Users\\12452\\AppData\\Local\\Temp\\t36-ZfH50G\\tmp\\xld-midi-delete-1MrJqe\\outside',
+  dest: 'C:\\Users\\12452\\AppData\\Local\\Temp\\t36-ZfH50G\\tmp\\xld-midi-delete-1MrJqe\\album\\track\\midi\\strings\\d59b0073-19da-4e1e-af0b-c6b116e5cb40'
+}
+~~~
+
+---
+
+
 # 车窗地貌 · 阳光进车厢与收音机电平 · terrain.36
 
 **晴天下午的光现在从左上穿过窗洞，落在窗台上。** 收音机的左肩受光，机身、提手和天线的影子向右前方伸出。云遮住太阳时，暖光和投影一起淡出。收音机待机电平保留声部电平和本曲真实鼓点，移除了按时间摆动的正弦项。正式试版已用自己的 XML.exe 启动，实导 1080p 与 4K。日常入口仍是 terrain.35。

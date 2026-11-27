@@ -15,7 +15,7 @@ Xin Music Lab 是一个持续迭代的个人音乐工具项目，关注器乐、
 
 ### 下载与版本
 
-本机日常入口 `0.5.0-dev.terrain.22` 全面升级 XML「车窗地貌」：三机制音乐天气引擎（统一势能 + 三态滞回与段落吸附 + 和声张力调光）、四天气系统（晴天斜阳丁达尔光束 / 阴到雨与克制远云片状闪电 / WebGL2 8 层一致风场暴风雪与场景覆雪互动 / WebGL2 体积沙尘暴）、车厢内外实时光影联动，以及熏胡桃木实体窗台与独立桌面 VFD 歌词机（纯音乐自动切 8 段实时 VU 待机）。沿用「画质 自动／高／省电」设置，上一版 `0.5.0-dev.terrain.13` 保留供随时回退。[本机发布与回退](work/terrain-polish-20261123/HANDOFF.md)
+本机日常入口为 `0.5.0-dev.terrain.36`，回退入口 `0.5.0-dev.terrain.35`（[发布状态](docs/RELEASE_STATUS.md)）。`.22` 之后加了车厢改造（窗帘、顶部信息屏、窗台便携收音机、晴天照进窗台的阳光）和按 XLD 情绪曲线走的天气强弱。以下是 `0.5.0-dev.terrain.22` 那一版对 XML「车窗地貌」的升级：三机制音乐天气引擎（统一势能 + 三态滞回与段落吸附 + 和声张力调光）、四天气系统（晴天斜阳丁达尔光束 / 阴到雨与克制远云片状闪电 / WebGL2 8 层一致风场暴风雪与场景覆雪互动 / WebGL2 体积沙尘暴）、车厢内外实时光影联动，以及熏胡桃木实体窗台与独立桌面 VFD 歌词机（纯音乐自动切 8 段实时 VU 待机）。沿用「画质 自动／高／省电」设置。[本机发布与回退](work/terrain-polish-20261123/HANDOFF.md)
 
 **原曲＋外部 MIDI → 回波雷达 → 带原声的 MP4**：XML 支持外部 MIDI 文件导入，本地开发版 `0.5.0-dev.midiin.4` 还可导出 4K（2160p）视频。操作、MuScriptor 获取方式、同步和导出见[外部 MIDI 使用说明](docs/XML_EXTERNAL_MIDI.md)。目前下方的 GitHub 预览包早于这项功能。
 
@@ -81,7 +81,7 @@ Xin Music Lab is a personal project for instrumental music, post-rock and comple
 
 ### Download and version status
 
-Local daily build `0.5.0-dev.terrain.22` upgrades XML's **Window Landscape (`车窗地貌`)** with a 3-mechanism musical weather engine, four selectable weather systems (Clear golden-afternoon beams & sunlit motes, Overcast-to-rain with restrained sheet lightning, WebGL2 8-layer coherent Blizzard with snow-capped scene interactions, and WebGL2 volumetric Sandstorm), coupled cabin lighting, and an open smoked-walnut windowsill with a standalone tabletop VFD lyric player (with deterministic 8-band VU standby on instrumentals). See [local release & rollback notes](work/terrain-polish-20261123/HANDOFF.md).
+The local daily build is `0.5.0-dev.terrain.36` (rollback `0.5.0-dev.terrain.35`, see [release status](docs/RELEASE_STATUS.md)); since `.22` it adds the carriage interior (curtains, top information board, a portable radio on the sill, afternoon sun on the sill) and weather strength driven by XLD's mood curve. Build `0.5.0-dev.terrain.22` upgraded XML's **Window Landscape (`车窗地貌`)** with a 3-mechanism musical weather engine, four selectable weather systems (Clear golden-afternoon beams & sunlit motes, Overcast-to-rain with restrained sheet lightning, WebGL2 8-layer coherent Blizzard with snow-capped scene interactions, and WebGL2 volumetric Sandstorm), coupled cabin lighting, and an open smoked-walnut windowsill with a standalone tabletop VFD lyric player (with deterministic 8-band VU standby on instrumentals). See [local release & rollback notes](work/terrain-polish-20261123/HANDOFF.md).
 
 **Original audio + external MIDI → radar score → MP4 with the original recording.** XML supports external MIDI import. Local development build `0.5.0-dev.midiin.4` also exports 4K (2160p) video. See the [external MIDI guide and English quick start](docs/XML_EXTERNAL_MIDI.md#english-quick-start). The GitHub preview linked below predates the feature.
 
