@@ -408,6 +408,8 @@
   const RADIO = {width: 596, height: 69, handleRise: 12.5, feetDrop: 3.5,
     screenX: 85, screenY: 12, screenWidth: 460, screenHeight: 42};
   const CABIN_RIDGE = 1, CABIN_GASKET = 5;
+  // Fixed afternoon light. Positive offsets on the shelf point right and into the car.
+  const AFTERNOON = Object.freeze({skyX: .26, skyY: 254, right: 1.72, forward: .23});
   function layout(w, h) {
     const u = Math.min(w / 1440, h / 900);
     const top = 136 * u, bottom = 68 * u, side = 64 * u;
@@ -1334,12 +1336,12 @@
     return {progress, musicLift, warmth, beam};
   }
 
-  // Painterly afternoon solar bloom in the upper-right sky + crisp cerulean zenith depth + golden horizon air.
+  // The point of illumination stays fixed; the existing atmosphere can still vary.
   function drawClearSkySun(ctx, L, t, sun) {
     if (!sun) return;
-    const {progress, warmth, beam} = sun;
-    const sunX = L.left + L.Wm * (.74 - .05 * progress) + Math.sin(t * .04) * 14;
-    const sunY = 238 + 42 * progress;
+    const {warmth, beam} = sun;
+    const sunX = L.left + L.Wm * AFTERNOON.skyX;
+    const sunY = AFTERNOON.skyY;
     ctx.save();
     // 1. Subtle deep-blue clear-sky richness on the shaded upper-left side (amplifies warm-vs-cool sunny contrast).
     const zenith = ctx.createRadialGradient(L.left, 118, 0, L.left, 118, Math.min(980, L.Wm * .78));
@@ -1349,7 +1351,7 @@
     ctx.fillStyle = zenith;
     ctx.fillRect(L.left - 10, M_TOP - 10, L.Wm + 20, M_BOTTOM - M_TOP + 20);
 
-    // 2. Luminous afternoon sun scatter in screen blend (visibly brightens upper-right sky without a harsh hard disc).
+    // 2. Luminous scatter without a hard solar disc.
     ctx.globalCompositeOperation = 'screen';
     const bloom = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, 680);
     bloom.addColorStop(0, 'rgba(255,250,228,' + (.52 * beam).toFixed(4) + ')');
@@ -1455,14 +1457,92 @@
     ctx.restore();
   }
 
-  // Only the weather tint and light are live. All paint texture and joinery are in the overlay raster.
-  function paintCarriageLighting(ctx, L, weather, sun) {
+  function directCabinSun(weather, terrainWeather) {
+    if (weather?.rain || weather?.snow || weather?.sand ||
+        terrainWeather === 'rain' || terrainWeather === 'snow' || terrainWeather === 'sandstorm') return 0;
+    return clamp((1 - (weather?.cloudOpacity ?? .35)) / .65);
+  }
+
+  function sillSunPatch(L) {
+    const {glass, shelf} = L.cabin;
+    const lip = glass.y + glass.h;
+    const top = lip + (CABIN_GASKET + 2) * L.u, bottom = shelf.front;
+    const left = glass.x + glass.r, right = glass.x + glass.w - glass.r;
+    const shift = y => (y - lip) * AFTERNOON.right;
+    return {top, bottom, points: [[left + shift(top), top], [right + shift(top), top],
+      [right + shift(bottom), bottom], [left + shift(bottom), bottom]]};
+  }
+
+  // Subtract the light intercepted by the case, bail and aerial. The soft contact
+  // underneath the feet belongs to the radio sprite and survives complete cloud cover.
+  function radioCastMask(g) {
+    const W = RADIO.width, H = RADIO.height;
+    const project = (x, y, base) => [x + (H - y) * AFTERNOON.right, base + (H - y) * AFTERNOON.forward];
+    const rear = H * .51, foot = H + RADIO.feetDrop;
+    const rearCap = project(W - H * .26, 7, rear), nearCap = project(W - 2, 5, foot);
+    g.fillStyle = '#000';
+    g.beginPath();
+    g.moveTo(5, rear);
+    g.lineTo(...project(6, 1, rear)); g.lineTo(...rearCap); g.lineTo(...nearCap);
+    g.lineTo(W - 3, foot); g.lineTo(8, foot); g.closePath(); g.fill();
+    // A folded bail and telescoping whip sit behind the top of the case.
+    g.strokeStyle = '#000'; g.lineWidth = 2.8; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(...project(6, 10, rear));
+    g.bezierCurveTo(...project(13, -7, rear - 7), ...project(29, -10, rear - 8), ...project(46, -10, rear - 8));
+    g.lineTo(...project(W - 47, -10, rear - 8));
+    g.bezierCurveTo(...project(W - 18, -10, rear - 8), ...project(W - 9, -4, rear - 6), ...project(W - 6, 10, rear));
+    g.stroke();
+    g.beginPath(); g.lineWidth = 1.5;
+    g.moveTo(...project(155, 2, rear - 12)); g.lineTo(...project(550, 3, rear - 4)); g.stroke();
+  }
+
+  const sillLightRasters = new Map();
+  function drawSillSun(ctx, L, dpr, direct) {
+    if (!(direct > 0)) return;
+    // Five penumbra widths. The actual incident intensity is continuous between bins.
+    const bin = Math.round(direct * 4);
+    const key = [L.w, L.h, dpr, bin].join('|');
+    let strip = sillLightRasters.get(key);
+    if (!strip) {
+      const {points, top, bottom} = sillSunPatch(L), y = Math.floor(top * dpr) / dpr;
+      const c = makeCanvas(L.w * dpr, (bottom - y) * dpr), g = c?.getContext('2d');
+      if (!g) return;
+      g.setTransform(dpr, 0, 0, dpr, 0, -y * dpr);
+      g.beginPath(); g.moveTo(...points[0]); for (const p of points.slice(1)) g.lineTo(...p);
+      g.closePath(); g.clip();
+      const wood = g.createLinearGradient(0, top, 0, bottom);
+      const revealEnd = clamp((L.cabin.shelf.back - top) / (bottom - top));
+      wood.addColorStop(0, 'rgba(255,224,173,.68)');
+      wood.addColorStop(revealEnd, 'rgba(255,214,154,.60)');
+      wood.addColorStop(1, 'rgba(246,195,129,.50)');
+      g.fillStyle = wood; g.fillRect(0, top, L.w, bottom - top);
+      g.globalCompositeOperation = 'destination-out';
+      const softness = (.70 + (4 - bin) * .60) * L.u;
+      const normal = softness / Math.hypot(1, AFTERNOON.right);
+      const edge = g.createLinearGradient(points[0][0], top, points[0][0] + normal, top - normal * AFTERNOON.right);
+      edge.addColorStop(0, '#000'); edge.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = edge; g.fillRect(0, top, L.w, bottom - top);
+      g.translate(L.sillDeck.x, L.sillDeck.y); g.scale(L.cabin.deckUnit, L.cabin.deckUnit);
+      g.filter = 'blur(' + (softness * dpr).toFixed(2) + 'px)';
+      radioCastMask(g);
+      strip = {c, y};
+      if (sillLightRasters.size >= 12) sillLightRasters.delete(sillLightRasters.keys().next().value);
+      sillLightRasters.set(key, strip);
+    }
+    ctx.save(); ctx.globalAlpha *= direct;
+    ctx.drawImage(strip.c, 0, strip.y, strip.c.width / dpr, strip.c.height / dpr); ctx.restore();
+  }
+
+  function paintCarriageLighting(ctx, L, weather, sun, dpr, direct) {
     const {u, w, h, header, cabin} = L;
     if (!cabin) return;
     const {glass, opening, shelf: {back, front}} = cabin;
     const B = glass.y + glass.h, G = glass.x + glass.w;
-    const R = opening.x + opening.w, D = opening.y + opening.h;
-    const {mode, bounce, shadow, flash, level} = cabinLight(weather, sun);
+    const R = opening.x + opening.w;
+    const light = cabinLight(weather, sun);
+    const {mode, shadow, flash} = light;
+    const bounce = mode === 'clear' ? [190, 195, 196] : light.bounce;
+    const level = mode === 'clear' ? .10 : light.level;
     const gloom = gloomOf(weather);
     const reflected = flash > .01 ? mixRgb(bounce, [207, 233, 255], flash) : bounce;
     const alpha = ctx.globalAlpha;
@@ -1499,32 +1579,7 @@
     ctx.fillRect(G + 6 * u, glass.y + glass.r, Math.max(0, R - G - 8 * u), glass.h - 2 * glass.r);
     ctx.globalAlpha = alpha;
 
-    if (mode === 'clear' && sun && front > back) {
-      const edgeX = G + CABIN_GASKET * u;
-      const wallEnd = Math.min(w, R + 9 * u);
-      const start = glass.y + glass.h * .26;
-      const light = ctx.createLinearGradient(G - glass.w * .56, back, wallEnd, B - glass.h * .3);
-      const warmth = mixRgb([255, 234, 194], [255, 198, 128], sun.warmth);
-      const power = sun.beam * (.32 + .13 * sun.warmth);
-      light.addColorStop(0, css(warmth, power * .70));
-      light.addColorStop(.62, css(warmth, power));
-      light.addColorStop(1, css(warmth, power * .40));
-      ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.moveTo(edgeX, start);
-      ctx.lineTo(wallEnd, start + glass.h * .19);
-      ctx.lineTo(wallEnd, Math.min(front, Math.max(back, D)));
-      ctx.lineTo(Math.min(w, wallEnd + 39 * u), front);
-      ctx.lineTo(glass.x + glass.w * .21, front);
-      ctx.lineTo(glass.x + glass.w * .09, back);
-      ctx.lineTo(glass.x + glass.w * .055, B + 7 * u);
-      ctx.lineTo(edgeX - glass.r, B + 5 * u);
-      ctx.quadraticCurveTo(edgeX, B + 2 * u, edgeX, B - glass.r);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
-    }
+    drawSillSun(ctx, L, dpr, direct);
 
     if (front < h) {
       ctx.fillStyle = css(reflected, .33 * level + .20 * flash);
@@ -1570,7 +1625,6 @@
 
   const mixRgb = (a, b, k) => [Math.round(lerp(a[0], b[0], k)), Math.round(lerp(a[1], b[1], k)), Math.round(lerp(a[2], b[2], k))];
   const radioDecks = new Map();
-  const RADIO_PLASTIC = {top:[204,188,153], face:[181,162,129], shade:[145,128,103], edge:[101,85,67]};
   function radioStroke(g, color, width, points) {
     g.strokeStyle=color; g.lineWidth=width; g.beginPath(); g.moveTo(points[0],points[1]);
     for(let i=2;i<points.length;i+=2)g.lineTo(points[i],points[i+1]);
@@ -1676,9 +1730,6 @@
     const tint={clear:[131,111,87],rain:[42,54,64],snow:[74,87,101],sand:[73,69,64]}[mode];
     const shade=(mode==='clear'?0:mode==='rain'?.48:mode==='snow'?.31:.37)+gloom*.16;
     const ink=c=>css(mixRgb(c,tint,shade));
-    const cast=g.createLinearGradient(0,52,0,woodEdge);
-    cast.addColorStop(0,'rgba(46,35,27,.23)');cast.addColorStop(.77,'rgba(40,30,23,.49)');cast.addColorStop(1,'rgba(50,40,31,0)');
-    radioPatch(g,cast,[4,50,W-3,35,W+16,54,W+23,woodEdge-1,22,woodEdge,7,72]);
     for(const x of [26,W-66]){
       const contact=g.createLinearGradient(0,68,0,woodEdge);
       contact.addColorStop(0,'rgba(34,26,20,.83)');contact.addColorStop(.55,'rgba(43,32,24,.44)');contact.addColorStop(1,'rgba(49,37,28,0)');
@@ -1686,17 +1737,15 @@
       radioBox(g,ink([47,43,36]),x,H-2,39,2+RADIO.feetDrop,1.7);
       radioStroke(g,ink([109,98,77]),.8,[x+3,70.1,x+30,70.1]);
     }
-    radioPatch(g,ink(RADIO_PLASTIC.edge),[0,9,5,1,10,0,W-10,0,W-6,1,W,8,W,62,W-3,67,W-8,H,7,H,2,66]);
-    const top=g.createLinearGradient(0,0,W,8);
-    top.addColorStop(0,ink(RADIO_PLASTIC.top));top.addColorStop(.57,ink([190,173,141]));top.addColorStop(1,ink(RADIO_PLASTIC.shade));
+    radioPatch(g,ink([101,85,67]),[0,9,5,1,10,0,W-10,0,W-6,1,W,8,W,62,W-3,67,W-8,H,7,H,2,66]);
+    const top=g.createLinearGradient(0,0,0,9);
+    top.addColorStop(0,ink([173,161,139]));top.addColorStop(1,ink([154,141,119]));
     radioPatch(g,top,[1,9,6,1,11,.5,W-11,.5,W-6,2,W-1,8,W-4,10,3,11]);
-    const face=g.createLinearGradient(W*.19,9,W*.79,69);
-    face.addColorStop(0,ink(RADIO_PLASTIC.face));face.addColorStop(.58,ink([170,149,117]));face.addColorStop(1,ink(RADIO_PLASTIC.shade));
+    const face=g.createLinearGradient(0,8,0,68);
+    face.addColorStop(0,ink([172,156,130]));face.addColorStop(1,ink([153,137,113]));
     radioBox(g,face,1.3,6.6,W-3,60.8,5.3);
     g.save();roundRect(g,1.3,6.6,W-3,60.8,5.3);g.clip();
-    // A broken diagonal of afternoon light, dry strokes and just a few scuffed corners.
-    radioPatch(g,'rgba(255,233,186,.105)',[0,4,166,4,128,34,83,57,74,63,34,70,0,70]);
-    radioPatch(g,'rgba(64,55,48,.095)',[W-87,6,W,6,W,70,W-143,70,W-129,47]);
+    // Surface wear stays visible in diffuse light.
     let seed=1857;
     const noise=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
     for(let i=0;i<160;i++){
@@ -1722,7 +1771,24 @@
     spill.addColorStop(0,'rgba(100,175,156,'+(mode==='clear'?.07:.115)+')');spill.addColorStop(1,'rgba(100,175,156,0)');
     g.fillStyle=spill;g.fillRect(RADIO.screenX,H+.4,RADIO.screenWidth,woodEdge-H-.4);
   }
-  function drawVfdDeck(ctx,L,weather,dpr,sun){
+  function radioSunFaces(g) {
+    const W = RADIO.width;
+    // Direct light touches only the plastic. Keep the entire screen, recess and controls clear.
+    radioPatch(g, 'rgba(88,63,43,.22)', [2,9,W-2,9,W-2,64,W-8,67,8,67,2,64]);
+    radioPatch(g, 'rgba(255,212,142,.67)', [2,8,6,2,11,.7,W-12,.7,W-5,3,W-2,7,165,6]);
+    radioPatch(g, 'rgba(255,216,156,.40)', [2,9,8,7,6,53,3,64,1,60]);
+    radioStroke(g, 'rgba(255,227,178,.66)', 1.1, [7,4,13,2.3,148,2.4]);
+    radioPatch(g, 'rgba(62,49,39,.27)', [W-6,9,W-1,10,W-1,63,W-6,67,W-8,63]);
+    // Cut the complete instrument panel and fittings out of the light decal.
+    g.globalCompositeOperation = 'destination-out';
+    radioBox(g,'#000',RADIO.screenX-4.8,RADIO.screenY-3,RADIO.screenWidth+9.6,RADIO.screenHeight+7,4);
+    radioBox(g,'#000',RADIO.screenX-2,57,RADIO.screenWidth+4,10.4,2);
+    radioDisc(g,'#000',43,37,30.6);
+    radioDisc(g,'#000',568,23.5,12); radioDisc(g,'#000',568,51.7,11.4);
+    // The folded aerial lies on top of the illuminated plastic; its metal stays visible.
+    radioStroke(g,'#000',4.8,[153,2,541,3.6,554,3.7]);
+  }
+  function drawVfdDeck(ctx,L,weather,dpr,sun,direct){
     const deck=L.sillDeck,u=L.cabin.deckUnit;
     const light=cabinLight(weather,sun),gloom=Math.round(gloomOf(weather)*4)/4;
     const key=[deck.w,dpr,light.mode,gloom].join('|');
@@ -1739,6 +1805,17 @@
       radioDecks.set(key,sprite);
     }
     ctx.drawImage(sprite.c,deck.x-sprite.dx,deck.y-sprite.dy,sprite.w,sprite.h);
+    if (direct > 0) {
+      if (!sprite.sunFaces) {
+        const c = makeCanvas(sprite.c.width, sprite.c.height), g = c?.getContext('2d');
+        if (!g) return;
+        g.setTransform(u*dpr,0,0,u*dpr,sprite.dx*dpr,sprite.dy*dpr);
+        radioSunFaces(g);
+        sprite.sunFaces = c;
+      }
+      ctx.save(); ctx.globalAlpha *= direct;
+      ctx.drawImage(sprite.sunFaces,deck.x-sprite.dx,deck.y-sprite.dy,sprite.w,sprite.h); ctx.restore();
+    }
   }
 
   // Deterministic 10-band musical VFD VU meter + section tag for instrumental / no-lyric standby mode.
@@ -1759,9 +1836,8 @@
       const pos = raw.length > 1 ? i / 9 * (raw.length - 1) : 0;
       const lo = Math.floor(pos), hi = Math.min(raw.length - 1, lo + 1);
       const base = lerp(raw[lo], raw[hi], pos - lo);
-      const motion = .76 + .24 * Math.sin(t * (3.1 + i * .83) + i * 1.67);
       const hitBoost = i < 3 ? kick : i > 6 ? kick * .65 : kick * .35;
-      bars.push(clamp((base * .78 + mean * .22) * motion + (mean > .04 ? hitBoost : 0)));
+      bars.push(clamp((base * .78 + mean * .22) + (mean > .04 ? hitBoost : 0)));
     }
     let cur = '';
     for (const s of sections) if (t >= s[0] && t < s[1]) { cur = s[2]; break; }
@@ -3056,7 +3132,8 @@
       }
       ctx.drawImage(R.overlay, 0, 0, L.w, L.h);
     }
-    paintCarriageLighting(ctx, L, weather, sun);
+    const direct = directCabinSun(weather, terrainWeather);
+    paintCarriageLighting(ctx, L, weather, sun, dpr, direct);
     if (R) drawCabinDrapes(ctx, R.drapes, weather, sun);
     if (sun) drawCabinSunMotes(ctx, L, t, sun);
     const tile = grain();
@@ -3065,7 +3142,7 @@
       if (!p) { p = ctx.createPattern(tile, 'repeat'); patterns.set(ctx, p); }
       if (p) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = p; ctx.fillRect(0, 0, ctx.canvas ? ctx.canvas.width : L.w * dpr, ctx.canvas ? ctx.canvas.height : L.h * dpr); ctx.restore(); }
     }
-    S.carriage = carriage(ctx, frame, S, dpr, weather, sun);
+    S.carriage = carriage(ctx, frame, S, dpr, weather, sun, direct);
     ctx.restore();
     S.light = LT.name;
     S.art = MODE();
@@ -4234,7 +4311,7 @@
   // Above the window: title, artist, distance, and the route. On the sill: the lyric line.
   // The route and trackside signs use the same section order, labels and start times.
   const warmed = new WeakSet();
-  function carriage(ctx, frame, S, dpr, weather, sun) {
+  function carriage(ctx, frame, S, dpr, weather, sun, direct) {
     const Led = globalThis.XinScoreTerrainLed;
     if (!Led) return null;
     const L = S.layout, song = frame.song, track = song.track || {}, opts = {dpr};
@@ -4251,7 +4328,7 @@
     if (progress === null) { const period = Math.max(6, Array.from(line).length * .45), u = (S.time / period) % 2; progress = 1 - Math.abs(u - 1); }
     // Retro portable VFD lyric receiver sitting on the windowsill: chassis behind, cyan-mint VFD glass inside,
     // and subtle phosphor light spill onto the wooden sill. On instrumentals, shows live deterministic VFD standby VU + clock.
-    drawVfdDeck(ctx, L, weather, dpr, sun);
+    drawVfdDeck(ctx, L, weather, dpr, sun, direct);
     const standby = line ? null : vfdStandby(S, sections);
     Led.drawLyric(ctx, L.sill, {line, progress: line ? progress : 0}, Object.assign({}, opts, {idle: 'dim', theme: 'vfd', standby}));
     if (ART) { // GPT's bezel over the top train LED header rim; the sill now uses the bespoke VFD receiver chassis
@@ -4297,7 +4374,7 @@
   }
   const api = Object.freeze({draw, timeAt, noteAt, inspect, invalidate, ready, weatherWindow,
     // for tests and measurements only
-    _internal: Object.freeze({curtainSway, wheelAngle, wheelPlace,
+    _internal: Object.freeze({curtainSway, wheelAngle, wheelPlace, directCabinSun, sillSunPatch,
       layout, analysePixels, cabinFaces, curtainShapes, transomOf, curtainPlace: refCurtainPlace, overlay: cabinOverlay, worldShape: (song, w, h, id, k0, k1) => { const src = songSource(song, song.track.duration), L = layout(w, h); return worldShape(src, L, src.layers.find(l => l.id === id), k0, k1); }, roadLines: song => roadLines(songSource(song, song.track.duration)), stations: song => stationsOf(songSource(song, song.track.duration), song), coverMild, BASE, NEAR_TO_FAR, STEM_COLOR, geometry: (frame, margin) => {
       ART = artNow();
       const duration = durationOf(frame), L = layout(frame.w, frame.h), src = songSource(frame.song, duration);

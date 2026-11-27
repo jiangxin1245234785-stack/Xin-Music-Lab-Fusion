@@ -1,4 +1,8 @@
-# 2026-11-26 · 日常入口切到 terrain.35
+# 2026-11-26 · 日常入口切到 terrain.36
+
+根目录 XML 和 XLD 的日常版本为 `0.5.0-dev.terrain.36`，回退入口为 `0.5.0-dev.terrain.35`。相对 `.35` 只改了车窗地貌：晴天下午的阳光从左上落到窗台上，收音机有同向的受光和影子，光量跟天气引擎的云量走（雨、雪、沙尘没有光斑）；天上的光晕固定在左上，不再随时间移动；收音机待机电平去掉了与歌无关的起伏，只留声部电平和本曲鼓点。`.22` 仍在 `releases/` 下。[决定与用户原话](../work/terrain-20261119/SETTING.md) · [交接](../work/terrain-cabin-20261125/HANDOFF.md)
+
+## 2026-11-26 · 日常入口切到 terrain.35（已被上一节取代）
 
 根目录 XML 和 XLD 的日常版本为 `0.5.0-dev.terrain.35`，回退入口为 `0.5.0-dev.terrain.22`（`releases/current-release.cmd`、`previous-release.cmd`）。相对 `.22`，这一版有：车厢改造（窗洞纵深、窗帘、顶屏三行后改为分栏信息屏、线路图站名缩写、窗台便携收音机）；XLD 的情绪曲线（`mood-curve.json`，公式 `mood-direct-1`、尺子 `mood-scale-1`）；车窗地貌的天气强弱按情绪曲线走，可切回原来的办法；XML 的情绪曲线调试台（快捷键 M）和谱面设置收纳；XLD 一键分析列表在运行前显示已有 / 待运行 / 仅需升级 / 需重转，旧的 MuScriptor bass / piano / guitar 谱只补后处理、不重转。`.31`–`.34` 与 `mood.1` 是中间试版，本机已删除。[决定与用户原话](../work/terrain-20261119/SETTING.md) · [车厢与调试台交接](../work/terrain-cabin-20261125/HANDOFF.md) · [情绪曲线交接](../work/mood-curve-20261125/HANDOFF.md)
 

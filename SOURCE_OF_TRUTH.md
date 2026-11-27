@@ -1,6 +1,6 @@
 # Xin’s Music Lab — Source of Truth after D-drive migration
 
-2026-11-26 当前本机日常版为 **0.5.0-dev.terrain.35**，上一入口为 **0.5.0-dev.terrain.22**；内容见 `docs/RELEASE_STATUS.md` 顶上一节。下面一段是 11-25 的记录，其中的入口已被本行取代。
+2026-11-26 当前本机日常版为 **0.5.0-dev.terrain.36**，上一入口为 **0.5.0-dev.terrain.35**（再早的 terrain.22 仍在 `releases/` 下）；内容见 `docs/RELEASE_STATUS.md` 顶上一节。下面一段是 11-25 的记录，其中的入口已被本行取代。
 
 2026-11-25 当前本机日常版为 **0.5.0-dev.terrain.22**，上一入口为 **0.5.0-dev.terrain.13**。根目录 XML 和 XLD 启动器共用 `releases/current-release.cmd` 和既有正式配置。独立候选版 **0.5.0-dev.terrain.26** 重做了三层落雪的运动和峰值雨雪。[实机动态对照](work/terrain-storm-20261125/HANDOFF.md) · [雨雪山面与飞沙](work/terrain-intensity-20261125/HANDOFF.md) · [日常版与回退](work/terrain-polish-20261123/HANDOFF.md) · [4K 谱面视频与外部 MIDI](docs/XML_EXTERNAL_MIDI.md) · [雷达双行铭牌](docs/XML_RADAR_OTHER5.md)
 

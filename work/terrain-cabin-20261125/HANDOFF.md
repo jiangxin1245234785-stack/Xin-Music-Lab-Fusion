@@ -1,3 +1,108 @@
+# 车窗地貌 · 阳光进车厢与收音机电平 · terrain.36
+
+**晴天下午的光现在从左上穿过窗洞，落在窗台上。** 收音机的左肩受光，机身、提手和天线的影子向右前方伸出。云遮住太阳时，暖光和投影一起淡出。收音机待机电平保留声部电平和本曲真实鼓点，移除了按时间摆动的正弦项。正式试版已用自己的 XML.exe 启动，实导 1080p 与 4K。日常入口仍是 terrain.35。
+
+[启动 terrain.36 的 XML.exe](../../releases/0.5.0-dev.terrain.36/XML.exe) · [浏览 36 张手机图](phone-9/index.html) · [肖邦 4:29 同帧对照](phone-9/02-chopin-bright.jpg) · [1080p 样片](round9/native/after1080-meguri-export/cabin-1080p.mp4) · [4K 样片](round9/native/after4k-meguri-export/cabin-2160p.mp4)
+
+## 光从哪来
+
+| 画面部分 | terrain.35 | terrain.36 |
+|---|---|---|
+| 天空 | 低空暖散射原在左，主要光晕在窗宽约 69%–74% 的右上方，横纵坐标都随时间移动。 | 主光晕固定在窗宽 26%、设计高度 254 的左上方。 |
+| 丁达尔光束 | 光束长轴由左上向右下。 | 保留原轴向和原有云隙变化。 |
+| 山体 | 坡面法线与岩脊明暗都取左侧光源。 | 保留山形、岩层纹理与明暗面。 |
+| 电线杆、路边物件、站台 | 左边受光，影子向右、稍朝观者。 | 沿用现有画法。 |
+| 窗框与台面 | 右内框和台面已有一片屏幕混合模式的暖光，下面还铺一层宽幅暖色。 | 旧暖光整片撤掉。晴天底色改为弱中性漫光，窗洞的投影落到下窗框与台面。 |
+| 窗帘 | 褶皱与接触影已有层次，投影向右下。 | 保留布料原貌。图中可对照布帘和相邻右框，新增受光集中在下框。 |
+| 收音机 | 固定的左暖斜带、右侧压暗和投影在天气变化时仍存在。 | 机壳顶面、左肩、右侧压暗和落在台面上的影子共用同一阳光量；脚底接触影与青屏独立。 |
+| 轨面反射、玻璃游光和悬浮尘点 | 轨顶反光偏右，游光会移动，尘点的位置偏右上。 | 保留这三种已有的窗外或玻璃效果，避免改动山前和玻璃内部的像素。 |
+
+[冻结版本逐处代码依据和方向说明](round9/directions.md) · [方向对照](phone-9/index.html)
+
+**光量。** 读取天气引擎当帧的 `cloudOpacity = 0.35 + 0.65 × smooth(慢线)`。晴天车内直射量取 `clamp((1 - cloudOpacity) / 0.65, 0, 1)`。没有曲线、或选「原来的办法」而引擎没有云量字段时，沿用草图的晴天默认端点 0.35，直射量为 1。雨、雪和沙尘都为 0，包括首次加载天气素材时。非晴天气沿用原车厢暗度、冷色天光、降雪反光、沙尘弱黄漫光和闪电照亮的瞬间。
+
+**几何与缓存。** 下档密封条下方作为光斑的后沿，窗洞下方两个圆角的切点给出左右界；沿台面深度向右推到窗台前沿，左边形成斜切。收音机的外壳、提手、天线按实际机身坐标投到该平面：每单位高度向右 1.72、向车内 0.23。把遮住的部分从暖光中扣除，原有脚底软影负责与台面接触。机壳直射贴图避开整块青屏、扬声器、旋钮和刻度。窗台只缓存下方的一条贴图；缓存区分画幅、DPR 和五档阴影边缘软硬，亮度始终用连续的实际阳光量。机壳漫反射与受光贴图也单独缓存。
+
+**电平。** 十根待机柱仍用各声部的约 0.28 秒电平取样、原来的插值和均值混合。只移除随时间摆动的正弦乘数。保留的鼓点来自本曲鼓轨的 MIDI 转写，沿用原有事件筛选、声部均值门槛和 160 毫秒释放。MEGURI 的底鼓在 323.970 秒发生；相对同帧移除鼓轨，第一根柱在 323.969、323.970、324.000、324.140 秒的增量依次为 0、0.25477、0.22750、0。时间、段名、窄屏收纳和整句歌词沿用 terrain.35。[电平实测](round9/meter.md)
+
+## 实际歌曲、画幅和同帧测量
+
+| 晴天曲目与时刻 | 慢线 | 云量 | 车厢直射量 |
+|---|---:|---:|---:|
+| 肖邦《降 E 大调夜曲》Op. 9 No. 2，4:29（全曲最大直射） | 0.013445 | 0.350349 | 0.999463 |
+| MEGURI，2:00 | 0.305211 | 0.494689 | 0.777402 |
+| MEGURI，5:24 | 0.959480 | 0.996885 | 0.004793 |
+| in Silence / in Siren，3:25 | 0.466160 | 0.642056 | 0.550682 |
+
+**玻璃和屏幕。** 1440×900 的肖邦 4:29，将 .36 的天空光晕中心临时还原为 .35 坐标，只在隔离验收页操作；玻璃内 756,684 个像素与 .35 完全相同。雨、雪、沙尘的玻璃直接与 .35 比对也为零差异。另有 18 组固定光晕、只关掉 G1 直射的对照，玻璃和 VFD 屏内差异均为零。在肖邦最亮帧，收音机待机屏段名与时间的亮字/暗底对比度为 **4.783:1 → 4.783:1**，取两版共有的 1,861 个亮字及 3,996 个暗底像素的线性亮度中位数。固定同句歌词对照为 **6.436:1 → 6.436:1**。独立 Chrome 的一组 1080p 导出绘制对照在顶屏有微小差异，正式 XML 同时刻导出对照的顶屏差异为零。[测量报告](round9/frames/report.md) · [原始读数](round9/frames/measurements.json)
+
+**画幅和导出。** 核对了 1123×778、1440×778、1440×900、1707×1067、2560×1600、3441×1440；1080p 和 4K 各从正式包实际导出了 90 帧、3 秒的 AVC/AAC 视频。MEGURI 2:00 在 1080p 的播放、向前定位、回拖、编码前画布四种路径间 RGBA 完全相同。播放路径使用实际媒体推进，并在一个正常绘制回调读取固定的 120.000 秒。4K 实时窗口沿用原来的 1080p 内部画布上限，导出独立以 3840×2160 渲染。[1080p 预编码帧](round9/native/after1080-meguri-export/pre-encode.png) · [4K 预编码帧](round9/native/after4k-meguri-export/pre-encode.png) · [实机和缓存记录](round9/native/REPORT.md)
+
+**取舍与边界。** 斜边、软硬程度、暖色浓度由本轮按草图定值；天空方向固定。收音机的提手和折叠天线投影是平面近似，两道细影在小画幅上会靠得很近。电平表沿用 .35 的单位与行数映射；安静段若出现真实鼓事件，仍可短时抬升。本轮的验收数据来自已有歌曲副本，未重新分析曲库。
+
+**帧耗时。** 在同一台 AMD Radeon 890M、ANGLE D3D11、1440×926 实时画布上，两版在同一段 MEGURI 各采样 360 帧。相邻成功轮中，单帧 CPU 绘制中位数从 **2.40 降至 2.30 ms**，P95 从 **3.80 降至 3.40 ms**，渲染主线程任务时间从每次绘制 **3.90 降至 3.58 ms**。此次采样未见绘制变慢。交替顺序为 .35、.36、.36、.35；前两轮在离屏启动后、打开歌曲前超时，均无帧样本，统计取后两轮。数字反映 CPU 绘制，不能外推到其他显卡的 GPU 时间。重复定位到 MEGURI 的 9:28.5 与 5:24 时，稳定段分别连续 16、11 帧复用了同一张台面光影贴图。[原始采样汇总](round9/native/summary.json) · [实机记录](round9/native/REPORT.md)
+
+## 文件与边界
+
+| 文件 | 修改 |
+|---|---|
+| `source/scoreview/score-terrain.js` | `drawClearSkySun` 固定光晕。`directCabinSun`、`sillSunPatch`、`radioCastMask`、`drawSillSun` 计算并缓存直射贴图。`paintCarriageLighting` 替换旧的固定暖光。`paintRadio`、`radioSunFaces`、`drawVfdDeck` 将机壳材质与直射分开。`draw` 与 `carriage` 传递同一强度。`vfdStandby` 去除正弦乘数。 |
+| `source/scoreview/tests/terrain-cabin-sun.test.cjs` | 校验云量、天气、窗台几何、固定阳光方向、投影、缓存、回拖和八种画幅。 |
+| `source/scoreview/tests/terrain-vfd-meter.test.cjs` | 校验静态电平、真实鼓点及消退、门槛、镲片和歌词优先。 |
+
+开工 HEAD 为 `0b774021f68ec26a3ad286803633246590021271`。工作区当时已有 `work/terrain-20261119/SETTING.md` 修改及未跟踪工作目录，按实际状态记录了 4,400 个基线指纹。包内产品逻辑差异只有 `scoreview/score-terrain.js`；新目录里的 XML/XLD EXE 版本资源、包元数据及启动配置按发行版编号更新。XLD 和共享分析源码均保持原样。日常入口仍指向 terrain.35，原包清单和启动指针通过哈希校验。实机用私有管道、离屏静音、临时档案与分析副本，避开用户现有窗口和 8777。没有下载、推送或提交。[开工指纹](round9/baseline-sha256.json) · [源码差异](round9/changed-files.json) · [打包回执](round9/suites/package-release.json) · [交付核验](round9/delivery-check.json)
+
+## 三套 npm test 原始尾部
+
+scoreview、XML 的完整命令退出码都是 0。scoreview 为 638 通过、1 个既有用例跳过。XLD 原命令退出码 1，Windows 禁止创建测试所需的 NTFS 目录联接。首次失败后逐条执行尾段 81 项，78 项通过；文件硬链接测试 `midi-export.cjs` 在系统默认临时目录原样复验通过。仍未能越过目录联接夹具、执行后续安全断言的两项为 `midi-delete.cjs` 和 `storage.cjs`。保留了原测试与错误。[尾段复验](round9/suites/xld-recovery.json) · [权限探针](round9/suites/xld-link-probe.json)
+
+[scoreview 完整日志](round9/suites/scoreview-test-final.log)
+
+```text
+ℹ tests 639
+ℹ suites 0
+ℹ pass 638
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 136558.4652
+```
+
+[XML 完整日志](round9/suites/xml-test.log)
+
+```text
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 150.3379
+```
+
+[XLD 完整日志](round9/suites/xld-test.log)
+
+```text
+Result deletion PASS: name closure keeps annotations unreachable, staging survives, Recycle Bin only, silent no-op and partial failure both reported, removed engines' leftovers deletable, traversal and non-file targets refused
+result engines: ok (4 registered, 0 retired, 7 removed and only sweepable)
+result sweep: ok (fragments discriminate where coverage and segment count do not; unreadable and failed results stay visible; unlisted directories warn)
+source hygiene: ok (256 files, no stray control characters)
+MuScriptor strings PASS: three independent caches, target invalidation, source restore, baseline activation
+Error: EPERM: operation not permitted, symlink 'C:\Users\12452\AppData\Local\Temp\t36-idzCpP\tmp\xld-midi-delete-bQy2Ea\outside' -> 'C:\Users\12452\AppData\Local\Temp\t36-idzCpP\tmp\xld-midi-delete-bQy2Ea\album\track\midi\strings\4b5c7f7c-6329-494c-9743-d345aece351f'
+    at async Object.symlink (node:internal/fs/promises:1059:10)
+    at async D:\Projects\Xin-Music-Lab-Fusion\source\xld-runtime-baseline\tests\midi-delete.cjs:29:164 {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'symlink',
+  path: 'C:\\Users\\12452\\AppData\\Local\\Temp\\t36-idzCpP\\tmp\\xld-midi-delete-bQy2Ea\\outside',
+  dest: 'C:\\Users\\12452\\AppData\\Local\\Temp\\t36-idzCpP\\tmp\\xld-midi-delete-bQy2Ea\\album\\track\\midi\\strings\\4b5c7f7c-6329-494c-9743-d345aece351f'
+}
+```
+
+---
+
 # 车窗地貌 · 情绪曲线调试台、谱面设置和 XLD 旧谱升级 · terrain.35
 
 2026-11-26。**XML 和 XLD 均已从新试版目录实际启动。** 播放时按 M 可查看情绪曲线与天气；车窗地貌的设置首层收为四项。XLD 清单现在预告实际工作，能独立补曲线，也能给历史 MuScriptor 谱只补后处理。在六首歌的 bass、piano、guitar 共 18 组对照中，CPU 升级与真实 GPU 重转的完整音符和 MIDI 字节均相同。XML、scoreview 两套 npm test 返回 0。XLD 套件有两项目录联接安全测试受当前 Windows 权限限制，未三套全绿。
